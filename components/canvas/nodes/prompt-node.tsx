@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { useMutation } from "convex/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
+import { DEFAULT_MODEL_ID } from "@/lib/ai-models";
+import { Sparkles, Loader2 } from "lucide-react";
 
 type PromptNodeData = {
   prompt?: string;
   model?: string;
+  canvasId?: string;
   _status?: string;
   _statusMessage?: string;
 };
@@ -22,82 +25,166 @@ export default function PromptNode({
   data,
   selected,
 }: NodeProps<PromptNode>) {
-  const updateData = useMutation(api.nodes.updateData);
-  const [prompt, setPrompt] = useState(data.prompt ?? "");
-  const [isEditing, setIsEditing] = useState(false);
+  const nodeData = data as PromptNodeData;
+  const { getEdges, getNode } = useReactFlow();
+
+  const [prompt, setPrompt] = useState(nodeData.prompt ?? "");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isEditing) {
-      setPrompt(data.prompt ?? "");
-    }
-  }, [data.prompt, isEditing]);
+    setPrompt(nodeData.prompt ?? "");
+  }, [nodeData.prompt]);
 
-  const savePrompt = useDebouncedCallback(
-    (newPrompt: string) => {
-      updateData({
-        nodeId: id as Id<"nodes">,
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  const updateData = useMutation(api.nodes.updateData);
+  const createNode = useMutation(api.nodes.create);
+  const generateImage = useAction(api.ai.generateImage);
+
+  const debouncedSave = useDebouncedCallback((value: string) => {
+    const raw = dataRef.current as Record<string, unknown>;
+    const { _status, _statusMessage, ...rest } = raw;
+    void _status;
+    void _statusMessage;
+    updateData({
+      nodeId: id as Id<"nodes">,
+      data: { ...rest, prompt: value },
+    });
+  }, 500);
+
+  const handlePromptChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setPrompt(value);
+      debouncedSave(value);
+    },
+    [debouncedSave]
+  );
+
+  const handleGenerate = useCallback(async () => {
+    if (!prompt.trim() || isGenerating) return;
+    setError(null);
+    setIsGenerating(true);
+
+    try {
+      const canvasId = nodeData.canvasId as Id<"canvases">;
+      if (!canvasId) throw new Error("Missing canvasId on node");
+
+      const edges = getEdges();
+      const incomingEdges = edges.filter((e) => e.target === id);
+      let referenceStorageId: Id<"_storage"> | undefined;
+
+      for (const edge of incomingEdges) {
+        const sourceNode = getNode(edge.source);
+        if (sourceNode?.type === "image") {
+          const srcData = sourceNode.data as { storageId?: string };
+          if (srcData.storageId) {
+            referenceStorageId = srcData.storageId as Id<"_storage">;
+            break;
+          }
+        }
+      }
+
+      const currentNode = getNode(id);
+      const offsetX = (currentNode?.measured?.width ?? 280) + 32;
+      const posX = (currentNode?.position?.x ?? 0) + offsetX;
+      const posY = currentNode?.position?.y ?? 0;
+
+      const aiNodeId = await createNode({
+        canvasId,
+        type: "ai-image",
+        positionX: posX,
+        positionY: posY,
+        width: 320,
+        height: 320,
         data: {
-          ...data,
-          prompt: newPrompt,
-          _status: undefined,
-          _statusMessage: undefined,
+          prompt,
+          model: DEFAULT_MODEL_ID,
+          modelTier: "standard",
+          canvasId,
         },
       });
-    },
-    500,
-  );
 
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newPrompt = e.target.value;
-      setPrompt(newPrompt);
-      savePrompt(newPrompt);
-    },
-    [savePrompt],
-  );
+      await generateImage({
+        canvasId,
+        nodeId: aiNodeId,
+        prompt,
+        referenceStorageId,
+        model: DEFAULT_MODEL_ID,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [
+    prompt,
+    isGenerating,
+    nodeData.canvasId,
+    id,
+    getEdges,
+    getNode,
+    createNode,
+    generateImage,
+  ]);
 
   return (
     <BaseNodeWrapper
       selected={selected}
-      status={data._status}
-      className="border-purple-500/30"
+      status={nodeData._status}
+      statusMessage={nodeData._statusMessage}
+      className="min-w-[240px] border-violet-500/30"
     >
-      <div className="w-72 p-3">
-        <div className="text-xs font-medium text-purple-500 mb-1">
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="image-in"
+        className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
+      />
+
+      <div className="flex flex-col gap-2 p-3">
+        <div className="text-xs font-medium text-violet-600 dark:text-violet-400">
           ✨ Prompt
         </div>
-        {isEditing ? (
-          <textarea
-            value={prompt}
-            onChange={handleChange}
-            onBlur={() => setIsEditing(false)}
-            autoFocus
-            className="nodrag nowheel w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm outline-none focus:ring-0 min-h-[3rem]"
-            placeholder="Prompt eingeben…"
-            rows={4}
-          />
-        ) : (
-          <div
-            onDoubleClick={() => setIsEditing(true)}
-            className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap"
-          >
-            {prompt || (
-              <span className="text-muted-foreground">
-                Doppelklick zum Bearbeiten
-              </span>
-            )}
-          </div>
+        <textarea
+          value={prompt}
+          onChange={handlePromptChange}
+          placeholder="Describe what you want to generate…"
+          rows={4}
+          className="nodrag nowheel w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
+        />
+
+        {error && (
+          <p className="text-xs text-destructive">{error}</p>
         )}
-        {data.model && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            Modell: {data.model}
-          </div>
-        )}
+
+        <button
+          type="button"
+          onClick={() => void handleGenerate()}
+          disabled={!prompt.trim() || isGenerating}
+          className="nodrag flex items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating…
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" />
+              Generate Image
+            </>
+          )}
+        </button>
       </div>
+
       <Handle
         type="source"
         position={Position.Right}
-        className="!h-3 !w-3 !bg-purple-500 !border-2 !border-background"
+        id="prompt-out"
+        className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
     </BaseNodeWrapper>
   );

@@ -192,7 +192,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         positionY: position.y,
         width: defaults.width,
         height: defaults.height,
-        data: defaults.data,
+        data: { ...defaults.data, canvasId },
       });
     },
     [screenToFlowPosition, createNode, canvasId],

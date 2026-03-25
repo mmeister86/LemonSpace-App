@@ -26,7 +26,7 @@ const nodeTemplates = [
     label: "Prompt",
     width: 320,
     height: 140,
-    defaultData: { content: "", model: "" },
+    defaultData: { prompt: "", model: "" },
   },
   {
     type: "note",
@@ -67,7 +67,7 @@ export default function CanvasToolbar({ canvasId }: CanvasToolbarProps) {
       positionY: 100 + offset,
       width,
       height,
-      data,
+      data: { ...data, canvasId },
     });
   };
 

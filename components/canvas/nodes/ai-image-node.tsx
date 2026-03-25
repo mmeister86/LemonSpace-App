@@ -1,78 +1,209 @@
 "use client";
 
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { useCallback, useState } from "react";
+import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
+import {
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  ImageIcon,
+} from "lucide-react";
 
 type AiImageNodeData = {
+  storageId?: string;
   url?: string;
   prompt?: string;
   model?: string;
+  modelTier?: string;
+  generatedAt?: number;
+  canvasId?: string;
   _status?: string;
   _statusMessage?: string;
 };
 
 export type AiImageNode = Node<AiImageNodeData, "ai-image">;
 
+type NodeStatus =
+  | "idle"
+  | "analyzing"
+  | "clarifying"
+  | "executing"
+  | "done"
+  | "error";
+
 export default function AiImageNode({
+  id,
   data,
   selected,
 }: NodeProps<AiImageNode>) {
-  const status = data._status ?? "idle";
+  const nodeData = data as AiImageNodeData;
+  const { getEdges, getNode } = useReactFlow();
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const generateImage = useAction(api.ai.generateImage);
+
+  const status = (nodeData._status ?? "idle") as NodeStatus;
+  const errorMessage = nodeData._statusMessage;
+
+  const isLoading =
+    status === "executing" ||
+    status === "analyzing" ||
+    status === "clarifying" ||
+    isGenerating;
+
+  const handleRegenerate = useCallback(async () => {
+    if (isLoading) return;
+    setLocalError(null);
+    setIsGenerating(true);
+
+    try {
+      const canvasId = nodeData.canvasId as Id<"canvases">;
+      if (!canvasId) throw new Error("Missing canvasId");
+
+      const prompt = nodeData.prompt;
+      if (!prompt) throw new Error("No prompt — use Generate from a Prompt node");
+
+      const edges = getEdges();
+      const incomingEdges = edges.filter((e) => e.target === id);
+      let referenceStorageId: Id<"_storage"> | undefined;
+      for (const edge of incomingEdges) {
+        const src = getNode(edge.source);
+        if (src?.type === "image") {
+          const srcData = src.data as { storageId?: string };
+          if (srcData.storageId) {
+            referenceStorageId = srcData.storageId as Id<"_storage">;
+            break;
+          }
+        }
+      }
+
+      await generateImage({
+        canvasId,
+        nodeId: id as Id<"nodes">,
+        prompt,
+        referenceStorageId,
+        model: nodeData.model ?? DEFAULT_MODEL_ID,
+      });
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [isLoading, nodeData, id, getEdges, getNode, generateImage]);
+
+  const modelName =
+    getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";
 
   return (
-    <BaseNodeWrapper
-      selected={selected}
-      status={status}
-      statusMessage={data._statusMessage}
-    >
-      <div className="p-2">
-        <div className="text-xs font-medium text-emerald-500 mb-1">
-          🤖 KI-Bild
-        </div>
+    <BaseNodeWrapper selected={selected} className="w-[320px] overflow-hidden">
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="prompt-in"
+        className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
+      />
 
-        {status === "executing" && (
-          <div className="flex h-36 w-56 items-center justify-center rounded-lg bg-muted">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="border-b border-border px-3 py-2">
+        <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          🖼️ AI Image
+        </div>
+      </div>
+
+      <div className="relative h-[320px] overflow-hidden bg-muted">
+        {status === "idle" && !nodeData.url && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+            <ImageIcon className="h-10 w-10 opacity-30" />
+            <p className="px-6 text-center text-xs opacity-60">
+              Connect a Prompt node and click Generate
+            </p>
           </div>
         )}
 
-        {status === "done" && data.url && (
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted">
+            <div className="absolute inset-0 overflow-hidden">
+              <div className="animate-shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+            </div>
+            <Loader2 className="relative z-10 h-8 w-8 animate-spin text-violet-500" />
+            <p className="relative z-10 text-xs text-muted-foreground">
+              {status === "analyzing" && "Analyzing…"}
+              {status === "clarifying" && "Clarifying…"}
+              {(status === "executing" || isGenerating) && "Generating…"}
+            </p>
+            <p className="relative z-10 text-[10px] text-muted-foreground/60">
+              {modelName}
+            </p>
+          </div>
+        )}
+
+        {status === "error" && !isLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="px-4 text-center text-xs font-medium text-destructive">
+              Generation failed
+            </p>
+            <p className="px-6 text-center text-[10px] text-muted-foreground">
+              {errorMessage ?? localError ?? "Unknown error"} — Credits not
+              charged
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleRegenerate()}
+              className="nodrag mt-1 flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Try again
+            </button>
+          </div>
+        )}
+
+        {nodeData.url && !isLoading && (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={data.url}
-            alt={data.prompt ?? "KI-generiertes Bild"}
-            className="rounded-lg object-cover max-w-[260px]"
+            src={nodeData.url}
+            alt={nodeData.prompt ?? "AI generated image"}
+            className="absolute inset-0 h-full w-full object-contain"
             draggable={false}
           />
         )}
 
-        {status === "error" && (
-          <div className="flex h-36 w-56 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/20 text-sm text-red-600">
-            {data._statusMessage ?? "Fehler bei der Generierung"}
+        {status === "done" && nodeData.url && !isLoading && (
+          <div className="absolute inset-0 z-20 flex items-end justify-end p-2 opacity-0 transition-opacity hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => void handleRegenerate()}
+              className="nodrag flex items-center gap-1.5 rounded-md border border-border bg-background/90 px-2.5 py-1.5 text-xs font-medium backdrop-blur-sm transition-colors hover:bg-background"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Regenerate
+            </button>
           </div>
-        )}
-
-        {status === "idle" && (
-          <div className="flex h-36 w-56 items-center justify-center rounded-lg border-2 border-dashed text-sm text-muted-foreground">
-            Prompt verbinden
-          </div>
-        )}
-
-        {data.prompt && status === "done" && (
-          <p className="mt-1 text-xs text-muted-foreground truncate max-w-[260px]">
-            {data.prompt}
-          </p>
         )}
       </div>
 
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!h-3 !w-3 !bg-emerald-500 !border-2 !border-background"
-      />
+      {nodeData.prompt && (
+        <div className="border-t border-border px-3 py-2">
+          <p className="line-clamp-2 text-[10px] text-muted-foreground">
+            {nodeData.prompt}
+          </p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground/60">
+            {modelName}
+          </p>
+        </div>
+      )}
+
       <Handle
         type="source"
         position={Position.Right}
-        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
+        id="image-out"
+        className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
     </BaseNodeWrapper>
   );

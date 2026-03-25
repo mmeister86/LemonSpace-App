@@ -270,7 +270,15 @@ export const updateStatus = mutation({
     if (!node) throw new Error("Node not found");
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
-    await ctx.db.patch(nodeId, { status, statusMessage });
+    const patch: { status: typeof status; statusMessage?: string } = {
+      status,
+    };
+    if (statusMessage !== undefined) {
+      patch.statusMessage = statusMessage;
+    } else if (status === "done" || status === "executing" || status === "idle") {
+      patch.statusMessage = undefined;
+    }
+    await ctx.db.patch(nodeId, patch);
   },
 });
 

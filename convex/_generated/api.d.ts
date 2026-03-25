@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
@@ -15,6 +16,7 @@ import type * as edges from "../edges.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
 import type * as nodes from "../nodes.js";
+import type * as openrouter from "../openrouter.js";
 import type * as storage from "../storage.js";
 
 import type {
@@ -24,6 +26,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ai: typeof ai;
   auth: typeof auth;
   canvases: typeof canvases;
   credits: typeof credits;
@@ -31,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   helpers: typeof helpers;
   http: typeof http;
   nodes: typeof nodes;
+  openrouter: typeof openrouter;
   storage: typeof storage;
 }>;
 
