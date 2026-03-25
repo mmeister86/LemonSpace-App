@@ -1,10 +1,12 @@
 "use client";
 
 import { authClient } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function Home() {
   const { data: session, isPending } = authClient.useSession();
+  const router = useRouter();
 
   if (isPending) {
     return (
@@ -29,6 +31,12 @@ export default function Home() {
           >
             Zum Dashboard
           </Link>
+          <button
+            onClick={() => authClient.signOut().then(() => router.refresh())}
+            className="rounded-lg border border-border px-6 py-3 text-sm hover:bg-accent"
+          >
+            Abmelden
+          </button>
         </div>
       ) : (
         <div className="flex gap-4">

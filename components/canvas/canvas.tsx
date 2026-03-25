@@ -146,9 +146,9 @@ export default function Canvas({ canvasId }: CanvasProps) {
         className="bg-background"
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls className="!rounded-lg !border !bg-card !shadow-sm" />
+        <Controls className="rounded-lg! border! bg-card! shadow-sm!" />
         <MiniMap
-          className="!rounded-lg !border !bg-card !shadow-sm"
+          className="rounded-lg! border! bg-card! shadow-sm!"
           nodeColor="#6366f1"
           maskColor="rgba(0, 0, 0, 0.1)"
         />
