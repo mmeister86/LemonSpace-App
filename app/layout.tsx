@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Manrope } from "next/font/google";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import { ConvexClientProvider } from "@/components/ui/convex-prover";
+import { Providers } from "@/components/providers";
+import { Toaster } from "@/components/ui/sonner";
+import { InitUser } from "@/components/init-user";
 
-const manrope = Manrope({subsets:['latin'],variable:'--font-sans'});
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -28,11 +20,15 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", manrope.variable)}
+      lang="de"
+      className={cn("h-full", "antialiased", "font-sans", manrope.variable)}
     >
       <body className="min-h-full flex flex-col">
-        <ConvexClientProvider>{children}</ConvexClientProvider>
+        <Providers>
+          <InitUser />
+          {children}
+          <Toaster />
+        </Providers>
       </body>
     </html>
   );

@@ -1,38 +1,51 @@
-// src/app/page.tsx — minimaler Test
 "use client";
 
 import { authClient } from "@/lib/auth-client";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import Link from "next/link";
 
 export default function Home() {
-  const user = useQuery(api.auth.getCurrentUser);
+  const { data: session, isPending } = authClient.useSession();
 
-// user === undefined → Query lädt noch
-// user === null → Nicht eingeloggt
-// user === { id, name, email, ... } → Eingeloggt
+  if (isPending) {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Laden...</p>
+      </main>
+    );
+  }
 
   return (
-    <div>
-      <h1>LemonSpace</h1>
-      {user ? (
-        <div>
-          <p>Eingeloggt als: {user.name}</p>
-          <button onClick={() => authClient.signOut()}>Logout</button>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+      <h1 className="text-4xl font-bold">🍋 LemonSpace</h1>
+
+      {session?.user ? (
+        <div className="flex flex-col items-center gap-4">
+          <p className="text-lg">
+            Willkommen, <span className="font-semibold">{session.user.name}</span>
+          </p>
+          <Link
+            href="/dashboard"
+            className="rounded-lg bg-primary px-6 py-3 text-primary-foreground hover:bg-primary/90"
+          >
+            Zum Dashboard
+          </Link>
         </div>
       ) : (
-        <button
-          onClick={() =>
-            authClient.signUp.email({
-              email: "test@lemonspace.io",
-              password: "test1234",
-              name: "Test User",
-            })
-          }
-        >
-          Test Signup
-        </button>
+        <div className="flex gap-4">
+          <Link
+            href="/auth/sign-in"
+            className="rounded-lg bg-primary px-6 py-3 text-primary-foreground hover:bg-primary/90"
+          >
+            Anmelden
+          </Link>
+          <Link
+            href="/auth/sign-up"
+            className="rounded-lg border border-border px-6 py-3 hover:bg-accent"
+          >
+            Registrieren
+          </Link>
+        </div>
       )}
-    </div>
+    </main>
   );
 }
