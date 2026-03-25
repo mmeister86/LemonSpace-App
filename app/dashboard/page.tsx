@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import Image from "next/image"
+import Image from "next/image";
 import {
   Activity,
   ArrowUpRight,
@@ -9,11 +9,11 @@ import {
   LayoutTemplate,
   Search,
   Sparkles,
-} from "lucide-react"
+} from "lucide-react";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,16 +21,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
-import { cn } from "@/lib/utils"
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 const formatEurFromCents = (cents: number) =>
   new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-  }).format(cents / 100)
+  }).format(cents / 100);
 
 const mockRuns = [
   {
@@ -69,53 +69,53 @@ const mockRuns = [
     credits: 0,
     updated: "vor 2 Std.",
   },
-]
+];
 
 const mockWorkspaces = [
   { name: "Sommer-Kampagne", nodes: 24, frames: 3, initial: "S" },
   { name: "Produktfotos", nodes: 11, frames: 2, initial: "P" },
   { name: "Social Variants", nodes: 8, frames: 1, initial: "V" },
-]
+];
 
 function StatusDot({ status }: { status: (typeof mockRuns)[0]["status"] }) {
-  const base = "inline-block size-2 rounded-full"
+  const base = "inline-block size-2 rounded-full";
   switch (status) {
     case "done":
-      return <span className={cn(base, "bg-primary")} />
+      return <span className={cn(base, "bg-primary")} />;
     case "executing":
       return (
         <span className="relative inline-flex size-2">
           <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
           <span className={cn(base, "relative bg-primary")} />
         </span>
-      )
+      );
     case "idle":
-      return <span className={cn(base, "bg-border")} />
+      return <span className={cn(base, "bg-border")} />;
     case "error":
-      return <span className={cn(base, "bg-destructive")} />
+      return <span className={cn(base, "bg-destructive")} />;
   }
 }
 
 function statusLabel(status: (typeof mockRuns)[0]["status"]) {
   switch (status) {
     case "done":
-      return "Fertig"
+      return "Fertig";
     case "executing":
-      return "Läuft"
+      return "Läuft";
     case "idle":
-      return "Bereit"
+      return "Bereit";
     case "error":
-      return "Fehler"
+      return "Fehler";
   }
 }
 
 export default function DashboardPage() {
-  const balanceCents = 4320
-  const reservedCents = 180
-  const monthlyPoolCents = 5000
+  const balanceCents = 4320;
+  const reservedCents = 180;
+  const monthlyPoolCents = 5000;
   const usagePercent = Math.round(
     ((monthlyPoolCents - balanceCents) / monthlyPoolCents) * 100,
-  )
+  );
 
   return (
     <div className="min-h-full bg-background">
@@ -131,6 +131,7 @@ export default function DashboardPage() {
               unoptimized
               className="h-5 w-auto shrink-0"
               aria-hidden
+              loading="eager"
             />
           </div>
 
@@ -204,7 +205,9 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="mb-2 flex items-baseline justify-between text-sm">
-                  <span className="text-muted-foreground">Monatskontingent</span>
+                  <span className="text-muted-foreground">
+                    Monatskontingent
+                  </span>
                   <span className="tabular-nums text-muted-foreground">
                     {usagePercent}%
                   </span>
@@ -214,7 +217,8 @@ export default function DashboardPage() {
             </div>
 
             <p className="text-xs leading-relaxed text-muted-foreground/80">
-              Bei fehlgeschlagenen Jobs werden reservierte Credits automatisch freigegeben.
+              Bei fehlgeschlagenen Jobs werden reservierte Credits automatisch
+              freigegeben.
             </p>
           </div>
 
@@ -248,9 +252,7 @@ export default function DashboardPage() {
 
             <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
               Step 2 von 4 —{" "}
-              <span className="font-mono text-[0.7rem]">
-                flux-schnell
-              </span>
+              <span className="font-mono text-[0.7rem]">flux-schnell</span>
             </p>
           </div>
         </div>
@@ -262,7 +264,12 @@ export default function DashboardPage() {
               <LayoutTemplate className="size-3.5 text-muted-foreground" />
               Workspaces
             </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled
+            >
               Neuer Workspace
             </Button>
           </div>
@@ -273,7 +280,7 @@ export default function DashboardPage() {
                 key={ws.name}
                 className={cn(
                   "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
-                  "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4"
+                  "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
                 )}
                 disabled
               >
@@ -319,7 +326,9 @@ export default function DashboardPage() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                       {run.model !== "—" && (
-                        <span className="font-mono text-[0.7rem]">{run.model}</span>
+                        <span className="font-mono text-[0.7rem]">
+                          {run.model}
+                        </span>
                       )}
                       {run.credits > 0 && (
                         <>
@@ -345,5 +354,5 @@ export default function DashboardPage() {
         </section>
       </main>
     </div>
-  )
+  );
 }
