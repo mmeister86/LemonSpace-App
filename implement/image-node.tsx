@@ -1,17 +1,10 @@
 "use client";
 
-import {
-  useState,
-  useCallback,
-  useRef,
-  type ChangeEvent,
-  type DragEvent,
-} from "react";
+import { useState, useCallback, useRef } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import Image from "next/image";
 import BaseNodeWrapper from "./base-node-wrapper";
 
 type ImageNodeData = {
@@ -38,19 +31,19 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
       setIsUploading(true);
 
       try {
+        // 1. Upload-URL generieren
         const uploadUrl = await generateUploadUrl();
+
+        // 2. Datei hochladen
         const result = await fetch(uploadUrl, {
           method: "POST",
           headers: { "Content-Type": file.type },
           body: file,
         });
+        const { storageId } = await result.json();
 
-        if (!result.ok) {
-          throw new Error("Upload failed");
-        }
-
-        const { storageId } = (await result.json()) as { storageId: string };
-
+        // 3. Node-Data mit storageId aktualisieren
+        //    Die URL wird serverseitig in der nodes.list Query aufgelöst
         await updateData({
           nodeId: id as Id<"nodes">,
           data: {
@@ -65,9 +58,10 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
         setIsUploading(false);
       }
     },
-    [id, generateUploadUrl, updateData]
+    [id, generateUploadUrl, updateData],
   );
 
+  // Click-to-Upload
   const handleClick = useCallback(() => {
     if (!data.url && !isUploading) {
       fileInputRef.current?.click();
@@ -75,14 +69,15 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
   }, [data.url, isUploading]);
 
   const handleFileChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) uploadFile(file);
     },
-    [uploadFile]
+    [uploadFile],
   );
 
-  const handleDragOver = useCallback((e: DragEvent) => {
+  // Drag & Drop auf den Node
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer.types.includes("Files")) {
@@ -91,14 +86,14 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
     }
   }, []);
 
-  const handleDragLeave = useCallback((e: DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
   }, []);
 
   const handleDrop = useCallback(
-    (e: DragEvent) => {
+    (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
@@ -108,9 +103,10 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
         uploadFile(file);
       }
     },
-    [uploadFile]
+    [uploadFile],
   );
 
+  // Bild ersetzen
   const handleReplace = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -118,12 +114,14 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
   return (
     <BaseNodeWrapper selected={selected} status={data._status}>
       <div className="p-2">
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-xs font-medium text-muted-foreground">🖼️ Bild</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs font-medium text-muted-foreground">
+            🖼️ Bild
+          </div>
           {data.url && (
             <button
               onClick={handleReplace}
-              className="nodrag text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="nodrag text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Ersetzen
             </button>
@@ -134,20 +132,18 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
           <div className="flex h-36 w-56 items-center justify-center rounded-lg bg-muted">
             <div className="flex flex-col items-center gap-2">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              <span className="text-xs text-muted-foreground">Wird hochgeladen...</span>
+              <span className="text-xs text-muted-foreground">
+                Wird hochgeladen…
+              </span>
             </div>
           </div>
         ) : data.url ? (
-          <div className="relative h-36 w-56 overflow-hidden rounded-lg">
-            <Image
-              src={data.url}
-              alt={data.filename ?? "Bild"}
-              fill
-              className="object-cover"
-              sizes="224px"
-              draggable={false}
-            />
-          </div>
+          <img
+            src={data.url}
+            alt={data.filename ?? "Bild"}
+            className="rounded-lg object-cover max-w-[260px]"
+            draggable={false}
+          />
         ) : (
           <div
             onClick={handleClick}
@@ -157,21 +153,17 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
             className={`
               nodrag flex h-36 w-56 cursor-pointer flex-col items-center justify-center
               rounded-lg border-2 border-dashed text-sm transition-colors
-              ${
-                isDragOver
-                  ? "border-primary bg-primary/5 text-primary"
-                  : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
-              }
+              ${isDragOver ? "border-primary bg-primary/5 text-primary" : "text-muted-foreground hover:border-primary/50 hover:text-foreground"}
             `}
           >
-            <span className="mb-1 text-lg">📁</span>
+            <span className="text-lg mb-1">📁</span>
             <span>Klicken oder hierhin ziehen</span>
-            <span className="mt-0.5 text-xs">PNG, JPG, WebP</span>
+            <span className="text-xs mt-0.5">PNG, JPG, WebP</span>
           </div>
         )}
 
         {data.filename && data.url && (
-          <p className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground truncate max-w-[260px]">
             {data.filename}
           </p>
         )}
@@ -188,7 +180,7 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
       <Handle
         type="source"
         position={Position.Right}
-        className="h-3! w-3! bg-primary! border-2! border-background!"
+        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
       />
     </BaseNodeWrapper>
   );

@@ -15,6 +15,7 @@ import type * as edges from "../edges.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
 import type * as nodes from "../nodes.js";
+import type * as storage from "../storage.js";
 
 import type {
   ApiFromModules,
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   helpers: typeof helpers;
   http: typeof http;
   nodes: typeof nodes;
+  storage: typeof storage;
 }>;
 
 /**

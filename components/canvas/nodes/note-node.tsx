@@ -1,20 +1,83 @@
 "use client";
 
-import { type Node, type NodeProps } from "@xyflow/react";
-
+import { useState, useCallback, useEffect } from "react";
+import { type NodeProps, type Node } from "@xyflow/react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
 
-export type NoteNodeData = {
+type NoteNodeData = {
   content?: string;
+  _status?: string;
+  _statusMessage?: string;
 };
 
 export type NoteNode = Node<NoteNodeData, "note">;
 
-export default function NoteNode({ data, selected }: NodeProps<NoteNode>) {
+export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
+  const updateData = useMutation(api.nodes.updateData);
+  const [content, setContent] = useState(data.content ?? "");
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setContent(data.content ?? "");
+    }
+  }, [data.content, isEditing]);
+
+  const saveContent = useDebouncedCallback(
+    (newContent: string) => {
+      updateData({
+        nodeId: id as Id<"nodes">,
+        data: {
+          ...data,
+          content: newContent,
+          _status: undefined,
+          _statusMessage: undefined,
+        },
+      });
+    },
+    500,
+  );
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newContent = e.target.value;
+      setContent(newContent);
+      saveContent(newContent);
+    },
+    [saveContent],
+  );
+
   return (
     <BaseNodeWrapper selected={selected} className="w-52 p-3">
-      <div className="mb-1 text-xs font-medium text-muted-foreground">Notiz</div>
-      <p className="whitespace-pre-wrap text-sm">{data.content || "Leere Notiz"}</p>
+      <div className="text-xs font-medium text-muted-foreground mb-1">
+        📌 Notiz
+      </div>
+      {isEditing ? (
+        <textarea
+          value={content}
+          onChange={handleChange}
+          onBlur={() => setIsEditing(false)}
+          autoFocus
+          className="nodrag nowheel w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm outline-none focus:ring-0 min-h-[2rem]"
+          placeholder="Notiz eingeben…"
+          rows={3}
+        />
+      ) : (
+        <div
+          onDoubleClick={() => setIsEditing(true)}
+          className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap"
+        >
+          {content || (
+            <span className="text-muted-foreground">
+              Doppelklick zum Bearbeiten
+            </span>
+          )}
+        </div>
+      )}
     </BaseNodeWrapper>
   );
 }

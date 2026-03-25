@@ -22,6 +22,18 @@ async function getCanvasOrThrow(
   return canvas;
 }
 
+async function getCanvasIfAuthorized(
+  ctx: QueryCtx | MutationCtx,
+  canvasId: Id<"canvases">,
+  userId: string
+) {
+  const canvas = await ctx.db.get(canvasId);
+  if (!canvas || canvas.ownerId !== userId) {
+    return null;
+  }
+  return canvas;
+}
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -35,10 +47,29 @@ export const list = query({
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, canvasId, user.userId);
 
-    return await ctx.db
+    const nodes = await ctx.db
       .query("nodes")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
+
+    return Promise.all(
+      nodes.map(async (node) => {
+        const data = node.data as Record<string, unknown> | undefined;
+        if (!data?.storageId) {
+          return node;
+        }
+
+        const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+
+        return {
+          ...node,
+          data: {
+            ...data,
+            url: url ?? undefined,
+          },
+        };
+      })
+    );
   },
 });
 
@@ -52,7 +83,11 @@ export const get = query({
     const node = await ctx.db.get(nodeId);
     if (!node) return null;
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    const canvas = await getCanvasIfAuthorized(ctx, node.canvasId, user.userId);
+    if (!canvas) {
+      return null;
+    }
+
     return node;
   },
 });
@@ -67,7 +102,10 @@ export const listByType = query({
   },
   handler: async (ctx, { canvasId, type }) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, canvasId, user.userId);
+    const canvas = await getCanvasIfAuthorized(ctx, canvasId, user.userId);
+    if (!canvas) {
+      return [];
+    }
 
     return await ctx.db
       .query("nodes")

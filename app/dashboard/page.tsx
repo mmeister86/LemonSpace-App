@@ -340,7 +340,7 @@ export default function DashboardPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground"
+              className="cursor-pointer text-muted-foreground"
               type="button"
               onClick={handleCreateWorkspace}
               disabled={isCreatingWorkspace || isSessionPending || !session?.user}
@@ -366,7 +366,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => router.push(`/canvas/${canvas._id}`)}
                   className={cn(
-                    "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
+                    "group flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
                     "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
                   )}
                 >

@@ -17,10 +17,14 @@ export async function requireAuth(
 ): Promise<AuthUser> {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (!user) {
+    console.error("[requireAuth] safeGetAuthUser returned null");
     throw new Error("Unauthenticated");
   }
   const userId = user.userId ?? String(user._id);
   if (!userId) {
+    console.error("[requireAuth] safeGetAuthUser returned user without userId", {
+      userRecordId: String(user._id),
+    });
     throw new Error("Unauthenticated");
   }
   return { ...user, userId };

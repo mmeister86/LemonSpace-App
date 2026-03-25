@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import Canvas from "@/components/canvas/canvas";
-import CanvasToolbar from "@/components/canvas/canvas-toolbar";
+import CanvasSidebar from "@/components/canvas/canvas-sidebar";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
@@ -48,9 +48,11 @@ export default async function CanvasPage({
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
-      <CanvasToolbar canvasId={typedCanvasId} />
-      <Canvas canvasId={typedCanvasId} />
+    <div className="flex h-screen w-screen overflow-hidden">
+      <CanvasSidebar />
+      <div className="flex-1">
+        <Canvas canvasId={typedCanvasId} />
+      </div>
     </div>
   );
 }
