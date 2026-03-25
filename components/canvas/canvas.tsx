@@ -80,6 +80,14 @@ function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   });
 }
 
+function getMiniMapNodeColor(node: RFNode): string {
+  return node.type === "frame" ? "transparent" : "#6366f1";
+}
+
+function getMiniMapNodeStrokeColor(node: RFNode): string {
+  return node.type === "frame" ? "transparent" : "#4f46e5";
+}
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
@@ -318,7 +326,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
         <MiniMap
           className="bg-card! border! shadow-sm! rounded-lg!"
-          nodeColor="#6366f1"
+          nodeColor={getMiniMapNodeColor}
+          nodeStrokeColor={getMiniMapNodeStrokeColor}
           maskColor="rgba(0, 0, 0, 0.1)"
         />
       </ReactFlow>
