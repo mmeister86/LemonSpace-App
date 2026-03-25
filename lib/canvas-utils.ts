@@ -49,8 +49,9 @@ export const NODE_DEFAULTS: Record<
 > = {
   image: { width: 280, height: 200, data: {} },
   text: { width: 256, height: 120, data: { content: "" } },
-  prompt: { width: 288, height: 140, data: { prompt: "" } },
-  "ai-image": { width: 280, height: 220, data: {} },
+  prompt: { width: 288, height: 220, data: { prompt: "", aspectRatio: "1:1" } },
+  // 1:1 viewport 320 + chrome 88 ≈ äußere Höhe (siehe lib/image-formats.ts)
+  "ai-image": { width: 320, height: 408, data: {} },
   group: { width: 400, height: 300, data: { label: "Gruppe" } },
   frame: {
     width: 400,
@@ -58,5 +59,5 @@ export const NODE_DEFAULTS: Record<
     data: { label: "Frame", resolution: "1080x1080" },
   },
   note: { width: 208, height: 100, data: { content: "" } },
-  compare: { width: 500, height: 220, data: {} },
+  compare: { width: 500, height: 380, data: {} },
 };

@@ -143,3 +143,10 @@
     animation: shimmer 1.5s ease-in-out infinite;
   }
 }
+
+@layer components {
+  /* Verbindungs-Punkte über Node-Inhalt (XYFlow setzt kein z-index) */
+  .react-flow__handle {
+    z-index: 50;
+  }
+}

@@ -32,6 +32,54 @@ interface CanvasInnerProps {
   canvasId: Id<"canvases">;
 }
 
+function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
+  return nodes.map((node) => {
+    if (node.type !== "compare") return node;
+
+    const incoming = edges.filter((edge) => edge.target === node.id);
+    let leftUrl: string | undefined;
+    let rightUrl: string | undefined;
+    let leftLabel: string | undefined;
+    let rightLabel: string | undefined;
+
+    for (const edge of incoming) {
+      const source = nodes.find((candidate) => candidate.id === edge.source);
+      if (!source) continue;
+
+      const srcData = source.data as { url?: string; label?: string };
+
+      if (edge.targetHandle === "left") {
+        leftUrl = srcData.url;
+        leftLabel = srcData.label ?? source.type ?? "Before";
+      } else if (edge.targetHandle === "right") {
+        rightUrl = srcData.url;
+        rightLabel = srcData.label ?? source.type ?? "After";
+      }
+    }
+
+    const current = node.data as {
+      leftUrl?: string;
+      rightUrl?: string;
+      leftLabel?: string;
+      rightLabel?: string;
+    };
+
+    if (
+      current.leftUrl === leftUrl &&
+      current.rightUrl === rightUrl &&
+      current.leftLabel === leftLabel &&
+      current.rightLabel === rightLabel
+    ) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: { ...node.data, leftUrl, rightUrl, leftLabel, rightLabel },
+    };
+  });
+}
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
@@ -54,9 +102,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     api.edges.list,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
+  const canvas = useQuery(
+    api.canvases.get,
+    shouldSkipCanvasQueries ? "skip" : { canvasId },
+  );
 
   // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
   const moveNode = useMutation(api.nodes.move);
+  const resizeNode = useMutation(api.nodes.resize);
   const batchMoveNodes = useMutation(api.nodes.batchMove);
   const createNode = useMutation(api.nodes.create);
   const removeNode = useMutation(api.nodes.remove);
@@ -74,8 +127,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useEffect(() => {
     if (!convexNodes || isDragging.current) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNodes(convexNodes.map(convexNodeToRF));
-  }, [convexNodes]);
+    setNodes(withResolvedCompareData(convexNodes.map(convexNodeToRF), edges));
+  }, [convexNodes, edges]);
 
   useEffect(() => {
     if (!convexEdges) return;
@@ -83,10 +136,36 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges(convexEdges.map(convexEdgeToRF));
   }, [convexEdges]);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNodes((nds) => withResolvedCompareData(nds, edges));
+  }, [edges]);
+
   // ─── Node Changes (Drag, Select, Remove) ─────────────────────
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((nds) => applyNodeChanges(changes, nds));
-  }, []);
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes((nds) => {
+        const nextNodes = applyNodeChanges(changes, nds);
+
+        for (const change of changes) {
+          if (change.type !== "dimensions") continue;
+          if (change.resizing !== false || !change.dimensions) continue;
+
+          const resizedNode = nextNodes.find((node) => node.id === change.id);
+          if (resizedNode?.type !== "frame") continue;
+
+          void resizeNode({
+            nodeId: change.id as Id<"nodes">,
+            width: change.dimensions.width,
+            height: change.dimensions.height,
+          });
+        }
+
+        return nextNodes;
+      });
+    },
+    [resizeNode],
+  );
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((eds) => applyEdgeChanges(changes, eds));
@@ -212,7 +291,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   return (
     <div className="relative h-full w-full">
-      <CanvasToolbar canvasId={canvasId} />
+      <CanvasToolbar canvasId={canvasId} canvasName={canvas?.name ?? "canvas"} />
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -14,6 +14,7 @@ export const generateImage = action({
     prompt: v.string(),
     referenceStorageId: v.optional(v.id("_storage")),
     model: v.optional(v.string()),
+    aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -55,6 +56,7 @@ export const generateImage = action({
         prompt: args.prompt,
         referenceImageUrl,
         model: modelId,
+        aspectRatio: args.aspectRatio,
       });
 
       const binaryString = atob(result.imageBase64);
@@ -71,6 +73,10 @@ export const generateImage = action({
       const prev = (existing.data ?? {}) as Record<string, unknown>;
       const creditCost = modelConfig.estimatedCostPerImage;
 
+      const aspectRatio =
+        args.aspectRatio?.trim() ||
+        (typeof prev.aspectRatio === "string" ? prev.aspectRatio : undefined);
+
       await ctx.runMutation(api.nodes.updateData, {
         nodeId: args.nodeId,
         data: {
@@ -81,6 +87,7 @@ export const generateImage = action({
           modelTier: modelConfig.tier,
           generatedAt: Date.now(),
           creditCost,
+          ...(aspectRatio ? { aspectRatio } : {}),
         },
       });
 

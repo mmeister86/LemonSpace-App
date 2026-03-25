@@ -88,7 +88,20 @@ export const get = query({
       return null;
     }
 
-    return node;
+    const data = node.data as Record<string, unknown> | undefined;
+    if (!data?.storageId) {
+      return node;
+    }
+
+    const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        url: url ?? undefined,
+      },
+    };
   },
 });
 

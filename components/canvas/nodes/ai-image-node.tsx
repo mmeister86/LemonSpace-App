@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
+import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
 import { cn, formatEurFromCents } from "@/lib/utils";
 import {
   Loader2,
@@ -25,6 +26,10 @@ type AiImageNodeData = {
   /** Gebuchte Credits in Euro-Cent (PRD: nach Commit) */
   creditCost?: number;
   canvasId?: string;
+  /** OpenRouter image_config.aspect_ratio */
+  aspectRatio?: string;
+  outputWidth?: number;
+  outputHeight?: number;
   _status?: string;
   _statusMessage?: string;
 };
@@ -93,6 +98,7 @@ export default function AiImageNode({
         prompt,
         referenceStorageId,
         model: nodeData.model ?? DEFAULT_MODEL_ID,
+        aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
       });
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Generation failed");
@@ -105,7 +111,10 @@ export default function AiImageNode({
     getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";
 
   return (
-    <BaseNodeWrapper selected={selected} className="w-[320px] overflow-hidden">
+    <BaseNodeWrapper
+      selected={selected}
+      className="flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden"
+    >
       <Handle
         type="target"
         position={Position.Left}
@@ -113,13 +122,13 @@ export default function AiImageNode({
         className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
 
-      <div className="border-b border-border px-3 py-2">
+      <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
           🖼️ AI Image
         </div>
       </div>
 
-      <div className="group relative h-[320px] overflow-hidden bg-muted">
+      <div className="group relative min-h-0 flex-1 overflow-hidden bg-muted">
         {status === "idle" && !nodeData.url && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
@@ -209,12 +218,12 @@ export default function AiImageNode({
       </div>
 
       {nodeData.prompt && (
-        <div className="border-t border-border px-3 py-2">
+        <div className="shrink-0 border-t border-border px-3 py-2">
           <p className="line-clamp-2 text-[10px] text-muted-foreground">
             {nodeData.prompt}
           </p>
           <p className="mt-0.5 text-[10px] text-muted-foreground/60">
-            {modelName}
+            {modelName} · {nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO}
           </p>
         </div>
       )}

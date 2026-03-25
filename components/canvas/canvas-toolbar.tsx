@@ -5,6 +5,7 @@ import { useRef } from "react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { ExportButton } from "@/components/canvas/export-button";
 
 const nodeTemplates = [
   {
@@ -25,8 +26,8 @@ const nodeTemplates = [
     type: "prompt",
     label: "Prompt",
     width: 320,
-    height: 140,
-    defaultData: { prompt: "", model: "" },
+    height: 220,
+    defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
   },
   {
     type: "note",
@@ -42,13 +43,24 @@ const nodeTemplates = [
     height: 240,
     defaultData: { label: "Untitled", exportWidth: 1080, exportHeight: 1080 },
   },
+  {
+    type: "compare",
+    label: "Compare",
+    width: 500,
+    height: 380,
+    defaultData: {},
+  },
 ] as const;
 
 interface CanvasToolbarProps {
   canvasId: Id<"canvases">;
+  canvasName?: string;
 }
 
-export default function CanvasToolbar({ canvasId }: CanvasToolbarProps) {
+export default function CanvasToolbar({
+  canvasId,
+  canvasName,
+}: CanvasToolbarProps) {
   const createNode = useMutation(api.nodes.create);
   const nodeCountRef = useRef(0);
 
@@ -91,6 +103,8 @@ export default function CanvasToolbar({ canvasId }: CanvasToolbarProps) {
           {template.label}
         </button>
       ))}
+      <div className="ml-1 h-6 w-px bg-border" />
+      <ExportButton canvasName={canvasName ?? "canvas"} />
     </div>
   );
 }

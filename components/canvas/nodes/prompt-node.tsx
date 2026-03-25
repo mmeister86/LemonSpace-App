@@ -8,10 +8,28 @@ import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { DEFAULT_MODEL_ID } from "@/lib/ai-models";
+import {
+  DEFAULT_ASPECT_RATIO,
+  getAiImageNodeOuterSize,
+  getImageViewportSize,
+  IMAGE_FORMAT_GROUP_LABELS,
+  IMAGE_FORMAT_PRESETS,
+} from "@/lib/image-formats";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sparkles, Loader2 } from "lucide-react";
 
 type PromptNodeData = {
   prompt?: string;
+  aspectRatio?: string;
   model?: string;
   canvasId?: string;
   _status?: string;
@@ -29,12 +47,24 @@ export default function PromptNode({
   const { getEdges, getNode } = useReactFlow();
 
   const [prompt, setPrompt] = useState(nodeData.prompt ?? "");
+  const [aspectRatio, setAspectRatio] = useState(
+    nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const promptRef = useRef(prompt);
+  const aspectRatioRef = useRef(aspectRatio);
+  promptRef.current = prompt;
+  aspectRatioRef.current = aspectRatio;
 
   useEffect(() => {
     setPrompt(nodeData.prompt ?? "");
   }, [nodeData.prompt]);
+
+  useEffect(() => {
+    setAspectRatio(nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO);
+  }, [nodeData.aspectRatio]);
 
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -44,14 +74,18 @@ export default function PromptNode({
   const createEdge = useMutation(api.edges.create);
   const generateImage = useAction(api.ai.generateImage);
 
-  const debouncedSave = useDebouncedCallback((value: string) => {
+  const debouncedSave = useDebouncedCallback(() => {
     const raw = dataRef.current as Record<string, unknown>;
     const { _status, _statusMessage, ...rest } = raw;
     void _status;
     void _statusMessage;
     updateData({
       nodeId: id as Id<"nodes">,
-      data: { ...rest, prompt: value },
+      data: {
+        ...rest,
+        prompt: promptRef.current,
+        aspectRatio: aspectRatioRef.current,
+      },
     });
   }, 500);
 
@@ -59,7 +93,15 @@ export default function PromptNode({
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value;
       setPrompt(value);
-      debouncedSave(value);
+      debouncedSave();
+    },
+    [debouncedSave]
+  );
+
+  const handleAspectRatioChange = useCallback(
+    (value: string) => {
+      setAspectRatio(value);
+      debouncedSave();
     },
     [debouncedSave]
   );
@@ -93,18 +135,24 @@ export default function PromptNode({
       const posX = (currentNode?.position?.x ?? 0) + offsetX;
       const posY = currentNode?.position?.y ?? 0;
 
+      const viewport = getImageViewportSize(aspectRatio);
+      const outer = getAiImageNodeOuterSize(viewport);
+
       const aiNodeId = await createNode({
         canvasId,
         type: "ai-image",
         positionX: posX,
         positionY: posY,
-        width: 320,
-        height: 320,
+        width: outer.width,
+        height: outer.height,
         data: {
           prompt,
           model: DEFAULT_MODEL_ID,
           modelTier: "standard",
           canvasId,
+          aspectRatio,
+          outputWidth: viewport.width,
+          outputHeight: viewport.height,
         },
       });
 
@@ -122,6 +170,7 @@ export default function PromptNode({
         prompt,
         referenceStorageId,
         model: DEFAULT_MODEL_ID,
+        aspectRatio,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -130,6 +179,7 @@ export default function PromptNode({
     }
   }, [
     prompt,
+    aspectRatio,
     isGenerating,
     nodeData.canvasId,
     id,
@@ -165,6 +215,45 @@ export default function PromptNode({
           rows={4}
           className="nodrag nowheel w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
         />
+
+        <div className="flex flex-col gap-1.5">
+          <Label
+            htmlFor={`prompt-format-${id}`}
+            className="text-[11px] font-medium text-muted-foreground"
+          >
+            Format
+          </Label>
+          <Select
+            value={aspectRatio}
+            onValueChange={handleAspectRatioChange}
+          >
+            <SelectTrigger
+              id={`prompt-format-${id}`}
+              className="nodrag nowheel w-full"
+              size="sm"
+            >
+              <SelectValue placeholder="Seitenverhältnis" />
+            </SelectTrigger>
+            <SelectContent className="nodrag">
+              {(["square", "landscape", "portrait"] as const).map((group) => {
+                const presets = IMAGE_FORMAT_PRESETS.filter(
+                  (p) => p.group === group
+                );
+                if (presets.length === 0) return null;
+                return (
+                  <SelectGroup key={group}>
+                    <SelectLabel>{IMAGE_FORMAT_GROUP_LABELS[group]}</SelectLabel>
+                    {presets.map((p) => (
+                      <SelectItem key={p.aspectRatio} value={p.aspectRatio}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
 
         {error && (
           <p className="text-xs text-destructive">{error}</p>

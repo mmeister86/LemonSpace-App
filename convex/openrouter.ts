@@ -24,6 +24,8 @@ export interface GenerateImageParams {
   prompt: string;
   referenceImageUrl?: string; // optional image-to-image input
   model?: string;
+  /** OpenRouter image_config.aspect_ratio e.g. "16:9", "1:1" */
+  aspectRatio?: string;
 }
 
 export interface OpenRouterImageResponse {
@@ -59,7 +61,7 @@ export async function generateImageViaOpenRouter(
     text: params.prompt,
   });
 
-  const body = {
+  const body: Record<string, unknown> = {
     model: modelId,
     modalities: ["image", "text"],
     messages: [
@@ -69,6 +71,12 @@ export async function generateImageViaOpenRouter(
       },
     ],
   };
+
+  if (params.aspectRatio?.trim()) {
+    body.image_config = {
+      aspect_ratio: params.aspectRatio.trim(),
+    };
+  }
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
