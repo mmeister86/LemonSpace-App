@@ -69,6 +69,7 @@ export const generateImage = action({
       const existing = await ctx.runQuery(api.nodes.get, { nodeId: args.nodeId });
       if (!existing) throw new Error("Node not found");
       const prev = (existing.data ?? {}) as Record<string, unknown>;
+      const creditCost = modelConfig.estimatedCostPerImage;
 
       await ctx.runMutation(api.nodes.updateData, {
         nodeId: args.nodeId,
@@ -79,6 +80,7 @@ export const generateImage = action({
           model: modelId,
           modelTier: modelConfig.tier,
           generatedAt: Date.now(),
+          creditCost,
         },
       });
 
@@ -89,7 +91,7 @@ export const generateImage = action({
 
       await ctx.runMutation(api.credits.commit, {
         transactionId: reservationId,
-        actualCost: modelConfig.estimatedCostPerImage,
+        actualCost: creditCost,
       });
     } catch (error) {
       await ctx.runMutation(api.credits.release, {

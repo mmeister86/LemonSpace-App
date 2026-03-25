@@ -41,6 +41,7 @@ export default function PromptNode({
 
   const updateData = useMutation(api.nodes.updateData);
   const createNode = useMutation(api.nodes.create);
+  const createEdge = useMutation(api.edges.create);
   const generateImage = useAction(api.ai.generateImage);
 
   const debouncedSave = useDebouncedCallback((value: string) => {
@@ -107,6 +108,14 @@ export default function PromptNode({
         },
       });
 
+      await createEdge({
+        canvasId,
+        sourceNodeId: id as Id<"nodes">,
+        targetNodeId: aiNodeId,
+        sourceHandle: "prompt-out",
+        targetHandle: "prompt-in",
+      });
+
       await generateImage({
         canvasId,
         nodeId: aiNodeId,
@@ -127,6 +136,7 @@ export default function PromptNode({
     getEdges,
     getNode,
     createNode,
+    createEdge,
     generateImage,
   ]);
 

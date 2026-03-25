@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
+import { cn, formatEurFromCents } from "@/lib/utils";
 import {
   Loader2,
   AlertCircle,
@@ -21,6 +22,8 @@ type AiImageNodeData = {
   model?: string;
   modelTier?: string;
   generatedAt?: number;
+  /** Gebuchte Credits in Euro-Cent (PRD: nach Commit) */
+  creditCost?: number;
   canvasId?: string;
   _status?: string;
   _statusMessage?: string;
@@ -116,7 +119,7 @@ export default function AiImageNode({
         </div>
       </div>
 
-      <div className="relative h-[320px] overflow-hidden bg-muted">
+      <div className="group relative h-[320px] overflow-hidden bg-muted">
         {status === "idle" && !nodeData.url && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
@@ -174,8 +177,25 @@ export default function AiImageNode({
           />
         )}
 
+        {nodeData.creditCost != null &&
+          nodeData.url &&
+          !isLoading &&
+          status !== "error" && (
+            <div
+              className="pointer-events-none absolute bottom-2 right-2 z-[15] rounded-md border border-border/80 bg-background/85 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground shadow-sm backdrop-blur-sm"
+              title="Gebuchte Credits (Cent) für diese Generierung"
+            >
+              {formatEurFromCents(nodeData.creditCost)}
+            </div>
+          )}
+
         {status === "done" && nodeData.url && !isLoading && (
-          <div className="absolute inset-0 z-20 flex items-end justify-end p-2 opacity-0 transition-opacity hover:opacity-100">
+          <div
+            className={cn(
+              "absolute right-2 z-20 opacity-0 transition-opacity group-hover:opacity-100",
+              nodeData.creditCost != null ? "bottom-12" : "bottom-2",
+            )}
+          >
             <button
               type="button"
               onClick={() => void handleRegenerate()}
