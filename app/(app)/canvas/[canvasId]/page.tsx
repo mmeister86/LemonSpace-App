@@ -17,7 +17,24 @@ export default async function CanvasPage({
   }
 
   const { canvasId } = await params;
-  const typedCanvasId = canvasId as Id<"canvases">;
+  let typedCanvasId: Id<"canvases">;
+
+  if (/^\d+$/.test(canvasId)) {
+    const oneBasedIndex = Number(canvasId);
+    if (!Number.isSafeInteger(oneBasedIndex) || oneBasedIndex < 1) {
+      notFound();
+    }
+
+    const canvases = await fetchAuthQuery(api.canvases.list, {});
+    const selectedCanvas = canvases[oneBasedIndex - 1];
+    if (!selectedCanvas) {
+      notFound();
+    }
+
+    typedCanvasId = selectedCanvas._id;
+  } else {
+    typedCanvasId = canvasId as Id<"canvases">;
+  }
 
   try {
     const canvas = await fetchAuthQuery(api.canvases.get, {

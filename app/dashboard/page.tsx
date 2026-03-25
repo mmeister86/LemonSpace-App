@@ -1,14 +1,21 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useTheme } from "next-themes";
+import { useMutation, useQuery } from "convex/react";
 import {
   Activity,
   ArrowUpRight,
   ChevronDown,
   Coins,
   LayoutTemplate,
+  Monitor,
+  Moon,
   Search,
   Sparkles,
+  Sun,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -19,11 +26,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { api } from "@/convex/_generated/api";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 const formatEurFromCents = (cents: number) =>
@@ -71,12 +82,6 @@ const mockRuns = [
   },
 ];
 
-const mockWorkspaces = [
-  { name: "Sommer-Kampagne", nodes: 24, frames: 3, initial: "S" },
-  { name: "Produktfotos", nodes: 11, frames: 2, initial: "P" },
-  { name: "Social Variants", nodes: 8, frames: 1, initial: "V" },
-];
-
 function StatusDot({ status }: { status: (typeof mockRuns)[0]["status"] }) {
   const base = "inline-block size-2 rounded-full";
   switch (status) {
@@ -109,7 +114,54 @@ function statusLabel(status: (typeof mockRuns)[0]["status"]) {
   }
 }
 
+function getInitials(nameOrEmail: string) {
+  const normalized = nameOrEmail.trim();
+  if (!normalized) return "U";
+
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return normalized.slice(0, 2).toUpperCase();
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
+  const { theme = "system", setTheme } = useTheme();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
+  const canvases = useQuery(
+    api.canvases.list,
+    session?.user && !isSessionPending ? {} : "skip",
+  );
+  const createCanvas = useMutation(api.canvases.create);
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+
+  const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
+  const initials = getInitials(displayName);
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    router.replace("/auth/sign-in");
+    router.refresh();
+  };
+
+  const handleCreateWorkspace = async () => {
+    if (isCreatingWorkspace) return;
+    if (!session?.user) return;
+    setIsCreatingWorkspace(true);
+
+    try {
+      const canvasId = await createCanvas({
+        name: "Neuer Workspace",
+        description: "",
+      });
+      router.push(`/canvas/${canvasId}`);
+    } finally {
+      setIsCreatingWorkspace(false);
+    }
+  };
+
   const balanceCents = 4320;
   const reservedCents = 180;
   const monthlyPoolCents = 5000;
@@ -151,22 +203,43 @@ export default function DashboardPage() {
                 <Button variant="ghost" size="sm" className="gap-2 px-1.5">
                   <Avatar className="size-7">
                     <AvatarFallback className="bg-primary/12 text-xs font-medium text-primary">
-                      MK
+                      {initials}
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden text-sm font-medium md:inline">
-                    Mock Nutzer
+                    {displayName}
                   </span>
                   <ChevronDown className="size-3.5 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Account (Demo)</DropdownMenuLabel>
+                <DropdownMenuLabel>Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Theme
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={theme}
+                  onValueChange={(value) => setTheme(value)}
+                >
+                  <DropdownMenuRadioItem value="light">
+                    <Sun className="size-4" />
+                    Light
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark">
+                    <Moon className="size-4" />
+                    Dark
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system">
+                    <Monitor className="size-4" />
+                    System
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled>Einstellungen</DropdownMenuItem>
                 <DropdownMenuItem disabled>Abrechnung</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>Abmelden</DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleSignOut}>Abmelden</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -177,7 +250,7 @@ export default function DashboardPage() {
         {/* Greeting & Context */}
         <div className="mb-10">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Guten Tag, Mock Nutzer
+            Guten Tag, {displayName}
           </h1>
           <p className="mt-1.5 text-muted-foreground">
             Überblick über deine Credits und laufende Generierungen.
@@ -268,35 +341,47 @@ export default function DashboardPage() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground"
-              disabled
+              type="button"
+              onClick={handleCreateWorkspace}
+              disabled={isCreatingWorkspace || isSessionPending || !session?.user}
             >
-              Neuer Workspace
+              {isCreatingWorkspace ? "Erstelle..." : "Neuer Workspace"}
             </Button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {mockWorkspaces.map((ws) => (
-              <button
-                key={ws.name}
-                className={cn(
-                  "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
-                  "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
-                )}
-                disabled
-              >
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
-                  {ws.initial}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{ws.name}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {ws.nodes} Nodes · {ws.frames} Frames
-                  </p>
-                </div>
-                <ArrowUpRight className="size-4 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
-              </button>
-            ))}
-          </div>
+          {isSessionPending || canvases === undefined ? (
+            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
+              Workspaces werden geladen...
+            </div>
+          ) : canvases.length === 0 ? (
+            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
+              Noch kein Workspace vorhanden. Mit &quot;Neuer Workspace&quot; legst du den
+              ersten an.
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {canvases.map((canvas) => (
+                <button
+                  key={canvas._id}
+                  type="button"
+                  onClick={() => router.push(`/canvas/${canvas._id}`)}
+                  className={cn(
+                    "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
+                    "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
+                  )}
+                >
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
+                    {canvas.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{canvas.name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
+                  </div>
+                  <ArrowUpRight className="size-4 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Recent Activity */}

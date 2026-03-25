@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import { ConvexReactClient } from "convex/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { AuthUIProvider } from "@daveyplate/better-auth-ui";
+import { ThemeProvider } from "next-themes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -21,20 +22,22 @@ export function Providers({
   const router = useRouter();
 
   return (
-    <ConvexBetterAuthProvider
-      client={convex}
-      authClient={authClient}
-      initialToken={initialToken}
-    >
-      <AuthUIProvider
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <ConvexBetterAuthProvider
+        client={convex}
         authClient={authClient}
-        navigate={router.push}
-        replace={router.replace}
-        onSessionChange={() => router.refresh()}
-        Link={Link}
+        initialToken={initialToken}
       >
-        {children}
-      </AuthUIProvider>
-    </ConvexBetterAuthProvider>
+        <AuthUIProvider
+          authClient={authClient}
+          navigate={router.push}
+          replace={router.replace}
+          onSessionChange={() => router.refresh()}
+          Link={Link}
+        >
+          {children}
+        </AuthUIProvider>
+      </ConvexBetterAuthProvider>
+    </ThemeProvider>
   );
 }
