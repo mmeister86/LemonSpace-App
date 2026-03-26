@@ -11,8 +11,6 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
-  useStoreApi,
-  useNodesInitialized,
   reconnectEdge,
   type Node as RFNode,
   type Edge as RFEdge,
@@ -29,7 +27,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
-import { convexNodeToRF, convexEdgeToRF, NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import { convexNodeToRF, convexEdgeToRF, NODE_DEFAULTS } from "@/lib/canvas-utils";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 
 interface CanvasInnerProps {
@@ -99,12 +97,8 @@ function getMiniMapNodeStrokeColor(node: RFNode): string {
   return node.type === "frame" ? "transparent" : "#4f46e5";
 }
 
-const MIN_DISTANCE = 150;
-
 function CanvasInner({ canvasId }: CanvasInnerProps) {
-  const { screenToFlowPosition, getInternalNode } = useReactFlow();
-  const store = useStoreApi();
-  const nodesInitialized = useNodesInitialized();
+  const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
@@ -181,7 +175,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Delete Edge on Drop
   const edgeReconnectSuccessful = useRef(true);
-  const uninitializedDragNodeIds = useRef<Set<string>>(new Set());
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {
@@ -256,173 +249,24 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (_: MouseEvent | TouchEvent, edge: RFEdge) => {
       if (!edgeReconnectSuccessful.current) {
         setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-        removeEdge({ edgeId: edge.id as Id<"edges"> });
+        if (edge.className === "temp") {
+          edgeReconnectSuccessful.current = true;
+          return;
+        }
+
+        void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+          console.error("[Canvas edge remove failed] reconnect end", {
+            edgeId: edge.id,
+            edgeClassName: edge.className ?? null,
+            source: edge.source,
+            target: edge.target,
+            error: String(error),
+          });
+        });
       }
       edgeReconnectSuccessful.current = true;
     },
     [removeEdge],
-  );
-
-  // ─── Proximity Connect ────────────────────────────────────────
-  const getClosestEdge = useCallback(
-    (node: RFNode) => {
-      if (!nodesInitialized) {
-        if (!uninitializedDragNodeIds.current.has(node.id)) {
-          uninitializedDragNodeIds.current.add(node.id);
-          console.warn("[Canvas debug] proximity skipped: nodes not initialized", {
-            canvasId,
-            nodeId: node.id,
-            nodeType: node.type,
-          });
-        }
-        return null;
-      }
-
-      const { nodeLookup } = store.getState();
-      const internalNode = getInternalNode(node.id);
-      if (!internalNode) {
-        if (!uninitializedDragNodeIds.current.has(node.id)) {
-          uninitializedDragNodeIds.current.add(node.id);
-          console.warn("[Canvas debug] proximity skipped: missing internal node", {
-            canvasId,
-            nodeId: node.id,
-            nodeType: node.type,
-            nodeLookupSize: nodeLookup.size,
-          });
-        }
-        return null;
-      }
-
-      const getNodeSize = (n: {
-        measured?: { width?: number; height?: number };
-        width?: number;
-        height?: number;
-        internals?: { userNode?: { width?: number; height?: number } };
-      }) => {
-        const width =
-          n.measured?.width ?? n.width ?? n.internals?.userNode?.width ?? 0;
-        const height =
-          n.measured?.height ?? n.height ?? n.internals?.userNode?.height ?? 0;
-        return { width, height };
-      };
-
-      const rectDistance = (
-        a: { x: number; y: number; width: number; height: number },
-        b: { x: number; y: number; width: number; height: number },
-      ) => {
-        const dx = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width), 0);
-        const dy = Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height), 0);
-        return Math.sqrt(dx * dx + dy * dy);
-      };
-
-      const thisSize = getNodeSize(internalNode);
-      const thisRect = {
-        x: internalNode.internals.positionAbsolute.x,
-        y: internalNode.internals.positionAbsolute.y,
-        width: thisSize.width,
-        height: thisSize.height,
-      };
-
-      let minDist = Number.MAX_VALUE;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let closestN: any = null;
-
-      for (const n of nodeLookup.values()) {
-        if (n.id !== internalNode.id) {
-          const nSize = getNodeSize(n);
-          const nRect = {
-            x: n.internals.positionAbsolute.x,
-            y: n.internals.positionAbsolute.y,
-            width: nSize.width,
-            height: nSize.height,
-          };
-          const d = rectDistance(thisRect, nRect);
-          if (d < minDist) {
-            minDist = d;
-            closestN = n;
-          }
-        }
-      }
-
-      if (!closestN || minDist >= MIN_DISTANCE) {
-        if (process.env.NODE_ENV !== "production") {
-          console.info("[Canvas proximity debug] skipped: distance", {
-            canvasId,
-            nodeId: node.id,
-            nodeType: node.type,
-            closestNodeId: closestN?.id ?? null,
-            closestNodeType: closestN?.type ?? null,
-            minDist,
-            minDistanceThreshold: MIN_DISTANCE,
-          });
-        }
-        return null;
-      }
-
-      const closeNodeIsSource =
-        closestN.internals.positionAbsolute.x <
-        internalNode.internals.positionAbsolute.x;
-
-      const sourceNode = closeNodeIsSource ? closestN : internalNode;
-      const targetNode = closeNodeIsSource ? internalNode : closestN;
-
-      const srcHandles = NODE_HANDLE_MAP[sourceNode.type ?? ""] ?? {};
-      const tgtHandles = NODE_HANDLE_MAP[targetNode.type ?? ""] ?? {};
-
-      if (!("source" in srcHandles) || !("target" in tgtHandles)) {
-        if (process.env.NODE_ENV !== "production") {
-          console.info("[Canvas proximity debug] skipped: handle map", {
-            canvasId,
-            nodeId: node.id,
-            nodeType: node.type,
-            sourceNodeId: sourceNode.id,
-            sourceType: sourceNode.type,
-            targetNodeId: targetNode.id,
-            targetType: targetNode.type,
-            sourceHandles: srcHandles,
-            targetHandles: tgtHandles,
-            minDist,
-          });
-        }
-        return null;
-      }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'594b9f'},body:JSON.stringify({sessionId:'594b9f',runId:'run3',hypothesisId:'H2-fix',location:'canvas.tsx:getClosestEdge',message:'proximity match with handles',data:{sourceId:sourceNode.id,sourceType:sourceNode.type,targetId:targetNode.id,targetType:targetNode.type,sourceHandle:srcHandles.source,targetHandle:tgtHandles.target,minDist},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-
-      return {
-        id: closeNodeIsSource
-          ? `${closestN.id}-${node.id}`
-          : `${node.id}-${closestN.id}`,
-        source: sourceNode.id,
-        target: targetNode.id,
-        sourceHandle: srcHandles.source,
-        targetHandle: tgtHandles.target,
-      };
-    },
-    [store, getInternalNode, nodesInitialized, canvasId],
-  );
-
-  const onNodeDrag = useCallback(
-    (_: React.MouseEvent, node: RFNode) => {
-      const closeEdge = getClosestEdge(node);
-
-      setEdges((es) => {
-        const nextEdges = es.filter((e) => e.className !== "temp");
-        if (
-          closeEdge &&
-          !nextEdges.find(
-            (ne) =>
-              ne.source === closeEdge.source && ne.target === closeEdge.target,
-          )
-        ) {
-          nextEdges.push({ ...closeEdge, className: "temp" });
-        }
-        return nextEdges;
-      });
-    },
-    [getClosestEdge],
   );
 
   // ─── Drag Start → Lock ────────────────────────────────────────
@@ -433,62 +277,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
-      // Proximity Connect: closeEdge bestimmen bevor isDragging zurückgesetzt wird
-      const closeEdge = getClosestEdge(node);
-
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[Canvas proximity debug] drag stop decision", {
-          canvasId,
-          nodeId: node.id,
-          nodeType: node.type,
-          draggedCount: draggedNodes.length,
-          closeEdge,
-        });
-      }
-
-      // Proximity Connect: temporäre Edge entfernen, ggf. echte Edge anlegen
-      setEdges((es) => {
-        const nextEdges = es.filter((e) => e.className !== "temp");
-        if (
-          closeEdge &&
-          !nextEdges.find(
-            (ne) =>
-              ne.source === closeEdge.source && ne.target === closeEdge.target,
-          )
-        ) {
-          void createEdge({
-            canvasId,
-            sourceNodeId: closeEdge.source as Id<"nodes">,
-            targetNodeId: closeEdge.target as Id<"nodes">,
-            sourceHandle: closeEdge.sourceHandle ?? undefined,
-            targetHandle: closeEdge.targetHandle ?? undefined,
-          })
-            .then((edgeId) => {
-              if (process.env.NODE_ENV !== "production") {
-                console.info("[Canvas proximity debug] edge created", {
-                  canvasId,
-                  edgeId,
-                  sourceNodeId: closeEdge.source,
-                  targetNodeId: closeEdge.target,
-                  sourceHandle: closeEdge.sourceHandle ?? null,
-                  targetHandle: closeEdge.targetHandle ?? null,
-                });
-              }
-            })
-            .catch((error) => {
-              console.error("[Canvas proximity debug] edge create failed", {
-                canvasId,
-                sourceNodeId: closeEdge.source,
-                targetNodeId: closeEdge.target,
-                sourceHandle: closeEdge.sourceHandle ?? null,
-                targetHandle: closeEdge.targetHandle ?? null,
-                error: String(error),
-              });
-            });
-        }
-        return nextEdges;
-      });
-
       // isDragging bleibt true bis die Mutation resolved ist → kein Convex-Override möglich
       if (draggedNodes.length > 1) {
         void batchMoveNodes({
@@ -510,7 +298,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         });
       }
     },
-    [moveNode, batchMoveNodes, getClosestEdge, createEdge, canvasId],
+    [moveNode, batchMoveNodes],
   );
 
   // ─── Neue Verbindung → Convex Edge ────────────────────────────
@@ -560,7 +348,19 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const onEdgesDelete = useCallback(
     (deletedEdges: RFEdge[]) => {
       for (const edge of deletedEdges) {
-        removeEdge({ edgeId: edge.id as Id<"edges"> });
+        if (edge.className === "temp") {
+          continue;
+        }
+
+        void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+          console.error("[Canvas edge remove failed] edge delete", {
+            edgeId: edge.id,
+            edgeClassName: edge.className ?? null,
+            source: edge.source,
+            target: edge.target,
+            error: String(error),
+          });
+        });
       }
     },
     [removeEdge],
@@ -627,7 +427,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeDrag={onNodeDrag}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}

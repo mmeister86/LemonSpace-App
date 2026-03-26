@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  useReactFlow,
+  type NodeProps,
+  type Node,
+} from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -17,6 +23,7 @@ type TextNodeData = {
 export type TextNode = Node<TextNodeData, "text">;
 
 export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
+  const { setNodes } = useReactFlow();
   const updateData = useMutation(api.nodes.updateData);
   const [content, setContent] = useState(data.content ?? "");
   const [isEditing, setIsEditing] = useState(false);
@@ -24,6 +31,7 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
   // Sync von außen (Convex-Update) wenn nicht gerade editiert wird
   useEffect(() => {
     if (!isEditing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setContent(data.content ?? "");
     }
   }, [data.content, isEditing]);
@@ -48,9 +56,22 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newContent = e.target.value;
       setContent(newContent);
+      setNodes((nodes) =>
+        nodes.map((node) =>
+          node.id === id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  content: newContent,
+                },
+              }
+            : node,
+        ),
+      );
       saveContent(newContent);
     },
-    [saveContent],
+    [id, saveContent, setNodes],
   );
 
   return (

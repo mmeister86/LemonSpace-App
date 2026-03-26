@@ -70,14 +70,14 @@ export default function CompareNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         id="left"
-        style={{ top: "40%" }}
+        style={{ top: "35%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-blue-500"
       />
       <Handle
         type="target"
-        position={Position.Right}
+        position={Position.Left}
         id="right"
-        style={{ top: "40%" }}
+        style={{ top: "55%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-emerald-500"
       />
 

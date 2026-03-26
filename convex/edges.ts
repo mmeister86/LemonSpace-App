@@ -82,15 +82,38 @@ export const remove = mutation({
   args: { edgeId: v.id("edges") },
   handler: async (ctx, { edgeId }) => {
     const user = await requireAuth(ctx);
+    console.info("[edges.remove] request", {
+      edgeId,
+      userId: user.userId,
+    });
+
     const edge = await ctx.db.get(edgeId);
-    if (!edge) throw new Error("Edge not found");
+    if (!edge) {
+      console.info("[edges.remove] edge already removed (idempotent no-op)", {
+        edgeId,
+        userId: user.userId,
+      });
+      return;
+    }
 
     const canvas = await ctx.db.get(edge.canvasId);
     if (!canvas || canvas.ownerId !== user.userId) {
+      console.warn("[edges.remove] unauthorized canvas access", {
+        edgeId,
+        canvasId: edge.canvasId,
+        userId: user.userId,
+        hasCanvas: Boolean(canvas),
+      });
       throw new Error("Canvas not found");
     }
 
     await ctx.db.delete(edgeId);
     await ctx.db.patch(edge.canvasId, { updatedAt: Date.now() });
+
+    console.info("[edges.remove] success", {
+      edgeId,
+      canvasId: edge.canvasId,
+      userId: user.userId,
+    });
   },
 });

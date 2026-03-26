@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Handle,
+  Position,
+  useReactFlow,
+  useStore,
+  type NodeProps,
+  type Node,
+} from "@xyflow/react";
 import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -52,6 +59,8 @@ export default function PromptNode({
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const edges = useStore((store) => store.edges);
+  const nodes = useStore((store) => store.nodes);
 
   const promptRef = useRef(prompt);
   const aspectRatioRef = useRef(aspectRatio);
@@ -65,6 +74,31 @@ export default function PromptNode({
   useEffect(() => {
     setAspectRatio(nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO);
   }, [nodeData.aspectRatio]);
+
+  const inputMeta = useMemo(() => {
+    const incomingEdges = edges.filter((edge) => edge.target === id);
+    let textPrompt: string | undefined;
+    let hasTextInput = false;
+
+    for (const edge of incomingEdges) {
+      const sourceNode = nodes.find((node) => node.id === edge.source);
+      if (sourceNode?.type !== "text") continue;
+
+      hasTextInput = true;
+      const sourceData = sourceNode.data as { content?: string };
+      if (typeof sourceData.content === "string") {
+        textPrompt = sourceData.content;
+        break;
+      }
+    }
+
+    return {
+      hasTextInput,
+      textPrompt: textPrompt ?? "",
+    };
+  }, [edges, id, nodes]);
+
+  const effectivePrompt = inputMeta.hasTextInput ? inputMeta.textPrompt : prompt;
 
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -107,28 +141,37 @@ export default function PromptNode({
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || isGenerating) return;
+    if (!effectivePrompt.trim() || isGenerating) return;
     setError(null);
     setIsGenerating(true);
 
     try {
       const canvasId = nodeData.canvasId as Id<"canvases">;
-      if (!canvasId) throw new Error("Missing canvasId on node");
+      if (!canvasId) throw new Error("Canvas-ID fehlt in der Node");
 
-      const edges = getEdges();
-      const incomingEdges = edges.filter((e) => e.target === id);
+      const currentEdges = getEdges();
+      const incomingEdges = currentEdges.filter((e) => e.target === id);
+      let connectedTextPrompt: string | undefined;
       let referenceStorageId: Id<"_storage"> | undefined;
 
       for (const edge of incomingEdges) {
         const sourceNode = getNode(edge.source);
+        if (sourceNode?.type === "text") {
+          const srcData = sourceNode.data as { content?: string };
+          if (typeof srcData.content === "string") {
+            connectedTextPrompt = srcData.content;
+          }
+        }
         if (sourceNode?.type === "image") {
           const srcData = sourceNode.data as { storageId?: string };
           if (srcData.storageId) {
             referenceStorageId = srcData.storageId as Id<"_storage">;
-            break;
           }
         }
       }
+
+      const promptToUse = (connectedTextPrompt ?? prompt).trim();
+      if (!promptToUse) return;
 
       const currentNode = getNode(id);
       const offsetX = (currentNode?.measured?.width ?? 280) + 32;
@@ -146,7 +189,7 @@ export default function PromptNode({
         width: outer.width,
         height: outer.height,
         data: {
-          prompt,
+          prompt: promptToUse,
           model: DEFAULT_MODEL_ID,
           modelTier: "standard",
           canvasId,
@@ -167,18 +210,19 @@ export default function PromptNode({
       await generateImage({
         canvasId,
         nodeId: aiNodeId,
-        prompt,
+        prompt: promptToUse,
         referenceStorageId,
         model: DEFAULT_MODEL_ID,
         aspectRatio,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      setError(err instanceof Error ? err.message : "Bildgenerierung fehlgeschlagen");
     } finally {
       setIsGenerating(false);
     }
   }, [
     prompt,
+    effectivePrompt,
     aspectRatio,
     isGenerating,
     nodeData.canvasId,
@@ -206,15 +250,26 @@ export default function PromptNode({
 
       <div className="flex flex-col gap-2 p-3">
         <div className="text-xs font-medium text-violet-600 dark:text-violet-400">
-          ✨ Prompt
+          ✨ Eingabe
         </div>
-        <textarea
-          value={prompt}
-          onChange={handlePromptChange}
-          placeholder="Describe what you want to generate…"
-          rows={4}
-          className="nodrag nowheel w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
-        />
+        {inputMeta.hasTextInput ? (
+          <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
+            <p className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
+              Prompt aus verbundener Text-Node
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+              {inputMeta.textPrompt.trim() || "(Verbundene Text-Node ist leer)"}
+            </p>
+          </div>
+        ) : (
+          <textarea
+            value={prompt}
+            onChange={handlePromptChange}
+            placeholder="Beschreibe, was du generieren willst…"
+            rows={4}
+            className="nodrag nowheel w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
+          />
+        )}
 
         <div className="flex flex-col gap-1.5">
           <Label
@@ -262,18 +317,18 @@ export default function PromptNode({
         <button
           type="button"
           onClick={() => void handleGenerate()}
-          disabled={!prompt.trim() || isGenerating}
+          disabled={!effectivePrompt.trim() || isGenerating}
           className="nodrag flex items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Generating…
+              Generiere…
             </>
           ) : (
             <>
               <Sparkles className="h-4 w-4" />
-              Generate Image
+              Bild generieren
             </>
           )}
         </button>

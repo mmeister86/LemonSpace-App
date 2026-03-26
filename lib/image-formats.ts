@@ -19,11 +19,11 @@ export const IMAGE_FORMAT_GROUP_LABELS: Record<ImageFormatGroup, string> = {
 export const IMAGE_FORMAT_PRESETS: ImageFormatPreset[] = [
   { label: "1:1 · Quadrat", aspectRatio: "1:1", group: "square" },
   { label: "16:9 · Breitbild", aspectRatio: "16:9", group: "landscape" },
-  { label: "21:9 · Cinematic", aspectRatio: "21:9", group: "landscape" },
+  { label: "21:9 · Kino", aspectRatio: "21:9", group: "landscape" },
   { label: "4:3 · Klassisch", aspectRatio: "4:3", group: "landscape" },
   { label: "3:2 · Foto (quer)", aspectRatio: "3:2", group: "landscape" },
   { label: "5:4 · leicht quer", aspectRatio: "5:4", group: "landscape" },
-  { label: "9:16 · Stories", aspectRatio: "9:16", group: "portrait" },
+  { label: "9:16 · Story", aspectRatio: "9:16", group: "portrait" },
   { label: "3:4 · Porträt", aspectRatio: "3:4", group: "portrait" },
   { label: "2:3 · Foto (hoch)", aspectRatio: "2:3", group: "portrait" },
   { label: "4:5 · Social hoch", aspectRatio: "4:5", group: "portrait" },
