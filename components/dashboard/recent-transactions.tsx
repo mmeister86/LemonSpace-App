@@ -24,7 +24,7 @@ function statusBadge(status: string) {
       );
     case "released":
       return (
-        <Badge variant="secondary" className="text-xs font-normal text-emerald-600 dark:text-emerald-400">
+        <Badge variant="secondary" className="text-xs font-normal text-emerald-600 dark:text-emerald-400 px-3">
           Rückerstattet
         </Badge>
       );
