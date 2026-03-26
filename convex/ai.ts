@@ -17,6 +17,9 @@ export const generateImage = action({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const internalCreditsEnabled =
+      process.env.INTERNAL_CREDITS_ENABLED === "true";
+
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is not set");
@@ -32,13 +35,15 @@ export const generateImage = action({
       throw new Error("User not found");
     }
 
-    const reservationId = await ctx.runMutation(api.credits.reserve, {
-      estimatedCost: modelConfig.estimatedCostPerImage,
-      description: `Bildgenerierung — ${modelConfig.name}`,
-      model: modelId,
-      nodeId: args.nodeId,
-      canvasId: args.canvasId,
-    });
+    const reservationId = internalCreditsEnabled
+      ? await ctx.runMutation(api.credits.reserve, {
+          estimatedCost: modelConfig.estimatedCostPerImage,
+          description: `Bildgenerierung — ${modelConfig.name}`,
+          model: modelId,
+          nodeId: args.nodeId,
+          canvasId: args.canvasId,
+        })
+      : null;
 
     await ctx.runMutation(api.nodes.updateStatus, {
       nodeId: args.nodeId,
@@ -96,14 +101,18 @@ export const generateImage = action({
         status: "done",
       });
 
-      await ctx.runMutation(api.credits.commit, {
-        transactionId: reservationId,
-        actualCost: creditCost,
-      });
+      if (reservationId) {
+        await ctx.runMutation(api.credits.commit, {
+          transactionId: reservationId,
+          actualCost: creditCost,
+        });
+      }
     } catch (error) {
-      await ctx.runMutation(api.credits.release, {
-        transactionId: reservationId,
-      });
+      if (reservationId) {
+        await ctx.runMutation(api.credits.release, {
+          transactionId: reservationId,
+        });
+      }
 
       await ctx.runMutation(api.nodes.updateStatus, {
         nodeId: args.nodeId,
