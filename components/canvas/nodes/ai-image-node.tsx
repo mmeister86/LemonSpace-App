@@ -8,12 +8,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
-import { cn, formatEurFromCents } from "@/lib/utils";
 import {
   Loader2,
   AlertCircle,
   RefreshCw,
   ImageIcon,
+  Coins,
 } from "lucide-react";
 
 type AiImageNodeData = {
@@ -21,6 +21,7 @@ type AiImageNodeData = {
   url?: string;
   prompt?: string;
   model?: string;
+  modelLabel?: string;
   modelTier?: string;
   generatedAt?: number;
   /** Gebuchte Credits in Euro-Cent (PRD: nach Commit) */
@@ -123,8 +124,9 @@ export default function AiImageNode({
       />
 
       <div className="shrink-0 border-b border-border px-3 py-2">
-        <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          🖼️ AI Image
+        <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <ImageIcon className="h-3.5 w-3.5" />
+          AI Image
         </div>
       </div>
 
@@ -186,24 +188,9 @@ export default function AiImageNode({
           />
         )}
 
-        {nodeData.creditCost != null &&
-          nodeData.url &&
-          !isLoading &&
-          status !== "error" && (
-            <div
-              className="pointer-events-none absolute bottom-2 right-2 z-[15] rounded-md border border-border/80 bg-background/85 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground shadow-sm backdrop-blur-sm"
-              title="Gebuchte Credits (Cent) für diese Generierung"
-            >
-              {formatEurFromCents(nodeData.creditCost)}
-            </div>
-          )}
-
         {status === "done" && nodeData.url && !isLoading && (
           <div
-            className={cn(
-              "absolute right-2 z-20 opacity-0 transition-opacity group-hover:opacity-100",
-              nodeData.creditCost != null ? "bottom-12" : "bottom-2",
-            )}
+            className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100"
           >
             <button
               type="button"
@@ -222,9 +209,25 @@ export default function AiImageNode({
           <p className="line-clamp-2 text-[10px] text-muted-foreground">
             {nodeData.prompt}
           </p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground/60">
-            {modelName} · {nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO}
-          </p>
+          {status === "done" && nodeData.creditCost != null ? (
+            <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+              <span
+                className="min-w-0 truncate"
+                title={nodeData.model ?? DEFAULT_MODEL_ID}
+              >
+                {nodeData.modelLabel ?? modelName} ·{" "}
+                {nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO}
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+                <Coins className="h-3 w-3" />
+                {nodeData.creditCost} Cr
+              </span>
+            </div>
+          ) : (
+            <p className="mt-0.5 text-[10px] text-muted-foreground/60">
+              {modelName} · {nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO}
+            </p>
+          )}
         </div>
       )}
 

@@ -9,13 +9,13 @@ import {
   type NodeProps,
   type Node,
 } from "@xyflow/react";
-import { useMutation, useAction } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
-import { DEFAULT_MODEL_ID } from "@/lib/ai-models";
+import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
 import {
   DEFAULT_ASPECT_RATIO,
   getAiImageNodeOuterSize,
@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, Coins } from "lucide-react";
 
 type PromptNodeData = {
   prompt?: string;
@@ -103,6 +103,14 @@ export default function PromptNode({
 
   const dataRef = useRef(data);
   dataRef.current = data;
+
+  const balance = useQuery(api.credits.getBalance);
+  const creditCost = getModel(DEFAULT_MODEL_ID)?.creditCost ?? 4;
+
+  const availableCredits =
+    balance !== undefined ? balance.balance - balance.reserved : null;
+  const hasEnoughCredits =
+    availableCredits !== null && availableCredits >= creditCost;
 
   const updateData = useMutation(api.nodes.updateData);
   const createEdge = useMutation(api.edges.create);
@@ -248,8 +256,9 @@ export default function PromptNode({
       />
 
       <div className="flex flex-col gap-2 p-3">
-        <div className="text-xs font-medium text-violet-600 dark:text-violet-400">
-          ✨ Eingabe
+        <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-3.5 w-3.5" />
+          Eingabe
         </div>
         {inputMeta.hasTextInput ? (
           <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
@@ -313,24 +322,45 @@ export default function PromptNode({
           <p className="text-xs text-destructive">{error}</p>
         )}
 
-        <button
-          type="button"
-          onClick={() => void handleGenerate()}
-          disabled={!effectivePrompt.trim() || isGenerating}
-          className="nodrag flex items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Generiere…
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4" />
-              Bild generieren
-            </>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => void handleGenerate()}
+            disabled={
+              !effectivePrompt.trim() ||
+              isGenerating ||
+              balance === undefined ||
+              (availableCredits !== null && !hasEnoughCredits)
+            }
+            className={`nodrag flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${
+              availableCredits !== null && !hasEnoughCredits
+                ? "bg-muted text-muted-foreground"
+                : "bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+            }`}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generiere…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Bild generieren
+                <span className="inline-flex items-center gap-1 text-xs opacity-90">
+                  <Coins className="h-3 w-3" />
+                  {creditCost} Cr
+                </span>
+              </>
+            )}
+          </button>
+          {availableCredits !== null && !hasEnoughCredits && (
+            <p className="text-center text-xs text-destructive">
+              Not enough credits ({availableCredits} available, {creditCost}{" "}
+              needed)
+            </p>
           )}
-        </button>
+        </div>
       </div>
 
       <Handle

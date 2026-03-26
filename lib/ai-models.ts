@@ -7,6 +7,8 @@ export interface AiModel {
   tier: "budget" | "standard" | "premium";
   description: string;
   estimatedCost: string; // human-readable, e.g. "~€0.04"
+  /** Credits pro Generierung — gleiche Einheit wie Convex reserve/commit (Euro-Cent). */
+  creditCost: number;
   minTier: "free" | "starter" | "pro" | "business"; // minimum subscription tier
 }
 
@@ -17,6 +19,7 @@ export const IMAGE_MODELS: AiModel[] = [
     tier: "standard",
     description: "Fast, high-quality generation",
     estimatedCost: "~€0.04",
+    creditCost: 4,
     minTier: "free",
   },
   // Phase 2 — uncomment when model selector UI is ready:

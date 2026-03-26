@@ -17,6 +17,7 @@ export const generateImage = action({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Auth: über requireAuth in runMutation — kein verschachteltes getCurrentUser (ConvexError → generische Client-Fehler).
     const internalCreditsEnabled =
       process.env.INTERNAL_CREDITS_ENABLED === "true";
 
@@ -31,13 +32,9 @@ export const generateImage = action({
       throw new Error(`Unknown model: ${modelId}`);
     }
 
-    if (!(await ctx.runQuery(api.auth.getCurrentUser, {}))) {
-      throw new Error("User not found");
-    }
-
     const reservationId = internalCreditsEnabled
       ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: modelConfig.estimatedCostPerImage,
+          estimatedCost: modelConfig.creditCost,
           description: `Bildgenerierung — ${modelConfig.name}`,
           model: modelId,
           nodeId: args.nodeId,
@@ -76,7 +73,7 @@ export const generateImage = action({
       const existing = await ctx.runQuery(api.nodes.get, { nodeId: args.nodeId });
       if (!existing) throw new Error("Node not found");
       const prev = (existing.data ?? {}) as Record<string, unknown>;
-      const creditCost = modelConfig.estimatedCostPerImage;
+      const creditCost = modelConfig.creditCost;
 
       const aspectRatio =
         args.aspectRatio?.trim() ||
@@ -89,6 +86,7 @@ export const generateImage = action({
           storageId,
           prompt: args.prompt,
           model: modelId,
+          modelLabel: modelConfig.name,
           modelTier: modelConfig.tier,
           generatedAt: Date.now(),
           creditCost,

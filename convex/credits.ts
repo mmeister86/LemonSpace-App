@@ -85,17 +85,30 @@ export const listTransactions = query({
 });
 
 /**
- * Aktuelle Subscription des Users abrufen.
+ * Aktuelle Subscription des Users abrufen (kompakt, immer definiert für die UI).
  */
 export const getSubscription = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireAuth(ctx);
-    return await ctx.db
+    const row = await ctx.db
       .query("subscriptions")
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .order("desc")
       .first();
+
+    if (!row) {
+      return {
+        tier: "free" as const,
+        status: "active" as const,
+      };
+    }
+
+    return {
+      tier: row.tier,
+      status: row.status,
+      currentPeriodEnd: row.currentPeriodEnd,
+    };
   },
 });
 
@@ -116,6 +129,61 @@ export const getDailyUsage = query({
       .unique();
 
     return usage ?? { generationCount: 0, concurrentJobs: 0 };
+  },
+});
+
+/**
+ * Neueste Transaktionen des Users abrufen (für Dashboard "Recent Activity").
+ * Ähnlich wie listTransactions, aber als dedizierter Query mit explizitem Limit.
+ */
+export const getRecentTransactions = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    const limit = args.limit ?? 10;
+
+    return await ctx.db
+      .query("creditTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+/**
+ * Monatliche Credit-Statistiken des Users abrufen (für Dashboard Verbrauchsbalken).
+ * Berechnet: monatlicher Verbrauch (nur committed usage-Transaktionen) + Anzahl Generierungen.
+ */
+export const getUsageStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireAuth(ctx);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    const transactions = await ctx.db
+      .query("creditTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .order("desc")
+      .collect();
+
+    const monthlyTransactions = transactions.filter(
+      (t) =>
+        t._creationTime >= monthStart &&
+        t.status === "committed" &&
+        t.type === "usage"
+    );
+
+    return {
+      monthlyUsage: monthlyTransactions.reduce(
+        (sum, t) => sum + Math.abs(t.amount),
+        0
+      ),
+      totalGenerations: monthlyTransactions.length,
+    };
   },
 });
 
@@ -168,6 +236,49 @@ export const initBalance = mutation({
     });
 
     return balanceId;
+  },
+});
+
+/**
+ * Nur Testphase: schreibt dem eingeloggten User Gutschrift gut.
+ * In Produktion deaktiviert, außer ALLOW_TEST_CREDIT_GRANT ist in Convex auf "true" gesetzt.
+ */
+export const grantTestCredits = mutation({
+  args: {
+    amount: v.optional(v.number()),
+  },
+  handler: async (ctx, { amount = 2000 }) => {
+    if (process.env.ALLOW_TEST_CREDIT_GRANT !== "true") {
+      throw new Error("Test-Gutschriften sind deaktiviert (ALLOW_TEST_CREDIT_GRANT).");
+    }
+    if (amount <= 0 || amount > 1_000_000) {
+      throw new Error("Ungültiger Betrag.");
+    }
+    const user = await requireAuth(ctx);
+    const balance = await ctx.db
+      .query("creditBalances")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .unique();
+
+    if (!balance) {
+      throw new Error("Keine Credit-Balance — zuerst einloggen / initBalance.");
+    }
+
+    const next = balance.balance + amount;
+    await ctx.db.patch(balance._id, {
+      balance: next,
+      updatedAt: Date.now(),
+    });
+
+    await ctx.db.insert("creditTransactions", {
+      userId: user.userId,
+      amount,
+      type: "subscription",
+      status: "committed",
+      description: `Testphase — Gutschrift (${amount} Cr)`,
+    });
+
+    return { newBalance: next };
   },
 });
 

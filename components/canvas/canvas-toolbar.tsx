@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 
+import { CreditDisplay } from "@/components/canvas/credit-display";
 import { ExportButton } from "@/components/canvas/export-button";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 
@@ -98,6 +99,7 @@ export default function CanvasToolbar({
         </button>
       ))}
       <div className="ml-1 h-6 w-px bg-border" />
+      <CreditDisplay />
       <ExportButton canvasName={canvasName ?? "canvas"} />
     </div>
   );

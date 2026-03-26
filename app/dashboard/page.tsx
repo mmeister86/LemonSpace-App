@@ -6,7 +6,6 @@ import { useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import {
-  Activity,
   ArrowUpRight,
   ChevronDown,
   Coins,
@@ -14,12 +13,10 @@ import {
   Monitor,
   Moon,
   Search,
-  Sparkles,
   Sun,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,87 +29,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { CreditOverview } from "@/components/dashboard/credit-overview";
+import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 
-const formatEurFromCents = (cents: number) =>
-  new Intl.NumberFormat("de-DE", {
-    style: "currency",
-    currency: "EUR",
-  }).format(cents / 100);
-
-const mockRuns = [
-  {
-    id: "run-8841",
-    workspace: "Sommer-Kampagne",
-    node: "KI-Bild",
-    model: "flux-pro",
-    status: "done" as const,
-    credits: 42,
-    updated: "vor 12 Min.",
-  },
-  {
-    id: "run-8839",
-    workspace: "Produktfotos",
-    node: "KI-Bild",
-    model: "flux-schnell",
-    status: "executing" as const,
-    credits: 18,
-    updated: "gerade eben",
-  },
-  {
-    id: "run-8832",
-    workspace: "Social Variants",
-    node: "Compare",
-    model: "—",
-    status: "idle" as const,
-    credits: 0,
-    updated: "vor 1 Std.",
-  },
-  {
-    id: "run-8828",
-    workspace: "Sommer-Kampagne",
-    node: "KI-Bild",
-    model: "flux-pro",
-    status: "error" as const,
-    credits: 0,
-    updated: "vor 2 Std.",
-  },
-];
-
-function StatusDot({ status }: { status: (typeof mockRuns)[0]["status"] }) {
-  const base = "inline-block size-2 rounded-full";
-  switch (status) {
-    case "done":
-      return <span className={cn(base, "bg-primary")} />;
-    case "executing":
-      return (
-        <span className="relative inline-flex size-2">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
-          <span className={cn(base, "relative bg-primary")} />
-        </span>
-      );
-    case "idle":
-      return <span className={cn(base, "bg-border")} />;
-    case "error":
-      return <span className={cn(base, "bg-destructive")} />;
-  }
-}
-
-function statusLabel(status: (typeof mockRuns)[0]["status"]) {
-  switch (status) {
-    case "done":
-      return "Fertig";
-    case "executing":
-      return "Läuft";
-    case "idle":
-      return "Bereit";
-    case "error":
-      return "Fehler";
-  }
-}
 
 function getInitials(nameOrEmail: string) {
   const normalized = nameOrEmail.trim();
@@ -161,13 +83,6 @@ export default function DashboardPage() {
       setIsCreatingWorkspace(false);
     }
   };
-
-  const balanceCents = 4320;
-  const reservedCents = 180;
-  const monthlyPoolCents = 5000;
-  const usagePercent = Math.round(
-    ((monthlyPoolCents - balanceCents) / monthlyPoolCents) * 100,
-  );
 
   return (
     <div className="min-h-full bg-background">
@@ -257,85 +172,21 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Credits & Active Generation — asymmetric two-column */}
-        <div className="mb-12 grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-          {/* Credits Section */}
-          <div className="space-y-5">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Coins className="size-3.5" />
-              <span>Credit-Guthaben</span>
-            </div>
-            <div className="text-4xl font-semibold tabular-nums tracking-tight">
-              {formatEurFromCents(balanceCents)}
-            </div>
-
-            <div className="space-y-3 pt-1">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="text-muted-foreground">Reserviert</span>
-                <span className="tabular-nums font-medium">
-                  {formatEurFromCents(reservedCents)}
-                </span>
-              </div>
-              <div>
-                <div className="mb-2 flex items-baseline justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    Monatskontingent
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {usagePercent}%
-                  </span>
-                </div>
-                <Progress value={usagePercent} className="h-1.5" />
-              </div>
-            </div>
-
-            <p className="text-xs leading-relaxed text-muted-foreground/80">
-              Bei fehlgeschlagenen Jobs werden reservierte Credits automatisch
-              freigegeben.
-            </p>
+        {/* Credits Overview */}
+        <section className="mb-12">
+          <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+            <Coins className="size-3.5 text-muted-foreground" />
+            Credit-Übersicht
           </div>
-
-          {/* Active Generation */}
-          <div className="rounded-2xl border bg-card p-6 shadow-sm shadow-foreground/3">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Sparkles className="size-3.5" />
-                <span>Aktive Generierung</span>
-              </div>
-              <Badge className="gap-1.5 font-normal">
-                <span className="relative inline-flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary-foreground/60 opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-primary-foreground" />
-                </span>
-                Läuft
-              </Badge>
-            </div>
-
-            <h2 className="mt-4 text-lg font-medium">
-              Produktfotos — Variante 3/4
-            </h2>
-
-            <div className="mt-5">
-              <div className="mb-2 flex items-baseline justify-between text-sm">
-                <span className="text-muted-foreground">Fortschritt</span>
-                <span className="font-medium tabular-nums">62%</span>
-              </div>
-              <Progress value={62} className="h-1.5" />
-            </div>
-
-            <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
-              Step 2 von 4 —{" "}
-              <span className="font-mono text-[0.7rem]">flux-schnell</span>
-            </p>
-          </div>
-        </div>
+          <CreditOverview />
+        </section>
 
         {/* Workspaces */}
         <section className="mb-12">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium">
               <LayoutTemplate className="size-3.5 text-muted-foreground" />
-              Workspaces
+              Arbeitsbereiche
             </div>
             <Button
               variant="ghost"
@@ -345,17 +196,17 @@ export default function DashboardPage() {
               onClick={handleCreateWorkspace}
               disabled={isCreatingWorkspace || isSessionPending || !session?.user}
             >
-              {isCreatingWorkspace ? "Erstelle..." : "Neuer Workspace"}
+              {isCreatingWorkspace ? "Erstelle..." : "Neuen Arbeitsbereich"}
             </Button>
           </div>
 
           {isSessionPending || canvases === undefined ? (
             <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Workspaces werden geladen...
+              Arbeitsbereiche werden geladen...
             </div>
           ) : canvases.length === 0 ? (
             <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Noch kein Workspace vorhanden. Mit &quot;Neuer Workspace&quot; legst du den
+              Noch kein Arbeitsbereich vorhanden. Mit „Neuer Arbeitsbereich“ legst du den
               ersten an.
             </div>
           ) : (
@@ -384,58 +235,9 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Recent Activity */}
-        <section>
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-            <Activity className="size-3.5 text-muted-foreground" />
-            Letzte Aktivität
-          </div>
-
-          <div className="rounded-xl border bg-card shadow-sm shadow-foreground/3">
-            <div className="divide-y">
-              {mockRuns.map((run) => (
-                <div
-                  key={run.id}
-                  className="flex items-center gap-4 px-5 py-3.5"
-                >
-                  <StatusDot status={run.status} />
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {run.workspace}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {run.node}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                      {run.model !== "—" && (
-                        <span className="font-mono text-[0.7rem]">
-                          {run.model}
-                        </span>
-                      )}
-                      {run.credits > 0 && (
-                        <>
-                          <span aria-hidden>·</span>
-                          <span className="tabular-nums">{run.credits} ct</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <span className="text-xs text-muted-foreground">
-                      {statusLabel(run.status)}
-                    </span>
-                    <p className="mt-0.5 text-[0.7rem] text-muted-foreground/70">
-                      {run.updated}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Recent Transactions */}
+        <section className="mb-12">
+          <RecentTransactions />
         </section>
       </main>
     </div>
