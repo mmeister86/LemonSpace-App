@@ -55,12 +55,14 @@ export const NODE_HANDLE_MAP: Record<
   string,
   { source?: string; target?: string }
 > = {
-  image: { source: undefined },
-  text: { source: undefined },
+  image: { source: undefined, target: undefined },
+  text: { source: undefined, target: undefined },
   prompt: { source: "prompt-out", target: "image-in" },
   "ai-image": { source: "image-out", target: "prompt-in" },
+  group: { source: undefined, target: undefined },
   frame: { source: "frame-out", target: "frame-in" },
-  compare: { target: "left" },
+  note: { source: undefined, target: undefined },
+  compare: { source: "compare-out", target: "left" },
 };
 
 /**

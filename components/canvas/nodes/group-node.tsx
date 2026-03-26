@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { type NodeProps, type Node } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -22,6 +22,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
 
   useEffect(() => {
     if (!isEditing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLabel(data.label ?? "Gruppe");
     }
   }, [data.label, isEditing]);
@@ -46,6 +47,12 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
       selected={selected}
       className="min-w-[200px] min-h-[150px] p-3 border-dashed"
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !bg-muted-foreground !border-2 !border-background"
+      />
+
       {isEditing ? (
         <input
           value={label}
@@ -63,6 +70,12 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
           📁 {label}
         </div>
       )}
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !bg-muted-foreground !border-2 !border-background"
+      />
     </BaseNodeWrapper>
   );
 }

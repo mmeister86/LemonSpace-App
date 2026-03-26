@@ -13,6 +13,7 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { DEFAULT_MODEL_ID } from "@/lib/ai-models";
 import {
@@ -104,9 +105,9 @@ export default function PromptNode({
   dataRef.current = data;
 
   const updateData = useMutation(api.nodes.updateData);
-  const createNode = useMutation(api.nodes.create);
   const createEdge = useMutation(api.edges.create);
   const generateImage = useAction(api.ai.generateImage);
+  const { createNodeWithIntersection } = useCanvasPlacement();
 
   const debouncedSave = useDebouncedCallback(() => {
     const raw = dataRef.current as Record<string, unknown>;
@@ -181,11 +182,9 @@ export default function PromptNode({
       const viewport = getImageViewportSize(aspectRatio);
       const outer = getAiImageNodeOuterSize(viewport);
 
-      const aiNodeId = await createNode({
-        canvasId,
+      const aiNodeId = await createNodeWithIntersection({
         type: "ai-image",
-        positionX: posX,
-        positionY: posY,
+        position: { x: posX, y: posY },
         width: outer.width,
         height: outer.height,
         data: {
@@ -229,7 +228,7 @@ export default function PromptNode({
     id,
     getEdges,
     getNode,
-    createNode,
+    createNodeWithIntersection,
     createEdge,
     generateImage,
   ]);

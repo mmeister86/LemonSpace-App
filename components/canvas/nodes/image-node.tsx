@@ -117,6 +117,12 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
 
   return (
     <BaseNodeWrapper selected={selected} status={data._status}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="h-3! w-3! bg-primary! border-2! border-background!"
+      />
+
       <div className="p-2">
         <div className="mb-1 flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">🖼️ Bild</div>

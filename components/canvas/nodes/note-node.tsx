@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { type NodeProps, type Node } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -23,6 +23,7 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
 
   useEffect(() => {
     if (!isEditing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setContent(data.content ?? "");
     }
   }, [data.content, isEditing]);
@@ -53,6 +54,12 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
 
   return (
     <BaseNodeWrapper selected={selected} className="w-52 p-3">
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
+      />
+
       <div className="text-xs font-medium text-muted-foreground mb-1">
         📌 Notiz
       </div>
@@ -78,6 +85,12 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
           )}
         </div>
       )}
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
+      />
     </BaseNodeWrapper>
   );
 }

@@ -17,6 +17,7 @@ import {
   type NodeChange,
   type EdgeChange,
   type Connection,
+  type DefaultEdgeOptions,
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -27,8 +28,14 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
-import { convexNodeToRF, convexEdgeToRF, NODE_DEFAULTS } from "@/lib/canvas-utils";
+import {
+  convexNodeToRF,
+  convexEdgeToRF,
+  NODE_DEFAULTS,
+  NODE_HANDLE_MAP,
+} from "@/lib/canvas-utils";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
+import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -95,6 +102,68 @@ function getMiniMapNodeColor(node: RFNode): string {
 
 function getMiniMapNodeStrokeColor(node: RFNode): string {
   return node.type === "frame" ? "transparent" : "#4f46e5";
+}
+
+const DEFAULT_EDGE_OPTIONS: DefaultEdgeOptions = {
+  interactionWidth: 75,
+};
+
+const EDGE_INTERSECTION_HIGHLIGHT_STYLE: NonNullable<RFEdge["style"]> = {
+  stroke: "hsl(var(--foreground))",
+  strokeWidth: 2,
+};
+
+function getEdgeIdFromInteractionElement(element: Element): string | null {
+  const edgeContainer = element.closest(".react-flow__edge");
+  if (!edgeContainer) return null;
+
+  const dataId = edgeContainer.getAttribute("data-id");
+  if (dataId) return dataId;
+
+  const domId = edgeContainer.getAttribute("id");
+  if (domId?.startsWith("reactflow__edge-")) {
+    return domId.slice("reactflow__edge-".length);
+  }
+
+  return null;
+}
+
+function getNodeCenterClientPosition(nodeId: string): { x: number; y: number } | null {
+  const nodeElement = Array.from(
+    document.querySelectorAll<HTMLElement>(".react-flow__node"),
+  ).find((element) => element.dataset.id === nodeId);
+
+  if (!nodeElement) return null;
+
+  const rect = nodeElement.getBoundingClientRect();
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function getIntersectedEdgeId(point: { x: number; y: number }): string | null {
+  const interactionElement = document
+    .elementsFromPoint(point.x, point.y)
+    .find((element) => element.classList.contains("react-flow__edge-interaction"));
+
+  if (!interactionElement) {
+    return null;
+  }
+
+  return getEdgeIdFromInteractionElement(interactionElement);
+}
+
+function hasHandleKey(
+  handles: { source?: string; target?: string } | undefined,
+  key: "source" | "target",
+): boolean {
+  if (!handles) return false;
+  return Object.prototype.hasOwnProperty.call(handles, key);
+}
+
+function normalizeHandle(handle: string | null | undefined): string | undefined {
+  return handle ?? undefined;
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
@@ -175,6 +244,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Delete Edge on Drop
   const edgeReconnectSuccessful = useRef(true);
+  const overlappedEdgeRef = useRef<string | null>(null);
+  const highlightedEdgeRef = useRef<string | null>(null);
+  const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
+    undefined,
+  );
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {
@@ -269,36 +343,195 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [removeEdge],
   );
 
+  const setHighlightedIntersectionEdge = useCallback((edgeId: string | null) => {
+    const previousHighlightedEdgeId = highlightedEdgeRef.current;
+    if (previousHighlightedEdgeId === edgeId) {
+      return;
+    }
+
+    setEdges((currentEdges) => {
+      let nextEdges = currentEdges;
+
+      if (previousHighlightedEdgeId) {
+        nextEdges = nextEdges.map((edge) =>
+          edge.id === previousHighlightedEdgeId
+            ? {
+                ...edge,
+                style: highlightedEdgeOriginalStyleRef.current,
+              }
+            : edge,
+        );
+      }
+
+      if (!edgeId) {
+        highlightedEdgeOriginalStyleRef.current = undefined;
+        return nextEdges;
+      }
+
+      const edgeToHighlight = nextEdges.find((edge) => edge.id === edgeId);
+      if (!edgeToHighlight || edgeToHighlight.className === "temp") {
+        highlightedEdgeOriginalStyleRef.current = undefined;
+        return nextEdges;
+      }
+
+      highlightedEdgeOriginalStyleRef.current = edgeToHighlight.style;
+
+      return nextEdges.map((edge) =>
+        edge.id === edgeId
+          ? {
+              ...edge,
+              style: {
+                ...(edge.style ?? {}),
+                ...EDGE_INTERSECTION_HIGHLIGHT_STYLE,
+              },
+            }
+          : edge,
+      );
+    });
+
+    highlightedEdgeRef.current = edgeId;
+  }, []);
+
+  const onNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: RFNode) => {
+      const nodeCenter = getNodeCenterClientPosition(node.id);
+      if (!nodeCenter) {
+        overlappedEdgeRef.current = null;
+        setHighlightedIntersectionEdge(null);
+        return;
+      }
+
+      const intersectedEdgeId = getIntersectedEdgeId(nodeCenter);
+      if (!intersectedEdgeId) {
+        overlappedEdgeRef.current = null;
+        setHighlightedIntersectionEdge(null);
+        return;
+      }
+
+      const intersectedEdge = edges.find(
+        (edge) => edge.id === intersectedEdgeId && edge.className !== "temp",
+      );
+      if (!intersectedEdge) {
+        overlappedEdgeRef.current = null;
+        setHighlightedIntersectionEdge(null);
+        return;
+      }
+
+      if (
+        intersectedEdge.source === node.id ||
+        intersectedEdge.target === node.id
+      ) {
+        overlappedEdgeRef.current = null;
+        setHighlightedIntersectionEdge(null);
+        return;
+      }
+
+      const handles = NODE_HANDLE_MAP[node.type ?? ""];
+      if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
+        overlappedEdgeRef.current = null;
+        setHighlightedIntersectionEdge(null);
+        return;
+      }
+
+      overlappedEdgeRef.current = intersectedEdge.id;
+      setHighlightedIntersectionEdge(intersectedEdge.id);
+    },
+    [edges, setHighlightedIntersectionEdge],
+  );
+
   // ─── Drag Start → Lock ────────────────────────────────────────
   const onNodeDragStart = useCallback(() => {
     isDragging.current = true;
-  }, []);
+    overlappedEdgeRef.current = null;
+    setHighlightedIntersectionEdge(null);
+  }, [setHighlightedIntersectionEdge]);
 
   // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
-      // isDragging bleibt true bis die Mutation resolved ist → kein Convex-Override möglich
-      if (draggedNodes.length > 1) {
-        void batchMoveNodes({
-          moves: draggedNodes.map((n) => ({
-            nodeId: n.id as Id<"nodes">,
-            positionX: n.position.x,
-            positionY: n.position.y,
-          })),
-        }).then(() => {
+      const intersectedEdgeId = overlappedEdgeRef.current;
+
+      void (async () => {
+        try {
+          // isDragging bleibt true bis alle Mutations resolved sind
+          if (draggedNodes.length > 1) {
+            await batchMoveNodes({
+              moves: draggedNodes.map((n) => ({
+                nodeId: n.id as Id<"nodes">,
+                positionX: n.position.x,
+                positionY: n.position.y,
+              })),
+            });
+          } else {
+            await moveNode({
+              nodeId: node.id as Id<"nodes">,
+              positionX: node.position.x,
+              positionY: node.position.y,
+            });
+          }
+
+          if (!intersectedEdgeId) {
+            return;
+          }
+
+          const intersectedEdge = edges.find((edge) => edge.id === intersectedEdgeId);
+          if (!intersectedEdge || intersectedEdge.className === "temp") {
+            return;
+          }
+
+          if (
+            intersectedEdge.source === node.id ||
+            intersectedEdge.target === node.id
+          ) {
+            return;
+          }
+
+          const handles = NODE_HANDLE_MAP[node.type ?? ""];
+          if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
+            return;
+          }
+
+          await createEdge({
+            canvasId,
+            sourceNodeId: intersectedEdge.source as Id<"nodes">,
+            targetNodeId: node.id as Id<"nodes">,
+            sourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
+            targetHandle: normalizeHandle(handles.target),
+          });
+
+          await createEdge({
+            canvasId,
+            sourceNodeId: node.id as Id<"nodes">,
+            targetNodeId: intersectedEdge.target as Id<"nodes">,
+            sourceHandle: normalizeHandle(handles.source),
+            targetHandle: normalizeHandle(intersectedEdge.targetHandle),
+          });
+
+          await removeEdge({ edgeId: intersectedEdge.id as Id<"edges"> });
+        } catch (error) {
+          console.error("[Canvas edge intersection split failed]", {
+            canvasId,
+            nodeId: node.id,
+            nodeType: node.type,
+            intersectedEdgeId,
+            error: String(error),
+          });
+        } finally {
+          overlappedEdgeRef.current = null;
+          setHighlightedIntersectionEdge(null);
           isDragging.current = false;
-        });
-      } else {
-        void moveNode({
-          nodeId: node.id as Id<"nodes">,
-          positionX: node.position.x,
-          positionY: node.position.y,
-        }).then(() => {
-          isDragging.current = false;
-        });
-      }
+        }
+      })();
     },
-    [moveNode, batchMoveNodes],
+    [
+      batchMoveNodes,
+      canvasId,
+      createEdge,
+      edges,
+      moveNode,
+      removeEdge,
+      setHighlightedIntersectionEdge,
+    ],
   );
 
   // ─── Neue Verbindung → Convex Edge ────────────────────────────
@@ -419,43 +652,47 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   }
 
   return (
-    <div className="relative h-full w-full">
-      <CanvasToolbar canvasId={canvasId} canvasName={canvas?.name ?? "canvas"} />
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDragStop={onNodeDragStop}
-        onConnect={onConnect}
-        onReconnect={onReconnect}
-        onReconnectStart={onReconnectStart}
-        onReconnectEnd={onReconnectEnd}
-        onNodesDelete={onNodesDelete}
-        onEdgesDelete={onEdgesDelete}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
-        fitView
-        snapToGrid
-        snapGrid={[16, 16]}
-        deleteKeyCode={["Backspace", "Delete"]}
-        multiSelectionKeyCode="Shift"
-        proOptions={{ hideAttribution: true }}
-        colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-        className="bg-background"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
-        <MiniMap
-          className="bg-card! border! shadow-sm! rounded-lg!"
-          nodeColor={getMiniMapNodeColor}
-          nodeStrokeColor={getMiniMapNodeStrokeColor}
-          maskColor="rgba(0, 0, 0, 0.1)"
-        />
-      </ReactFlow>
-    </div>
+    <CanvasPlacementProvider canvasId={canvasId}>
+      <div className="relative h-full w-full">
+        <CanvasToolbar canvasName={canvas?.name ?? "canvas"} />
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
+          onConnect={onConnect}
+          onReconnect={onReconnect}
+          onReconnectStart={onReconnectStart}
+          onReconnectEnd={onReconnectEnd}
+          onNodesDelete={onNodesDelete}
+          onEdgesDelete={onEdgesDelete}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          fitView
+          snapToGrid
+          snapGrid={[16, 16]}
+          deleteKeyCode={["Backspace", "Delete"]}
+          multiSelectionKeyCode="Shift"
+          proOptions={{ hideAttribution: true }}
+          colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+          className="bg-background"
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+          <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
+          <MiniMap
+            className="bg-card! border! shadow-sm! rounded-lg!"
+            nodeColor={getMiniMapNodeColor}
+            nodeStrokeColor={getMiniMapNodeStrokeColor}
+            maskColor="rgba(0, 0, 0, 0.1)"
+          />
+        </ReactFlow>
+      </div>
+    </CanvasPlacementProvider>
   );
 }
 

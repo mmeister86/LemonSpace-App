@@ -80,6 +80,12 @@ export default function CompareNode({ data, selected }: NodeProps) {
         style={{ top: "55%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-emerald-500"
       />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="compare-out"
+        className="!h-3 !w-3 !border-2 !border-background !bg-muted-foreground"
+      />
 
       <div
         ref={containerRef}

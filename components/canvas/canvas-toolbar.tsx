@@ -1,11 +1,9 @@
 "use client";
 
-import { useMutation } from "convex/react";
 import { useRef } from "react";
 
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { ExportButton } from "@/components/canvas/export-button";
+import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 
 const nodeTemplates = [
   {
@@ -53,15 +51,13 @@ const nodeTemplates = [
 ] as const;
 
 interface CanvasToolbarProps {
-  canvasId: Id<"canvases">;
   canvasName?: string;
 }
 
 export default function CanvasToolbar({
-  canvasId,
   canvasName,
 }: CanvasToolbarProps) {
-  const createNode = useMutation(api.nodes.create);
+  const { createNodeWithIntersection } = useCanvasPlacement();
   const nodeCountRef = useRef(0);
 
   const handleAddNode = async (
@@ -72,14 +68,12 @@ export default function CanvasToolbar({
   ) => {
     const offset = (nodeCountRef.current % 8) * 24;
     nodeCountRef.current += 1;
-    await createNode({
-      canvasId,
+    await createNodeWithIntersection({
       type,
-      positionX: 100 + offset,
-      positionY: 100 + offset,
+      position: { x: 100 + offset, y: 100 + offset },
       width,
       height,
-      data: { ...data, canvasId },
+      data,
     });
   };
 
