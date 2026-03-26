@@ -149,4 +149,16 @@
   .react-flow__handle {
     z-index: 50;
   }
+
+  /* Proximity-Vorschaukante (temp) */
+  .react-flow__edge.temp {
+    opacity: 0.9;
+  }
+
+  .react-flow__edge.temp .react-flow__edge-path {
+    stroke: hsl(var(--foreground) / 0.3);
+    stroke-width: 2.5;
+    stroke-dasharray: 8 6;
+    stroke-linecap: round;
+  }
 }

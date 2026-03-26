@@ -17,7 +17,12 @@ export async function requireAuth(
 ): Promise<AuthUser> {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (!user) {
-    console.error("[requireAuth] safeGetAuthUser returned null");
+    const identity = await ctx.auth.getUserIdentity();
+    console.error("[requireAuth] safeGetAuthUser returned null", {
+      hasIdentity: Boolean(identity),
+      identityIssuer: identity?.issuer ?? null,
+      identitySubject: identity?.subject ?? null,
+    });
     throw new Error("Unauthenticated");
   }
   const userId = user.userId ?? String(user._id);

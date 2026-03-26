@@ -11,6 +11,9 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
+  useStoreApi,
+  useNodesInitialized,
+  reconnectEdge,
   type Node as RFNode,
   type Edge as RFEdge,
   type NodeChange,
@@ -23,9 +26,10 @@ import "@xyflow/react/dist/style.css";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
-import { convexNodeToRF, convexEdgeToRF, NODE_DEFAULTS } from "@/lib/canvas-utils";
+import { convexNodeToRF, convexEdgeToRF, NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 
 interface CanvasInnerProps {
@@ -33,10 +37,13 @@ interface CanvasInnerProps {
 }
 
 function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
-  return nodes.map((node) => {
+  const persistedEdges = edges.filter((edge) => edge.className !== "temp");
+  let hasNodeUpdates = false;
+
+  const nextNodes = nodes.map((node) => {
     if (node.type !== "compare") return node;
 
-    const incoming = edges.filter((edge) => edge.target === node.id);
+    const incoming = persistedEdges.filter((edge) => edge.target === node.id);
     let leftUrl: string | undefined;
     let rightUrl: string | undefined;
     let leftLabel: string | undefined;
@@ -73,11 +80,15 @@ function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
       return node;
     }
 
+    hasNodeUpdates = true;
+
     return {
       ...node,
       data: { ...node.data, leftUrl, rightUrl, leftLabel, rightLabel },
     };
   });
+
+  return hasNodeUpdates ? nextNodes : nodes;
 }
 
 function getMiniMapNodeColor(node: RFNode): string {
@@ -88,11 +99,20 @@ function getMiniMapNodeStrokeColor(node: RFNode): string {
   return node.type === "frame" ? "transparent" : "#4f46e5";
 }
 
+const MIN_DISTANCE = 150;
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getInternalNode } = useReactFlow();
+  const store = useStoreApi();
+  const nodesInitialized = useNodesInitialized();
   const { resolvedTheme } = useTheme();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
   const shouldSkipCanvasQueries = isAuthLoading || !isAuthenticated;
+  const convexAuthUserProbe = useQuery(
+    api.auth.safeGetAuthUser,
+    isAuthLoading ? "skip" : {},
+  );
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -100,6 +120,34 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       console.warn("[Canvas debug] mounted without Convex auth", { canvasId });
     }
   }, [canvasId, isAuthLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (isAuthLoading || isSessionPending) return;
+
+    console.info("[Canvas auth state]", {
+      canvasId,
+      convex: {
+        isAuthenticated,
+        shouldSkipCanvasQueries,
+        probeUserId: convexAuthUserProbe?.userId ?? null,
+        probeRecordId: convexAuthUserProbe?._id ?? null,
+      },
+      session: {
+        hasUser: Boolean(session?.user),
+        email: session?.user?.email ?? null,
+      },
+    });
+  }, [
+    canvasId,
+    convexAuthUserProbe?._id,
+    convexAuthUserProbe?.userId,
+    isAuthLoading,
+    isAuthenticated,
+    isSessionPending,
+    session?.user,
+    shouldSkipCanvasQueries,
+  ]);
 
   // ─── Convex Realtime Queries ───────────────────────────────────
   const convexNodes = useQuery(
@@ -131,6 +179,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
 
+  // Delete Edge on Drop
+  const edgeReconnectSuccessful = useRef(true);
+  const uninitializedDragNodeIds = useRef<Set<string>>(new Set());
+
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {
     if (!convexNodes || isDragging.current) return;
@@ -141,10 +193,18 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useEffect(() => {
     if (!convexEdges) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEdges(convexEdges.map(convexEdgeToRF));
+    setEdges((prev) => {
+      const tempEdges = prev.filter((e) => e.className === "temp");
+      const mapped = convexEdges.map(convexEdgeToRF);
+      // #region agent log
+      fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'594b9f'},body:JSON.stringify({sessionId:'594b9f',runId:'run1',hypothesisId:'H1-H2',location:'canvas.tsx:edgeSyncEffect',message:'edges passed to ReactFlow',data:{edgeCount:mapped.length,edges:mapped.map(e=>({id:e.id,source:e.source,target:e.target,sourceHandle:e.sourceHandle,targetHandle:e.targetHandle,typeofTH:typeof e.targetHandle,isNullTH:e.targetHandle===null}))},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return [...mapped, ...tempEdges];
+    });
   }, [convexEdges]);
 
   useEffect(() => {
+    if (isDragging.current) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes((nds) => withResolvedCompareData(nds, edges));
   }, [edges]);
@@ -179,6 +239,192 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges((eds) => applyEdgeChanges(changes, eds));
   }, []);
 
+  // ─── Delete Edge on Drop ──────────────────────────────────────
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: RFEdge, newConnection: Connection) => {
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [],
+  );
+
+  const onReconnectEnd = useCallback(
+    (_: MouseEvent | TouchEvent, edge: RFEdge) => {
+      if (!edgeReconnectSuccessful.current) {
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+        removeEdge({ edgeId: edge.id as Id<"edges"> });
+      }
+      edgeReconnectSuccessful.current = true;
+    },
+    [removeEdge],
+  );
+
+  // ─── Proximity Connect ────────────────────────────────────────
+  const getClosestEdge = useCallback(
+    (node: RFNode) => {
+      if (!nodesInitialized) {
+        if (!uninitializedDragNodeIds.current.has(node.id)) {
+          uninitializedDragNodeIds.current.add(node.id);
+          console.warn("[Canvas debug] proximity skipped: nodes not initialized", {
+            canvasId,
+            nodeId: node.id,
+            nodeType: node.type,
+          });
+        }
+        return null;
+      }
+
+      const { nodeLookup } = store.getState();
+      const internalNode = getInternalNode(node.id);
+      if (!internalNode) {
+        if (!uninitializedDragNodeIds.current.has(node.id)) {
+          uninitializedDragNodeIds.current.add(node.id);
+          console.warn("[Canvas debug] proximity skipped: missing internal node", {
+            canvasId,
+            nodeId: node.id,
+            nodeType: node.type,
+            nodeLookupSize: nodeLookup.size,
+          });
+        }
+        return null;
+      }
+
+      const getNodeSize = (n: {
+        measured?: { width?: number; height?: number };
+        width?: number;
+        height?: number;
+        internals?: { userNode?: { width?: number; height?: number } };
+      }) => {
+        const width =
+          n.measured?.width ?? n.width ?? n.internals?.userNode?.width ?? 0;
+        const height =
+          n.measured?.height ?? n.height ?? n.internals?.userNode?.height ?? 0;
+        return { width, height };
+      };
+
+      const rectDistance = (
+        a: { x: number; y: number; width: number; height: number },
+        b: { x: number; y: number; width: number; height: number },
+      ) => {
+        const dx = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width), 0);
+        const dy = Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height), 0);
+        return Math.sqrt(dx * dx + dy * dy);
+      };
+
+      const thisSize = getNodeSize(internalNode);
+      const thisRect = {
+        x: internalNode.internals.positionAbsolute.x,
+        y: internalNode.internals.positionAbsolute.y,
+        width: thisSize.width,
+        height: thisSize.height,
+      };
+
+      let minDist = Number.MAX_VALUE;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let closestN: any = null;
+
+      for (const n of nodeLookup.values()) {
+        if (n.id !== internalNode.id) {
+          const nSize = getNodeSize(n);
+          const nRect = {
+            x: n.internals.positionAbsolute.x,
+            y: n.internals.positionAbsolute.y,
+            width: nSize.width,
+            height: nSize.height,
+          };
+          const d = rectDistance(thisRect, nRect);
+          if (d < minDist) {
+            minDist = d;
+            closestN = n;
+          }
+        }
+      }
+
+      if (!closestN || minDist >= MIN_DISTANCE) {
+        if (process.env.NODE_ENV !== "production") {
+          console.info("[Canvas proximity debug] skipped: distance", {
+            canvasId,
+            nodeId: node.id,
+            nodeType: node.type,
+            closestNodeId: closestN?.id ?? null,
+            closestNodeType: closestN?.type ?? null,
+            minDist,
+            minDistanceThreshold: MIN_DISTANCE,
+          });
+        }
+        return null;
+      }
+
+      const closeNodeIsSource =
+        closestN.internals.positionAbsolute.x <
+        internalNode.internals.positionAbsolute.x;
+
+      const sourceNode = closeNodeIsSource ? closestN : internalNode;
+      const targetNode = closeNodeIsSource ? internalNode : closestN;
+
+      const srcHandles = NODE_HANDLE_MAP[sourceNode.type ?? ""] ?? {};
+      const tgtHandles = NODE_HANDLE_MAP[targetNode.type ?? ""] ?? {};
+
+      if (!("source" in srcHandles) || !("target" in tgtHandles)) {
+        if (process.env.NODE_ENV !== "production") {
+          console.info("[Canvas proximity debug] skipped: handle map", {
+            canvasId,
+            nodeId: node.id,
+            nodeType: node.type,
+            sourceNodeId: sourceNode.id,
+            sourceType: sourceNode.type,
+            targetNodeId: targetNode.id,
+            targetType: targetNode.type,
+            sourceHandles: srcHandles,
+            targetHandles: tgtHandles,
+            minDist,
+          });
+        }
+        return null;
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'594b9f'},body:JSON.stringify({sessionId:'594b9f',runId:'run3',hypothesisId:'H2-fix',location:'canvas.tsx:getClosestEdge',message:'proximity match with handles',data:{sourceId:sourceNode.id,sourceType:sourceNode.type,targetId:targetNode.id,targetType:targetNode.type,sourceHandle:srcHandles.source,targetHandle:tgtHandles.target,minDist},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
+      return {
+        id: closeNodeIsSource
+          ? `${closestN.id}-${node.id}`
+          : `${node.id}-${closestN.id}`,
+        source: sourceNode.id,
+        target: targetNode.id,
+        sourceHandle: srcHandles.source,
+        targetHandle: tgtHandles.target,
+      };
+    },
+    [store, getInternalNode, nodesInitialized, canvasId],
+  );
+
+  const onNodeDrag = useCallback(
+    (_: React.MouseEvent, node: RFNode) => {
+      const closeEdge = getClosestEdge(node);
+
+      setEdges((es) => {
+        const nextEdges = es.filter((e) => e.className !== "temp");
+        if (
+          closeEdge &&
+          !nextEdges.find(
+            (ne) =>
+              ne.source === closeEdge.source && ne.target === closeEdge.target,
+          )
+        ) {
+          nextEdges.push({ ...closeEdge, className: "temp" });
+        }
+        return nextEdges;
+      });
+    },
+    [getClosestEdge],
+  );
+
   // ─── Drag Start → Lock ────────────────────────────────────────
   const onNodeDragStart = useCallback(() => {
     isDragging.current = true;
@@ -187,26 +433,84 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
-      isDragging.current = false;
+      // Proximity Connect: closeEdge bestimmen bevor isDragging zurückgesetzt wird
+      const closeEdge = getClosestEdge(node);
 
-      // Wenn mehrere Nodes gleichzeitig gedraggt wurden → batchMove
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[Canvas proximity debug] drag stop decision", {
+          canvasId,
+          nodeId: node.id,
+          nodeType: node.type,
+          draggedCount: draggedNodes.length,
+          closeEdge,
+        });
+      }
+
+      // Proximity Connect: temporäre Edge entfernen, ggf. echte Edge anlegen
+      setEdges((es) => {
+        const nextEdges = es.filter((e) => e.className !== "temp");
+        if (
+          closeEdge &&
+          !nextEdges.find(
+            (ne) =>
+              ne.source === closeEdge.source && ne.target === closeEdge.target,
+          )
+        ) {
+          void createEdge({
+            canvasId,
+            sourceNodeId: closeEdge.source as Id<"nodes">,
+            targetNodeId: closeEdge.target as Id<"nodes">,
+            sourceHandle: closeEdge.sourceHandle ?? undefined,
+            targetHandle: closeEdge.targetHandle ?? undefined,
+          })
+            .then((edgeId) => {
+              if (process.env.NODE_ENV !== "production") {
+                console.info("[Canvas proximity debug] edge created", {
+                  canvasId,
+                  edgeId,
+                  sourceNodeId: closeEdge.source,
+                  targetNodeId: closeEdge.target,
+                  sourceHandle: closeEdge.sourceHandle ?? null,
+                  targetHandle: closeEdge.targetHandle ?? null,
+                });
+              }
+            })
+            .catch((error) => {
+              console.error("[Canvas proximity debug] edge create failed", {
+                canvasId,
+                sourceNodeId: closeEdge.source,
+                targetNodeId: closeEdge.target,
+                sourceHandle: closeEdge.sourceHandle ?? null,
+                targetHandle: closeEdge.targetHandle ?? null,
+                error: String(error),
+              });
+            });
+        }
+        return nextEdges;
+      });
+
+      // isDragging bleibt true bis die Mutation resolved ist → kein Convex-Override möglich
       if (draggedNodes.length > 1) {
-        batchMoveNodes({
+        void batchMoveNodes({
           moves: draggedNodes.map((n) => ({
             nodeId: n.id as Id<"nodes">,
             positionX: n.position.x,
             positionY: n.position.y,
           })),
+        }).then(() => {
+          isDragging.current = false;
         });
       } else {
-        moveNode({
+        void moveNode({
           nodeId: node.id as Id<"nodes">,
           positionX: node.position.x,
           positionY: node.position.y,
+        }).then(() => {
+          isDragging.current = false;
         });
       }
     },
-    [moveNode, batchMoveNodes],
+    [moveNode, batchMoveNodes, getClosestEdge, createEdge, canvasId],
   );
 
   // ─── Neue Verbindung → Convex Edge ────────────────────────────
@@ -227,12 +531,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // ─── Node löschen → Convex ────────────────────────────────────
   const onNodesDelete = useCallback(
-    (deletedNodes: RFNode[]) => {
+    async (deletedNodes: RFNode[]) => {
       for (const node of deletedNodes) {
+        const incomingEdges = edges.filter((e) => e.target === node.id);
+        const outgoingEdges = edges.filter((e) => e.source === node.id);
+
+        if (incomingEdges.length > 0 && outgoingEdges.length > 0) {
+          for (const incoming of incomingEdges) {
+            for (const outgoing of outgoingEdges) {
+              await createEdge({
+                canvasId,
+                sourceNodeId: incoming.source as Id<"nodes">,
+                targetNodeId: outgoing.target as Id<"nodes">,
+                sourceHandle: incoming.sourceHandle ?? undefined,
+                targetHandle: outgoing.targetHandle ?? undefined,
+              });
+            }
+          }
+        }
+
         removeNode({ nodeId: node.id as Id<"nodes"> });
       }
     },
-    [removeNode],
+    [edges, removeNode, createEdge, canvasId],
   );
 
   // ─── Edge löschen → Convex ────────────────────────────────────
@@ -306,9 +627,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDrag={onNodeDrag}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
+        onReconnect={onReconnect}
+        onReconnectStart={onReconnectStart}
+        onReconnectEnd={onReconnectEnd}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onDragOver={onDragOver}
