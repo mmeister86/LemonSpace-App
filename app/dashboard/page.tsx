@@ -6,7 +6,6 @@ import { useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import {
-  ArrowUpRight,
   ChevronDown,
   Coins,
   LayoutTemplate,
@@ -31,9 +30,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 import { CreditOverview } from "@/components/dashboard/credit-overview";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
+import CanvasCard from "@/components/dashboard/canvas-card";
 
 
 function getInitials(nameOrEmail: string) {
@@ -212,24 +211,11 @@ export default function DashboardPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
               {canvases.map((canvas) => (
-                <button
+                <CanvasCard
                   key={canvas._id}
-                  type="button"
-                  onClick={() => router.push(`/canvas/${canvas._id}`)}
-                  className={cn(
-                    "group flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
-                    "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
-                  )}
-                >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
-                    {canvas.name.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{canvas.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
-                  </div>
-                  <ArrowUpRight className="size-4 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
-                </button>
+                  canvas={canvas}
+                  onNavigate={(id) => router.push(`/canvas/${id}`)}
+                />
               ))}
             </div>
           )}
