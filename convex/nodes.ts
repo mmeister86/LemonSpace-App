@@ -47,29 +47,10 @@ export const list = query({
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, canvasId, user.userId);
 
-    const nodes = await ctx.db
+    return await ctx.db
       .query("nodes")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
-
-    return Promise.all(
-      nodes.map(async (node) => {
-        const data = node.data as Record<string, unknown> | undefined;
-        if (!data?.storageId) {
-          return node;
-        }
-
-        const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
-
-        return {
-          ...node,
-          data: {
-            ...data,
-            url: url ?? undefined,
-          },
-        };
-      })
-    );
   },
 });
 
@@ -167,6 +148,72 @@ export const create = mutation({
     });
 
     // Canvas updatedAt aktualisieren
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    return nodeId;
+  },
+});
+
+/**
+ * Neuen Node erzeugen und eine bestehende Kante in zwei Kanten aufteilen (ein Roundtrip).
+ */
+export const createWithEdgeSplit = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    type: v.string(),
+    positionX: v.number(),
+    positionY: v.number(),
+    width: v.number(),
+    height: v.number(),
+    data: v.any(),
+    parentId: v.optional(v.id("nodes")),
+    zIndex: v.optional(v.number()),
+    splitEdgeId: v.id("edges"),
+    newNodeTargetHandle: v.optional(v.string()),
+    newNodeSourceHandle: v.optional(v.string()),
+    splitSourceHandle: v.optional(v.string()),
+    splitTargetHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+    const edge = await ctx.db.get(args.splitEdgeId);
+    if (!edge || edge.canvasId !== args.canvasId) {
+      throw new Error("Edge not found");
+    }
+
+    const nodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: args.type as Doc<"nodes">["type"],
+      positionX: args.positionX,
+      positionY: args.positionY,
+      width: args.width,
+      height: args.height,
+      status: "idle",
+      retryCount: 0,
+      data: args.data,
+      parentId: args.parentId,
+      zIndex: args.zIndex,
+    });
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: edge.sourceNodeId,
+      targetNodeId: nodeId,
+      sourceHandle: args.splitSourceHandle,
+      targetHandle: args.newNodeTargetHandle,
+    });
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: nodeId,
+      targetNodeId: edge.targetNodeId,
+      sourceHandle: args.newNodeSourceHandle,
+      targetHandle: args.splitTargetHandle,
+    });
+
+    await ctx.db.delete(args.splitEdgeId);
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
 
     return nodeId;
@@ -408,8 +455,6 @@ export const batchRemove = mutation({
     const firstNode = await ctx.db.get(nodeIds[0]);
     if (!firstNode) throw new Error("Node not found");
     await getCanvasOrThrow(ctx, firstNode.canvasId, user.userId);
-
-    const nodeIdSet = new Set(nodeIds.map((id) => id.toString()));
 
     for (const nodeId of nodeIds) {
       const node = await ctx.db.get(nodeId);

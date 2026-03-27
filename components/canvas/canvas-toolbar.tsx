@@ -5,51 +5,10 @@ import { useRef } from "react";
 import { CreditDisplay } from "@/components/canvas/credit-display";
 import { ExportButton } from "@/components/canvas/export-button";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
-
-const nodeTemplates = [
-  {
-    type: "image",
-    label: "Bild",
-    width: 280,
-    height: 180,
-    defaultData: {},
-  },
-  {
-    type: "text",
-    label: "Text",
-    width: 256,
-    height: 120,
-    defaultData: { content: "" },
-  },
-  {
-    type: "prompt",
-    label: "Prompt",
-    width: 320,
-    height: 220,
-    defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
-  },
-  {
-    type: "note",
-    label: "Notiz",
-    width: 220,
-    height: 120,
-    defaultData: { content: "" },
-  },
-  {
-    type: "frame",
-    label: "Frame",
-    width: 360,
-    height: 240,
-    defaultData: { label: "Untitled", exportWidth: 1080, exportHeight: 1080 },
-  },
-  {
-    type: "compare",
-    label: "Compare",
-    width: 500,
-    height: 380,
-    defaultData: {},
-  },
-] as const;
+import {
+  CANVAS_NODE_TEMPLATES,
+  type CanvasNodeTemplate,
+} from "@/lib/canvas-node-templates";
 
 interface CanvasToolbarProps {
   canvasName?: string;
@@ -62,8 +21,8 @@ export default function CanvasToolbar({
   const nodeCountRef = useRef(0);
 
   const handleAddNode = async (
-    type: (typeof nodeTemplates)[number]["type"],
-    data: (typeof nodeTemplates)[number]["defaultData"],
+    type: CanvasNodeTemplate["type"],
+    data: CanvasNodeTemplate["defaultData"],
     width: number,
     height: number,
   ) => {
@@ -80,7 +39,7 @@ export default function CanvasToolbar({
 
   return (
     <div className="absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl border bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
-      {nodeTemplates.map((template) => (
+      {CANVAS_NODE_TEMPLATES.map((template) => (
         <button
           key={template.type}
           onClick={() =>

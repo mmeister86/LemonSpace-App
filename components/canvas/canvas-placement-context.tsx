@@ -7,12 +7,55 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { useMutation } from "convex/react";
+import type { ReactMutation } from "convex/react";
+import type { FunctionReference } from "convex/server";
 import { useReactFlow, useStore, type Edge as RFEdge } from "@xyflow/react";
 
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+
+type CreateNodeMutation = ReactMutation<
+  FunctionReference<
+    "mutation",
+    "public",
+    {
+      canvasId: Id<"canvases">;
+      type: string;
+      positionX: number;
+      positionY: number;
+      width: number;
+      height: number;
+      data: unknown;
+      parentId?: Id<"nodes">;
+      zIndex?: number;
+    },
+    Id<"nodes">
+  >
+>;
+
+type CreateNodeWithEdgeSplitMutation = ReactMutation<
+  FunctionReference<
+    "mutation",
+    "public",
+    {
+      canvasId: Id<"canvases">;
+      type: string;
+      positionX: number;
+      positionY: number;
+      width: number;
+      height: number;
+      data: unknown;
+      parentId?: Id<"nodes">;
+      zIndex?: number;
+      splitEdgeId: Id<"edges">;
+      newNodeTargetHandle?: string;
+      newNodeSourceHandle?: string;
+      splitSourceHandle?: string;
+      splitTargetHandle?: string;
+    },
+    Id<"nodes">
+  >
+>;
 
 type FlowPoint = { x: number; y: number };
 
@@ -87,18 +130,19 @@ function normalizeHandle(handle: string | null | undefined): string | undefined 
 
 interface CanvasPlacementProviderProps {
   canvasId: Id<"canvases">;
+  createNode: CreateNodeMutation;
+  createNodeWithEdgeSplit: CreateNodeWithEdgeSplitMutation;
   children: ReactNode;
 }
 
 export function CanvasPlacementProvider({
   canvasId,
+  createNode,
+  createNodeWithEdgeSplit,
   children,
 }: CanvasPlacementProviderProps) {
   const { flowToScreenPosition } = useReactFlow();
   const edges = useStore((store) => store.edges);
-  const createNode = useMutation(api.nodes.create);
-  const createEdge = useMutation(api.edges.create);
-  const removeEdge = useMutation(api.edges.remove);
 
   const createNodeWithIntersection = useCallback(
     async ({
@@ -130,7 +174,7 @@ export function CanvasPlacementProvider({
         hitEdgeFromClientPosition ??
         getIntersectedPersistedEdge(centerClientPosition, edges);
 
-      const nodeId = await createNode({
+      const nodePayload = {
         canvasId,
         type,
         positionX: position.x,
@@ -143,47 +187,36 @@ export function CanvasPlacementProvider({
           canvasId,
         },
         ...(zIndex !== undefined ? { zIndex } : {}),
-      });
+      };
 
       if (!hitEdge) {
-        return nodeId;
+        return await createNode(nodePayload);
       }
 
       const handles = NODE_HANDLE_MAP[type];
       if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
-        return nodeId;
+        return await createNode(nodePayload);
       }
 
       try {
-        await createEdge({
-          canvasId,
-          sourceNodeId: hitEdge.source as Id<"nodes">,
-          targetNodeId: nodeId,
-          sourceHandle: normalizeHandle(hitEdge.sourceHandle),
-          targetHandle: normalizeHandle(handles.target),
+        return await createNodeWithEdgeSplit({
+          ...nodePayload,
+          splitEdgeId: hitEdge.id as Id<"edges">,
+          newNodeTargetHandle: normalizeHandle(handles.target),
+          newNodeSourceHandle: normalizeHandle(handles.source),
+          splitSourceHandle: normalizeHandle(hitEdge.sourceHandle),
+          splitTargetHandle: normalizeHandle(hitEdge.targetHandle),
         });
-
-        await createEdge({
-          canvasId,
-          sourceNodeId: nodeId,
-          targetNodeId: hitEdge.target as Id<"nodes">,
-          sourceHandle: normalizeHandle(handles.source),
-          targetHandle: normalizeHandle(hitEdge.targetHandle),
-        });
-
-        await removeEdge({ edgeId: hitEdge.id as Id<"edges"> });
       } catch (error) {
         console.error("[Canvas placement] edge split failed", {
           edgeId: hitEdge.id,
-          nodeId,
           type,
           error: String(error),
         });
+        throw error;
       }
-
-      return nodeId;
     },
-    [canvasId, createEdge, createNode, edges, flowToScreenPosition, removeEdge],
+    [canvasId, createNode, createNodeWithEdgeSplit, edges, flowToScreenPosition],
   );
 
   const value = useMemo(

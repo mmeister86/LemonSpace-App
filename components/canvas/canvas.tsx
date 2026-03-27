@@ -26,11 +26,12 @@ import { msg } from "@/lib/toast-messages";
 
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
 import {
+  convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
   convexEdgeToRF,
   NODE_DEFAULTS,
@@ -38,6 +39,7 @@ import {
   resolveMediaAspectRatio,
 } from "@/lib/canvas-utils";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
+import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
 
 interface CanvasInnerProps {
@@ -338,6 +340,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     api.edges.list,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
+  const storageUrlsById = useQuery(
+    api.storage.batchGetUrlsForCanvas,
+    shouldSkipCanvasQueries ? "skip" : { canvasId },
+  );
   const canvas = useQuery(
     api.canvases.get,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
@@ -347,7 +353,40 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
   const batchMoveNodes = useMutation(api.nodes.batchMove);
-  const createNode = useMutation(api.nodes.create);
+  const createNode = useMutation(api.nodes.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const current = localStore.getQuery(api.nodes.list, {
+        canvasId: args.canvasId,
+      });
+      if (current === undefined) return;
+
+      const tempId =
+        `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 11)}` as Id<"nodes">;
+
+      const synthetic: Doc<"nodes"> = {
+        _id: tempId,
+        _creationTime: Date.now(),
+        canvasId: args.canvasId,
+        type: args.type as Doc<"nodes">["type"],
+        positionX: args.positionX,
+        positionY: args.positionY,
+        width: args.width,
+        height: args.height,
+        status: "idle",
+        retryCount: 0,
+        data: args.data,
+        parentId: args.parentId,
+        zIndex: args.zIndex,
+      };
+
+      localStore.setQuery(
+        api.nodes.list,
+        { canvasId: args.canvasId },
+        [...current, synthetic],
+      );
+    },
+  );
+  const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
   const batchRemoveNodes = useMutation(api.nodes.batchRemove);
   const createEdge = useMutation(api.edges.create);
   const removeEdge = useMutation(api.edges.remove);
@@ -432,14 +471,27 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useEffect(() => {
     if (!convexNodes || isDragging.current) return;
     setNodes((previousNodes) => {
-      const incomingNodes = withResolvedCompareData(convexNodes.map(convexNodeToRF), edges);
+      const prevDataById = new Map(
+        previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
+      );
+      const enriched = convexNodes.map((node) =>
+        convexNodeDocWithMergedStorageUrl(
+          node,
+          storageUrlsById,
+          prevDataById,
+        ),
+      );
+      const incomingNodes = withResolvedCompareData(
+        enriched.map(convexNodeToRF),
+        edges,
+      );
       // Nodes, die gerade optimistisch gelöscht werden, nicht wiederherstellen
       const filteredIncoming = deletingNodeIds.current.size > 0
         ? incomingNodes.filter((node) => !deletingNodeIds.current.has(node.id))
         : incomingNodes;
       return mergeNodesPreservingLocalState(previousNodes, filteredIncoming);
     });
-  }, [convexNodes, edges]);
+  }, [convexNodes, edges, storageUrlsById]);
 
   useEffect(() => {
     if (!convexEdges) return;
@@ -976,9 +1028,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   }
 
   return (
-    <CanvasPlacementProvider canvasId={canvasId}>
+    <CanvasPlacementProvider
+      canvasId={canvasId}
+      createNode={createNode}
+      createNodeWithEdgeSplit={createNodeWithEdgeSplit}
+    >
       <div className="relative h-full w-full">
         <CanvasToolbar canvasName={canvas?.name ?? "canvas"} />
+        <CanvasCommandPalette />
         <ReactFlow
           nodes={nodes}
           edges={edges}

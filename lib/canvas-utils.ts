@@ -7,6 +7,46 @@ import type { Doc } from "@/convex/_generated/dataModel";
  * Convex speichert positionX/positionY als separate Felder,
  * React Flow erwartet position: { x, y }.
  */
+/**
+ * Reichert Node-Dokumente mit `data.url` an (aus gebündelter Storage-URL-Map).
+ * Behält eine zuvor gemappte URL bei, solange die Batch-Query noch lädt.
+ */
+export function convexNodeDocWithMergedStorageUrl(
+  node: Doc<"nodes">,
+  urlByStorage: Record<string, string | undefined> | undefined,
+  previousDataByNodeId: Map<string, Record<string, unknown>>,
+): Doc<"nodes"> {
+  const data = node.data as Record<string, unknown> | undefined;
+  const sid = data?.storageId;
+  if (typeof sid !== "string") {
+    return node;
+  }
+
+  if (urlByStorage) {
+    const fromBatch = urlByStorage[sid];
+    if (fromBatch !== undefined) {
+      return {
+        ...node,
+        data: { ...data, url: fromBatch },
+      };
+    }
+  }
+
+  const prev = previousDataByNodeId.get(node._id);
+  if (
+    prev?.url !== undefined &&
+    typeof prev.storageId === "string" &&
+    prev.storageId === sid
+  ) {
+    return {
+      ...node,
+      data: { ...data, url: prev.url },
+    };
+  }
+
+  return node;
+}
+
 export function convexNodeToRF(node: Doc<"nodes">): RFNode {
   return {
     id: node._id,
