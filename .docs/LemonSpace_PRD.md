@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v1.1 | Draft | März 2026 | lemonspace.app |
+| v1.3 | Draft | März 2026 | lemonspace.app |
 
 ---
 
@@ -22,6 +22,8 @@
 | v0.9 | Zwei-Repo-Strategie (Web-App + Landing Page), Auth-Cookie-Sharing |
 | v1.0 | Self-Hosting-Strategie, Credit Reservation+Commit, UX-Latenzen/Skeleton-Nodes, Convex Lock-in dokumentiert |
 | v1.1 | Monorepo verworfen → Zwei unabhängige Repos (lemonspace-web + lemonspace-landing), Auth-Cookie-Sharing via .lemonspace.io |
+| v1.2 | Pricing überarbeitet: Credit-Abstraktion (1 Cr = €0,01 intern), Tiers €8/€59/€119 (Business→Max), Top-Up-System (fix + Custom mit Bonus-Staffel), Marge nach LS-Gebühr + USt validiert |
+| v1.3 | Payment: Lemon Squeezy → Polar.sh (niedrigere Gebühren, Better Auth Plugin, Open Source). Gebührenmodell angepasst: 4% + $0,40 + 1,5% intl. + 0,5% Subscription |
 
 ---
 
@@ -154,7 +156,7 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Canvas / Flow | @xyflow/react | ehem. react-flow-renderer |
 | Drag & Drop | dnd-kit | Empfohlen über react-dnd (bessere Performance) |
 | Deployment | Coolify | VPS-Deployment für alle Self-hosted Services |
-| Payment | Lemon Squeezy | Merchant of Record, VAT-Handling |
+| Payment | Polar.sh | MoR, VAT-Handling, Better Auth Plugin (@polar-sh/better-auth) |
 | Input Validation | Zod | Frontend + Backend, Convex Mutations |
 | In-Memory Store | Redis | Self-hosted via Coolify |
 | Rate Limiting | Redis-backed | Next.js Middleware / Route Handler |
@@ -288,44 +290,95 @@ Node (Basis)
 ```
 CreditBalance
 ├── id, userId
-├── balance          // tatsächlich verfügbare Credits (Euro-Cent)
+├── balance          // verfügbare Credits
 ├── reserved         // aktuell gesperrte Credits (laufende Jobs)
 ├── available        // computed: balance - reserved
-├── monthlyAllocation // Credits aus dem Abo
+├── monthlyAllocation // Credits aus dem Abo (50/400/3300/6700)
 └── updatedAt
 
 CreditTransaction
 ├── id, userId
-├── amount           // positiv = Gutschrift, negativ = Verbrauch
+├── amount           // positiv = Gutschrift, negativ = Verbrauch (in Credits)
 ├── type             // subscription | topup | usage | reservation | refund
 ├── status           // committed | reserved | released | failed
-├── description      // z.B. "Bildgenerierung – Gemini 2.5 Flash Image"
+├── description      // z.B. "Bildgenerierung – Gemini 2.5 Flash Image (8 Cr)"
 ├── nodeId?          // Referenz auf den auslösenden Node
-├── openRouterCost?  // tatsächliche OpenRouter-Kosten (gecacht)
+├── creditCost       // Credit-Preis der Operation
+├── openRouterCost?  // tatsächliche OpenRouter-Kosten in € (intern, für Marge-Tracking)
 └── createdAt
 
 Subscription
 ├── id, userId
-├── tier             // free | starter | pro | business
+├── tier             // free | starter | pro | max
 ├── status           // active | cancelled | past_due
 ├── currentPeriodStart / currentPeriodEnd
-└── lemonSqueezySubscriptionId?
+└── polarSubscriptionId?
 ```
 
 ---
 
 ## 9. Pricing & Credit-System
 
+### Credit-Abstraktion
+
+Nutzer arbeiten mit **Credits** statt mit Euro-Beträgen. Ein Credit entspricht intern €0,01 OpenRouter-Kosten (interner Wechselkurs, wird dem Nutzer nicht kommuniziert). Die Abstraktion entkoppelt das Pricing von API-Preisschwankungen und ermöglicht flexible Anpassungen.
+
 ### Abo-Stufen
 
-| Tier | Preis/Monat | Marge (30%) | Credits (70%) | Credits gesamt | Zielgruppe |
-|------|-------------|-------------|---------------|----------------|------------|
-| Free | €0 | — | — | €0,50 (Geschenk) | Testen & Evaluieren |
-| Starter | €9 | €2,70 | €6,30 | €6,30 | Einzelnutzer |
-| Pro | €49 | €12,98 | €34,30 | €36,02 (+5%) | Aktive Creator |
-| Business | €99 | €22,77 | €69,30 | €76,23 (+10%) | Teams, hoher Durchsatz |
+Preise kalkuliert mit ≥28% Netto-Marge nach Polar Gebühr (4% + $0,40 + 1,5% intl. + 0,5% Subscription) und 19% USt.
 
-### Credit Reservation + Commit (Option C)
+| Tier | Preis/Monat | Credits/Monat | Echte Marge | €/Credit | Zielgruppe |
+|------|-------------|---------------|-------------|----------|------------|
+| Free | €0 | 50 | −€0,50 (Akquise) | gratis | Testen & Evaluieren |
+| Starter | €8 | 400 | ~€2,00 (33%) | €0,0200 | Einzelnutzer, Einstieg |
+| Pro | €59 | 3.300 | ~€13,71 (29%) | €0,0179 | Aktive Creator |
+| Max | €119 | 6.700 | ~€27,61 (29%) | Teams, hoher Durchsatz |
+
+### Credit-Nachkauf (Top-Up)
+
+Fixe Top-Up-Pakete + frei wählbarer Custom-Betrag (€5–200). Top-Ups sind pro Credit immer teurer als das entsprechende Abo — regelmäßige Nachkäufer werden zum Upgrade animiert.
+
+**Fixe Pakete:**
+
+| Paket | Preis | Credits | Marge | €/Credit |
+|-------|-------|---------|-------|----------|
+| Klein | €5 | 250 | ~31% | €0,0200 |
+| Mittel | €10 | 500 | ~34% | €0,0200 |
+| Groß | €20 | 1.000 | ~36% | €0,0200 |
+| XL | €50 | 3.000 | ~24% | €0,0167 |
+
+**Custom Top-Up (€5–200):** Bonus steigt stufenweise mit dem Betrag. Formel: `Credits = FLOOR(Netto × 0,70 × (1 + Bonus) ÷ Kurs)`. UI zeigt live: "€X → Y Credits".
+
+| Bereich | Bonus | Min. Marge |
+|---------|-------|------------|
+| €5–9,99 | 0% | ~30% |
+| €10–19,99 | 3% | ~28% |
+| €20–49,99 | 6% | ~26% |
+| €50–99,99 | 10% | ~23% |
+| €100–200 | 13% | ~21% |
+
+### Credit-Preise pro Operation
+
+Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup (Wertschöpfung durch Orchestrierung).
+
+| Operation | Modell | API-Kosten | Markup | Credits | Tier-Zugang |
+|-----------|--------|------------|--------|---------|-------------|
+| Bildgenerierung (Budget) | FLUX.2 Klein 4B | ~€0,02 | 2× | 4 Cr | Alle Tiers |
+| Bildgenerierung (Standard) | Gemini 2.5 Flash Image | ~€0,04 | 2× | 8 Cr | Alle Tiers |
+| Bildgenerierung (Standard+) | Gemini 3.1 Flash Image | ~€0,06 | 2× | 12 Cr | Alle Tiers |
+| Bildgenerierung (Premium) | GPT-5 Image Mini | ~€0,08 | 2× | 16 Cr | Ab Starter |
+| Bildgenerierung (Ultra) | GPT-5 Image | ~€0,18 | 2× | 36 Cr | Ab Starter |
+| Bildgen. (Pro Text/4K) | Riverflow V2 Pro | ~€0,33 | 1,5× | 50 Cr | Ab Starter |
+| Agent Reasoning (leicht) | Claude Sonnet | ~€0,03 | 3× | 9 Cr | Ab Starter |
+| Agent Reasoning (mittel) | Claude Sonnet | ~€0,06 | 2,5× | 15 Cr | Ab Starter |
+| Agent-Run (komplex) | Multi-Step Workflow | ~€0,15 | 2,5× | 38 Cr | Ab Starter |
+| BG-Entfernung | rembg (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
+| Upscaling | Real-ESRGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
+| Face Restoration | GFPGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
+| Canvas-Operationen | — | €0 | — | 0 Cr | Alle Tiers |
+| Export (PNG/ZIP) | — | €0 | — | 0 Cr | Alle Tiers |
+
+### Credit Reservation + Commit
 
 Credits werden vor jedem KI-Call reserviert und erst nach erfolgreichem Abschluss committed. Bei Fehler werden reservierte Credits automatisch freigegeben — kein manueller Refund-Prozess nötig.
 
@@ -333,38 +386,23 @@ Credits werden vor jedem KI-Call reserviert und erst nach erfolgreichem Abschlus
 
 ```
 1. RESERVE → CreditTransaction (type: reservation, status: reserved)
-   CreditBalance.reserved += estimated_cost
+   CreditBalance.reserved += estimated_credits
    CreditBalance.available = balance - reserved
 
 2a. SUCCESS → Transaction status: committed
-    CreditBalance.balance -= actual_cost
-    CreditBalance.reserved -= estimated_cost
+    CreditBalance.balance -= actual_credits
+    CreditBalance.reserved -= estimated_credits
 
 2b. FAILURE → Transaction status: released
-    CreditBalance.reserved -= estimated_cost
+    CreditBalance.reserved -= estimated_credits
     (balance bleibt unverändert — voller Refund)
 ```
 
-> **Preisbasis:** Credits werden auf Basis der gecachten OpenRouter-Preise (Redis, TTL ~10 Minuten) reserviert und abgebucht. Minimale Abweichungen zum tatsächlichen API-Preis werden bewusst akzeptiert. Keine nachträgliche Korrektur.
+> **Preisbasis:** Credit-Preise pro Operation sind fix definiert (siehe Tabelle). Der interne Wechselkurs (1 Credit = €0,01 OR-Kosten) ist ein internes Kalkulationsinstrument. Bei API-Preisänderungen werden die Credit-Preise pro Operation angepasst — nicht der Wechselkurs.
 
 ### Agent Partial Failure
 
 Bei Agent-Workflows läuft Reservation + Commit pro Suboperation. Schlägt Step 3 von 5 fehl: Steps 1+2 sind committed, Step 3 wird released, Steps 4+5 werden nicht mehr reserviert. Nur tatsächlich verbrauchte Credits werden berechnet.
-
-### Credit-Verbrauch
-
-| Operation | Modell / Service | Ungefähre Kosten |
-|-----------|------------------|------------------|
-| Bildgenerierung (Budget) | FLUX.2 Klein 4B | ~€0,01–0,03 |
-| Bildgenerierung (Standard) | Gemini 2.5 Flash Image | ~€0,02–0,04 |
-| Bildgenerierung (Premium) | GPT-5 Image / Nano Banana Pro | ~€0,10–0,20 |
-| Agent Reasoning Call | Claude 3.5 Sonnet | ~€0,01–0,05 |
-| BG-Entfernung | rembg (self-hosted) | Kostenlos |
-| Upscaling | Real-ESRGAN (self-hosted) | Kostenlos |
-| Face Restoration | GFPGAN (self-hosted) | Kostenlos |
-| Canvas-Operationen | — | Kostenlos |
-| Text-Overlay | — | Kostenlos |
-| Export-Funktionen | — | Kostenlos |
 
 ---
 
@@ -425,10 +463,10 @@ Agent Status: analyzing
 | Drag & Drop von Bildern via dnd-kit | ☐ Offen |
 | Authentifizierung via Better Auth | ☐ Offen |
 | OpenRouter Integration (Image Gen, Gemini 2.5 Flash Image) | ☐ Offen |
-| Credit-System: Balance-Tracking, Reservation+Commit, Kosten-Voranzeige | ☐ Offen |
-| Abo-Verwaltung: Free/Starter/Pro/Business Tiers, monatliche Credit-Zuweisung | ☐ Offen |
-| Lemon Squeezy Integration: Checkout, Webhooks, Credit-Zuweisung | ☐ Offen |
-| Credit-Nachkauf (Top-Up) zum Selbstkostenpreis | ☐ Offen |
+| Credit-System: Balance-Tracking (in Credits), Reservation+Commit, Kosten-Voranzeige | ☐ Offen |
+| Abo-Verwaltung: Free/Starter/Pro/Max Tiers, monatliche Credit-Zuweisung (50/400/3300/6700) | ☐ Offen |
+| Polar Integration: Checkout, Webhooks, Credit-Zuweisung | ☐ Offen |
+| Credit-Nachkauf: Fixe Top-Ups (€5/€10/€20/€50) + Custom (€5–200 mit Bonus-Staffel) | ☐ Offen |
 | Node-Status-Modell (idle/executing/done/error) direkt am Node | ☐ Offen |
 | docker-compose.yml + .env.example + Setup-README | ☐ Offen |
 
@@ -482,8 +520,8 @@ Agent Status: analyzing
 |-------|----------------------|
 | Authentifizierung | ✅ Better Auth (self-hosted, open-source) |
 | Tailwind v4 | ✅ v4 ist Standard, keine Migration nötig |
-| Pricing / Credit-System | ✅ 4-Tier Abo + Credit-System, 30% Marge, Reservation+Commit |
-| Payment Provider | ✅ Lemon Squeezy (Merchant of Record, VAT-Handling) |
+| Pricing / Credit-System | ✅ Credit-Abstraktion (1 Cr = €0,01 intern), 4 Tiers (Free/Starter €8/Pro €59/Max €119), Reservation+Commit, Top-Up fix + Custom |
+| Payment Provider | ✅ Polar (Merchant of Record, VAT-Handling) |
 | Self-Hosting-Strategie | ✅ docker-compose.yml + .env.example + README, für technisch versierte Nutzer |
 | Convex Lock-in | ✅ Bewusst akzeptiert; Migrations-Pfad: Convex Cloud EU |
 | OpenRouter Image-Modelle | ✅ 9 Modelle definiert, alle Tiers haben Zugriff |
@@ -527,7 +565,7 @@ Agent Status: analyzing
 2. Convex Schema: Detailliertes Datenbankschema entwerfen (Node-Taxonomie + Credit-System inkl. CreditBalance.reserved/available)
 3. UI/UX Wireframes: Canvas-Interface, Node-Status-Modell, Skeleton-Nodes, Agent Clarification-UX skizzieren
 4. API-Prototyp: OpenRouter Anbindung testen — Image Gen (Gemini 2.5 Flash Image) und Text/Reasoning (Claude 3.5 Sonnet)
-5. Lemon Squeezy Integration: Abo-Tiers anlegen, Webhook-Handling für Subscription-Events und Credit-Zuweisung
+5. Polar Integration: Abo-Tiers anlegen, Webhook-Handling für Subscription-Events und Credit-Zuweisung
 6. docker-compose.yml + .env.example + Setup-README ausarbeiten
 
 ---

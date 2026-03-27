@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — Produkt-Manifest
 
-**v1.2 — März 2026**
+**v1.4 — März 2026**
 
 *Self-Hosted, Source-Available Creative Workspace*
 
@@ -115,9 +115,9 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 | Auth | Better Auth (self-hosted, open-source) | ✅ |
 | AI Layer | OpenRouter als primäre AI-Schicht. 9 Image-Modelle, Text/Reasoning via Claude / GPT. | ✅ |
 | Self-hosted KI | rembg, Real-ESRGAN, GFPGAN — kostenlos, separate Repos | ✅ |
-| Payment | Lemon Squeezy (Merchant of Record, VAT-Handling) | ✅ |
-| Credits | Reservation + Commit. Gecachte Preise (Redis, TTL ~10min). Kein nachträglicher Ausgleich. | ✅ |
-| Pricing | 4 Tiers: Free / Starter €9 / Pro €49 / Business €99. 30% Marge, 70% → Credits. | ✅ |
+| Payment | Polar.sh (MoR, VAT, Better Auth Plugin @polar-sh/better-auth) | ✅ |
+| Credits | Reservation + Commit. Credit-Abstraktion (1 Cr = €0,01 OR intern). Markup: 2× Bild, 2,5–3× Agent. | ✅ |
+| Pricing | 4 Tiers: Free (50 Cr) / Starter €8 (400 Cr) / Pro €59 (3.300 Cr) / Max €119 (6.700 Cr). ≥29% Marge nach LS + USt. Top-Up: fix (€5/€10/€20/€50) + Custom (€5–200, Bonus-Staffel 0–13%). | ✅ |
 | Lizenz | BSL 1.1, 3J Change Date → Apache 2.0. Private Nutzung frei. | ✅ |
 | Repo-Strategie | Zwei unabhängige Repos (lemonspace-web + lemonspace-landing). Auth-Cookie-Sharing via `.lemonspace.io`. | ✅ |
 | Frontend | Next.js 16 + Tailwind v4 + ShadCN | ✅ |
@@ -164,9 +164,9 @@ Ohne messbare Ziele ist jedes PRD Wünsch-dir-was. Diese Metriken entscheiden, o
 
 | Metrik | Ziel (6 Monate) | Messung |
 |--------|-----------------|---------|
-| Conversion Free → Paid | > 5% | Lemon Squeezy Events |
-| COGS pro aktivem Workspace | < 70% des Abo-Preises | OpenRouter-Kosten / aktive User |
-| MRR | €2.000+ | Lemon Squeezy Dashboard |
+| Conversion Free → Paid | > 5% | Polar Events |
+| COGS pro aktivem Workspace | < 70% des Credit-Werts | OpenRouter-Kosten / aktive User |
+| MRR | €2.000+ | Polar Dashboard |
 | Churn (monatlich) | < 8% | Subscription-Events |
 
 ---
@@ -177,7 +177,7 @@ Ein AI-Kreativtool mit Free-Tier und Premium-Modellen braucht von Tag 1 Schutzma
 
 ### Geplante Maßnahmen
 
-- Daily Generation Caps pro Tier (Free: 10/Tag, Starter: 50, Pro: 200, Business: 500)
+- Daily Generation Caps pro Tier (Free: 10/Tag, Starter: 50, Pro: 200, Max: 500)
 - Concurrency Limits: max. 2 parallele Generierungen (Free: 1)
 - Rate Limiting auf allen API-Endpunkten (Redis-backed)
 - Premium-Modelle erst ab Starter-Tier (Free nur Budget-Modelle)
@@ -215,8 +215,8 @@ Priorisiert nach Abhängigkeiten. Jeder Schritt hat ein klares Artefakt.
 | 3 | Basis-Canvas mit @xyflow/react | Funktionierender Canvas mit Bild- und Prompt-Nodes |
 | 4 | OpenRouter-Prototyp | Image Gen (Gemini 2.5 Flash) funktioniert im Canvas |
 | 5 | Compare + Export | PNG/ZIP-Export aus Frame-Nodes |
-| 6 | Better Auth + Credit-System | Login, Balance-Tracking, Reservation+Commit |
-| 7 | Lemon Squeezy Integration | Checkout, Webhooks, Credit-Zuweisung |
+| 6 | Better Auth + Polar + Credit-System | Login, Polar Checkout via @polar-sh/better-auth, Balance-Tracking, Reservation+Commit |
+| 7 | Polar Webhook-Handling | Subscription-Events, automatische Credit-Zuweisung |
 
 ---
 
@@ -228,10 +228,10 @@ Folgende Themen werden in eigenen Dokumenten vertieft. Das Manifest bleibt schla
 |----------|--------|
 | System Design Doc | Tech Stack mit Versionen, Zwei-Repo-Strategie, Infra-Details, Convex-Architektur, Redis, Cloudflare |
 | Node Spec Doc | Vollständige Node-Taxonomie (5 Kategorien, 25+ Typen), Datenmodell pro Node-Typ |
-| Credit & Pricing Doc | Detaillierte Pricing-Tabellen, Credit-Mechanik, Reservation+Commit-Flow, Agent Partial Failure |
+| Credit & Pricing Doc | Detaillierte Pricing-Tabellen, Credit-Abstraktion, Tier-Kalkulation (nach LS + USt), Top-Up-System (fix + Custom mit Bonus-Staffel), Reservation+Commit-Flow, Agent Partial Failure |
 | Self-Hosting Guide | docker-compose.yml, .env.example, Setup-README, Coolify-Anleitung |
 | ADR-Sammlung | Architecture Decision Records für Convex, OpenRouter, BSL 1.1, useSend, etc. |
 
 ---
 
-*LemonSpace Manifest v1.2 — März 2026*
+*LemonSpace Manifest v1.4 — März 2026*
