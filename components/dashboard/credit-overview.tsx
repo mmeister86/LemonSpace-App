@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { CreditCard } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,15 +17,17 @@ import { cn } from "@/lib/utils";
 
 const TIER_MONTHLY_CREDITS: Record<string, number> = {
   free: 50,
-  starter: 630,
-  pro: 3602,
-  business: 7623,
+  starter: 400,
+  pro: 3300,
+  max: 6700,
+  business: 6700,
 };
 
 const TIER_BADGE_STYLES: Record<string, string> = {
   free: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
   starter: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
   pro: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
+  max: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
   business: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
 };
 
@@ -124,14 +127,11 @@ export function CreditOverview() {
 
         {/* ── Block C: Aufladen ───────────────────────────────────────── */}
         <div className="flex items-end">
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            disabled
-            title="Demnächst verfügbar – Top-Up via Polar.sh"
-          >
-            <CreditCard className="size-4" />
-            Credits aufladen
+          <Button variant="outline" className="w-full gap-2" asChild>
+            <Link href="/settings/billing">
+              <CreditCard className="size-4" />
+              Credits aufladen
+            </Link>
           </Button>
         </div>
       </div>

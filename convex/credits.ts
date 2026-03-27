@@ -8,28 +8,35 @@ import { requireAuth } from "./helpers";
 
 export const TIER_CONFIG = {
   free: {
-    monthlyCredits: 50,           // €0,50 in Cent
+    monthlyCredits: 50,
     dailyGenerationCap: 10,
     concurrencyLimit: 1,
     premiumModels: false,
-    topUpLimit: 0,                // Kein Top-Up für Free
+    topUpLimit: 50000,
   },
   starter: {
-    monthlyCredits: 630,          // €6,30 in Cent
+    monthlyCredits: 400,
     dailyGenerationCap: 50,
     concurrencyLimit: 2,
     premiumModels: true,
     topUpLimit: 2000,             // €20 pro Monat
   },
   pro: {
-    monthlyCredits: 3602,         // €36,02 in Cent (+5% Bonus)
+    monthlyCredits: 3300,
     dailyGenerationCap: 200,
     concurrencyLimit: 2,
     premiumModels: true,
     topUpLimit: 10000,            // €100 pro Monat
   },
+  max: {
+    monthlyCredits: 6700,
+    dailyGenerationCap: 500,
+    concurrencyLimit: 2,
+    premiumModels: true,
+    topUpLimit: 50000,
+  },
   business: {
-    monthlyCredits: 7623,         // €76,23 in Cent (+10% Bonus)
+    monthlyCredits: 6700,
     dailyGenerationCap: 500,
     concurrencyLimit: 2,
     premiumModels: true,
@@ -516,6 +523,7 @@ export const activateSubscription = internalMutation({
       v.literal("free"),
       v.literal("starter"),
       v.literal("pro"),
+      v.literal("max"),
       v.literal("business")
     ),
     lemonSqueezySubscriptionId: v.string(),
@@ -600,10 +608,6 @@ export const topUp = mutation({
       .first();
     const tier = (subscription?.tier ?? "free") as Tier;
     const config = TIER_CONFIG[tier];
-
-    if (config.topUpLimit === 0) {
-      throw new Error("Top-up not available for Free tier");
-    }
 
     // Monatliches Top-Up-Limit prüfen
     const monthStart = new Date();

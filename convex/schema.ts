@@ -258,6 +258,7 @@ export default defineSchema({
       v.literal("free"),
       v.literal("starter"),
       v.literal("pro"),
+      v.literal("max"),
       v.literal("business")
     ),
     status: v.union(
@@ -268,11 +269,13 @@ export default defineSchema({
     ),
     currentPeriodStart: v.number(),                // Timestamp (ms)
     currentPeriodEnd: v.number(),                  // Timestamp (ms)
+    polarSubscriptionId: v.optional(v.string()),
     lemonSqueezySubscriptionId: v.optional(v.string()),
     lemonSqueezyCustomerId: v.optional(v.string()),
     cancelAtPeriodEnd: v.optional(v.boolean()),    // Kündigung zum Periodenende
   })
     .index("by_user", ["userId"])
+    .index("by_polar", ["polarSubscriptionId"])
     .index("by_lemon_squeezy", ["lemonSqueezySubscriptionId"]),
 
   // ==========================================================================

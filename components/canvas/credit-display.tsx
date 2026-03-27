@@ -9,6 +9,7 @@ const TIER_LABELS: Record<string, string> = {
   free: "Free",
   starter: "Starter",
   pro: "Pro",
+  max: "Max",
   business: "Business",
 };
 
@@ -16,6 +17,7 @@ const TIER_COLORS: Record<string, string> = {
   free: "text-muted-foreground",
   starter: "text-blue-500",
   pro: "text-purple-500",
+  max: "text-amber-500",
   business: "text-amber-500",
 };
 

@@ -18,6 +18,7 @@ import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
 import type * as nodes from "../nodes.js";
 import type * as openrouter from "../openrouter.js";
+import type * as polar from "../polar.js";
 import type * as storage from "../storage.js";
 
 import type {
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   nodes: typeof nodes;
   openrouter: typeof openrouter;
+  polar: typeof polar;
   storage: typeof storage;
 }>;
 

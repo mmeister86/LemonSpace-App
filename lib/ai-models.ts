@@ -9,7 +9,7 @@ export interface AiModel {
   estimatedCost: string; // human-readable, e.g. "~€0.04"
   /** Credits pro Generierung — gleiche Einheit wie Convex reserve/commit (Euro-Cent). */
   creditCost: number;
-  minTier: "free" | "starter" | "pro" | "business"; // minimum subscription tier
+  minTier: "free" | "starter" | "pro" | "max" | "business"; // minimum subscription tier
 }
 
 export const IMAGE_MODELS: AiModel[] = [
