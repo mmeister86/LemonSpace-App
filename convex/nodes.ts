@@ -205,7 +205,7 @@ export const resize = mutation({
   handler: async (ctx, { nodeId, width, height }) => {
     const user = await requireAuth(ctx);
     const node = await ctx.db.get(nodeId);
-    if (!node) throw new Error("Node not found");
+    if (!node) return;
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
     await ctx.db.patch(nodeId, { width, height });
@@ -391,5 +391,60 @@ export const remove = mutation({
     // Node löschen
     await ctx.db.delete(nodeId);
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Mehrere Nodes gleichzeitig löschen (Batch Delete).
+ * Entfernt auch alle verbundenen Edges und löst Kind-Nodes aus Gruppen/Frames.
+ */
+export const batchRemove = mutation({
+  args: { nodeIds: v.array(v.id("nodes")) },
+  handler: async (ctx, { nodeIds }) => {
+    const user = await requireAuth(ctx);
+    if (nodeIds.length === 0) return;
+
+    // Canvas-Zugriff über den ersten Node prüfen
+    const firstNode = await ctx.db.get(nodeIds[0]);
+    if (!firstNode) throw new Error("Node not found");
+    await getCanvasOrThrow(ctx, firstNode.canvasId, user.userId);
+
+    const nodeIdSet = new Set(nodeIds.map((id) => id.toString()));
+
+    for (const nodeId of nodeIds) {
+      const node = await ctx.db.get(nodeId);
+      if (!node) continue;
+
+      // Alle Edges entfernen, die diesen Node als Source oder Target haben
+      const sourceEdges = await ctx.db
+        .query("edges")
+        .withIndex("by_source", (q) => q.eq("sourceNodeId", nodeId))
+        .collect();
+      for (const edge of sourceEdges) {
+        await ctx.db.delete(edge._id);
+      }
+
+      const targetEdges = await ctx.db
+        .query("edges")
+        .withIndex("by_target", (q) => q.eq("targetNodeId", nodeId))
+        .collect();
+      for (const edge of targetEdges) {
+        await ctx.db.delete(edge._id);
+      }
+
+      // Kind-Nodes aus Gruppe/Frame lösen
+      const children = await ctx.db
+        .query("nodes")
+        .withIndex("by_parent", (q) => q.eq("parentId", nodeId))
+        .collect();
+      for (const child of children) {
+        await ctx.db.patch(child._id, { parentId: undefined });
+      }
+
+      // Node löschen
+      await ctx.db.delete(nodeId);
+    }
+
+    await ctx.db.patch(firstNode.canvasId, { updatedAt: Date.now() });
   },
 });

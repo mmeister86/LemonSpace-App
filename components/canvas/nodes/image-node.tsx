@@ -12,11 +12,10 @@ import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import NextImage from "next/image";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
-import { computeMediaNodeSize, resolveMediaAspectRatio } from "@/lib/canvas-utils";
+import { computeMediaNodeSize } from "@/lib/canvas-utils";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -79,8 +78,12 @@ export default function ImageNode({
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const hasAutoSizedRef = useRef(false);
-
-  const aspectRatio = resolveMediaAspectRatio(data.width, data.height);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const footerRef = useRef<HTMLParagraphElement>(null);
+  const lastMetricsRef = useRef<string>("");
 
   useEffect(() => {
     if (typeof data.width !== "number" || typeof data.height !== "number") {
@@ -230,6 +233,57 @@ export default function ImageNode({
     fileInputRef.current?.click();
   }, []);
 
+  const showFilename = Boolean(data.filename && data.url);
+
+  useEffect(() => {
+    if (!selected) return;
+    const rootEl = rootRef.current;
+    const headerEl = headerRef.current;
+    const previewEl = previewRef.current;
+    if (!rootEl || !headerEl || !previewEl) return;
+
+    const rootHeight = rootEl.getBoundingClientRect().height;
+    const headerHeight = headerEl.getBoundingClientRect().height;
+    const previewHeight = previewEl.getBoundingClientRect().height;
+    const footerHeight = footerRef.current?.getBoundingClientRect().height ?? null;
+    const imageEl = imageRef.current;
+    const rootStyles = window.getComputedStyle(rootEl);
+    const imageStyles = imageEl ? window.getComputedStyle(imageEl) : null;
+    const rows = rootStyles.gridTemplateRows;
+    const imageRect = imageEl?.getBoundingClientRect();
+    const previewRect = previewEl.getBoundingClientRect();
+    const naturalRatio =
+      imageEl && imageEl.naturalWidth > 0 && imageEl.naturalHeight > 0
+        ? imageEl.naturalWidth / imageEl.naturalHeight
+        : null;
+    const previewRatio =
+      previewRect.width > 0 && previewRect.height > 0
+        ? previewRect.width / previewRect.height
+        : null;
+    let expectedContainWidth: number | null = null;
+    let expectedContainHeight: number | null = null;
+    if (naturalRatio) {
+      const fitByWidthHeight = previewRect.width / naturalRatio;
+      if (fitByWidthHeight <= previewRect.height) {
+        expectedContainWidth = previewRect.width;
+        expectedContainHeight = fitByWidthHeight;
+      } else {
+        expectedContainHeight = previewRect.height;
+        expectedContainWidth = previewRect.height * naturalRatio;
+      }
+    }
+    const signature = `${width}|${height}|${Math.round(rootHeight)}|${Math.round(headerHeight)}|${Math.round(previewHeight)}|${Math.round(footerHeight ?? -1)}|${Math.round(imageRect?.height ?? -1)}|${rows}|${showFilename}`;
+
+    if (lastMetricsRef.current === signature) {
+      return;
+    }
+    lastMetricsRef.current = signature;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d48a18'},body:JSON.stringify({sessionId:'d48a18',runId:'run4',hypothesisId:'H15-H16',location:'image-node.tsx:metricsEffect',message:'image contain-fit diagnostics',data:{nodeId:id,width,height,rootHeight,previewWidth:previewRect.width,previewHeight,previewRatio,naturalRatio,headerHeight,footerHeight,imageRenderWidth:imageRect?.width ?? null,imageRenderHeight:imageRect?.height ?? null,expectedContainWidth,expectedContainHeight,imageNaturalWidth:imageEl?.naturalWidth ?? null,imageNaturalHeight:imageEl?.naturalHeight ?? null,imageObjectFit:imageStyles?.objectFit ?? null,imageObjectPosition:imageStyles?.objectPosition ?? null,rows,showFilename},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }, [height, id, selected, showFilename, width]);
+
   return (
     <BaseNodeWrapper
       nodeType="image"
@@ -243,8 +297,15 @@ export default function ImageNode({
         className="h-3! w-3! bg-primary! border-2! border-background!"
       />
 
-      <div className="p-2">
-        <div className="mb-1 flex items-center justify-between">
+      <div
+        ref={rootRef}
+        className={`grid h-full min-h-0 w-full grid-cols-1 gap-y-1 p-2 ${
+          showFilename
+            ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+            : "grid-rows-[auto_minmax(0,1fr)]"
+        }`}
+      >
+        <div ref={headerRef} className="flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">🖼️ Bild</div>
           {data.url && (
             <button
@@ -256,7 +317,7 @@ export default function ImageNode({
           )}
         </div>
 
-        <div className="relative w-full overflow-hidden rounded-lg" style={{ aspectRatio }}>
+        <div ref={previewRef} className="relative min-h-0 overflow-hidden rounded-lg bg-muted/30">
           {isUploading ? (
             <div className="flex h-full w-full items-center justify-center bg-muted">
               <div className="flex flex-col items-center gap-2">
@@ -265,12 +326,12 @@ export default function ImageNode({
               </div>
             </div>
           ) : data.url ? (
-            <NextImage
+            // eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node
+            <img
+              ref={imageRef}
               src={data.url}
               alt={data.filename ?? "Bild"}
-              fill
-              className="object-cover"
-              sizes="(max-width: 640px) 100vw, 260px"
+              className="h-full w-full object-cover object-center"
               draggable={false}
             />
           ) : (
@@ -280,8 +341,8 @@ export default function ImageNode({
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`
-              nodrag flex w-full cursor-pointer flex-col items-center justify-center
-              h-full border-2 border-dashed text-sm transition-colors
+              nodrag flex h-full w-full cursor-pointer flex-col items-center justify-center
+              border-2 border-dashed text-sm transition-colors
               ${
                 isDragOver
                   ? "border-primary bg-primary/5 text-primary"
@@ -296,11 +357,9 @@ export default function ImageNode({
           )}
         </div>
 
-        {data.filename && data.url && (
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {data.filename}
-          </p>
-        )}
+        {showFilename ? (
+          <p ref={footerRef} className="min-h-0 truncate text-xs text-muted-foreground">{data.filename}</p>
+        ) : null}
       </div>
 
       <input

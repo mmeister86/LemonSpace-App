@@ -297,7 +297,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const resizeNode = useMutation(api.nodes.resize);
   const batchMoveNodes = useMutation(api.nodes.batchMove);
   const createNode = useMutation(api.nodes.create);
-  const removeNode = useMutation(api.nodes.remove);
+  const batchRemoveNodes = useMutation(api.nodes.batchRemove);
   const createEdge = useMutation(api.edges.create);
   const removeEdge = useMutation(api.edges.remove);
 
@@ -307,6 +307,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
+
+  // Delete-Lock: Nodes die gerade gelöscht werden, nicht aus Convex-Sync wiederherstellen
+  const deletingNodeIds = useRef<Set<string>>(new Set());
 
   // Delete Edge on Drop
   const edgeReconnectSuccessful = useRef(true);
@@ -379,7 +382,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (!convexNodes || isDragging.current) return;
     setNodes((previousNodes) => {
       const incomingNodes = withResolvedCompareData(convexNodes.map(convexNodeToRF), edges);
-      return mergeNodesPreservingLocalState(previousNodes, incomingNodes);
+      // Nodes, die gerade optimistisch gelöscht werden, nicht wiederherstellen
+      const filteredIncoming = deletingNodeIds.current.size > 0
+        ? incomingNodes.filter((node) => !deletingNodeIds.current.has(node.id))
+        : incomingNodes;
+      return mergeNodesPreservingLocalState(previousNodes, filteredIncoming);
     });
   }, [convexNodes, edges]);
 
@@ -403,17 +410,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Node Changes (Drag, Select, Remove) ─────────────────────
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const removedIds = new Set<string>();
+      for (const c of changes) {
+        if (c.type === "remove") {
+          removedIds.add(c.id);
+        }
+      }
+
       setNodes((nds) => {
         const nextNodes = applyNodeChanges(changes, nds);
 
         for (const change of changes) {
           if (change.type !== "dimensions") continue;
           if (change.resizing !== false || !change.dimensions) continue;
+          if (removedIds.has(change.id)) continue;
 
           void resizeNode({
             nodeId: change.id as Id<"nodes">,
             width: change.dimensions.width,
             height: change.dimensions.height,
+          }).catch((error: unknown) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("[Canvas] resizeNode failed", error);
+            }
           });
         }
 
@@ -723,8 +742,18 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // ─── Node löschen → Convex ────────────────────────────────────
   const onNodesDelete = useCallback(
-    async (deletedNodes: RFNode[]) => {
+    (deletedNodes: RFNode[]) => {
       const count = deletedNodes.length;
+      if (count === 0) return;
+
+      // Optimistic: Node-IDs sofort als "wird gelöscht" markieren
+      const idsToDelete = deletedNodes.map((n) => n.id);
+      for (const id of idsToDelete) {
+        deletingNodeIds.current.add(id);
+      }
+
+      // Auto-Reconnect: Für jeden gelöschten Node eingehende und ausgehende Edges verbinden
+      const edgePromises: Promise<unknown>[] = [];
       for (const node of deletedNodes) {
         const incomingEdges = edges.filter((e) => e.target === node.id);
         const outgoingEdges = edges.filter((e) => e.source === node.id);
@@ -732,25 +761,46 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         if (incomingEdges.length > 0 && outgoingEdges.length > 0) {
           for (const incoming of incomingEdges) {
             for (const outgoing of outgoingEdges) {
-              await createEdge({
-                canvasId,
-                sourceNodeId: incoming.source as Id<"nodes">,
-                targetNodeId: outgoing.target as Id<"nodes">,
-                sourceHandle: incoming.sourceHandle ?? undefined,
-                targetHandle: outgoing.targetHandle ?? undefined,
-              });
+              edgePromises.push(
+                createEdge({
+                  canvasId,
+                  sourceNodeId: incoming.source as Id<"nodes">,
+                  targetNodeId: outgoing.target as Id<"nodes">,
+                  sourceHandle: incoming.sourceHandle ?? undefined,
+                  targetHandle: outgoing.targetHandle ?? undefined,
+                }),
+              );
             }
           }
         }
-
-        removeNode({ nodeId: node.id as Id<"nodes"> });
       }
+
+      // Batch-Delete + Auto-Reconnect parallel, dann deletingNodeIds aufräumen
+      void Promise.all([
+        batchRemoveNodes({
+          nodeIds: idsToDelete as Id<"nodes">[],
+        }),
+        ...edgePromises,
+      ])
+        .then(() => {
+          for (const id of idsToDelete) {
+            deletingNodeIds.current.delete(id);
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("[Canvas] batch remove failed", error);
+          // Bei Fehler: deletingNodeIds aufräumen, damit Nodes wieder erscheinen
+          for (const id of idsToDelete) {
+            deletingNodeIds.current.delete(id);
+          }
+        });
+
       if (count > 0) {
         const { title } = msg.canvas.nodesRemoved(count);
         toast.info(title);
       }
     },
-    [edges, removeNode, createEdge, canvasId],
+    [edges, batchRemoveNodes, createEdge, canvasId],
   );
 
   // ─── Edge löschen → Convex ────────────────────────────────────

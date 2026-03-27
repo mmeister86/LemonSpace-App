@@ -1,29 +1,28 @@
 "use client";
 
-import { useCallback, useRef, type ReactNode } from "react";
-import { NodeResizeControl, type ShouldResize } from "@xyflow/react";
+import type { ReactNode } from "react";
+import { NodeResizeControl } from "@xyflow/react";
 import { NodeErrorBoundary } from "./node-error-boundary";
 
 interface ResizeConfig {
   minWidth: number;
   minHeight: number;
   keepAspectRatio?: boolean;
-  contentAware?: boolean;
 }
 
 const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   frame: { minWidth: 200, minHeight: 150 },
   group: { minWidth: 150, minHeight: 100 },
-  image: { minWidth: 100, minHeight: 80, keepAspectRatio: true },
-  asset: { minWidth: 100, minHeight: 80, keepAspectRatio: true },
+  image: { minWidth: 140, minHeight: 120, keepAspectRatio: true },
+  asset: { minWidth: 140, minHeight: 120, keepAspectRatio: true },
   "ai-image": { minWidth: 200, minHeight: 200 },
   compare: { minWidth: 300, minHeight: 200 },
-  prompt: { minWidth: 240, minHeight: 200, contentAware: true },
-  text: { minWidth: 180, minHeight: 80, contentAware: true },
-  note: { minWidth: 160, minHeight: 80, contentAware: true },
+  prompt: { minWidth: 260, minHeight: 200 },
+  text: { minWidth: 220, minHeight: 90 },
+  note: { minWidth: 200, minHeight: 90 },
 };
 
-const DEFAULT_CONFIG: ResizeConfig = { minWidth: 80, minHeight: 50, contentAware: true };
+const DEFAULT_CONFIG: ResizeConfig = { minWidth: 80, minHeight: 50 };
 
 const CORNERS = [
   "top-left",
@@ -49,7 +48,6 @@ export default function BaseNodeWrapper({
   children,
   className = "",
 }: BaseNodeWrapperProps) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const config = RESIZE_CONFIGS[nodeType] ?? DEFAULT_CONFIG;
 
   const statusStyles: Record<string, string> = {
@@ -61,37 +59,10 @@ export default function BaseNodeWrapper({
     error: "border-red-500",
   };
 
-  const shouldResize: ShouldResize = useCallback(
-    (event, params) => {
-      if (!wrapperRef.current || !config.contentAware) return true;
-
-      const contentEl = wrapperRef.current;
-      const paddingX =
-        parseFloat(getComputedStyle(contentEl).paddingLeft) +
-        parseFloat(getComputedStyle(contentEl).paddingRight);
-      const paddingY =
-        parseFloat(getComputedStyle(contentEl).paddingTop) +
-        parseFloat(getComputedStyle(contentEl).paddingBottom);
-
-      const minW = Math.max(
-        config.minWidth,
-        contentEl.scrollWidth - paddingX + paddingX * 0.5,
-      );
-      const minH = Math.max(
-        config.minHeight,
-        contentEl.scrollHeight - paddingY + paddingY * 0.5,
-      );
-
-      return params.width >= minW && params.height >= minH;
-    },
-    [config],
-  );
-
   return (
     <div
-      ref={wrapperRef}
       className={`
-        rounded-xl border bg-card shadow-sm transition-shadow
+        h-full w-full rounded-xl border bg-card shadow-sm transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
         ${statusStyles[status] ?? ""}
         ${className}
@@ -105,7 +76,6 @@ export default function BaseNodeWrapper({
             minWidth={config.minWidth}
             minHeight={config.minHeight}
             keepAspectRatio={config.keepAspectRatio}
-            shouldResize={shouldResize}
             style={{
               background: "none",
               border: "none",

@@ -104,7 +104,7 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
         ) : (
           <div
             onDoubleClick={() => setIsEditing(true)}
-            className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap overflow-wrap-break-word"
+            className="min-h-[2rem] cursor-text whitespace-pre-wrap break-words text-sm"
           >
             {content || (
               <span className="text-muted-foreground">

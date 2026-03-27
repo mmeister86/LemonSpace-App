@@ -76,7 +76,7 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
       ) : (
         <div
           onDoubleClick={() => setIsEditing(true)}
-          className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap"
+          className="min-h-[2rem] cursor-text whitespace-pre-wrap break-words text-sm"
         >
           {content || (
             <span className="text-muted-foreground">
