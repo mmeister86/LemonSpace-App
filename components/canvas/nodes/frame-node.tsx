@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useAction, useMutation } from "convex/react";
 import { Download, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -78,8 +78,6 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
       selected={selected}
       className="relative h-full w-full border-2 border-dashed border-muted-foreground/40 !bg-transparent p-0 shadow-none"
     >
-      <NodeResizer isVisible={selected} minWidth={200} minHeight={150} />
-
       <div className="absolute -top-8 left-0 flex items-center gap-2">
         <input
           value={label}

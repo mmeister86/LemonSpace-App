@@ -410,9 +410,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           if (change.type !== "dimensions") continue;
           if (change.resizing !== false || !change.dimensions) continue;
 
-          const resizedNode = nextNodes.find((node) => node.id === change.id);
-          if (resizedNode?.type !== "frame") continue;
-
           void resizeNode({
             nodeId: change.id as Id<"nodes">,
             width: change.dimensions.width,

@@ -4,7 +4,6 @@ import {
   useState,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   type ChangeEvent,
   type DragEvent,
@@ -77,11 +76,9 @@ export default function ImageNode({
   const updateData = useMutation(api.nodes.updateData);
   const resizeNode = useMutation(api.nodes.resize);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const mediaRef = useRef<HTMLDivElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [handleTop, setHandleTop] = useState<number | undefined>(undefined);
+  const hasAutoSizedRef = useRef(false);
 
   const aspectRatio = resolveMediaAspectRatio(data.width, data.height);
 
@@ -89,6 +86,9 @@ export default function ImageNode({
     if (typeof data.width !== "number" || typeof data.height !== "number") {
       return;
     }
+
+    if (hasAutoSizedRef.current) return;
+    hasAutoSizedRef.current = true;
 
     const targetSize = computeMediaNodeSize("image", {
       intrinsicWidth: data.width,
@@ -105,39 +105,6 @@ export default function ImageNode({
       height: targetSize.height,
     });
   }, [data.height, data.width, height, id, resizeNode, width]);
-
-  useLayoutEffect(() => {
-    if (!contentRef.current || !mediaRef.current) return;
-
-    const contentEl = contentRef.current;
-    const mediaEl = mediaRef.current;
-    let frameId: number | undefined;
-
-    const updateHandleTop = () => {
-      if (frameId !== undefined) {
-        cancelAnimationFrame(frameId);
-      }
-      frameId = requestAnimationFrame(() => {
-        const contentRect = contentEl.getBoundingClientRect();
-        const mediaRect = mediaEl.getBoundingClientRect();
-        const nextTop = mediaRect.top - contentRect.top + mediaRect.height / 2;
-        setHandleTop(nextTop);
-      });
-    };
-
-    updateHandleTop();
-
-    const observer = new ResizeObserver(updateHandleTop);
-    observer.observe(contentEl);
-    observer.observe(mediaEl);
-
-    return () => {
-      observer.disconnect();
-      if (frameId !== undefined) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [aspectRatio, data.filename, data.url, isDragOver, isUploading]);
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -274,10 +241,9 @@ export default function ImageNode({
         type="target"
         position={Position.Left}
         className="h-3! w-3! bg-primary! border-2! border-background!"
-        style={{ top: handleTop ? `${handleTop}px` : "50%" }}
       />
 
-      <div ref={contentRef} className="p-2">
+      <div className="p-2">
         <div className="mb-1 flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">🖼️ Bild</div>
           {data.url && (
@@ -290,7 +256,7 @@ export default function ImageNode({
           )}
         </div>
 
-        <div ref={mediaRef} className="relative w-full overflow-hidden rounded-lg" style={{ aspectRatio }}>
+        <div className="relative w-full overflow-hidden rounded-lg" style={{ aspectRatio }}>
           {isUploading ? (
             <div className="flex h-full w-full items-center justify-center bg-muted">
               <div className="flex flex-col items-center gap-2">
@@ -349,7 +315,6 @@ export default function ImageNode({
         type="source"
         position={Position.Right}
         className="h-3! w-3! bg-primary! border-2! border-background!"
-        style={{ top: handleTop ? `${handleTop}px` : "50%" }}
       />
     </BaseNodeWrapper>
   );

@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -42,7 +41,8 @@ export type AssetNodeType = Node<AssetNodeData, "asset">;
 
 export default function AssetNode({ id, data, selected, width, height }: NodeProps<AssetNodeType>) {
   const [panelOpen, setPanelOpen] = useState(false);
-  const [handleTop, setHandleTop] = useState<number | undefined>(undefined);
+  const [loadedPreviewUrl, setLoadedPreviewUrl] = useState<string | null>(null);
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
   const [browserState, setBrowserState] = useState<AssetBrowserSessionState>({
     term: "",
     assetType: "photo",
@@ -51,19 +51,25 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     totalPages: 1,
   });
   const resizeNode = useMutation(api.nodes.resize);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const mediaRef = useRef<HTMLDivElement | null>(null);
 
   const hasAsset = typeof data.assetId === "number";
   const previewUrl = data.url ?? data.previewUrl;
+  const isPreviewLoading = Boolean(
+    previewUrl && previewUrl !== loadedPreviewUrl && previewUrl !== failedPreviewUrl,
+  );
+  const previewLoadError = Boolean(previewUrl && previewUrl === failedPreviewUrl);
   const aspectRatio = resolveMediaAspectRatio(
     data.intrinsicWidth,
     data.intrinsicHeight,
     data.orientation,
   );
 
+  const hasAutoSizedRef = useRef(false);
+
   useEffect(() => {
     if (!hasAsset) return;
+    if (hasAutoSizedRef.current) return;
+    hasAutoSizedRef.current = true;
 
     const targetSize = computeMediaNodeSize("asset", {
       intrinsicWidth: data.intrinsicWidth,
@@ -91,39 +97,6 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     width,
   ]);
 
-  useLayoutEffect(() => {
-    if (!hasAsset || !contentRef.current || !mediaRef.current) return;
-
-    const contentEl = contentRef.current;
-    const mediaEl = mediaRef.current;
-    let frameId: number | undefined;
-
-    const updateHandleTop = () => {
-      if (frameId !== undefined) {
-        cancelAnimationFrame(frameId);
-      }
-      frameId = requestAnimationFrame(() => {
-        const contentRect = contentEl.getBoundingClientRect();
-        const mediaRect = mediaEl.getBoundingClientRect();
-        const nextTop = mediaRect.top - contentRect.top + mediaRect.height / 2;
-        setHandleTop(nextTop);
-      });
-    };
-
-    updateHandleTop();
-
-    const observer = new ResizeObserver(updateHandleTop);
-    observer.observe(contentEl);
-    observer.observe(mediaEl);
-
-    return () => {
-      observer.disconnect();
-      if (frameId !== undefined) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [aspectRatio, hasAsset]);
-
   const stopNodeClickPropagation = (event: MouseEvent<HTMLAnchorElement>) => {
     event.stopPropagation();
   };
@@ -140,10 +113,9 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
         type="target"
         position={Position.Left}
         className="h-3! w-3! border-2! border-background! bg-primary!"
-        style={{ top: hasAsset && handleTop ? `${handleTop}px` : "50%" }}
       />
 
-      <div ref={contentRef} className="w-full">
+      <div className="w-full">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Asset
@@ -162,16 +134,36 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
         {hasAsset && previewUrl ? (
           <div className="flex flex-col gap-0">
             <div
-              ref={mediaRef}
               className="relative overflow-hidden bg-muted/30"
               style={{ aspectRatio }}
             >
+              {isPreviewLoading ? (
+                <div className="absolute inset-0 z-10 flex animate-pulse items-center justify-center bg-muted/60 text-[11px] text-muted-foreground">
+                  Loading preview...
+                </div>
+              ) : null}
+              {previewLoadError ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-muted/70 text-[11px] text-muted-foreground">
+                  Preview unavailable
+                </div>
+              ) : null}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewUrl}
                 alt={data.title ?? "Asset preview"}
-                className="h-full w-full object-contain"
+                className={`h-full w-full object-contain transition-opacity ${
+                  isPreviewLoading ? "opacity-0" : "opacity-100"
+                }`}
                 draggable={false}
+                onLoad={() => {
+                  setLoadedPreviewUrl(previewUrl ?? null);
+                  setFailedPreviewUrl((current) =>
+                    current === (previewUrl ?? null) ? null : current,
+                  );
+                }}
+                onError={() => {
+                  setFailedPreviewUrl(previewUrl ?? null);
+                }}
               />
               <Badge variant="secondary" className="absolute top-2 left-2 h-4 py-0 text-[10px]">
                 {data.assetType ?? "asset"}
@@ -238,7 +230,6 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
         type="source"
         position={Position.Right}
         className="h-3! w-3! border-2! border-background! bg-primary!"
-        style={{ top: hasAsset && handleTop ? `${handleTop}px` : "50%" }}
       />
     </BaseNodeWrapper>
   );

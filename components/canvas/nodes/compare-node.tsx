@@ -63,7 +63,7 @@ export default function CompareNode({ data, selected }: NodeProps) {
   }, []);
 
   return (
-    <BaseNodeWrapper nodeType="compare" selected={selected} className="w-[500px] p-0">
+    <BaseNodeWrapper nodeType="compare" selected={selected} className="p-0">
       <div className="px-3 py-2 text-xs font-medium text-muted-foreground">⚖️ Compare</div>
 
       <Handle
@@ -89,7 +89,8 @@ export default function CompareNode({ data, selected }: NodeProps) {
 
       <div
         ref={containerRef}
-        className="nodrag relative h-[320px] w-[500px] select-none overflow-hidden rounded-b-xl bg-muted"
+        className="nodrag relative w-full select-none overflow-hidden rounded-b-xl bg-muted"
+        style={{ height: "100%" }}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
       >
@@ -122,7 +123,7 @@ export default function CompareNode({ data, selected }: NodeProps) {
               src={nodeData.leftUrl}
               alt={nodeData.leftLabel ?? "Left"}
               className="absolute inset-0 h-full w-full object-contain"
-              style={{ width: "500px", maxWidth: "none" }}
+              style={{ width: "100%", maxWidth: "none" }}
               draggable={false}
             />
           </div>

@@ -87,7 +87,7 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
         className="!h-3 !w-3 !bg-primary !border-2 !border-background"
       />
 
-      <div className="w-64 p-3">
+      <div className="w-full p-3">
         <div className="text-xs font-medium text-muted-foreground mb-1">
           📝 Text
         </div>
@@ -97,14 +97,14 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
             onChange={handleChange}
             onBlur={() => setIsEditing(false)}
             autoFocus
-            className="nodrag nowheel w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm outline-none focus:ring-0 min-h-[3rem]"
+            className="nodrag nowheel w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm outline-none focus:ring-0 min-h-[3rem] overflow-hidden"
             placeholder="Text eingeben…"
             rows={3}
           />
         ) : (
           <div
             onDoubleClick={() => setIsEditing(true)}
-            className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap"
+            className="min-h-[2rem] cursor-text text-sm whitespace-pre-wrap overflow-wrap-break-word"
           >
             {content || (
               <span className="text-muted-foreground">
