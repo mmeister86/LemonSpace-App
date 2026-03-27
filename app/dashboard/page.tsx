@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import {
   ChevronDown,
   Coins,
@@ -35,6 +35,7 @@ import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import CanvasCard from "@/components/dashboard/canvas-card";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 
 
 function getInitials(nameOrEmail: string) {
@@ -54,7 +55,7 @@ export default function DashboardPage() {
   const welcomeToastSentRef = useRef(false);
   const { theme = "system", setTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
-  const canvases = useQuery(
+  const canvases = useAuthQuery(
     api.canvases.list,
     session?.user && !isSessionPending ? {} : "skip",
   );

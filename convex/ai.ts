@@ -162,6 +162,7 @@ export const generateImage = action({
     nodeId: v.id("nodes"),
     prompt: v.string(),
     referenceStorageId: v.optional(v.id("_storage")),
+    referenceImageUrl: v.optional(v.string()),
     model: v.optional(v.string()),
     aspectRatio: v.optional(v.string()),
   },
@@ -200,7 +201,7 @@ export const generateImage = action({
     let retryCount = 0;
 
     try {
-      let referenceImageUrl: string | undefined;
+      let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
       if (args.referenceStorageId) {
         referenceImageUrl =
           (await ctx.storage.getUrl(args.referenceStorageId)) ?? undefined;

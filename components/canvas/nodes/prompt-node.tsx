@@ -182,6 +182,7 @@ export default function PromptNode({
       const incomingEdges = currentEdges.filter((e) => e.target === id);
       let connectedTextPrompt: string | undefined;
       let referenceStorageId: Id<"_storage"> | undefined;
+      let referenceImageUrl: string | undefined;
 
       for (const edge of incomingEdges) {
         const sourceNode = getNode(edge.source);
@@ -196,6 +197,10 @@ export default function PromptNode({
           if (srcData.storageId) {
             referenceStorageId = srcData.storageId as Id<"_storage">;
           }
+        }
+        if (sourceNode?.type === "asset") {
+          const srcData = sourceNode.data as { previewUrl?: string; url?: string };
+          referenceImageUrl = srcData.url ?? srcData.previewUrl;
         }
       }
 
@@ -240,6 +245,7 @@ export default function PromptNode({
           nodeId: aiNodeId,
           prompt: promptToUse,
           referenceStorageId,
+          referenceImageUrl,
           model: DEFAULT_MODEL_ID,
           aspectRatio,
         }),

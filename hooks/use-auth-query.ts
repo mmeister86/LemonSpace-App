@@ -7,6 +7,9 @@ import type { FunctionReference, FunctionArgs, FunctionReturnType } from "convex
  * Wrapper um `useQuery` der automatisch `"skip"` nutzt wenn der
  * Convex-Auth-Token noch nicht bereit ist. Verhindert "Unauthenticated"-Fehler
  * bei Queries die `requireAuth` nutzen.
+ * Convex-Queries sind reaktiv: Ergebnisse werden im Client-Cache gehalten und
+ * nur bei relevanten Datenänderungen aktualisiert (keine manuelle Polling-
+ * Schleife, z. B. alle 3000ms, notwendig).
  *
  * Nutzt nur `isAuthenticated` (nicht `isLoading`) als Guard — wenn ein
  * `initialToken` vom SSR vorhanden ist, springt `isAuthenticated` sofort

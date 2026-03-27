@@ -64,6 +64,7 @@ export const NODE_HANDLE_MAP: Record<
   frame: { source: "frame-out", target: "frame-in" },
   note: { source: undefined, target: undefined },
   compare: { source: "compare-out", target: "left" },
+  asset: { source: undefined, target: undefined },
 };
 
 /**
@@ -86,4 +87,84 @@ export const NODE_DEFAULTS: Record<
   },
   note: { width: 208, height: 100, data: { content: "" } },
   compare: { width: 500, height: 380, data: {} },
+  asset: { width: 260, height: 240, data: {} },
 };
+
+type MediaNodeKind = "asset" | "image";
+
+const MEDIA_NODE_CONFIG: Record<
+  MediaNodeKind,
+  {
+    width: number;
+    chromeHeight: number;
+    minPreviewHeight: number;
+    maxPreviewHeight: number;
+  }
+> = {
+  asset: {
+    width: 260,
+    chromeHeight: 88,
+    minPreviewHeight: 120,
+    maxPreviewHeight: 300,
+  },
+  image: {
+    width: 280,
+    chromeHeight: 52,
+    minPreviewHeight: 120,
+    maxPreviewHeight: 320,
+  },
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function fallbackAspectRatio(orientation?: string): number {
+  if (orientation === "horizontal") return 4 / 3;
+  if (orientation === "vertical") return 3 / 4;
+  return 1;
+}
+
+export function resolveMediaAspectRatio(
+  intrinsicWidth?: number,
+  intrinsicHeight?: number,
+  orientation?: string,
+): number {
+  if (
+    typeof intrinsicWidth === "number" &&
+    typeof intrinsicHeight === "number" &&
+    intrinsicWidth > 0 &&
+    intrinsicHeight > 0
+  ) {
+    return intrinsicWidth / intrinsicHeight;
+  }
+  return fallbackAspectRatio(orientation);
+}
+
+export function computeMediaNodeSize(
+  kind: MediaNodeKind,
+  options?: {
+    intrinsicWidth?: number;
+    intrinsicHeight?: number;
+    orientation?: string;
+  },
+): { width: number; height: number; previewHeight: number; aspectRatio: number } {
+  const config = MEDIA_NODE_CONFIG[kind];
+  const aspectRatio = resolveMediaAspectRatio(
+    options?.intrinsicWidth,
+    options?.intrinsicHeight,
+    options?.orientation,
+  );
+  const previewHeight = clamp(
+    Math.round(config.width / aspectRatio),
+    config.minPreviewHeight,
+    config.maxPreviewHeight,
+  );
+
+  return {
+    width: config.width,
+    height: previewHeight + config.chromeHeight,
+    previewHeight,
+    aspectRatio,
+  };
+}

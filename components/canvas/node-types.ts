@@ -6,6 +6,7 @@ import GroupNode from "./nodes/group-node";
 import FrameNode from "./nodes/frame-node";
 import NoteNode from "./nodes/note-node";
 import CompareNode from "./nodes/compare-node";
+import AssetNode from "./nodes/asset-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -23,4 +24,5 @@ export const nodeTypes = {
   frame: FrameNode,
   note: NoteNode,
   compare: CompareNode,
+  asset: AssetNode,
 } as const;

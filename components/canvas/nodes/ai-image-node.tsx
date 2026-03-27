@@ -97,6 +97,7 @@ export default function AiImageNode({
       const edges = getEdges();
       const incomingEdges = edges.filter((e) => e.target === id);
       let referenceStorageId: Id<"_storage"> | undefined;
+      let referenceImageUrl: string | undefined;
       for (const edge of incomingEdges) {
         const src = getNode(edge.source);
         if (src?.type === "image") {
@@ -105,6 +106,10 @@ export default function AiImageNode({
             referenceStorageId = srcData.storageId as Id<"_storage">;
             break;
           }
+        }
+        if (src?.type === "asset") {
+          const srcData = src.data as { previewUrl?: string; url?: string };
+          referenceImageUrl = srcData.url ?? srcData.previewUrl;
         }
       }
 
@@ -117,6 +122,7 @@ export default function AiImageNode({
           nodeId: id as Id<"nodes">,
           prompt,
           referenceStorageId,
+          referenceImageUrl,
           model: modelId,
           aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
         }),
