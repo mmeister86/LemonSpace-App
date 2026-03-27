@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { CreditDisplay } from "@/components/canvas/credit-display";
 import { ExportButton } from "@/components/canvas/export-button";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import {
   CANVAS_NODE_TEMPLATES,
   type CanvasNodeTemplate,
@@ -18,6 +19,7 @@ export default function CanvasToolbar({
   canvasName,
 }: CanvasToolbarProps) {
   const { createNodeWithIntersection } = useCanvasPlacement();
+  const getCenteredPosition = useCenteredFlowNodePosition();
   const nodeCountRef = useRef(0);
 
   const handleAddNode = async (
@@ -26,11 +28,11 @@ export default function CanvasToolbar({
     width: number,
     height: number,
   ) => {
-    const offset = (nodeCountRef.current % 8) * 24;
+    const stagger = (nodeCountRef.current % 8) * 24;
     nodeCountRef.current += 1;
     await createNodeWithIntersection({
       type,
-      position: { x: 100 + offset, y: 100 + offset },
+      position: getCenteredPosition(width, height, stagger),
       width,
       height,
       data,

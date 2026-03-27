@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import {
   Command,
   CommandDialog,
@@ -53,6 +54,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
 export function CanvasCommandPalette() {
   const [open, setOpen] = useState(false);
   const { createNodeWithIntersection } = useCanvasPlacement();
+  const getCenteredPosition = useCenteredFlowNodePosition();
   const { setTheme } = useTheme();
   const nodeCountRef = useRef(0);
 
@@ -73,12 +75,12 @@ export function CanvasCommandPalette() {
     width: number,
     height: number,
   ) => {
-    const offset = (nodeCountRef.current % 8) * 24;
+    const stagger = (nodeCountRef.current % 8) * 24;
     nodeCountRef.current += 1;
     setOpen(false);
     void createNodeWithIntersection({
       type,
-      position: { x: 100 + offset, y: 100 + offset },
+      position: getCenteredPosition(width, height, stagger),
       width,
       height,
       data,
