@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import type { ErrorInfo, ReactNode } from "react";
 import { Component } from "react";
 
@@ -29,6 +30,11 @@ export class NodeErrorBoundary extends Component<
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    Sentry.captureException(error, {
+      tags: { nodeType: this.props.nodeType },
+      extra: { componentStack: errorInfo.componentStack },
+    });
+
     console.error("Node rendering error", {
       nodeType: this.props.nodeType,
       error,

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -33,6 +33,8 @@ import { authClient } from "@/lib/auth-client";
 import { CreditOverview } from "@/components/dashboard/credit-overview";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import CanvasCard from "@/components/dashboard/canvas-card";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 
 function getInitials(nameOrEmail: string) {
@@ -49,6 +51,7 @@ function getInitials(nameOrEmail: string) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const welcomeToastSentRef = useRef(false);
   const { theme = "system", setTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const canvases = useQuery(
@@ -61,7 +64,17 @@ export default function DashboardPage() {
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
 
+  useEffect(() => {
+    if (!session?.user || welcomeToastSentRef.current) return;
+    const key = `ls-dashboard-welcome-${session.user.id}`;
+    if (typeof window !== "undefined" && sessionStorage.getItem(key)) return;
+    welcomeToastSentRef.current = true;
+    sessionStorage.setItem(key, "1");
+    toast.success(msg.auth.welcomeOnDashboard.title);
+  }, [session?.user]);
+
   const handleSignOut = async () => {
+    toast.info(msg.auth.signedOut.title);
     await authClient.signOut();
     router.replace("/auth/sign-in");
     router.refresh();

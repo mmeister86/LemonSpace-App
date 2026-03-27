@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useConvexConnectionState } from "convex/react";
 
 import { cn } from "@/lib/utils";
+import { toast, toastDuration } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 type BannerState = "hidden" | "reconnecting" | "disconnected" | "reconnected";
 
@@ -12,6 +14,7 @@ const RECONNECTED_HIDE_DELAY_MS = 1800;
 export default function ConnectionBanner() {
   const connectionState = useConvexConnectionState();
   const previousConnectedRef = useRef(connectionState.isWebSocketConnected);
+  const disconnectToastIdRef = useRef<string | number | undefined>(undefined);
   const [showReconnected, setShowReconnected] = useState(false);
   const [isBrowserOnline, setIsBrowserOnline] = useState(
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -33,14 +36,19 @@ export default function ConnectionBanner() {
   useEffect(() => {
     const wasConnected = previousConnectedRef.current;
     const isConnected = connectionState.isWebSocketConnected;
-    const didReconnect = !wasConnected && isConnected && connectionState.connectionCount > 1;
+    const didReconnect =
+      !wasConnected && isConnected && connectionState.connectionCount > 1;
 
     if (didReconnect) {
-      setShowReconnected(true);
+      queueMicrotask(() => {
+        setShowReconnected(true);
+      });
     }
 
     if (!isConnected) {
-      setShowReconnected(false);
+      queueMicrotask(() => {
+        setShowReconnected(false);
+      });
     }
 
     previousConnectedRef.current = isConnected;
@@ -57,6 +65,39 @@ export default function ConnectionBanner() {
 
     return () => window.clearTimeout(timeoutId);
   }, [showReconnected]);
+
+  useEffect(() => {
+    const connected = connectionState.isWebSocketConnected;
+    const shouldAlertDisconnect =
+      !connected &&
+      (!isBrowserOnline ||
+        connectionState.hasEverConnected ||
+        connectionState.connectionRetries > 0);
+
+    if (shouldAlertDisconnect) {
+      if (disconnectToastIdRef.current === undefined) {
+        disconnectToastIdRef.current = toast.error(
+          msg.system.connectionLost.title,
+          msg.system.connectionLost.desc,
+          { duration: Number.POSITIVE_INFINITY },
+        );
+      }
+      return;
+    }
+
+    if (connected && disconnectToastIdRef.current !== undefined) {
+      toast.dismiss(disconnectToastIdRef.current);
+      disconnectToastIdRef.current = undefined;
+      toast.success(msg.system.reconnected.title, undefined, {
+        duration: toastDuration.successShort,
+      });
+    }
+  }, [
+    connectionState.connectionRetries,
+    connectionState.hasEverConnected,
+    connectionState.isWebSocketConnected,
+    isBrowserOnline,
+  ]);
 
   const bannerState = useMemo<BannerState>(() => {
     if (connectionState.isWebSocketConnected) {

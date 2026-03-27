@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Coins } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 const TIER_LABELS: Record<string, string> = {
   free: "Free",
@@ -90,11 +91,16 @@ export function CreditDisplay() {
           onClick={() => {
             void grantTestCredits({ amount: 2000 })
               .then((r) => {
-                toast.success(`+2000 Cr — Stand: ${r.newBalance.toLocaleString("de-DE")}`);
+                const { title, desc } = msg.billing.creditsAdded(2000);
+                toast.success(
+                  title,
+                  `${desc} — Stand: ${r.newBalance.toLocaleString("de-DE")}`,
+                );
               })
               .catch((e: unknown) => {
                 toast.error(
-                  e instanceof Error ? e.message : "Gutschrift fehlgeschlagen",
+                  msg.billing.testGrantFailed.title,
+                  e instanceof Error ? e.message : undefined,
                 );
               });
           }}

@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,8 @@ type AppErrorProps = {
 
 export default function AppError({ error, unstable_retry }: AppErrorProps) {
   useEffect(() => {
+    Sentry.captureException(error);
+
     const safeError = {
       name: error.name,
       message:

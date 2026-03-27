@@ -13,6 +13,15 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import Image from "next/image";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
+
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 type ImageNodeData = {
   storageId?: string;
@@ -34,7 +43,21 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
 
   const uploadFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) return;
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+        const { title, desc } = msg.canvas.uploadFormatError(
+          file.type || file.name.split(".").pop() || "—",
+        );
+        toast.error(title, desc);
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        const { title, desc } = msg.canvas.uploadSizeError(
+          Math.round(MAX_IMAGE_BYTES / (1024 * 1024)),
+        );
+        toast.error(title, desc);
+        return;
+      }
+
       setIsUploading(true);
 
       try {
@@ -59,8 +82,13 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
             mimeType: file.type,
           },
         });
+        toast.success(msg.canvas.imageUploaded.title);
       } catch (err) {
         console.error("Upload failed:", err);
+        toast.error(
+          msg.canvas.uploadFailed.title,
+          err instanceof Error ? err.message : undefined,
+        );
       } finally {
         setIsUploading(false);
       }

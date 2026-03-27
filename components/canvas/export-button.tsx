@@ -7,6 +7,8 @@ import JSZip from "jszip";
 import { Archive, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 interface ExportButtonProps {
   canvasName?: string;
@@ -24,12 +26,14 @@ export function ExportButton({ canvasName = "canvas" }: ExportButtonProps) {
     setIsExporting(true);
     setError(null);
 
-    try {
+    const NO_FRAMES = "NO_FRAMES";
+
+    const runExport = async () => {
       const nodes = getNodes();
       const frameNodes = nodes.filter((node) => node.type === "frame");
 
       if (frameNodes.length === 0) {
-        throw new Error("No frames on canvas - add a Frame node first");
+        throw new Error(NO_FRAMES);
       }
 
       const zip = new JSZip();
@@ -64,8 +68,36 @@ export function ExportButton({ canvasName = "canvas" }: ExportButtonProps) {
       anchor.click();
 
       URL.revokeObjectURL(url);
+    };
+
+    try {
+      await toast.promise(runExport(), {
+        loading: msg.export.exportingFrames.title,
+        success: msg.export.zipReady.title,
+        error: (err) => {
+          const m = err instanceof Error ? err.message : "";
+          if (m === NO_FRAMES) return msg.export.noFramesOnCanvas.title;
+          if (m.includes("No images found")) return msg.export.frameEmpty.title;
+          return msg.export.exportFailed.title;
+        },
+        description: {
+          error: (err) => {
+            const m = err instanceof Error ? err.message : "";
+            if (m === NO_FRAMES) return msg.export.noFramesOnCanvas.desc;
+            if (m.includes("No images found")) return msg.export.frameEmpty.desc;
+            return m || undefined;
+          },
+        },
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
+      const m = err instanceof Error ? err.message : "";
+      if (m === NO_FRAMES) {
+        setError(msg.export.noFramesOnCanvas.desc);
+      } else if (m.includes("No images found")) {
+        setError(msg.export.frameEmpty.desc);
+      } else {
+        setError(m || msg.export.exportFailed.title);
+      }
     } finally {
       setIsExporting(false);
       setProgress(null);

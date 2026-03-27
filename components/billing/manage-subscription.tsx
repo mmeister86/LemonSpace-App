@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
 import { normalizeTier, TIER_MONTHLY_CREDITS } from "@/lib/polar-products";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 const TIER_LABELS: Record<keyof typeof TIER_MONTHLY_CREDITS, string> = {
   free: "Free",
@@ -39,7 +41,16 @@ export function ManageSubscription() {
       </div>
 
       {tier !== "free" && (
-        <Button variant="outline" onClick={() => authClient.customer.portal()}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            toast.info(
+              msg.billing.openingPortal.title,
+              msg.billing.openingPortal.desc,
+            );
+            void authClient.customer.portal();
+          }}
+        >
           <ExternalLink className="mr-2 h-4 w-4" />
           Manage
         </Button>

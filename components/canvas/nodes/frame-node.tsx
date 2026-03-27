@@ -8,6 +8,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 interface FrameNodeData {
   label?: string;
@@ -43,16 +45,29 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
 
     try {
       const result = await exportFrame({ frameNodeId: id as Id<"nodes"> });
-      const a = document.createElement("a");
-      a.href = result.url;
-      a.download = result.filename;
-      a.click();
+      const fileLabel = `${label.trim() || "frame"}.png`;
+      toast.action(msg.export.frameExported.title, {
+        description: fileLabel,
+        label: msg.export.download,
+        onClick: () => {
+          window.open(result.url, "_blank", "noopener,noreferrer");
+        },
+        successLabel: msg.export.downloaded,
+        type: "success",
+      });
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "Export failed");
+      const m = error instanceof Error ? error.message : "";
+      if (m.includes("No images found")) {
+        toast.error(msg.export.frameEmpty.title, msg.export.frameEmpty.desc);
+        setExportError(msg.export.frameEmpty.desc);
+      } else {
+        toast.error(msg.export.exportFailed.title, m || undefined);
+        setExportError(m || msg.export.exportFailed.title);
+      }
     } finally {
       setIsExporting(false);
     }
-  }, [exportFrame, id, isExporting]);
+  }, [exportFrame, id, isExporting, label]);
 
   const frameW = Math.round(width ?? 400);
   const frameH = Math.round(height ?? 300);

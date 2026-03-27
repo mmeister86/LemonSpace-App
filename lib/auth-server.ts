@@ -1,5 +1,7 @@
 import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
 
+import { api } from "@/convex/_generated/api";
+
 export const {
   handler,              // Route Handler für /api/auth/*
   preloadAuthQuery,     // SSR: Query mit Auth vorladen
@@ -17,3 +19,8 @@ export const {
     isAuthError: (error) => /auth/i.test(String(error)),
   },
 });
+
+/** Aktueller User für SSR (z. B. Sentry `setUser`), oder `null`. */
+export async function getAuthUser() {
+  return fetchAuthQuery(api.auth.safeGetAuthUser, {});
+}

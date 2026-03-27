@@ -12,6 +12,8 @@ import {
   SUBSCRIPTION_PRODUCTS,
   TIER_MONTHLY_CREDITS,
 } from "@/lib/polar-products";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 const TIER_ORDER = ["free", "starter", "pro", "max"] as const;
 
@@ -20,6 +22,10 @@ export function PricingCards() {
   const currentTier = normalizeTier(subscription?.tier);
 
   async function handleCheckout(polarProductId: string) {
+    toast.info(
+      msg.billing.redirectingToCheckout.title,
+      msg.billing.redirectingToCheckout.desc,
+    );
     await authClient.checkout({ products: [polarProductId] });
   }
 

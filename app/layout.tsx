@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import * as Sentry from "@sentry/nextjs";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/providers";
 import { InitUser } from "@/components/init-user";
-import { getToken } from "@/lib/auth-server";
+import { getAuthUser, getToken } from "@/lib/auth-server";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -19,6 +20,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const initialToken = await getToken();
+  const user = await getAuthUser();
+  if (user) {
+    const id = user.userId ?? String(user._id);
+    Sentry.setUser({
+      id,
+      email: user.email ?? undefined,
+    });
+  } else {
+    Sentry.setUser(null);
+  }
 
   return (
     <html

@@ -34,6 +34,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sparkles, Loader2, Coins } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 type PromptNodeData = {
   prompt?: string;
@@ -52,6 +55,7 @@ export default function PromptNode({
   selected,
 }: NodeProps<PromptNode>) {
   const nodeData = data as PromptNodeData;
+  const router = useRouter();
   const { getEdges, getNode } = useReactFlow();
 
   const [prompt, setPrompt] = useState(nodeData.prompt ?? "");
@@ -151,6 +155,21 @@ export default function PromptNode({
 
   const handleGenerate = useCallback(async () => {
     if (!effectivePrompt.trim() || isGenerating) return;
+
+    if (availableCredits !== null && !hasEnoughCredits) {
+      const { title, desc } = msg.ai.insufficientCredits(
+        creditCost,
+        availableCredits,
+      );
+      toast.action(title, {
+        description: desc,
+        label: msg.billing.topUp,
+        onClick: () => router.push("/settings/billing"),
+        type: "warning",
+      });
+      return;
+    }
+
     setError(null);
     setIsGenerating(true);
 
@@ -214,16 +233,27 @@ export default function PromptNode({
         targetHandle: "prompt-in",
       });
 
-      await generateImage({
-        canvasId,
-        nodeId: aiNodeId,
-        prompt: promptToUse,
-        referenceStorageId,
-        model: DEFAULT_MODEL_ID,
-        aspectRatio,
-      });
+      await toast.promise(
+        generateImage({
+          canvasId,
+          nodeId: aiNodeId,
+          prompt: promptToUse,
+          referenceStorageId,
+          model: DEFAULT_MODEL_ID,
+          aspectRatio,
+        }),
+        {
+          loading: msg.ai.generating.title,
+          success: msg.ai.generated.title,
+          error: msg.ai.generationFailed.title,
+          description: {
+            success: msg.ai.generatedDesc(creditCost),
+            error: msg.ai.creditsNotCharged,
+          },
+        },
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bildgenerierung fehlgeschlagen");
+      setError(err instanceof Error ? err.message : msg.ai.generationFailed.title);
     } finally {
       setIsGenerating(false);
     }
@@ -239,6 +269,10 @@ export default function PromptNode({
     createNodeWithIntersection,
     createEdge,
     generateImage,
+    creditCost,
+    availableCredits,
+    hasEnoughCredits,
+    router,
   ]);
 
   return (
@@ -328,14 +362,11 @@ export default function PromptNode({
             type="button"
             onClick={() => void handleGenerate()}
             disabled={
-              !effectivePrompt.trim() ||
-              isGenerating ||
-              balance === undefined ||
-              (availableCredits !== null && !hasEnoughCredits)
+              !effectivePrompt.trim() || isGenerating || balance === undefined
             }
             className={`nodrag flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${
               availableCredits !== null && !hasEnoughCredits
-                ? "bg-muted text-muted-foreground"
+                ? "bg-amber-600/90 text-white hover:bg-amber-600"
                 : "bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
             }`}
           >

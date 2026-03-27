@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
 import { ArrowUpRight, MoreHorizontal, Pencil } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +47,8 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
   const handleSave = useCallback(async () => {
     const trimmedName = editName.trim();
     if (!trimmedName) {
-      toast.error("Name darf nicht leer sein");
+      const { title, desc } = msg.dashboard.renameEmpty;
+      toast.error(title, desc);
       return;
     }
     if (trimmedName === canvas.name) {
@@ -59,10 +61,10 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
     setIsSaving(true);
     try {
       await updateCanvas({ canvasId: canvas._id, name: trimmedName });
-      toast.success("Arbeitsbereich umbenannt");
+      toast.success(msg.dashboard.renameSuccess.title);
       setIsEditing(false);
     } catch {
-      toast.error("Fehler beim Umbenennen");
+      toast.error(msg.dashboard.renameFailed.title);
     } finally {
       setIsSaving(false);
       saveInFlightRef.current = false;

@@ -1,5 +1,8 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
 import { Button } from "@/components/ui/button";
 
 type GlobalErrorProps = {
@@ -11,6 +14,10 @@ export default function GlobalError({
   error,
   unstable_retry,
 }: GlobalErrorProps) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <html lang="de" className="h-full antialiased font-sans">
       <body className="min-h-full bg-background text-foreground">

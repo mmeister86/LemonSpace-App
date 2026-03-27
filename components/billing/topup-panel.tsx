@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { authClient } from "@/lib/auth-client";
 import { TOPUP_PRODUCTS } from "@/lib/polar-products";
 import { calculateCustomTopup } from "@/lib/topup-calculator";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 const CUSTOM_TOPUP_PRODUCT_ID = "POLAR_PRODUCT_ID_TOPUP_CUSTOM";
 
@@ -16,6 +18,10 @@ export function TopupPanel() {
   const { credits, bonusRate } = calculateCustomTopup(customAmount);
 
   async function handleTopup(polarProductId: string) {
+    toast.info(
+      msg.billing.redirectingToCheckout.title,
+      msg.billing.redirectingToCheckout.desc,
+    );
     await authClient.checkout({ products: [polarProductId] });
   }
 

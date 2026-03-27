@@ -3,6 +3,8 @@
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 export default function Home() {
   const { data: session, isPending } = authClient.useSession();
@@ -32,7 +34,10 @@ export default function Home() {
             Zum Dashboard
           </Link>
           <button
-            onClick={() => authClient.signOut().then(() => router.refresh())}
+            onClick={() => {
+              toast.info(msg.auth.signedOut.title);
+              void authClient.signOut().then(() => router.refresh());
+            }}
             className="rounded-lg border border-border px-6 py-3 text-sm hover:bg-accent"
           >
             Abmelden

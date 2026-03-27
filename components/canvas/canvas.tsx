@@ -11,6 +11,7 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
+  useStoreApi,
   reconnectEdge,
   type Node as RFNode,
   type Edge as RFEdge,
@@ -22,6 +23,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -170,8 +172,67 @@ function normalizeHandle(handle: string | null | undefined): string | undefined 
   return handle ?? undefined;
 }
 
+function shallowEqualRecord(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+
+  return true;
+}
+
+function mergeNodesPreservingLocalState(
+  previousNodes: RFNode[],
+  incomingNodes: RFNode[],
+): RFNode[] {
+  const previousById = new Map(previousNodes.map((node) => [node.id, node]));
+
+  return incomingNodes.map((incomingNode) => {
+    const previousNode = previousById.get(incomingNode.id);
+    if (!previousNode) {
+      return incomingNode;
+    }
+
+    const previousData = previousNode.data as Record<string, unknown>;
+    const incomingData = incomingNode.data as Record<string, unknown>;
+    const previousWidth = previousNode.style?.width;
+    const previousHeight = previousNode.style?.height;
+    const incomingWidth = incomingNode.style?.width;
+    const incomingHeight = incomingNode.style?.height;
+
+    const isStructurallyEqual =
+      previousNode.type === incomingNode.type &&
+      previousNode.parentId === incomingNode.parentId &&
+      previousNode.zIndex === incomingNode.zIndex &&
+      previousNode.position.x === incomingNode.position.x &&
+      previousNode.position.y === incomingNode.position.y &&
+      previousWidth === incomingWidth &&
+      previousHeight === incomingHeight &&
+      shallowEqualRecord(previousData, incomingData);
+
+    if (isStructurallyEqual) {
+      return previousNode;
+    }
+
+    return {
+      ...previousNode,
+      ...incomingNode,
+      selected: previousNode.selected,
+      dragging: previousNode.dragging,
+    };
+  });
+}
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { screenToFlowPosition } = useReactFlow();
+  const storeApi = useStoreApi();
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
@@ -301,8 +362,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     }
 
     if (recentFailures.length >= GENERATION_FAILURE_THRESHOLD) {
-      toast.error(
-        "Mehrere Generierungen sind fehlgeschlagen. Bitte Prompt, Modell oder Credits prüfen.",
+      toast.warning(
+        msg.ai.openrouterIssues.title,
+        msg.ai.openrouterIssues.desc,
       );
       recentGenerationFailureTimestampsRef.current = [];
       return;
@@ -315,7 +377,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useEffect(() => {
     if (!convexNodes || isDragging.current) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNodes(withResolvedCompareData(convexNodes.map(convexNodeToRF), edges));
+    setNodes((previousNodes) => {
+      const incomingNodes = withResolvedCompareData(convexNodes.map(convexNodeToRF), edges);
+      return mergeNodesPreservingLocalState(previousNodes, incomingNodes);
+    });
   }, [convexNodes, edges]);
 
   useEffect(() => {
@@ -366,6 +431,56 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((eds) => applyEdgeChanges(changes, eds));
   }, []);
+
+  const onFlowError = useCallback(
+    (code: string, message: string) => {
+      if (process.env.NODE_ENV === "production") return;
+
+      if (code !== "015") {
+        console.error("[ReactFlow error]", { canvasId, code, message });
+        return;
+      }
+
+      const state = storeApi.getState() as {
+        nodeLookup?: Map<
+          string,
+          {
+            id: string;
+            selected?: boolean;
+            type?: string;
+            measured?: { width?: number; height?: number };
+            internals?: { positionAbsolute?: { x: number; y: number } };
+          }
+        >;
+      };
+
+      const uninitializedNodes = Array.from(state.nodeLookup?.values() ?? [])
+        .filter(
+          (node) =>
+            node.measured?.width === undefined ||
+            node.measured?.height === undefined,
+        )
+        .map((node) => ({
+          id: node.id,
+          type: node.type ?? null,
+          selected: Boolean(node.selected),
+          measuredWidth: node.measured?.width,
+          measuredHeight: node.measured?.height,
+          positionAbsolute: node.internals?.positionAbsolute ?? null,
+        }));
+
+      console.error("[ReactFlow error 015 diagnostics]", {
+        canvasId,
+        message,
+        localNodeCount: nodes.length,
+        localSelectedNodeIds: nodes.filter((n) => n.selected).map((n) => n.id),
+        isDragging: isDragging.current,
+        uninitializedNodeCount: uninitializedNodes.length,
+        uninitializedNodes,
+      });
+    },
+    [canvasId, nodes, storeApi],
+  );
 
   // ─── Delete Edge on Drop ──────────────────────────────────────
   const onReconnectStart = useCallback(() => {
@@ -614,6 +729,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Node löschen → Convex ────────────────────────────────────
   const onNodesDelete = useCallback(
     async (deletedNodes: RFNode[]) => {
+      const count = deletedNodes.length;
       for (const node of deletedNodes) {
         const incomingEdges = edges.filter((e) => e.target === node.id);
         const outgoingEdges = edges.filter((e) => e.source === node.id);
@@ -633,6 +749,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         }
 
         removeNode({ nodeId: node.id as Id<"nodes"> });
+      }
+      if (count > 0) {
+        const { title } = msg.canvas.nodesRemoved(count);
+        toast.info(title);
       }
     },
     [edges, removeNode, createEdge, canvasId],
@@ -732,6 +852,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onReconnectEnd={onReconnectEnd}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onError={onFlowError}
           onDragOver={onDragOver}
           onDrop={onDrop}
           fitView

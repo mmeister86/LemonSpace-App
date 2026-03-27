@@ -10,6 +10,8 @@ import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
 import { classifyError, type AiErrorCategory } from "@/lib/ai-errors";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
+import { toast } from "@/lib/toast";
+import { msg } from "@/lib/toast-messages";
 import {
   Loader2,
   AlertCircle,
@@ -106,16 +108,30 @@ export default function AiImageNode({
         }
       }
 
-      await generateImage({
-        canvasId,
-        nodeId: id as Id<"nodes">,
-        prompt,
-        referenceStorageId,
-        model: nodeData.model ?? DEFAULT_MODEL_ID,
-        aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
-      });
+      const modelId = nodeData.model ?? DEFAULT_MODEL_ID;
+      const regenCreditCost = getModel(modelId)?.creditCost ?? 4;
+
+      await toast.promise(
+        generateImage({
+          canvasId,
+          nodeId: id as Id<"nodes">,
+          prompt,
+          referenceStorageId,
+          model: modelId,
+          aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
+        }),
+        {
+          loading: msg.ai.generating.title,
+          success: msg.ai.generated.title,
+          error: msg.ai.generationFailed.title,
+          description: {
+            success: msg.ai.generatedDesc(regenCreditCost),
+            error: msg.ai.creditsNotCharged,
+          },
+        },
+      );
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Generation failed");
+      setLocalError(err instanceof Error ? err.message : msg.ai.generationFailed.title);
     } finally {
       setIsGenerating(false);
     }
