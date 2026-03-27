@@ -1,8 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { NodeErrorBoundary } from "./node-error-boundary";
 
 interface BaseNodeWrapperProps {
+  nodeType: string;
   selected?: boolean;
   status?: string;
   statusMessage?: string;
@@ -11,6 +13,7 @@ interface BaseNodeWrapperProps {
 }
 
 export default function BaseNodeWrapper({
+  nodeType,
   selected,
   status = "idle",
   statusMessage,
@@ -35,7 +38,7 @@ export default function BaseNodeWrapper({
         ${className}
       `}
     >
-      {children}
+      <NodeErrorBoundary nodeType={nodeType}>{children}</NodeErrorBoundary>
       {status === "error" && statusMessage && (
         <div className="px-3 pb-2 text-xs text-red-500 truncate">
           {statusMessage}

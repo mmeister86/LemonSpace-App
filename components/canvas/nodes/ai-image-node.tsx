@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
+import { classifyError, type AiErrorCategory } from "@/lib/ai-errors";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
 import {
   Loader2,
@@ -14,6 +16,9 @@ import {
   RefreshCw,
   ImageIcon,
   Coins,
+  Clock3,
+  ShieldAlert,
+  WifiOff,
 } from "lucide-react";
 
 type AiImageNodeData = {
@@ -31,6 +36,7 @@ type AiImageNodeData = {
   aspectRatio?: string;
   outputWidth?: number;
   outputHeight?: number;
+  retryCount?: number;
   _status?: string;
   _statusMessage?: string;
 };
@@ -52,6 +58,7 @@ export default function AiImageNode({
 }: NodeProps<AiImageNode>) {
   const nodeData = data as AiImageNodeData;
   const { getEdges, getNode } = useReactFlow();
+  const router = useRouter();
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -60,6 +67,12 @@ export default function AiImageNode({
 
   const status = (nodeData._status ?? "idle") as NodeStatus;
   const errorMessage = nodeData._statusMessage;
+  const classifiedError = classifyError(errorMessage ?? localError);
+
+  const executingRetryCount =
+    typeof nodeData.retryCount === "number"
+      ? nodeData.retryCount
+      : classifiedError.retryCount;
 
   const isLoading =
     status === "executing" ||
@@ -111,8 +124,25 @@ export default function AiImageNode({
   const modelName =
     getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";
 
+  const renderErrorIcon = (category: AiErrorCategory) => {
+    switch (category) {
+      case "insufficient_credits":
+        return <Coins className="h-8 w-8 text-amber-500" />;
+      case "rate_limited":
+      case "timeout":
+        return <Clock3 className="h-8 w-8 text-amber-500" />;
+      case "content_policy":
+        return <ShieldAlert className="h-8 w-8 text-destructive" />;
+      case "network":
+        return <WifiOff className="h-8 w-8 text-destructive" />;
+      default:
+        return <AlertCircle className="h-8 w-8 text-destructive" />;
+    }
+  };
+
   return (
     <BaseNodeWrapper
+      nodeType="ai-image"
       selected={selected}
       className="flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden"
     >
@@ -151,6 +181,13 @@ export default function AiImageNode({
               {status === "clarifying" && "Clarifying…"}
               {(status === "executing" || isGenerating) && "Generating…"}
             </p>
+            {(status === "executing" || isGenerating) &&
+              typeof executingRetryCount === "number" &&
+              executingRetryCount > 0 && (
+                <p className="relative z-10 text-[10px] text-amber-600 dark:text-amber-400">
+                  Retry attempt {executingRetryCount}
+                </p>
+              )}
             <p className="relative z-10 text-[10px] text-muted-foreground/60">
               {modelName}
             </p>
@@ -159,22 +196,42 @@ export default function AiImageNode({
 
         {status === "error" && !isLoading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted">
-            <AlertCircle className="h-8 w-8 text-destructive" />
+            {renderErrorIcon(classifiedError.category)}
             <p className="px-4 text-center text-xs font-medium text-destructive">
-              Generation failed
+              {classifiedError.message}
             </p>
-            <p className="px-6 text-center text-[10px] text-muted-foreground">
-              {errorMessage ?? localError ?? "Unknown error"} — Credits not
-              charged
-            </p>
-            <button
-              type="button"
-              onClick={() => void handleRegenerate()}
-              className="nodrag mt-1 flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Try again
-            </button>
+            {classifiedError.detail && (
+              <p className="px-6 text-center text-[10px] text-muted-foreground">
+                {classifiedError.detail}
+              </p>
+            )}
+            {classifiedError.creditsNotCharged && (
+              <p className="px-6 text-center text-[10px] text-muted-foreground">
+                Credits not charged
+              </p>
+            )}
+            <div className="mt-1 flex items-center gap-2">
+              {classifiedError.showTopUp && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/settings/billing")}
+                  className="nodrag flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-300"
+                >
+                  <Coins className="h-3 w-3" />
+                  Top up credits
+                </button>
+              )}
+              {classifiedError.retryable && (
+                <button
+                  type="button"
+                  onClick={() => void handleRegenerate()}
+                  className="nodrag flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Try again
+                </button>
+              )}
+            </div>
           </div>
         )}
 

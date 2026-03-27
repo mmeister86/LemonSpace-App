@@ -53,7 +53,7 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
   );
 
   return (
-    <BaseNodeWrapper selected={selected} className="w-52 p-3">
+    <BaseNodeWrapper nodeType="note" selected={selected} className="w-52 p-3">
       <Handle
         type="target"
         position={Position.Left}

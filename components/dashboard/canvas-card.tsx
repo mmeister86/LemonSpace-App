@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
 import { ArrowUpRight, MoreHorizontal, Pencil } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
 import {

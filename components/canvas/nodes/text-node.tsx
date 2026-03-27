@@ -75,7 +75,12 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
   );
 
   return (
-    <BaseNodeWrapper selected={selected} status={data._status} className="relative">
+    <BaseNodeWrapper
+      nodeType="text"
+      selected={selected}
+      status={data._status}
+      className="relative"
+    >
       <Handle
         type="target"
         position={Position.Left}

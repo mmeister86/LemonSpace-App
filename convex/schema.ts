@@ -183,6 +183,7 @@ export default defineSchema({
     // Node-Status (UX-Strategie: Status direkt am Node sichtbar)
     status: nodeStatus,
     statusMessage: v.optional(v.string()),         // z.B. "Timeout — Credits nicht abgebucht"
+    retryCount: v.optional(v.number()),            // Anzahl bereits durchgeführter Retries
     // Typ-spezifische Daten
     // Convex empfiehlt v.any() für polymorphe data-Felder
     // Type Safety wird über den `type`-Discriminator + Zod im Frontend sichergestellt

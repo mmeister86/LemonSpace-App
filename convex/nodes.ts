@@ -160,6 +160,7 @@ export const create = mutation({
       width: args.width,
       height: args.height,
       status: "idle",
+      retryCount: 0,
       data: args.data,
       parentId: args.parentId,
       zIndex: args.zIndex,
@@ -276,20 +277,28 @@ export const updateStatus = mutation({
       v.literal("error")
     ),
     statusMessage: v.optional(v.string()),
+    retryCount: v.optional(v.number()),
   },
-  handler: async (ctx, { nodeId, status, statusMessage }) => {
+  handler: async (ctx, { nodeId, status, statusMessage, retryCount }) => {
     const user = await requireAuth(ctx);
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
-    const patch: { status: typeof status; statusMessage?: string } = {
+    const patch: {
+      status: typeof status;
+      statusMessage?: string;
+      retryCount?: number;
+    } = {
       status,
     };
     if (statusMessage !== undefined) {
       patch.statusMessage = statusMessage;
     } else if (status === "done" || status === "executing" || status === "idle") {
       patch.statusMessage = undefined;
+    }
+    if (retryCount !== undefined) {
+      patch.retryCount = retryCount;
     }
     await ctx.db.patch(nodeId, patch);
   },

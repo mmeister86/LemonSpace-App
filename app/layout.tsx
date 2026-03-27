@@ -3,7 +3,6 @@ import { Manrope } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/providers";
-import { Toaster } from "@/components/ui/sonner";
 import { InitUser } from "@/components/init-user";
 import { getToken } from "@/lib/auth-server";
 
@@ -31,7 +30,6 @@ export default async function RootLayout({
         <Providers initialToken={initialToken}>
           <InitUser />
           {children}
-          <Toaster />
         </Providers>
       </body>
     </html>

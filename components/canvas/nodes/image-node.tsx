@@ -116,7 +116,7 @@ export default function ImageNode({ id, data, selected }: NodeProps<ImageNode>) 
   }, []);
 
   return (
-    <BaseNodeWrapper selected={selected} status={data._status}>
+    <BaseNodeWrapper nodeType="image" selected={selected} status={data._status}>
       <Handle
         type="target"
         position={Position.Left}

@@ -44,6 +44,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
 
   return (
     <BaseNodeWrapper
+      nodeType="group"
       selected={selected}
       className="min-w-[200px] min-h-[150px] p-3 border-dashed"
     >

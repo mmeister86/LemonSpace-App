@@ -21,6 +21,7 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { toast } from "@/lib/toast";
 
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -112,6 +113,9 @@ const EDGE_INTERSECTION_HIGHLIGHT_STYLE: NonNullable<RFEdge["style"]> = {
   stroke: "hsl(var(--foreground))",
   strokeWidth: 2,
 };
+
+const GENERATION_FAILURE_WINDOW_MS = 5 * 60 * 1000;
+const GENERATION_FAILURE_THRESHOLD = 3;
 
 function getEdgeIdFromInteractionElement(element: Element): string | null {
   const edgeContainer = element.closest(".react-flow__edge");
@@ -249,6 +253,63 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
     undefined,
   );
+  const recentGenerationFailureTimestampsRef = useRef<number[]>([]);
+  const previousNodeStatusRef = useRef<Map<string, string | undefined>>(new Map());
+  const hasInitializedGenerationFailureTrackingRef = useRef(false);
+
+  useEffect(() => {
+    if (!convexNodes) return;
+
+    const nextNodeStatusMap = new Map<string, string | undefined>();
+    let detectedGenerationFailures = 0;
+
+    for (const node of convexNodes) {
+      nextNodeStatusMap.set(node._id, node.status);
+
+      if (node.type !== "ai-image") {
+        continue;
+      }
+
+      const previousStatus = previousNodeStatusRef.current.get(node._id);
+      if (
+        hasInitializedGenerationFailureTrackingRef.current &&
+        node.status === "error" &&
+        previousStatus !== "error"
+      ) {
+        detectedGenerationFailures += 1;
+      }
+    }
+
+    previousNodeStatusRef.current = nextNodeStatusMap;
+
+    if (!hasInitializedGenerationFailureTrackingRef.current) {
+      hasInitializedGenerationFailureTrackingRef.current = true;
+      return;
+    }
+
+    if (detectedGenerationFailures === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const recentFailures = recentGenerationFailureTimestampsRef.current.filter(
+      (timestamp) => now - timestamp <= GENERATION_FAILURE_WINDOW_MS,
+    );
+
+    for (let index = 0; index < detectedGenerationFailures; index += 1) {
+      recentFailures.push(now);
+    }
+
+    if (recentFailures.length >= GENERATION_FAILURE_THRESHOLD) {
+      toast.error(
+        "Mehrere Generierungen sind fehlgeschlagen. Bitte Prompt, Modell oder Credits prüfen.",
+      );
+      recentGenerationFailureTimestampsRef.current = [];
+      return;
+    }
+
+    recentGenerationFailureTimestampsRef.current = recentFailures;
+  }, [convexNodes]);
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {

@@ -17,6 +17,7 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
       // Status direkt in data durchreichen, damit Node-Komponenten darauf zugreifen können
       _status: node.status,
       _statusMessage: node.statusMessage,
+      retryCount: node.retryCount,
     },
     parentId: node.parentId ?? undefined,
     zIndex: node.zIndex,

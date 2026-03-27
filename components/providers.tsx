@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
+import { Toaster } from "@/components/ui/sonner";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -36,6 +37,7 @@ export function Providers({
           Link={Link}
         >
           {children}
+          <Toaster position="bottom-right" />
         </AuthUIProvider>
       </ConvexBetterAuthProvider>
     </ThemeProvider>

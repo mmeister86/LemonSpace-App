@@ -243,6 +243,7 @@ export default function PromptNode({
 
   return (
     <BaseNodeWrapper
+      nodeType="prompt"
       selected={selected}
       status={nodeData._status}
       statusMessage={nodeData._statusMessage}

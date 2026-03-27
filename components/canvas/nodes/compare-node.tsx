@@ -63,7 +63,7 @@ export default function CompareNode({ data, selected }: NodeProps) {
   }, []);
 
   return (
-    <BaseNodeWrapper selected={selected} className="w-[500px] p-0">
+    <BaseNodeWrapper nodeType="compare" selected={selected} className="w-[500px] p-0">
       <div className="px-3 py-2 text-xs font-medium text-muted-foreground">⚖️ Compare</div>
 
       <Handle

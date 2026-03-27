@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Coins } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const TIER_LABELS: Record<string, string> = {
   free: "Free",

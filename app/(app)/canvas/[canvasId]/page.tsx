@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import Canvas from "@/components/canvas/canvas";
+import ConnectionBanner from "@/components/canvas/connection-banner";
 import CanvasSidebar from "@/components/canvas/canvas-sidebar";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -50,7 +51,8 @@ export default async function CanvasPage({
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       <CanvasSidebar />
-      <div className="flex-1">
+      <div className="relative flex-1">
+        <ConnectionBanner />
         <Canvas canvasId={typedCanvasId} />
       </div>
     </div>

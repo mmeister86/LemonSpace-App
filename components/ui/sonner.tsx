@@ -6,6 +6,7 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
+  const { toastOptions, ...restProps } = props
 
   return (
     <Sonner
@@ -37,11 +38,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as React.CSSProperties
       }
       toastOptions={{
+        ...toastOptions,
         classNames: {
           toast: "cn-toast",
+          error: "border-destructive",
+          ...toastOptions?.classNames,
         },
       }}
-      {...props}
+      {...restProps}
     />
   )
 }

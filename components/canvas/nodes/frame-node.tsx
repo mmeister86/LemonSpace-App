@@ -59,6 +59,7 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
 
   return (
     <BaseNodeWrapper
+      nodeType="frame"
       selected={selected}
       className="relative h-full w-full border-2 border-dashed border-muted-foreground/40 !bg-transparent p-0 shadow-none"
     >
