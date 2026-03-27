@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { Check } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,7 @@ import { msg } from "@/lib/toast-messages";
 const TIER_ORDER = ["free", "starter", "pro", "max"] as const;
 
 export function PricingCards() {
-  const subscription = useQuery(api.credits.getSubscription);
+  const subscription = useAuthQuery(api.credits.getSubscription);
   const currentTier = normalizeTier(subscription?.tier);
 
   async function handleCheckout(polarProductId: string) {

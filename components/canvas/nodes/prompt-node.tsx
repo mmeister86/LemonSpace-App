@@ -9,7 +9,8 @@ import {
   type NodeProps,
   type Node,
 } from "@xyflow/react";
-import { useMutation, useAction, useQuery } from "convex/react";
+import { useMutation, useAction } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
@@ -108,7 +109,7 @@ export default function PromptNode({
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const balance = useQuery(api.credits.getBalance);
+  const balance = useAuthQuery(api.credits.getBalance);
   const creditCost = getModel(DEFAULT_MODEL_ID)?.creditCost ?? 4;
 
   const availableCredits =

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ const TIER_LABELS: Record<keyof typeof TIER_MONTHLY_CREDITS, string> = {
 };
 
 export function ManageSubscription() {
-  const subscription = useQuery(api.credits.getSubscription);
+  const subscription = useAuthQuery(api.credits.getSubscription);
   const tier = normalizeTier(subscription?.tier);
 
   return (

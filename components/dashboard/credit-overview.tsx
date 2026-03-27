@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,9 +43,9 @@ const LOW_CREDITS_THRESHOLD = 20;
 
 export function CreditOverview() {
   const router = useRouter();
-  const balance = useQuery(api.credits.getBalance);
-  const subscription = useQuery(api.credits.getSubscription);
-  const usageStats = useQuery(api.credits.getUsageStats);
+  const balance = useAuthQuery(api.credits.getBalance);
+  const subscription = useAuthQuery(api.credits.getSubscription);
+  const usageStats = useAuthQuery(api.credits.getUsageStats);
 
   useEffect(() => {
     if (balance === undefined) return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { Activity, Coins } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +45,7 @@ function truncatedDescription(text: string, maxLen = 40) {
 // ---------------------------------------------------------------------------
 
 export function RecentTransactions() {
-  const transactions = useQuery(api.credits.getRecentTransactions, {
+  const transactions = useAuthQuery(api.credits.getRecentTransactions, {
     limit: 10,
   });
 

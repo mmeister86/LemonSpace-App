@@ -1,6 +1,7 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import { Coins } from "lucide-react";
 import { toast } from "@/lib/toast";
@@ -27,8 +28,8 @@ const showTestCreditGrant =
   process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "true";
 
 export function CreditDisplay() {
-  const balance = useQuery(api.credits.getBalance);
-  const subscription = useQuery(api.credits.getSubscription);
+  const balance = useAuthQuery(api.credits.getBalance);
+  const subscription = useAuthQuery(api.credits.getSubscription);
   const grantTestCredits = useMutation(api.credits.grantTestCredits);
 
   if (balance === undefined || subscription === undefined) {

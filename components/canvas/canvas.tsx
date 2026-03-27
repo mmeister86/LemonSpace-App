@@ -236,10 +236,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
-  const shouldSkipCanvasQueries = isAuthLoading || !isAuthenticated;
+  const shouldSkipCanvasQueries =
+    isSessionPending || isAuthLoading || !isAuthenticated;
   const convexAuthUserProbe = useQuery(
     api.auth.safeGetAuthUser,
-    isAuthLoading ? "skip" : {},
+    shouldSkipCanvasQueries ? "skip" : {},
   );
 
   useEffect(() => {
@@ -376,7 +377,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {
     if (!convexNodes || isDragging.current) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes((previousNodes) => {
       const incomingNodes = withResolvedCompareData(convexNodes.map(convexNodeToRF), edges);
       return mergeNodesPreservingLocalState(previousNodes, incomingNodes);
@@ -385,7 +385,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   useEffect(() => {
     if (!convexEdges) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEdges((prev) => {
       const tempEdges = prev.filter((e) => e.className === "temp");
       const mapped = convexEdges.map(convexEdgeToRF);
@@ -398,7 +397,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   useEffect(() => {
     if (isDragging.current) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes((nds) => withResolvedCompareData(nds, edges));
   }, [edges]);
 

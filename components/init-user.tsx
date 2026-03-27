@@ -1,7 +1,8 @@
 "use client";
 
 import { authClient } from "@/lib/auth-client";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import { useEffect, useRef } from "react";
 import { toast } from "@/lib/toast";
@@ -14,10 +15,8 @@ import { msg } from "@/lib/toast-messages";
  */
 export function InitUser() {
   const { data: session } = authClient.useSession();
-  const balance = useQuery(
-    api.credits.getBalance,
-    session?.user ? {} : "skip"
-  );
+
+  const balance = useAuthQuery(api.credits.getBalance);
   const initBalance = useMutation(api.credits.initBalance);
   const initStartedRef = useRef(false);
 
