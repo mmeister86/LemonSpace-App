@@ -34,6 +34,7 @@ export default function CanvasToolbar({
       width,
       height,
       data,
+      clientRequestId: crypto.randomUUID(),
     });
   };
 

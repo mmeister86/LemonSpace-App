@@ -128,10 +128,14 @@ export const create = mutation({
     data: v.any(),
     parentId: v.optional(v.id("nodes")),
     zIndex: v.optional(v.number()),
+    /** Client-only correlation for optimistic UI (not persisted). */
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+    void args.clientRequestId;
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,

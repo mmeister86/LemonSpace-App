@@ -67,7 +67,7 @@ export function CanvasCommandPalette() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const handleAddNode = async (
+  const handleAddNode = (
     type: CanvasNodeTemplate["type"],
     data: CanvasNodeTemplate["defaultData"],
     width: number,
@@ -75,14 +75,17 @@ export function CanvasCommandPalette() {
   ) => {
     const offset = (nodeCountRef.current % 8) * 24;
     nodeCountRef.current += 1;
-    await createNodeWithIntersection({
+    setOpen(false);
+    void createNodeWithIntersection({
       type,
       position: { x: 100 + offset, y: 100 + offset },
       width,
       height,
       data,
+      clientRequestId: crypto.randomUUID(),
+    }).catch((error) => {
+      console.error("[CanvasCommandPalette] createNode failed", error);
     });
-    setOpen(false);
   };
 
   return (
@@ -104,7 +107,7 @@ export function CanvasCommandPalette() {
                   key={template.type}
                   keywords={NODE_SEARCH_KEYWORDS[template.type] ?? []}
                   onSelect={() =>
-                    void handleAddNode(
+                    handleAddNode(
                       template.type,
                       template.defaultData,
                       template.width,

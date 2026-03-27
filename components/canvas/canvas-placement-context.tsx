@@ -28,6 +28,7 @@ type CreateNodeMutation = ReactMutation<
       data: unknown;
       parentId?: Id<"nodes">;
       zIndex?: number;
+      clientRequestId?: string;
     },
     Id<"nodes">
   >
@@ -67,6 +68,8 @@ type CreateNodeWithIntersectionInput = {
   data?: Record<string, unknown>;
   clientPosition?: FlowPoint;
   zIndex?: number;
+  /** Correlate optimistic node id with server id after create (see canvas move flush). */
+  clientRequestId?: string;
 };
 
 type CanvasPlacementContextValue = {
@@ -132,6 +135,10 @@ interface CanvasPlacementProviderProps {
   canvasId: Id<"canvases">;
   createNode: CreateNodeMutation;
   createNodeWithEdgeSplit: CreateNodeWithEdgeSplitMutation;
+  onCreateNodeSettled?: (payload: {
+    clientRequestId?: string;
+    realId: Id<"nodes">;
+  }) => void;
   children: ReactNode;
 }
 
@@ -139,6 +146,7 @@ export function CanvasPlacementProvider({
   canvasId,
   createNode,
   createNodeWithEdgeSplit,
+  onCreateNodeSettled,
   children,
 }: CanvasPlacementProviderProps) {
   const { flowToScreenPosition } = useReactFlow();
@@ -153,6 +161,7 @@ export function CanvasPlacementProvider({
       data,
       clientPosition,
       zIndex,
+      clientRequestId,
     }: CreateNodeWithIntersectionInput) => {
       const defaults = NODE_DEFAULTS[type] ?? {
         width: 200,
@@ -174,7 +183,7 @@ export function CanvasPlacementProvider({
         hitEdgeFromClientPosition ??
         getIntersectedPersistedEdge(centerClientPosition, edges);
 
-      const nodePayload = {
+      const baseNodePayload = {
         canvasId,
         type,
         positionX: position.x,
@@ -189,24 +198,39 @@ export function CanvasPlacementProvider({
         ...(zIndex !== undefined ? { zIndex } : {}),
       };
 
+      const createNodePayload = {
+        ...baseNodePayload,
+        ...(clientRequestId !== undefined ? { clientRequestId } : {}),
+      };
+
+      const notifySettled = (realId: Id<"nodes">) => {
+        onCreateNodeSettled?.({ clientRequestId, realId });
+      };
+
       if (!hitEdge) {
-        return await createNode(nodePayload);
+        const realId = await createNode(createNodePayload);
+        notifySettled(realId);
+        return realId;
       }
 
       const handles = NODE_HANDLE_MAP[type];
       if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
-        return await createNode(nodePayload);
+        const realId = await createNode(createNodePayload);
+        notifySettled(realId);
+        return realId;
       }
 
       try {
-        return await createNodeWithEdgeSplit({
-          ...nodePayload,
+        const realId = await createNodeWithEdgeSplit({
+          ...baseNodePayload,
           splitEdgeId: hitEdge.id as Id<"edges">,
           newNodeTargetHandle: normalizeHandle(handles.target),
           newNodeSourceHandle: normalizeHandle(handles.source),
           splitSourceHandle: normalizeHandle(hitEdge.sourceHandle),
           splitTargetHandle: normalizeHandle(hitEdge.targetHandle),
         });
+        notifySettled(realId);
+        return realId;
       } catch (error) {
         console.error("[Canvas placement] edge split failed", {
           edgeId: hitEdge.id,
@@ -216,7 +240,14 @@ export function CanvasPlacementProvider({
         throw error;
       }
     },
-    [canvasId, createNode, createNodeWithEdgeSplit, edges, flowToScreenPosition],
+    [
+      canvasId,
+      createNode,
+      createNodeWithEdgeSplit,
+      edges,
+      flowToScreenPosition,
+      onCreateNodeSettled,
+    ],
   );
 
   const value = useMemo(

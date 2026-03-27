@@ -229,6 +229,7 @@ export default function PromptNode({
           outputWidth: viewport.width,
           outputHeight: viewport.height,
         },
+        clientRequestId: crypto.randomUUID(),
       });
 
       await createEdge({

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { NodeResizeControl, NodeToolbar, Position, useNodeId, useReactFlow } from "@xyflow/react";
-import { Trash2, Copy, Loader2 } from "lucide-react";
+import { Trash2, Copy } from "lucide-react";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { NodeErrorBoundary } from "./node-error-boundary";
 
@@ -46,21 +46,16 @@ function NodeToolbarActions() {
   const nodeId = useNodeId();
   const { deleteElements, getNode, getNodes, setNodes } = useReactFlow();
   const { createNodeWithIntersection } = useCanvasPlacement();
-  const [isDuplicating, setIsDuplicating] = useState(false);
-
   const handleDelete = () => {
     if (!nodeId) return;
     void deleteElements({ nodes: [{ id: nodeId }] });
   };
 
-  const handleDuplicate = async () => {
-    if (!nodeId || isDuplicating) return;
+  const handleDuplicate = () => {
+    if (!nodeId) return;
     const node = getNode(nodeId);
     if (!node) return;
 
-    setIsDuplicating(true);
-
-    try {
     // Strip internal/runtime fields, keep only user content
     const originalData = (node.data ?? {}) as Record<string, unknown>;
     const cleanedData: Record<string, unknown> = {};
@@ -81,7 +76,15 @@ function NodeToolbarActions() {
       0,
     );
 
-    const createdNodeId = await createNodeWithIntersection({
+    // Deselect source node immediately for instant visual feedback
+    setNodes((nodes) =>
+      nodes.map((n) =>
+        n.id === nodeId ? { ...n, selected: false } : n,
+      ),
+    );
+
+    // Fire-and-forget: optimistic update makes the duplicate appear instantly
+    void createNodeWithIntersection({
       type: node.type ?? "text",
       position: {
         x: originalPosition.x + 50,
@@ -91,34 +94,8 @@ function NodeToolbarActions() {
       height,
       data: cleanedData,
       zIndex: maxZIndex + 1,
+      clientRequestId: crypto.randomUUID(),
     });
-
-    const selectCreatedNode = (attempt = 0) => {
-      const createdNode = getNode(createdNodeId);
-      if (!createdNode) {
-        if (attempt < 10) {
-          requestAnimationFrame(() => selectCreatedNode(attempt + 1));
-        }
-        return;
-      }
-
-      setNodes((nodes) =>
-        nodes.map((n) => {
-          if (n.id === nodeId) {
-            return { ...n, selected: false };
-          }
-          if (n.id === createdNodeId) {
-            return { ...n, selected: true };
-          }
-          return n;
-        }),
-      );
-    };
-
-    selectCreatedNode();
-    } finally {
-      setIsDuplicating(false);
-    }
   };
 
   const stopPropagation = (e: React.MouseEvent | React.PointerEvent) => {
@@ -130,17 +107,12 @@ function NodeToolbarActions() {
       <div className="flex items-center gap-1 rounded-lg border bg-card p-1 shadow-md">
         <button
           type="button"
-          onClick={(e) => { stopPropagation(e); void handleDuplicate(); }}
+          onClick={(e) => { stopPropagation(e); handleDuplicate(); }}
           onPointerDown={stopPropagation}
-          title={isDuplicating ? "Duplicating…" : "Duplicate"}
-          disabled={isDuplicating}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-wait"
+          title="Duplicate"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          {isDuplicating ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Copy size={14} />
-          )}
+          <Copy size={14} />
         </button>
         <button
           type="button"

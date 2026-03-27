@@ -46,6 +46,18 @@ interface CanvasInnerProps {
   canvasId: Id<"canvases">;
 }
 
+const OPTIMISTIC_NODE_PREFIX = "optimistic_";
+
+function isOptimisticNodeId(id: string): boolean {
+  return id.startsWith(OPTIMISTIC_NODE_PREFIX);
+}
+
+function clientRequestIdFromOptimisticNodeId(id: string): string | null {
+  if (!isOptimisticNodeId(id)) return null;
+  const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
+  return suffix.length > 0 ? suffix : null;
+}
+
 function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
   let hasNodeUpdates = false;
@@ -353,6 +365,46 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
   const batchMoveNodes = useMutation(api.nodes.batchMove);
+  const pendingMoveAfterCreateRef = useRef(
+    new Map<string, { positionX: number; positionY: number }>(),
+  );
+  const resolvedRealIdByClientRequestRef = useRef(new Map<string, Id<"nodes">>());
+
+  /** Pairing: create kann vor oder nach Drag-Ende fertig sein — was zuerst kommt, speichert; das andere triggert moveNode. */
+  const syncPendingMoveForClientRequest = useCallback(
+    (clientRequestId: string | undefined, realId?: Id<"nodes">) => {
+      if (!clientRequestId) return;
+
+      if (realId !== undefined) {
+        const pending = pendingMoveAfterCreateRef.current.get(clientRequestId);
+        if (pending) {
+          pendingMoveAfterCreateRef.current.delete(clientRequestId);
+          resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
+          void moveNode({
+            nodeId: realId,
+            positionX: pending.positionX,
+            positionY: pending.positionY,
+          });
+          return;
+        }
+        resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
+        return;
+      }
+
+      const r = resolvedRealIdByClientRequestRef.current.get(clientRequestId);
+      const p = pendingMoveAfterCreateRef.current.get(clientRequestId);
+      if (!r || !p) return;
+      pendingMoveAfterCreateRef.current.delete(clientRequestId);
+      resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
+      void moveNode({
+        nodeId: r,
+        positionX: p.positionX,
+        positionY: p.positionY,
+      });
+    },
+    [moveNode],
+  );
+
   const createNode = useMutation(api.nodes.create).withOptimisticUpdate(
     (localStore, args) => {
       const current = localStore.getQuery(api.nodes.list, {
@@ -360,8 +412,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       });
       if (current === undefined) return;
 
-      const tempId =
-        `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 11)}` as Id<"nodes">;
+      const tempId = (
+        args.clientRequestId
+          ? `${OPTIMISTIC_NODE_PREFIX}${args.clientRequestId}`
+          : `${OPTIMISTIC_NODE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+      ) as Id<"nodes">;
 
       const synthetic: Doc<"nodes"> = {
         _id: tempId,
@@ -795,19 +850,41 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         try {
           // isDragging bleibt true bis alle Mutations resolved sind
           if (draggedNodes.length > 1) {
-            await batchMoveNodes({
-              moves: draggedNodes.map((n) => ({
-                nodeId: n.id as Id<"nodes">,
-                positionX: n.position.x,
-                positionY: n.position.y,
-              })),
-            });
+            for (const n of draggedNodes) {
+              const cid = clientRequestIdFromOptimisticNodeId(n.id);
+              if (cid) {
+                pendingMoveAfterCreateRef.current.set(cid, {
+                  positionX: n.position.x,
+                  positionY: n.position.y,
+                });
+                syncPendingMoveForClientRequest(cid);
+              }
+            }
+            const realMoves = draggedNodes.filter((n) => !isOptimisticNodeId(n.id));
+            if (realMoves.length > 0) {
+              await batchMoveNodes({
+                moves: realMoves.map((n) => ({
+                  nodeId: n.id as Id<"nodes">,
+                  positionX: n.position.x,
+                  positionY: n.position.y,
+                })),
+              });
+            }
           } else {
-            await moveNode({
-              nodeId: node.id as Id<"nodes">,
-              positionX: node.position.x,
-              positionY: node.position.y,
-            });
+            const cid = clientRequestIdFromOptimisticNodeId(node.id);
+            if (cid) {
+              pendingMoveAfterCreateRef.current.set(cid, {
+                positionX: node.position.x,
+                positionY: node.position.y,
+              });
+              syncPendingMoveForClientRequest(cid);
+            } else {
+              await moveNode({
+                nodeId: node.id as Id<"nodes">,
+                positionX: node.position.x,
+                positionY: node.position.y,
+              });
+            }
           }
 
           if (!intersectedEdgeId) {
@@ -871,6 +948,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       moveNode,
       removeEdge,
       setHighlightedIntersectionEdge,
+      syncPendingMoveForClientRequest,
     ],
   );
 
@@ -1002,7 +1080,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         data: {},
       };
 
-      createNode({
+      const clientRequestId = crypto.randomUUID();
+      void createNode({
         canvasId,
         type: nodeType,
         positionX: position.x,
@@ -1010,9 +1089,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         width: defaults.width,
         height: defaults.height,
         data: { ...defaults.data, canvasId },
+        clientRequestId,
+      }).then((realId) => {
+        syncPendingMoveForClientRequest(clientRequestId, realId);
       });
     },
-    [screenToFlowPosition, createNode, canvasId],
+    [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest],
   );
 
   // ─── Loading State ────────────────────────────────────────────
@@ -1032,6 +1114,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       canvasId={canvasId}
       createNode={createNode}
       createNodeWithEdgeSplit={createNodeWithEdgeSplit}
+      onCreateNodeSettled={({ clientRequestId, realId }) =>
+        syncPendingMoveForClientRequest(clientRequestId, realId)
+      }
     >
       <div className="relative h-full w-full">
         <CanvasToolbar canvasName={canvas?.name ?? "canvas"} />
