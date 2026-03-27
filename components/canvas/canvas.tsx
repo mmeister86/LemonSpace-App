@@ -38,6 +38,12 @@ import {
   NODE_HANDLE_MAP,
   resolveMediaAspectRatio,
 } from "@/lib/canvas-utils";
+import {
+  AI_IMAGE_NODE_FOOTER_PX,
+  AI_IMAGE_NODE_HEADER_PX,
+  DEFAULT_ASPECT_RATIO,
+  parseAspectRatioString,
+} from "@/lib/image-formats";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
@@ -47,6 +53,7 @@ interface CanvasInnerProps {
 }
 
 const OPTIMISTIC_NODE_PREFIX = "optimistic_";
+const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
 
 function isOptimisticNodeId(id: string): boolean {
   return id.startsWith(OPTIMISTIC_NODE_PREFIX);
@@ -250,7 +257,10 @@ function mergeNodesPreservingLocalState(
       typeof (previousNode as { resizing?: boolean }).resizing === "boolean"
         ? (previousNode as { resizing?: boolean }).resizing
         : false;
-    const isMediaNode = incomingNode.type === "asset" || incomingNode.type === "image";
+    const isMediaNode =
+      incomingNode.type === "asset" ||
+      incomingNode.type === "image" ||
+      incomingNode.type === "ai-image";
     const shouldPreserveInteractivePosition =
       isMediaNode && (Boolean(previousNode.selected) || Boolean(previousNode.dragging) || previousResizing);
     const shouldPreserveInteractiveSize =
@@ -441,6 +451,66 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       );
     },
   );
+
+  const createNodeWithEdgeFromSource = useMutation(
+    api.nodes.createWithEdgeFromSource,
+  ).withOptimisticUpdate((localStore, args) => {
+    const nodeList = localStore.getQuery(api.nodes.list, {
+      canvasId: args.canvasId,
+    });
+    const edgeList = localStore.getQuery(api.edges.list, {
+      canvasId: args.canvasId,
+    });
+    if (nodeList === undefined || edgeList === undefined) return;
+
+    const tempNodeId = (
+      args.clientRequestId
+        ? `${OPTIMISTIC_NODE_PREFIX}${args.clientRequestId}`
+        : `${OPTIMISTIC_NODE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+    ) as Id<"nodes">;
+
+    const tempEdgeId = (
+      args.clientRequestId
+        ? `${OPTIMISTIC_EDGE_PREFIX}${args.clientRequestId}`
+        : `${OPTIMISTIC_EDGE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+    ) as Id<"edges">;
+
+    const syntheticNode: Doc<"nodes"> = {
+      _id: tempNodeId,
+      _creationTime: Date.now(),
+      canvasId: args.canvasId,
+      type: args.type as Doc<"nodes">["type"],
+      positionX: args.positionX,
+      positionY: args.positionY,
+      width: args.width,
+      height: args.height,
+      status: "idle",
+      retryCount: 0,
+      data: args.data,
+      parentId: args.parentId,
+      zIndex: args.zIndex,
+    };
+
+    const syntheticEdge: Doc<"edges"> = {
+      _id: tempEdgeId,
+      _creationTime: Date.now(),
+      canvasId: args.canvasId,
+      sourceNodeId: args.sourceNodeId,
+      targetNodeId: tempNodeId,
+      sourceHandle: args.sourceHandle,
+      targetHandle: args.targetHandle,
+    };
+
+    localStore.setQuery(api.nodes.list, { canvasId: args.canvasId }, [
+      ...nodeList,
+      syntheticNode,
+    ]);
+    localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, [
+      ...edgeList,
+      syntheticEdge,
+    ]);
+  });
+
   const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
   const batchRemoveNodes = useMutation(api.nodes.batchRemove);
   const createEdge = useMutation(api.edges.create);
@@ -580,86 +650,169 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           }
 
           const node = nds.find((candidate) => candidate.id === change.id);
-          if (!node || node.type !== "asset") {
+          if (!node) {
             return change;
           }
 
           const isActiveResize =
             change.resizing === true || change.resizing === false;
-          if (!isActiveResize) {
-            return change;
+
+          if (node.type === "asset") {
+            if (!isActiveResize) {
+              return change;
+            }
+
+            const nodeData = node.data as {
+              intrinsicWidth?: number;
+              intrinsicHeight?: number;
+              orientation?: string;
+            };
+            const hasIntrinsicRatioInput =
+              typeof nodeData.intrinsicWidth === "number" &&
+              nodeData.intrinsicWidth > 0 &&
+              typeof nodeData.intrinsicHeight === "number" &&
+              nodeData.intrinsicHeight > 0;
+            if (!hasIntrinsicRatioInput) {
+              return change;
+            }
+
+            const targetRatio = resolveMediaAspectRatio(
+              nodeData.intrinsicWidth,
+              nodeData.intrinsicHeight,
+              nodeData.orientation,
+            );
+
+            if (!Number.isFinite(targetRatio) || targetRatio <= 0) {
+              return change;
+            }
+
+            const previousWidth =
+              typeof node.style?.width === "number"
+                ? node.style.width
+                : change.dimensions.width;
+            const previousHeight =
+              typeof node.style?.height === "number"
+                ? node.style.height
+                : change.dimensions.height;
+
+            const widthDelta = Math.abs(change.dimensions.width - previousWidth);
+            const heightDelta = Math.abs(change.dimensions.height - previousHeight);
+
+            let constrainedWidth = change.dimensions.width;
+            let constrainedHeight = change.dimensions.height;
+
+            // Axis with larger delta drives resize; the other axis is ratio-locked.
+            if (heightDelta > widthDelta) {
+              constrainedWidth = constrainedHeight * targetRatio;
+            } else {
+              constrainedHeight = constrainedWidth / targetRatio;
+            }
+
+            const assetChromeHeight = 88;
+            const assetMinPreviewHeight = 120;
+            const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
+            const assetMinNodeWidth = 140;
+
+            const minWidthFromHeight = assetMinNodeHeight * targetRatio;
+            const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromHeight);
+            const minimumAllowedHeight = minimumAllowedWidth / targetRatio;
+
+            const enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
+            const enforcedHeight = Math.max(
+              constrainedHeight,
+              minimumAllowedHeight,
+              assetMinNodeHeight,
+            );
+
+            return {
+              ...change,
+              dimensions: {
+                ...change.dimensions,
+                width: enforcedWidth,
+                height: enforcedHeight,
+              },
+            };
           }
 
-          const nodeData = node.data as {
-            intrinsicWidth?: number;
-            intrinsicHeight?: number;
-            orientation?: string;
-          };
-          const hasIntrinsicRatioInput =
-            typeof nodeData.intrinsicWidth === "number" &&
-            nodeData.intrinsicWidth > 0 &&
-            typeof nodeData.intrinsicHeight === "number" &&
-            nodeData.intrinsicHeight > 0;
-          if (!hasIntrinsicRatioInput) {
-            return change;
+          if (node.type === "ai-image") {
+            if (!isActiveResize) {
+              return change;
+            }
+
+            const nodeData = node.data as { aspectRatio?: string };
+            const arLabel =
+              typeof nodeData.aspectRatio === "string" && nodeData.aspectRatio.trim()
+                ? nodeData.aspectRatio.trim()
+                : DEFAULT_ASPECT_RATIO;
+
+            let arW: number;
+            let arH: number;
+            try {
+              const parsed = parseAspectRatioString(arLabel);
+              arW = parsed.w;
+              arH = parsed.h;
+            } catch {
+              return change;
+            }
+
+            const chrome = AI_IMAGE_NODE_HEADER_PX + AI_IMAGE_NODE_FOOTER_PX;
+            const hPerW = arH / arW;
+
+            const previousWidth =
+              typeof node.style?.width === "number"
+                ? node.style.width
+                : change.dimensions.width;
+            const previousHeight =
+              typeof node.style?.height === "number"
+                ? node.style.height
+                : change.dimensions.height;
+
+            const widthDelta = Math.abs(change.dimensions.width - previousWidth);
+            const heightDelta = Math.abs(change.dimensions.height - previousHeight);
+
+            let constrainedWidth = change.dimensions.width;
+            let constrainedHeight = change.dimensions.height;
+
+            if (heightDelta > widthDelta) {
+              const viewportH = Math.max(1, constrainedHeight - chrome);
+              constrainedWidth = viewportH * (arW / arH);
+              constrainedHeight = chrome + viewportH;
+            } else {
+              constrainedHeight = chrome + constrainedWidth * hPerW;
+            }
+
+            const aiMinViewport = 120;
+            const aiMinOuterHeight = chrome + aiMinViewport;
+            const aiMinOuterWidthBase = 200;
+            const minimumAllowedWidth = Math.max(
+              aiMinOuterWidthBase,
+              aiMinViewport * (arW / arH),
+            );
+            const minimumAllowedHeight = Math.max(
+              aiMinOuterHeight,
+              chrome + minimumAllowedWidth * hPerW,
+            );
+
+            let enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
+            let enforcedHeight = chrome + enforcedWidth * hPerW;
+            if (enforcedHeight < minimumAllowedHeight) {
+              enforcedHeight = minimumAllowedHeight;
+              enforcedWidth = (enforcedHeight - chrome) * (arW / arH);
+            }
+            enforcedWidth = Math.max(enforcedWidth, minimumAllowedWidth);
+            enforcedHeight = chrome + enforcedWidth * hPerW;
+
+            return {
+              ...change,
+              dimensions: {
+                ...change.dimensions,
+                width: enforcedWidth,
+                height: enforcedHeight,
+              },
+            };
           }
 
-          const targetRatio = resolveMediaAspectRatio(
-            nodeData.intrinsicWidth,
-            nodeData.intrinsicHeight,
-            nodeData.orientation,
-          );
-
-          if (!Number.isFinite(targetRatio) || targetRatio <= 0) {
-            return change;
-          }
-
-          const previousWidth =
-            typeof node.style?.width === "number"
-              ? node.style.width
-              : change.dimensions.width;
-          const previousHeight =
-            typeof node.style?.height === "number"
-              ? node.style.height
-              : change.dimensions.height;
-
-          const widthDelta = Math.abs(change.dimensions.width - previousWidth);
-          const heightDelta = Math.abs(change.dimensions.height - previousHeight);
-
-          let constrainedWidth = change.dimensions.width;
-          let constrainedHeight = change.dimensions.height;
-
-          // Axis with larger delta drives resize; the other axis is ratio-locked.
-          if (heightDelta > widthDelta) {
-            constrainedWidth = constrainedHeight * targetRatio;
-          } else {
-            constrainedHeight = constrainedWidth / targetRatio;
-          }
-
-          const assetChromeHeight = 88;
-          const assetMinPreviewHeight = 120;
-          const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
-          const assetMinNodeWidth = 140;
-
-          const minWidthFromHeight = assetMinNodeHeight * targetRatio;
-          const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromHeight);
-          const minimumAllowedHeight = minimumAllowedWidth / targetRatio;
-
-          const enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
-          const enforcedHeight = Math.max(
-            constrainedHeight,
-            minimumAllowedHeight,
-            assetMinNodeHeight,
-          );
-
-          return {
-            ...change,
-            dimensions: {
-              ...change.dimensions,
-              width: enforcedWidth,
-              height: enforcedHeight,
-            },
-          };
+          return change;
           })
           .filter((change): change is NodeChange => change !== null);
 
@@ -1114,6 +1267,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       canvasId={canvasId}
       createNode={createNode}
       createNodeWithEdgeSplit={createNodeWithEdgeSplit}
+      createNodeWithEdgeFromSource={createNodeWithEdgeFromSource}
       onCreateNodeSettled={({ clientRequestId, realId }) =>
         syncPendingMoveForClientRequest(clientRequestId, realId)
       }

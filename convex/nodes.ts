@@ -225,6 +225,64 @@ export const createWithEdgeSplit = mutation({
 });
 
 /**
+ * Neuen Node erstellen und sofort mit einem bestehenden Node verbinden
+ * (ein Roundtrip — z. B. Prompt → neue AI-Image-Node).
+ */
+export const createWithEdgeFromSource = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    type: v.string(),
+    positionX: v.number(),
+    positionY: v.number(),
+    width: v.number(),
+    height: v.number(),
+    data: v.any(),
+    parentId: v.optional(v.id("nodes")),
+    zIndex: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
+    sourceNodeId: v.id("nodes"),
+    sourceHandle: v.optional(v.string()),
+    targetHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    void args.clientRequestId;
+
+    const source = await ctx.db.get(args.sourceNodeId);
+    if (!source || source.canvasId !== args.canvasId) {
+      throw new Error("Source node not found");
+    }
+
+    const nodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: args.type as Doc<"nodes">["type"],
+      positionX: args.positionX,
+      positionY: args.positionY,
+      width: args.width,
+      height: args.height,
+      status: "idle",
+      retryCount: 0,
+      data: args.data,
+      parentId: args.parentId,
+      zIndex: args.zIndex,
+    });
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: args.sourceNodeId,
+      targetNodeId: nodeId,
+      sourceHandle: args.sourceHandle,
+      targetHandle: args.targetHandle,
+    });
+
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    return nodeId;
+  },
+});
+
+/**
  * Node-Position auf dem Canvas verschieben.
  */
 export const move = mutation({

@@ -118,9 +118,8 @@ export default function PromptNode({
     availableCredits !== null && availableCredits >= creditCost;
 
   const updateData = useMutation(api.nodes.updateData);
-  const createEdge = useMutation(api.edges.create);
   const generateImage = useAction(api.ai.generateImage);
-  const { createNodeWithIntersection } = useCanvasPlacement();
+  const { createNodeConnectedFromSource } = useCanvasPlacement();
 
   const debouncedSave = useDebouncedCallback(() => {
     const raw = dataRef.current as Record<string, unknown>;
@@ -215,7 +214,9 @@ export default function PromptNode({
       const viewport = getImageViewportSize(aspectRatio);
       const outer = getAiImageNodeOuterSize(viewport);
 
-      const aiNodeId = await createNodeWithIntersection({
+      const clientRequestId = crypto.randomUUID();
+
+      const aiNodeId = await createNodeConnectedFromSource({
         type: "ai-image",
         position: { x: posX, y: posY },
         width: outer.width,
@@ -229,13 +230,8 @@ export default function PromptNode({
           outputWidth: viewport.width,
           outputHeight: viewport.height,
         },
-        clientRequestId: crypto.randomUUID(),
-      });
-
-      await createEdge({
-        canvasId,
+        clientRequestId,
         sourceNodeId: id as Id<"nodes">,
-        targetNodeId: aiNodeId,
         sourceHandle: "prompt-out",
         targetHandle: "prompt-in",
       });
@@ -274,8 +270,7 @@ export default function PromptNode({
     id,
     getEdges,
     getNode,
-    createNodeWithIntersection,
-    createEdge,
+    createNodeConnectedFromSource,
     generateImage,
     creditCost,
     availableCredits,
