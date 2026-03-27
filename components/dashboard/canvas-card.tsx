@@ -27,12 +27,20 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
   const [editName, setEditName] = useState(canvas.name);
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const suppressCardNavigationRef = useRef(false);
+  const saveInFlightRef = useRef(false);
   const updateCanvas = useMutation(api.canvases.update);
 
   const handleStartEdit = useCallback(() => {
+    suppressCardNavigationRef.current = true;
     setEditName(canvas.name);
     setIsEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
+    setTimeout(() => {
+      inputRef.current?.select();
+      setTimeout(() => {
+        suppressCardNavigationRef.current = false;
+      }, 0);
+    }, 0);
   }, [canvas.name]);
 
   const handleSave = useCallback(async () => {
@@ -46,6 +54,8 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
       return;
     }
 
+    if (saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     setIsSaving(true);
     try {
       await updateCanvas({ canvasId: canvas._id, name: trimmedName });
@@ -55,6 +65,7 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
       toast.error("Fehler beim Umbenennen");
     } finally {
       setIsSaving(false);
+      saveInFlightRef.current = false;
     }
   }, [editName, canvas.name, canvas._id, updateCanvas]);
 
@@ -79,6 +90,7 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
   }, [isEditing, handleSave]);
 
   const handleCardClick = useCallback(() => {
+    if (suppressCardNavigationRef.current) return;
     if (!isEditing) {
       onNavigate(canvas._id);
     }
