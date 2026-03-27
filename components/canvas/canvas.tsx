@@ -11,7 +11,6 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
-  useStoreApi,
   reconnectEdge,
   type Node as RFNode,
   type Edge as RFEdge,
@@ -36,6 +35,7 @@ import {
   convexEdgeToRF,
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
+  resolveMediaAspectRatio,
 } from "@/lib/canvas-utils";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
@@ -221,6 +221,58 @@ function mergeNodesPreservingLocalState(
       return previousNode;
     }
 
+    if (incomingNode.type === "prompt") {
+      const prevW = typeof previousNode.style?.width === "number" ? previousNode.style.width : null;
+      const prevH = typeof previousNode.style?.height === "number" ? previousNode.style.height : null;
+      const inW = typeof incomingNode.style?.width === "number" ? incomingNode.style.width : null;
+      const inH = typeof incomingNode.style?.height === "number" ? incomingNode.style.height : null;
+      void prevW;
+      void prevH;
+      void inW;
+      void inH;
+    }
+
+    const previousResizing =
+      typeof (previousNode as { resizing?: boolean }).resizing === "boolean"
+        ? (previousNode as { resizing?: boolean }).resizing
+        : false;
+    const isMediaNode = incomingNode.type === "asset" || incomingNode.type === "image";
+    const shouldPreserveInteractivePosition =
+      isMediaNode && (Boolean(previousNode.selected) || Boolean(previousNode.dragging) || previousResizing);
+    const shouldPreserveInteractiveSize =
+      isMediaNode && (Boolean(previousNode.dragging) || previousResizing);
+
+    const previousStyleWidth = typeof previousNode.style?.width === "number" ? previousNode.style.width : null;
+    const previousStyleHeight = typeof previousNode.style?.height === "number" ? previousNode.style.height : null;
+    const incomingStyleWidth = typeof incomingNode.style?.width === "number" ? incomingNode.style.width : null;
+    const incomingStyleHeight = typeof incomingNode.style?.height === "number" ? incomingNode.style.height : null;
+    const isAssetSeedSize = previousStyleWidth === 260 && previousStyleHeight === 240;
+    const isImageSeedSize = previousStyleWidth === 280 && previousStyleHeight === 200;
+    const canApplySeedSizeCorrection =
+      isMediaNode &&
+      Boolean(previousNode.selected) &&
+      !previousNode.dragging &&
+      !previousResizing &&
+      ((incomingNode.type === "asset" && isAssetSeedSize) ||
+        (incomingNode.type === "image" && isImageSeedSize)) &&
+      incomingStyleWidth !== null &&
+      incomingStyleHeight !== null &&
+      (incomingStyleWidth !== previousStyleWidth || incomingStyleHeight !== previousStyleHeight);
+
+    if (shouldPreserveInteractivePosition) {
+      const nextStyle = shouldPreserveInteractiveSize || !canApplySeedSizeCorrection
+        ? previousNode.style
+        : incomingNode.style;
+      return {
+        ...previousNode,
+        ...incomingNode,
+        position: previousNode.position,
+        style: nextStyle,
+        selected: previousNode.selected,
+        dragging: previousNode.dragging,
+      };
+    }
+
     return {
       ...previousNode,
       ...incomingNode,
@@ -232,7 +284,6 @@ function mergeNodesPreservingLocalState(
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { screenToFlowPosition } = useReactFlow();
-  const storeApi = useStoreApi();
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
@@ -395,9 +446,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges((prev) => {
       const tempEdges = prev.filter((e) => e.className === "temp");
       const mapped = convexEdges.map(convexEdgeToRF);
-      // #region agent log
-      fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'594b9f'},body:JSON.stringify({sessionId:'594b9f',runId:'run1',hypothesisId:'H1-H2',location:'canvas.tsx:edgeSyncEffect',message:'edges passed to ReactFlow',data:{edgeCount:mapped.length,edges:mapped.map(e=>({id:e.id,source:e.source,target:e.target,sourceHandle:e.sourceHandle,targetHandle:e.targetHandle,typeofTH:typeof e.targetHandle,isNullTH:e.targetHandle===null}))},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return [...mapped, ...tempEdges];
     });
   }, [convexEdges]);
@@ -418,12 +466,107 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       }
 
       setNodes((nds) => {
-        const nextNodes = applyNodeChanges(changes, nds);
+        const adjustedChanges = changes
+          .map((change) => {
+          if (change.type !== "dimensions" || !change.dimensions) {
+            return change;
+          }
 
-        for (const change of changes) {
+          const node = nds.find((candidate) => candidate.id === change.id);
+          if (!node || node.type !== "asset") {
+            return change;
+          }
+
+          const isActiveResize =
+            change.resizing === true || change.resizing === false;
+          if (!isActiveResize) {
+            return change;
+          }
+
+          const nodeData = node.data as {
+            intrinsicWidth?: number;
+            intrinsicHeight?: number;
+            orientation?: string;
+          };
+          const hasIntrinsicRatioInput =
+            typeof nodeData.intrinsicWidth === "number" &&
+            nodeData.intrinsicWidth > 0 &&
+            typeof nodeData.intrinsicHeight === "number" &&
+            nodeData.intrinsicHeight > 0;
+          if (!hasIntrinsicRatioInput) {
+            return change;
+          }
+
+          const targetRatio = resolveMediaAspectRatio(
+            nodeData.intrinsicWidth,
+            nodeData.intrinsicHeight,
+            nodeData.orientation,
+          );
+
+          if (!Number.isFinite(targetRatio) || targetRatio <= 0) {
+            return change;
+          }
+
+          const previousWidth =
+            typeof node.style?.width === "number"
+              ? node.style.width
+              : change.dimensions.width;
+          const previousHeight =
+            typeof node.style?.height === "number"
+              ? node.style.height
+              : change.dimensions.height;
+
+          const widthDelta = Math.abs(change.dimensions.width - previousWidth);
+          const heightDelta = Math.abs(change.dimensions.height - previousHeight);
+
+          let constrainedWidth = change.dimensions.width;
+          let constrainedHeight = change.dimensions.height;
+
+          // Axis with larger delta drives resize; the other axis is ratio-locked.
+          if (heightDelta > widthDelta) {
+            constrainedWidth = constrainedHeight * targetRatio;
+          } else {
+            constrainedHeight = constrainedWidth / targetRatio;
+          }
+
+          const assetChromeHeight = 88;
+          const assetMinPreviewHeight = 120;
+          const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
+          const assetMinNodeWidth = 140;
+
+          const minWidthFromHeight = assetMinNodeHeight * targetRatio;
+          const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromHeight);
+          const minimumAllowedHeight = minimumAllowedWidth / targetRatio;
+
+          const enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
+          const enforcedHeight = Math.max(
+            constrainedHeight,
+            minimumAllowedHeight,
+            assetMinNodeHeight,
+          );
+
+          return {
+            ...change,
+            dimensions: {
+              ...change.dimensions,
+              width: enforcedWidth,
+              height: enforcedHeight,
+            },
+          };
+          })
+          .filter((change): change is NodeChange => change !== null);
+
+        const nextNodes = applyNodeChanges(adjustedChanges, nds);
+
+        for (const change of adjustedChanges) {
           if (change.type !== "dimensions") continue;
-          if (change.resizing !== false || !change.dimensions) continue;
+          if (!change.dimensions) continue;
           if (removedIds.has(change.id)) continue;
+          const prevNode = nds.find((node) => node.id === change.id);
+          const nextNode = nextNodes.find((node) => node.id === change.id);
+          void prevNode;
+          void nextNode;
+          if (change.resizing !== false) continue;
 
           void resizeNode({
             nodeId: change.id as Id<"nodes">,
@@ -446,55 +589,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges((eds) => applyEdgeChanges(changes, eds));
   }, []);
 
-  const onFlowError = useCallback(
-    (code: string, message: string) => {
-      if (process.env.NODE_ENV === "production") return;
-
-      if (code !== "015") {
-        console.error("[ReactFlow error]", { canvasId, code, message });
-        return;
-      }
-
-      const state = storeApi.getState() as {
-        nodeLookup?: Map<
-          string,
-          {
-            id: string;
-            selected?: boolean;
-            type?: string;
-            measured?: { width?: number; height?: number };
-            internals?: { positionAbsolute?: { x: number; y: number } };
-          }
-        >;
-      };
-
-      const uninitializedNodes = Array.from(state.nodeLookup?.values() ?? [])
-        .filter(
-          (node) =>
-            node.measured?.width === undefined ||
-            node.measured?.height === undefined,
-        )
-        .map((node) => ({
-          id: node.id,
-          type: node.type ?? null,
-          selected: Boolean(node.selected),
-          measuredWidth: node.measured?.width,
-          measuredHeight: node.measured?.height,
-          positionAbsolute: node.internals?.positionAbsolute ?? null,
-        }));
-
-      console.error("[ReactFlow error 015 diagnostics]", {
-        canvasId,
-        message,
-        localNodeCount: nodes.length,
-        localSelectedNodeIds: nodes.filter((n) => n.selected).map((n) => n.id),
-        isDragging: isDragging.current,
-        uninitializedNodeCount: uninitializedNodes.length,
-        uninitializedNodes,
-      });
-    },
-    [canvasId, nodes, storeApi],
-  );
+  const onFlowError = useCallback((code: string, message: string) => {
+    if (process.env.NODE_ENV === "production") return;
+    console.error("[ReactFlow error]", { canvasId, code, message });
+  }, [canvasId]);
 
   // ─── Delete Edge on Drop ──────────────────────────────────────
   const onReconnectStart = useCallback(() => {

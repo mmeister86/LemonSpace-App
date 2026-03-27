@@ -64,8 +64,6 @@ export default function CompareNode({ data, selected }: NodeProps) {
 
   return (
     <BaseNodeWrapper nodeType="compare" selected={selected} className="p-0">
-      <div className="px-3 py-2 text-xs font-medium text-muted-foreground">⚖️ Compare</div>
-
       <Handle
         type="target"
         position={Position.Left}
@@ -87,13 +85,15 @@ export default function CompareNode({ data, selected }: NodeProps) {
         className="!h-3 !w-3 !border-2 !border-background !bg-muted-foreground"
       />
 
-      <div
-        ref={containerRef}
-        className="nodrag relative w-full select-none overflow-hidden rounded-b-xl bg-muted"
-        style={{ height: "100%" }}
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-      >
+      <div className="grid h-full min-h-0 w-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)]">
+        <div className="px-3 py-2 text-xs font-medium text-muted-foreground">⚖️ Compare</div>
+
+        <div
+          ref={containerRef}
+          className="nodrag relative min-h-0 w-full select-none overflow-hidden rounded-b-xl bg-muted"
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+        >
         {!hasLeft && !hasRight && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
@@ -169,6 +169,7 @@ export default function CompareNode({ data, selected }: NodeProps) {
             </span>
           </div>
         )}
+        </div>
       </div>
     </BaseNodeWrapper>
   );

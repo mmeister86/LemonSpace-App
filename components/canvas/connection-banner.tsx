@@ -104,7 +104,8 @@ export default function ConnectionBanner() {
       return showReconnected ? "reconnected" : "hidden";
     }
 
-    if (!isBrowserOnline) {
+    // Streng `=== false`, damit kein undefined/SSR-Artefakt wie „offline“ wird.
+    if (isBrowserOnline === false) {
       return "disconnected";
     }
 
@@ -120,6 +121,12 @@ export default function ConnectionBanner() {
     isBrowserOnline,
     showReconnected,
   ]);
+
+  // WebSocket/Convex-Verbindung gibt es im Browser; SSR soll keinen Banner rendern,
+  // sonst weicht die Geschwister-Reihenfolge vom ersten Client-Render ab (Hydration).
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   if (bannerState === "hidden") {
     return null;

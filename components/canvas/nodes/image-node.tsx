@@ -78,12 +78,6 @@ export default function ImageNode({
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const hasAutoSizedRef = useRef(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
-  const footerRef = useRef<HTMLParagraphElement>(null);
-  const lastMetricsRef = useRef<string>("");
 
   useEffect(() => {
     if (typeof data.width !== "number" || typeof data.height !== "number") {
@@ -91,17 +85,27 @@ export default function ImageNode({
     }
 
     if (hasAutoSizedRef.current) return;
-    hasAutoSizedRef.current = true;
-
     const targetSize = computeMediaNodeSize("image", {
       intrinsicWidth: data.width,
       intrinsicHeight: data.height,
     });
-
-    if (width === targetSize.width && height === targetSize.height) {
+    const currentWidth = typeof width === "number" ? width : 0;
+    const currentHeight = typeof height === "number" ? height : 0;
+    const hasMeasuredSize = currentWidth > 0 && currentHeight > 0;
+    if (!hasMeasuredSize) {
       return;
     }
 
+    const isAtTargetSize = currentWidth === targetSize.width && currentHeight === targetSize.height;
+    const isAtDefaultSeedSize = currentWidth === 280 && currentHeight === 200;
+    const shouldRunInitialAutoSize = isAtDefaultSeedSize && !isAtTargetSize;
+
+    if (!shouldRunInitialAutoSize) {
+      hasAutoSizedRef.current = true;
+      return;
+    }
+
+    hasAutoSizedRef.current = true;
     void resizeNode({
       nodeId: id as Id<"nodes">,
       width: targetSize.width,
@@ -235,61 +239,11 @@ export default function ImageNode({
 
   const showFilename = Boolean(data.filename && data.url);
 
-  useEffect(() => {
-    if (!selected) return;
-    const rootEl = rootRef.current;
-    const headerEl = headerRef.current;
-    const previewEl = previewRef.current;
-    if (!rootEl || !headerEl || !previewEl) return;
-
-    const rootHeight = rootEl.getBoundingClientRect().height;
-    const headerHeight = headerEl.getBoundingClientRect().height;
-    const previewHeight = previewEl.getBoundingClientRect().height;
-    const footerHeight = footerRef.current?.getBoundingClientRect().height ?? null;
-    const imageEl = imageRef.current;
-    const rootStyles = window.getComputedStyle(rootEl);
-    const imageStyles = imageEl ? window.getComputedStyle(imageEl) : null;
-    const rows = rootStyles.gridTemplateRows;
-    const imageRect = imageEl?.getBoundingClientRect();
-    const previewRect = previewEl.getBoundingClientRect();
-    const naturalRatio =
-      imageEl && imageEl.naturalWidth > 0 && imageEl.naturalHeight > 0
-        ? imageEl.naturalWidth / imageEl.naturalHeight
-        : null;
-    const previewRatio =
-      previewRect.width > 0 && previewRect.height > 0
-        ? previewRect.width / previewRect.height
-        : null;
-    let expectedContainWidth: number | null = null;
-    let expectedContainHeight: number | null = null;
-    if (naturalRatio) {
-      const fitByWidthHeight = previewRect.width / naturalRatio;
-      if (fitByWidthHeight <= previewRect.height) {
-        expectedContainWidth = previewRect.width;
-        expectedContainHeight = fitByWidthHeight;
-      } else {
-        expectedContainHeight = previewRect.height;
-        expectedContainWidth = previewRect.height * naturalRatio;
-      }
-    }
-    const signature = `${width}|${height}|${Math.round(rootHeight)}|${Math.round(headerHeight)}|${Math.round(previewHeight)}|${Math.round(footerHeight ?? -1)}|${Math.round(imageRect?.height ?? -1)}|${rows}|${showFilename}`;
-
-    if (lastMetricsRef.current === signature) {
-      return;
-    }
-    lastMetricsRef.current = signature;
-
-    // #region agent log
-    fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d48a18'},body:JSON.stringify({sessionId:'d48a18',runId:'run4',hypothesisId:'H15-H16',location:'image-node.tsx:metricsEffect',message:'image contain-fit diagnostics',data:{nodeId:id,width,height,rootHeight,previewWidth:previewRect.width,previewHeight,previewRatio,naturalRatio,headerHeight,footerHeight,imageRenderWidth:imageRect?.width ?? null,imageRenderHeight:imageRect?.height ?? null,expectedContainWidth,expectedContainHeight,imageNaturalWidth:imageEl?.naturalWidth ?? null,imageNaturalHeight:imageEl?.naturalHeight ?? null,imageObjectFit:imageStyles?.objectFit ?? null,imageObjectPosition:imageStyles?.objectPosition ?? null,rows,showFilename},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [height, id, selected, showFilename, width]);
-
   return (
     <BaseNodeWrapper
       nodeType="image"
       selected={selected}
       status={data._status}
-      className="overflow-hidden"
     >
       <Handle
         type="target"
@@ -298,14 +252,13 @@ export default function ImageNode({
       />
 
       <div
-        ref={rootRef}
         className={`grid h-full min-h-0 w-full grid-cols-1 gap-y-1 p-2 ${
           showFilename
             ? "grid-rows-[auto_minmax(0,1fr)_auto]"
             : "grid-rows-[auto_minmax(0,1fr)]"
         }`}
       >
-        <div ref={headerRef} className="flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">🖼️ Bild</div>
           {data.url && (
             <button
@@ -317,7 +270,7 @@ export default function ImageNode({
           )}
         </div>
 
-        <div ref={previewRef} className="relative min-h-0 overflow-hidden rounded-lg bg-muted/30">
+        <div className="relative min-h-0 overflow-hidden rounded-lg bg-muted/30">
           {isUploading ? (
             <div className="flex h-full w-full items-center justify-center bg-muted">
               <div className="flex flex-col items-center gap-2">
@@ -328,7 +281,6 @@ export default function ImageNode({
           ) : data.url ? (
             // eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node
             <img
-              ref={imageRef}
               src={data.url}
               alt={data.filename ?? "Bild"}
               className="h-full w-full object-cover object-center"
@@ -358,7 +310,7 @@ export default function ImageNode({
         </div>
 
         {showFilename ? (
-          <p ref={footerRef} className="min-h-0 truncate text-xs text-muted-foreground">{data.filename}</p>
+          <p className="min-h-0 truncate text-xs text-muted-foreground">{data.filename}</p>
         ) : null}
       </div>
 

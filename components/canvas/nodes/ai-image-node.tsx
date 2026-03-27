@@ -166,7 +166,7 @@ export default function AiImageNode({
     <BaseNodeWrapper
       nodeType="ai-image"
       selected={selected}
-      className="flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden"
+      className="flex h-full w-full min-h-0 min-w-0 flex-col"
     >
       <Handle
         type="target"

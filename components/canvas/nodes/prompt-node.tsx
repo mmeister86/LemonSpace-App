@@ -297,13 +297,13 @@ export default function PromptNode({
         className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
 
-      <div className="flex flex-col gap-2 p-3">
+      <div className="flex h-full flex-col gap-2 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
           <Sparkles className="h-3.5 w-3.5" />
           Eingabe
         </div>
         {inputMeta.hasTextInput ? (
-          <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
+          <div className="flex-1 overflow-auto rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
             <p className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
               Prompt aus verbundener Text-Node
             </p>
@@ -316,8 +316,7 @@ export default function PromptNode({
             value={prompt}
             onChange={handlePromptChange}
             placeholder="Beschreibe, was du generieren willst…"
-            rows={4}
-            className="nodrag nowheel w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="nodrag nowheel min-h-[72px] w-full flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
           />
         )}
 

@@ -23,6 +23,7 @@ type CreateNodeWithIntersectionInput = {
   height?: number;
   data?: Record<string, unknown>;
   clientPosition?: FlowPoint;
+  zIndex?: number;
 };
 
 type CanvasPlacementContextValue = {
@@ -107,6 +108,7 @@ export function CanvasPlacementProvider({
       height,
       data,
       clientPosition,
+      zIndex,
     }: CreateNodeWithIntersectionInput) => {
       const defaults = NODE_DEFAULTS[type] ?? {
         width: 200,
@@ -140,6 +142,7 @@ export function CanvasPlacementProvider({
           ...(data ?? {}),
           canvasId,
         },
+        ...(zIndex !== undefined ? { zIndex } : {}),
       });
 
       if (!hitEdge) {

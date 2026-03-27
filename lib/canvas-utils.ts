@@ -35,9 +35,6 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
 export function convexEdgeToRF(edge: Doc<"edges">): RFEdge {
   const sanitize = (h: string | undefined): string | undefined =>
     h === undefined || h === "null" ? undefined : h;
-  // #region agent log
-  fetch('http://127.0.0.1:7733/ingest/db1ec129-24cb-483b-98e2-3e7beef6d9cd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'594b9f'},body:JSON.stringify({sessionId:'594b9f',runId:'run1',hypothesisId:'H1-H3-H4',location:'canvas-utils.ts:convexEdgeToRF',message:'raw edge from convex',data:{edgeId:edge._id,sourceNodeId:edge.sourceNodeId,targetNodeId:edge.targetNodeId,rawSourceHandle:edge.sourceHandle,rawTargetHandle:edge.targetHandle,typeofSourceHandle:typeof edge.sourceHandle,typeofTargetHandle:typeof edge.targetHandle,isNullSH:edge.sourceHandle===null,isNullTH:edge.targetHandle===null,isUndefinedSH:edge.sourceHandle===undefined,isUndefinedTH:edge.targetHandle===undefined,isStringNullSH:edge.sourceHandle==='null',isStringNullTH:edge.targetHandle==='null',sanitizedSH:sanitize(edge.sourceHandle),sanitizedTH:sanitize(edge.targetHandle)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   return {
     id: edge._id,
     source: edge.sourceNodeId,

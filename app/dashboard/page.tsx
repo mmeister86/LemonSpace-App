@@ -61,6 +61,11 @@ export default function DashboardPage() {
   );
   const createCanvas = useMutation(api.canvases.create);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [hasClientMounted, setHasClientMounted] = useState(false);
+
+  useEffect(() => {
+    setHasClientMounted(true);
+  }, []);
 
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
@@ -207,7 +212,12 @@ export default function DashboardPage() {
               className="cursor-pointer text-muted-foreground"
               type="button"
               onClick={handleCreateWorkspace}
-              disabled={isCreatingWorkspace || isSessionPending || !session?.user}
+              disabled={
+                isCreatingWorkspace ||
+                !hasClientMounted ||
+                isSessionPending ||
+                !session?.user
+              }
             >
               {isCreatingWorkspace ? "Erstelle..." : "Neuen Arbeitsbereich"}
             </Button>
