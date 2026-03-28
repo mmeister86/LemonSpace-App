@@ -72,6 +72,9 @@ interface CanvasInnerProps {
 const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
 
+/** @xyflow/react default minZoom ist 0.5 — dreimal weiter raus für große Boards. */
+const CANVAS_MIN_ZOOM = 0.5 / 3;
+
 function isOptimisticNodeId(id: string): boolean {
   return id.startsWith(OPTIMISTIC_NODE_PREFIX);
 }
@@ -1981,6 +1984,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onDragOver={onDragOver}
           onDrop={onDrop}
           fitView
+          minZoom={CANVAS_MIN_ZOOM}
           snapToGrid
           snapGrid={[16, 16]}
           deleteKeyCode={["Backspace", "Delete"]}
