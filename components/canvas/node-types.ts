@@ -7,6 +7,7 @@ import FrameNode from "./nodes/frame-node";
 import NoteNode from "./nodes/note-node";
 import CompareNode from "./nodes/compare-node";
 import AssetNode from "./nodes/asset-node";
+import VideoNode from "./nodes/video-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -25,4 +26,5 @@ export const nodeTypes = {
   note: NoteNode,
   compare: CompareNode,
   asset: AssetNode,
+  video: VideoNode,
 } as const;

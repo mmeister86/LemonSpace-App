@@ -92,7 +92,7 @@ export default function AiImageNode({
       if (!canvasId) throw new Error("Missing canvasId");
 
       const prompt = nodeData.prompt;
-      if (!prompt) throw new Error("No prompt — use Generate from a Prompt node");
+      if (!prompt) throw new Error("No prompt — use Generate from a KI-Bild node");
 
       const edges = getEdges();
       const incomingEdges = edges.filter((e) => e.target === id);
@@ -187,7 +187,7 @@ export default function AiImageNode({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
             <p className="px-6 text-center text-xs opacity-60">
-              Connect a Prompt node and click Generate
+              Verbinde einen KI-Bild-Knoten und starte die Generierung dort.
             </p>
           </div>
         )}

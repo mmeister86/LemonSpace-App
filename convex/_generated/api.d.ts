@@ -19,6 +19,7 @@ import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
 import type * as nodes from "../nodes.js";
 import type * as openrouter from "../openrouter.js";
+import type * as pexels from "../pexels.js";
 import type * as polar from "../polar.js";
 import type * as storage from "../storage.js";
 
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   nodes: typeof nodes;
   openrouter: typeof openrouter;
+  pexels: typeof pexels;
   polar: typeof polar;
   storage: typeof storage;
 }>;

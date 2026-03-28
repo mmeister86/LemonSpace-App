@@ -138,7 +138,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
       >
         <div className="flex items-center justify-between border-b px-3 py-2">
           <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Asset
+            FreePik
           </span>
           <Button
             size="sm"
@@ -167,7 +167,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewUrl}
-                alt={data.title ?? "Asset preview"}
+                alt={data.title ?? "FreePik-Vorschau"}
                 className={`h-full w-full object-cover object-right transition-opacity ${
                   isPreviewLoading ? "opacity-0" : "opacity-100"
                 }`}

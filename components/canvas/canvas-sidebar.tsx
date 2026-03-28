@@ -2,9 +2,10 @@
 
 const nodeTemplates = [
   { type: "image", label: "Bild", icon: "🖼️", category: "Quelle" },
-  { type: "asset", label: "Asset", icon: "🛍️", category: "Quelle" },
+  { type: "asset", label: "FreePik", icon: "🛍️", category: "Quelle" },
+  { type: "video", label: "Pexels", icon: "🎬", category: "Quelle" },
   { type: "text", label: "Text", icon: "📝", category: "Quelle" },
-  { type: "prompt", label: "Prompt", icon: "✨", category: "Quelle" },
+  { type: "prompt", label: "KI-Bild", icon: "✨", category: "Quelle" },
   { type: "note", label: "Notiz", icon: "📌", category: "Layout" },
   { type: "frame", label: "Frame", icon: "🖥️", category: "Layout" },
   { type: "group", label: "Gruppe", icon: "📁", category: "Layout" },

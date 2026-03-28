@@ -15,7 +15,7 @@ export const CANVAS_NODE_TEMPLATES = [
   },
   {
     type: "prompt",
-    label: "Prompt",
+    label: "KI-Bild",
     width: 320,
     height: 220,
     defaultData: { prompt: "", model: "", aspectRatio: "1:1" },

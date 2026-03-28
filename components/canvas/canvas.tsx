@@ -240,6 +240,49 @@ function isEdgeCuttable(edge: RFEdge): boolean {
   return true;
 }
 
+/** Abstand in px zwischen Abtastpunkten beim Durchschneiden (kleiner = zuverlässiger bei schnellen Bewegungen). */
+const SCISSORS_SEGMENT_SAMPLE_STEP_PX = 4;
+
+function addCuttableEdgeIdAtClientPoint(
+  clientX: number,
+  clientY: number,
+  edgesList: RFEdge[],
+  strokeIds: Set<string>,
+): void {
+  const id = getIntersectedEdgeId({ x: clientX, y: clientY });
+  if (!id) return;
+  const found = edgesList.find((e) => e.id === id);
+  if (found && isEdgeCuttable(found)) strokeIds.add(id);
+}
+
+/** Alle Kanten erfassen, deren Hit-Zone die Strecke von (x0,y0) nach (x1,y1) schneidet. */
+function collectCuttableEdgesAlongScreenSegment(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  edgesList: RFEdge[],
+  strokeIds: Set<string>,
+): void {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.5) {
+    addCuttableEdgeIdAtClientPoint(x1, y1, edgesList, strokeIds);
+    return;
+  }
+  const steps = Math.max(1, Math.ceil(dist / SCISSORS_SEGMENT_SAMPLE_STEP_PX));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    addCuttableEdgeIdAtClientPoint(
+      x0 + dx * t,
+      y0 + dy * t,
+      edgesList,
+      strokeIds,
+    );
+  }
+}
+
 function hasHandleKey(
   handles: { source?: string; target?: string } | undefined,
   key: "source" | "target",
@@ -1703,11 +1746,27 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const nodeType = event.dataTransfer.getData(
+      const rawData = event.dataTransfer.getData(
         "application/lemonspace-node-type",
       );
-      if (!nodeType) {
+      if (!rawData) {
         return;
+      }
+
+      // Support both plain type string (sidebar) and JSON payload (browser panels)
+      let nodeType: string;
+      let payloadData: Record<string, unknown> | undefined;
+
+      try {
+        const parsed = JSON.parse(rawData);
+        if (typeof parsed === "object" && parsed.type) {
+          nodeType = parsed.type;
+          payloadData = parsed.data;
+        } else {
+          nodeType = rawData;
+        }
+      } catch {
+        nodeType = rawData;
       }
 
       const position = screenToFlowPosition({
@@ -1729,7 +1788,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         positionY: position.y,
         width: defaults.width,
         height: defaults.height,
-        data: { ...defaults.data, canvasId },
+        data: { ...defaults.data, ...payloadData, canvasId },
         clientRequestId,
       }).then((realId) => {
         syncPendingMoveForClientRequest(clientRequestId, realId);
@@ -1798,13 +1857,19 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       setScissorStrokePreview(points);
 
       const handleMove = (ev: PointerEvent) => {
-        points.push({ x: ev.clientX, y: ev.clientY });
+        const prev = points[points.length - 1]!;
+        const nx = ev.clientX;
+        const ny = ev.clientY;
+        collectCuttableEdgesAlongScreenSegment(
+          prev.x,
+          prev.y,
+          nx,
+          ny,
+          edgesRef.current,
+          strokeIds,
+        );
+        points.push({ x: nx, y: ny });
         setScissorStrokePreview([...points]);
-        const id = getIntersectedEdgeId({ x: ev.clientX, y: ev.clientY });
-        if (id) {
-          const found = edgesRef.current.find((ed) => ed.id === id);
-          if (found && isEdgeCuttable(found)) strokeIds.add(id);
-        }
       };
 
       const handleUp = () => {

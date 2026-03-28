@@ -30,7 +30,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
 > = {
   image: ["image", "photo", "foto"],
   text: ["text", "typo"],
-  prompt: ["prompt", "ai", "generate"],
+  prompt: ["prompt", "ai", "generate", "ki-bild", "ki", "bild"],
   note: ["note", "sticky", "notiz"],
   frame: ["frame", "artboard"],
   compare: ["compare", "before", "after"],

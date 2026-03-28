@@ -17,6 +17,7 @@ const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   group: { minWidth: 150, minHeight: 100 },
   image: { minWidth: 140, minHeight: 120, keepAspectRatio: true },
   asset: { minWidth: 140, minHeight: 208, keepAspectRatio: false },
+  video: { minWidth: 200, minHeight: 120, keepAspectRatio: true },
   // Chrome 88 + min. Viewport 120 → äußere Mindesthöhe 208 (siehe canvas onNodesChange)
   "ai-image": { minWidth: 200, minHeight: 208, keepAspectRatio: false },
   compare: { minWidth: 300, minHeight: 200 },

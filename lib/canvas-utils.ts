@@ -101,6 +101,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   text: [13, 148, 136],
   note: [13, 148, 136],
   asset: [13, 148, 136],
+  video: [13, 148, 136],
   group: [100, 116, 139],
   frame: [249, 115, 22],
   compare: [100, 116, 139],
@@ -185,6 +186,7 @@ export const NODE_HANDLE_MAP: Record<
   note: { source: undefined, target: undefined },
   compare: { source: "compare-out", target: "left" },
   asset: { source: undefined, target: undefined },
+  video: { source: undefined, target: undefined },
 };
 
 /**
@@ -208,6 +210,7 @@ export const NODE_DEFAULTS: Record<
   note: { width: 208, height: 100, data: { content: "" } },
   compare: { width: 500, height: 380, data: {} },
   asset: { width: 260, height: 240, data: {} },
+  video: { width: 320, height: 180, data: {} },
 };
 
 type MediaNodeKind = "asset" | "image";
