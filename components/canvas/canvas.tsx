@@ -18,6 +18,7 @@ import {
   type EdgeChange,
   type Connection,
   type DefaultEdgeOptions,
+  type OnConnectEnd,
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -48,8 +49,13 @@ import {
 } from "@/lib/image-formats";
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
+import {
+  CanvasConnectionDropMenu,
+  type ConnectionDropMenuState,
+} from "@/components/canvas/canvas-connection-drop-menu";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
 import CustomConnectionLine from "@/components/canvas/custom-connection-line";
+import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -62,10 +68,25 @@ function isOptimisticNodeId(id: string): boolean {
   return id.startsWith(OPTIMISTIC_NODE_PREFIX);
 }
 
+function isOptimisticEdgeId(id: string): boolean {
+  return id.startsWith(OPTIMISTIC_EDGE_PREFIX);
+}
+
 function clientRequestIdFromOptimisticNodeId(id: string): string | null {
   if (!isOptimisticNodeId(id)) return null;
   const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
   return suffix.length > 0 ? suffix : null;
+}
+
+function getConnectEndClientPoint(
+  event: MouseEvent | TouchEvent,
+): { x: number; y: number } | null {
+  if ("clientX" in event && typeof event.clientX === "number") {
+    return { x: event.clientX, y: event.clientY };
+  }
+  const t = (event as TouchEvent).changedTouches?.[0];
+  if (t) return { x: t.clientX, y: t.clientY };
+  return null;
 }
 
 /** Kanten-Split nach Drag: wartet auf echte Node-ID, wenn der Knoten noch optimistisch ist. */
@@ -495,6 +516,65 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ]);
   });
 
+  const createNodeWithEdgeToTarget = useMutation(
+    api.nodes.createWithEdgeToTarget,
+  ).withOptimisticUpdate((localStore, args) => {
+    const nodeList = localStore.getQuery(api.nodes.list, {
+      canvasId: args.canvasId,
+    });
+    const edgeList = localStore.getQuery(api.edges.list, {
+      canvasId: args.canvasId,
+    });
+    if (nodeList === undefined || edgeList === undefined) return;
+
+    const tempNodeId = (
+      args.clientRequestId
+        ? `${OPTIMISTIC_NODE_PREFIX}${args.clientRequestId}`
+        : `${OPTIMISTIC_NODE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+    ) as Id<"nodes">;
+
+    const tempEdgeId = (
+      args.clientRequestId
+        ? `${OPTIMISTIC_EDGE_PREFIX}${args.clientRequestId}`
+        : `${OPTIMISTIC_EDGE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+    ) as Id<"edges">;
+
+    const syntheticNode: Doc<"nodes"> = {
+      _id: tempNodeId,
+      _creationTime: Date.now(),
+      canvasId: args.canvasId,
+      type: args.type as Doc<"nodes">["type"],
+      positionX: args.positionX,
+      positionY: args.positionY,
+      width: args.width,
+      height: args.height,
+      status: "idle",
+      retryCount: 0,
+      data: args.data,
+      parentId: args.parentId,
+      zIndex: args.zIndex,
+    };
+
+    const syntheticEdge: Doc<"edges"> = {
+      _id: tempEdgeId,
+      _creationTime: Date.now(),
+      canvasId: args.canvasId,
+      sourceNodeId: tempNodeId,
+      targetNodeId: args.targetNodeId,
+      sourceHandle: args.sourceHandle,
+      targetHandle: args.targetHandle,
+    };
+
+    localStore.setQuery(api.nodes.list, { canvasId: args.canvasId }, [
+      ...nodeList,
+      syntheticNode,
+    ]);
+    localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, [
+      ...edgeList,
+      syntheticEdge,
+    ]);
+  });
+
   const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
 
   const batchRemoveNodes = useMutation(api.nodes.batchRemove).withOptimisticUpdate(
@@ -709,6 +789,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  const [connectionDropMenu, setConnectionDropMenu] =
+    useState<ConnectionDropMenuState | null>(null);
+  const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
+  connectionDropMenuRef.current = connectionDropMenu;
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
@@ -718,6 +802,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Delete Edge on Drop
   const edgeReconnectSuccessful = useRef(true);
+  const isReconnectDragActiveRef = useRef(false);
   const overlappedEdgeRef = useRef<string | null>(null);
   const highlightedEdgeRef = useRef<string | null>(null);
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
@@ -1060,6 +1145,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Delete Edge on Drop ──────────────────────────────────────
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
+    isReconnectDragActiveRef.current = true;
   }, []);
 
   const onReconnect = useCallback(
@@ -1072,24 +1158,32 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const onReconnectEnd = useCallback(
     (_: MouseEvent | TouchEvent, edge: RFEdge) => {
-      if (!edgeReconnectSuccessful.current) {
-        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-        if (edge.className === "temp") {
-          edgeReconnectSuccessful.current = true;
-          return;
-        }
+      try {
+        if (!edgeReconnectSuccessful.current) {
+          setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+          if (edge.className === "temp") {
+            edgeReconnectSuccessful.current = true;
+            return;
+          }
 
-        void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
-          console.error("[Canvas edge remove failed] reconnect end", {
-            edgeId: edge.id,
-            edgeClassName: edge.className ?? null,
-            source: edge.source,
-            target: edge.target,
-            error: String(error),
+          if (isOptimisticEdgeId(edge.id)) {
+            return;
+          }
+
+          void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+            console.error("[Canvas edge remove failed] reconnect end", {
+              edgeId: edge.id,
+              edgeClassName: edge.className ?? null,
+              source: edge.source,
+              target: edge.target,
+              error: String(error),
+            });
           });
-        });
+        }
+        edgeReconnectSuccessful.current = true;
+      } finally {
+        isReconnectDragActiveRef.current = false;
       }
-      edgeReconnectSuccessful.current = true;
     },
     [removeEdge],
   );
@@ -1396,6 +1490,98 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [createEdge, canvasId],
   );
 
+  const onConnectEnd = useCallback<OnConnectEnd>(
+    (event, connectionState) => {
+      if (isReconnectDragActiveRef.current) return;
+      if (connectionState.isValid === true) return;
+      const fromNode = connectionState.fromNode;
+      const fromHandle = connectionState.fromHandle;
+      if (!fromNode || !fromHandle) return;
+
+      const pt = getConnectEndClientPoint(event);
+      if (!pt) return;
+
+      const flow = screenToFlowPosition({ x: pt.x, y: pt.y });
+      setConnectionDropMenu({
+        screenX: pt.x,
+        screenY: pt.y,
+        flowX: flow.x,
+        flowY: flow.y,
+        fromNodeId: fromNode.id as Id<"nodes">,
+        fromHandleId: fromHandle.id ?? undefined,
+        fromHandleType: fromHandle.type,
+      });
+    },
+    [screenToFlowPosition],
+  );
+
+  const handleConnectionDropPick = useCallback(
+    (template: CanvasNodeTemplate) => {
+      const ctx = connectionDropMenuRef.current;
+      if (!ctx) return;
+
+      const defaults = NODE_DEFAULTS[template.type] ?? {
+        width: 200,
+        height: 100,
+        data: {},
+      };
+      const clientRequestId = crypto.randomUUID();
+      const handles = NODE_HANDLE_MAP[template.type];
+      const width = template.width ?? defaults.width;
+      const height = template.height ?? defaults.height;
+      const data = {
+        ...defaults.data,
+        ...(template.defaultData as Record<string, unknown>),
+        canvasId,
+      };
+
+      const base = {
+        canvasId,
+        type: template.type,
+        positionX: ctx.flowX,
+        positionY: ctx.flowY,
+        width,
+        height,
+        data,
+        clientRequestId,
+      };
+
+      const settle = (realId: Id<"nodes">) => {
+        syncPendingMoveForClientRequest(clientRequestId, realId);
+      };
+
+      if (ctx.fromHandleType === "source") {
+        void createNodeWithEdgeFromSource({
+          ...base,
+          sourceNodeId: ctx.fromNodeId,
+          sourceHandle: ctx.fromHandleId,
+          targetHandle: handles?.target ?? undefined,
+        })
+          .then(settle)
+          .catch((error) => {
+            console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
+          });
+      } else {
+        void createNodeWithEdgeToTarget({
+          ...base,
+          targetNodeId: ctx.fromNodeId,
+          sourceHandle: handles?.source ?? undefined,
+          targetHandle: ctx.fromHandleId,
+        })
+          .then(settle)
+          .catch((error) => {
+            console.error("[Canvas] createNodeWithEdgeToTarget failed", error);
+          });
+      }
+    },
+    [
+      canvasId,
+      createNodeWithEdgeFromSource,
+      createNodeWithEdgeToTarget,
+      syncPendingMoveForClientRequest,
+    ],
+  );
+
   // ─── Node löschen → Convex ────────────────────────────────────
   const onNodesDelete = useCallback(
     (deletedNodes: RFNode[]) => {
@@ -1456,6 +1642,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (deletedEdges: RFEdge[]) => {
       for (const edge of deletedEdges) {
         if (edge.className === "temp") {
+          continue;
+        }
+
+        if (isOptimisticEdgeId(edge.id)) {
           continue;
         }
 
@@ -1535,6 +1725,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       createNode={createNode}
       createNodeWithEdgeSplit={createNodeWithEdgeSplit}
       createNodeWithEdgeFromSource={createNodeWithEdgeFromSource}
+      createNodeWithEdgeToTarget={createNodeWithEdgeToTarget}
       onCreateNodeSettled={({ clientRequestId, realId }) =>
         syncPendingMoveForClientRequest(clientRequestId, realId)
       }
@@ -1542,6 +1733,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       <div className="relative h-full w-full">
         <CanvasToolbar canvasName={canvas?.name ?? "canvas"} />
         <CanvasCommandPalette />
+        <CanvasConnectionDropMenu
+          state={connectionDropMenu}
+          onClose={() => setConnectionDropMenu(null)}
+          onPick={handleConnectionDropPick}
+        />
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1555,6 +1751,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           onConnect={onConnect}
+          onConnectEnd={onConnectEnd}
           onReconnect={onReconnect}
           onReconnectStart={onReconnectStart}
           onReconnectEnd={onReconnectEnd}

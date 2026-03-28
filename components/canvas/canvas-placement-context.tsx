@@ -81,6 +81,29 @@ type CreateNodeWithEdgeFromSourceMutation = ReactMutation<
   >
 >;
 
+type CreateNodeWithEdgeToTargetMutation = ReactMutation<
+  FunctionReference<
+    "mutation",
+    "public",
+    {
+      canvasId: Id<"canvases">;
+      type: string;
+      positionX: number;
+      positionY: number;
+      width: number;
+      height: number;
+      data: unknown;
+      parentId?: Id<"nodes">;
+      zIndex?: number;
+      clientRequestId?: string;
+      targetNodeId: Id<"nodes">;
+      sourceHandle?: string;
+      targetHandle?: string;
+    },
+    Id<"nodes">
+  >
+>;
+
 type FlowPoint = { x: number; y: number };
 
 type CreateNodeWithIntersectionInput = {
@@ -105,12 +128,21 @@ export type CreateNodeConnectedFromSourceInput = CreateNodeWithIntersectionInput
   targetHandle?: string;
 };
 
+export type CreateNodeConnectedToTargetInput = CreateNodeWithIntersectionInput & {
+  targetNodeId: Id<"nodes">;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
 type CanvasPlacementContextValue = {
   createNodeWithIntersection: (
     input: CreateNodeWithIntersectionInput,
   ) => Promise<Id<"nodes">>;
   createNodeConnectedFromSource: (
     input: CreateNodeConnectedFromSourceInput,
+  ) => Promise<Id<"nodes">>;
+  createNodeConnectedToTarget: (
+    input: CreateNodeConnectedToTargetInput,
   ) => Promise<Id<"nodes">>;
 };
 
@@ -172,6 +204,7 @@ interface CanvasPlacementProviderProps {
   createNode: CreateNodeMutation;
   createNodeWithEdgeSplit: CreateNodeWithEdgeSplitMutation;
   createNodeWithEdgeFromSource: CreateNodeWithEdgeFromSourceMutation;
+  createNodeWithEdgeToTarget: CreateNodeWithEdgeToTargetMutation;
   onCreateNodeSettled?: (payload: {
     clientRequestId?: string;
     realId: Id<"nodes">;
@@ -184,6 +217,7 @@ export function CanvasPlacementProvider({
   createNode,
   createNodeWithEdgeSplit,
   createNodeWithEdgeFromSource,
+  createNodeWithEdgeToTarget,
   onCreateNodeSettled,
   children,
 }: CanvasPlacementProviderProps) {
@@ -327,9 +361,65 @@ export function CanvasPlacementProvider({
     [canvasId, createNodeWithEdgeFromSource, onCreateNodeSettled],
   );
 
+  const createNodeConnectedToTarget = useCallback(
+    async ({
+      type,
+      position,
+      width,
+      height,
+      data,
+      zIndex,
+      clientRequestId,
+      targetNodeId,
+      sourceHandle,
+      targetHandle,
+    }: CreateNodeConnectedToTargetInput) => {
+      const defaults = NODE_DEFAULTS[type] ?? {
+        width: 200,
+        height: 100,
+        data: {},
+      };
+
+      const effectiveWidth = width ?? defaults.width;
+      const effectiveHeight = height ?? defaults.height;
+
+      const payload = {
+        canvasId,
+        type,
+        positionX: position.x,
+        positionY: position.y,
+        width: effectiveWidth,
+        height: effectiveHeight,
+        data: {
+          ...defaults.data,
+          ...(data ?? {}),
+          canvasId,
+        },
+        ...(zIndex !== undefined ? { zIndex } : {}),
+        ...(clientRequestId !== undefined ? { clientRequestId } : {}),
+        targetNodeId,
+        sourceHandle,
+        targetHandle,
+      };
+
+      const realId = await createNodeWithEdgeToTarget(payload);
+      onCreateNodeSettled?.({ clientRequestId, realId });
+      return realId;
+    },
+    [canvasId, createNodeWithEdgeToTarget, onCreateNodeSettled],
+  );
+
   const value = useMemo(
-    () => ({ createNodeWithIntersection, createNodeConnectedFromSource }),
-    [createNodeConnectedFromSource, createNodeWithIntersection],
+    () => ({
+      createNodeWithIntersection,
+      createNodeConnectedFromSource,
+      createNodeConnectedToTarget,
+    }),
+    [
+      createNodeConnectedFromSource,
+      createNodeConnectedToTarget,
+      createNodeWithIntersection,
+    ],
   );
 
   return (

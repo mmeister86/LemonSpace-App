@@ -2,18 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import {
-  Frame,
-  GitCompare,
-  Image,
-  Moon,
-  Sparkles,
-  StickyNote,
-  Sun,
-  Type,
-  type LucideIcon,
-} from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 
+import { CanvasNodeTemplatePicker } from "@/components/canvas/canvas-node-template-picker";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import {
@@ -26,30 +17,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import {
-  CANVAS_NODE_TEMPLATES,
-  type CanvasNodeTemplate,
-} from "@/lib/canvas-node-templates";
-
-const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
-  image: Image,
-  text: Type,
-  prompt: Sparkles,
-  note: StickyNote,
-  frame: Frame,
-  compare: GitCompare,
-};
-
-const NODE_SEARCH_KEYWORDS: Partial<
-  Record<CanvasNodeTemplate["type"], string[]>
-> = {
-  image: ["image", "photo", "foto"],
-  text: ["text", "typo"],
-  prompt: ["prompt", "ai", "generate"],
-  note: ["note", "sticky", "notiz"],
-  frame: ["frame", "artboard"],
-  compare: ["compare", "before", "after"],
-};
+import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 
 export function CanvasCommandPalette() {
   const [open, setOpen] = useState(false);
@@ -69,21 +37,16 @@ export function CanvasCommandPalette() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const handleAddNode = (
-    type: CanvasNodeTemplate["type"],
-    data: CanvasNodeTemplate["defaultData"],
-    width: number,
-    height: number,
-  ) => {
+  const handleAddNode = (template: CanvasNodeTemplate) => {
     const stagger = (nodeCountRef.current % 8) * 24;
     nodeCountRef.current += 1;
     setOpen(false);
     void createNodeWithIntersection({
-      type,
-      position: getCenteredPosition(width, height, stagger),
-      width,
-      height,
-      data,
+      type: template.type,
+      position: getCenteredPosition(template.width, template.height, stagger),
+      width: template.width,
+      height: template.height,
+      data: template.defaultData,
       clientRequestId: crypto.randomUUID(),
     }).catch((error) => {
       console.error("[CanvasCommandPalette] createNode failed", error);
@@ -101,28 +64,7 @@ export function CanvasCommandPalette() {
         <CommandInput placeholder="Suchen …" />
         <CommandList>
           <CommandEmpty>Keine Treffer.</CommandEmpty>
-          <CommandGroup heading="Knoten">
-            {CANVAS_NODE_TEMPLATES.map((template) => {
-              const Icon = NODE_ICONS[template.type];
-              return (
-                <CommandItem
-                  key={template.type}
-                  keywords={NODE_SEARCH_KEYWORDS[template.type] ?? []}
-                  onSelect={() =>
-                    handleAddNode(
-                      template.type,
-                      template.defaultData,
-                      template.width,
-                      template.height,
-                    )
-                  }
-                >
-                  <Icon className="size-4" />
-                  {template.label}
-                </CommandItem>
-              );
-            })}
-          </CommandGroup>
+          <CanvasNodeTemplatePicker onPick={handleAddNode} />
           <CommandSeparator />
           <CommandGroup heading="Erscheinungsbild">
             <CommandItem

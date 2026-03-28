@@ -351,6 +351,64 @@ export const createWithEdgeFromSource = mutation({
 });
 
 /**
+ * Neuen Node erstellen und als Quelle mit einem bestehenden Node verbinden
+ * (Kante: neu → bestehend), z. B. Kante von Input-Handle gezogen und abgesetzt.
+ */
+export const createWithEdgeToTarget = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    type: v.string(),
+    positionX: v.number(),
+    positionY: v.number(),
+    width: v.number(),
+    height: v.number(),
+    data: v.any(),
+    parentId: v.optional(v.id("nodes")),
+    zIndex: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
+    targetNodeId: v.id("nodes"),
+    sourceHandle: v.optional(v.string()),
+    targetHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    void args.clientRequestId;
+
+    const target = await ctx.db.get(args.targetNodeId);
+    if (!target || target.canvasId !== args.canvasId) {
+      throw new Error("Target node not found");
+    }
+
+    const nodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: args.type as Doc<"nodes">["type"],
+      positionX: args.positionX,
+      positionY: args.positionY,
+      width: args.width,
+      height: args.height,
+      status: "idle",
+      retryCount: 0,
+      data: args.data,
+      parentId: args.parentId,
+      zIndex: args.zIndex,
+    });
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: nodeId,
+      targetNodeId: args.targetNodeId,
+      sourceHandle: args.sourceHandle,
+      targetHandle: args.targetHandle,
+    });
+
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    return nodeId;
+  },
+});
+
+/**
  * Node-Position auf dem Canvas verschieben.
  */
 export const move = mutation({
