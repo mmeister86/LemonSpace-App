@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useTheme } from "next-themes";
 import {
   ReactFlow,
@@ -21,6 +28,7 @@ import {
   type OnConnectEnd,
   BackgroundVariant,
 } from "@xyflow/react";
+import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
@@ -216,6 +224,20 @@ function getIntersectedEdgeId(point: { x: number; y: number }): string | null {
   }
 
   return getEdgeIdFromInteractionElement(interactionElement);
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.closest("input, textarea, select, [contenteditable=true]") !== null;
+}
+
+function isEdgeCuttable(edge: RFEdge): boolean {
+  if (edge.className === "temp") return false;
+  if (isOptimisticEdgeId(edge.id)) return false;
+  return true;
 }
 
 function hasHandleKey(
@@ -793,6 +815,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     useState<ConnectionDropMenuState | null>(null);
   const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
   connectionDropMenuRef.current = connectionDropMenu;
+
+  const [scissorsMode, setScissorsMode] = useState(false);
+  const [scissorStrokePreview, setScissorStrokePreview] = useState<
+    { x: number; y: number }[] | null
+  >(null);
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+  const scissorsModeRef = useRef(scissorsMode);
+  scissorsModeRef.current = scissorsMode;
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
@@ -1707,6 +1738,99 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest],
   );
 
+  // ─── Scherenmodus (K) — Kante klicken oder mit Maus durchschneiden ─
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && scissorsModeRef.current) {
+        setScissorsMode(false);
+        setScissorStrokePreview(null);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.length === 1 && e.key.toLowerCase() === "k";
+      if (!k) return;
+      if (isEditableKeyboardTarget(e.target)) return;
+      e.preventDefault();
+      setScissorsMode((prev) => !prev);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!scissorsMode) {
+      setScissorStrokePreview(null);
+    }
+  }, [scissorsMode]);
+
+  const onEdgeClickScissors = useCallback(
+    (_event: ReactMouseEvent, edge: RFEdge) => {
+      if (!scissorsModeRef.current) return;
+      if (!isEdgeCuttable(edge)) return;
+      void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+        console.error("[Canvas] scissors edge click remove failed", {
+          edgeId: edge.id,
+          error: String(error),
+        });
+      });
+    },
+    [removeEdge],
+  );
+
+  const onScissorsFlowPointerDownCapture = useCallback(
+    (event: ReactPointerEvent) => {
+      if (!scissorsModeRef.current) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      const el = event.target as HTMLElement;
+      if (el.closest(".react-flow__node")) return;
+      if (el.closest(".react-flow__controls")) return;
+      if (el.closest(".react-flow__minimap")) return;
+      if (!el.closest(".react-flow__pane")) return;
+      if (getIntersectedEdgeId({ x: event.clientX, y: event.clientY })) {
+        return;
+      }
+
+      const strokeIds = new Set<string>();
+      const points: { x: number; y: number }[] = [
+        { x: event.clientX, y: event.clientY },
+      ];
+      setScissorStrokePreview(points);
+
+      const handleMove = (ev: PointerEvent) => {
+        points.push({ x: ev.clientX, y: ev.clientY });
+        setScissorStrokePreview([...points]);
+        const id = getIntersectedEdgeId({ x: ev.clientX, y: ev.clientY });
+        if (id) {
+          const found = edgesRef.current.find((ed) => ed.id === id);
+          if (found && isEdgeCuttable(found)) strokeIds.add(id);
+        }
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
+        setScissorStrokePreview(null);
+        if (!scissorsModeRef.current) return;
+        for (const id of strokeIds) {
+          void removeEdge({ edgeId: id as Id<"edges"> }).catch((error) => {
+            console.error("[Canvas] scissors stroke remove failed", {
+              edgeId: id,
+              error: String(error),
+            });
+          });
+        }
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
+      event.preventDefault();
+    },
+    [removeEdge],
+  );
+
   // ─── Loading State ────────────────────────────────────────────
   if (convexNodes === undefined || convexEdges === undefined) {
     return (
@@ -1738,6 +1862,36 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onClose={() => setConnectionDropMenu(null)}
           onPick={handleConnectionDropPick}
         />
+        {scissorsMode ? (
+          <div className="pointer-events-none absolute top-3 left-1/2 z-50 max-w-[min(100%-2rem,28rem)] -translate-x-1/2 rounded-lg bg-popover/95 px-3 py-1.5 text-center text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            Scherenmodus — Kante anklicken oder ziehen zum Durchtrennen ·{" "}
+            <span className="whitespace-nowrap">Esc oder K beenden</span> · Mitte/Rechtsklick zum
+            Verschieben
+          </div>
+        ) : null}
+        {scissorStrokePreview && scissorStrokePreview.length > 1 ? (
+          <svg
+            className="pointer-events-none fixed inset-0 z-60 overflow-visible"
+            aria-hidden
+          >
+            <polyline
+              fill="none"
+              stroke="var(--primary)"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              opacity={0.85}
+              points={scissorStrokePreview
+                .map((p) => `${p.x},${p.y}`)
+                .join(" ")}
+            />
+          </svg>
+        ) : null}
+        <div
+          className="relative h-full min-h-0 w-full"
+          onPointerDownCapture={
+            scissorsMode ? onScissorsFlowPointerDownCapture : undefined
+          }
+        >
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1757,6 +1911,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onReconnectEnd={onReconnectEnd}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onEdgeClick={scissorsMode ? onEdgeClickScissors : undefined}
           onError={onFlowError}
           onDragOver={onDragOver}
           onDrop={onDrop}
@@ -1765,9 +1920,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           snapGrid={[16, 16]}
           deleteKeyCode={["Backspace", "Delete"]}
           multiSelectionKeyCode="Shift"
+          nodesConnectable={!scissorsMode}
+          panOnDrag={scissorsMode ? [1, 2] : true}
           proOptions={{ hideAttribution: true }}
           colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-          className="bg-background"
+          className={cn("bg-background", scissorsMode && "canvas-scissors-mode")}
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
           <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
@@ -1778,6 +1935,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             maskColor="rgba(0, 0, 0, 0.1)"
           />
         </ReactFlow>
+        </div>
       </div>
     </CanvasPlacementProvider>
   );
