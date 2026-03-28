@@ -225,6 +225,74 @@ export const createWithEdgeSplit = mutation({
 });
 
 /**
+ * Bestehenden Knoten in eine Kante einhängen: alte Kante löschen, zwei neue anlegen.
+ * Optional positionX/Y: Mitte-Knoten in derselben Transaktion verschieben (ein Roundtrip mit Drag-Ende).
+ */
+export const splitEdgeAtExistingNode = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    splitEdgeId: v.id("edges"),
+    middleNodeId: v.id("nodes"),
+    splitSourceHandle: v.optional(v.string()),
+    splitTargetHandle: v.optional(v.string()),
+    newNodeSourceHandle: v.optional(v.string()),
+    newNodeTargetHandle: v.optional(v.string()),
+    positionX: v.optional(v.number()),
+    positionY: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+    const edge = await ctx.db.get(args.splitEdgeId);
+    if (!edge || edge.canvasId !== args.canvasId) {
+      throw new Error("Edge not found");
+    }
+
+    if (
+      edge.sourceNodeId === args.middleNodeId ||
+      edge.targetNodeId === args.middleNodeId
+    ) {
+      throw new Error("Middle node is already an endpoint of this edge");
+    }
+
+    const middle = await ctx.db.get(args.middleNodeId);
+    if (!middle || middle.canvasId !== args.canvasId) {
+      throw new Error("Middle node not found");
+    }
+
+    if (
+      args.positionX !== undefined &&
+      args.positionY !== undefined
+    ) {
+      await ctx.db.patch(args.middleNodeId, {
+        positionX: args.positionX,
+        positionY: args.positionY,
+      });
+    }
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: edge.sourceNodeId,
+      targetNodeId: args.middleNodeId,
+      sourceHandle: args.splitSourceHandle,
+      targetHandle: args.newNodeTargetHandle,
+    });
+
+    await ctx.db.insert("edges", {
+      canvasId: args.canvasId,
+      sourceNodeId: args.middleNodeId,
+      targetNodeId: edge.targetNodeId,
+      sourceHandle: args.newNodeSourceHandle,
+      targetHandle: args.splitTargetHandle,
+    });
+
+    await ctx.db.delete(args.splitEdgeId);
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+  },
+});
+
+/**
  * Neuen Node erstellen und sofort mit einem bestehenden Node verbinden
  * (ein Roundtrip — z. B. Prompt → neue AI-Image-Node).
  */
