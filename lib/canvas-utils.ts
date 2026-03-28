@@ -85,6 +85,54 @@ export function convexEdgeToRF(edge: Doc<"edges">): RFEdge {
 }
 
 /**
+ * Akzentfarben der Handles je Node-Typ (s. jeweilige Node-Komponente).
+ * Für einen dezenten Glow entlang der Kante (drop-shadow am Pfad).
+ */
+const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = {
+  prompt: [139, 92, 246],
+  "ai-image": [139, 92, 246],
+  image: [13, 148, 136],
+  text: [13, 148, 136],
+  note: [13, 148, 136],
+  asset: [13, 148, 136],
+  group: [100, 116, 139],
+  frame: [249, 115, 22],
+  compare: [100, 116, 139],
+};
+
+export type EdgeGlowColorMode = "light" | "dark";
+
+function sourceGlowFilterForNodeType(
+  type: string | undefined,
+  colorMode: EdgeGlowColorMode,
+): string | undefined {
+  if (!type) return undefined;
+  const rgb = SOURCE_NODE_GLOW_RGB[type];
+  if (!rgb) return undefined;
+  const [r, g, b] = rgb;
+  if (colorMode === "dark") {
+    /* Zwei kleine Schatten statt gestapelter großer Blur — weniger GPU-Last beim Pan/Zoom */
+    return `drop-shadow(0 0 4px rgba(${r},${g},${b},0.72)) drop-shadow(0 0 9px rgba(${r},${g},${b},0.38))`;
+  }
+  return `drop-shadow(0 0 3px rgba(${r},${g},${b},0.42)) drop-shadow(0 0 7px rgba(${r},${g},${b},0.2))`;
+}
+
+/** Wie convexEdgeToRF, setzt zusätzlich filter am Pfad nach Quell-Node-Typ. */
+export function convexEdgeToRFWithSourceGlow(
+  edge: Doc<"edges">,
+  sourceNodeType: string | undefined,
+  colorMode: EdgeGlowColorMode = "light",
+): RFEdge {
+  const base = convexEdgeToRF(edge);
+  const filter = sourceGlowFilterForNodeType(sourceNodeType, colorMode);
+  if (!filter) return base;
+  return {
+    ...base,
+    style: { ...(base.style ?? {}), filter },
+  };
+}
+
+/**
  * Handle-IDs pro Node-Typ für Proximity Connect.
  * `undefined` = default handle (kein explizites `id`-Attribut auf dem Handle).
  * Fehlendes Feld = Node hat keinen Handle dieses Typs.

@@ -34,6 +34,7 @@ import {
   convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
   convexEdgeToRF,
+  convexEdgeToRFWithSourceGlow,
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
   resolveMediaAspectRatio,
@@ -133,7 +134,7 @@ const DEFAULT_EDGE_OPTIONS: DefaultEdgeOptions = {
 };
 
 const EDGE_INTERSECTION_HIGHLIGHT_STYLE: NonNullable<RFEdge["style"]> = {
-  stroke: "hsl(var(--foreground))",
+  stroke: "var(--xy-edge-stroke)",
   strokeWidth: 2,
 };
 
@@ -622,10 +623,23 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (!convexEdges) return;
     setEdges((prev) => {
       const tempEdges = prev.filter((e) => e.className === "temp");
-      const mapped = convexEdges.map(convexEdgeToRF);
+      const sourceTypeByNodeId =
+        convexNodes !== undefined
+          ? new Map(convexNodes.map((n) => [n._id, n.type]))
+          : undefined;
+      const glowMode = resolvedTheme === "dark" ? "dark" : "light";
+      const mapped = convexEdges.map((edge) =>
+        sourceTypeByNodeId
+          ? convexEdgeToRFWithSourceGlow(
+              edge,
+              sourceTypeByNodeId.get(edge.sourceNodeId),
+              glowMode,
+            )
+          : convexEdgeToRF(edge),
+      );
       return [...mapped, ...tempEdges];
     });
-  }, [convexEdges]);
+  }, [convexEdges, convexNodes, resolvedTheme]);
 
   useEffect(() => {
     if (isDragging.current) return;
@@ -1278,6 +1292,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onlyRenderVisibleElements
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
