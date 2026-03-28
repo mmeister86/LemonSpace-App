@@ -1,17 +1,20 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
 } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { ExternalLink, ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import {
   AssetBrowserPanel,
+  useAssetBrowserTarget,
   type AssetBrowserSessionState,
 } from "@/components/canvas/asset-browser-panel";
 import { api } from "@/convex/_generated/api";
@@ -40,7 +43,9 @@ type AssetNodeData = {
 export type AssetNodeType = Node<AssetNodeData, "asset">;
 
 export default function AssetNode({ id, data, selected, width, height }: NodeProps<AssetNodeType>) {
-  const [panelOpen, setPanelOpen] = useState(false);
+  const { targetNodeId, openForNode, close: closeAssetBrowser } =
+    useAssetBrowserTarget();
+  const panelOpen = targetNodeId === id;
   const [loadedPreviewUrl, setLoadedPreviewUrl] = useState<string | null>(null);
   const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
   const [browserState, setBrowserState] = useState<AssetBrowserSessionState>({
@@ -51,6 +56,31 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     totalPages: 1,
   });
   const resizeNode = useMutation(api.nodes.resize);
+
+  const edges = useStore((s) => s.edges);
+  const nodes = useStore((s) => s.nodes);
+
+  const linkedSearchTerm = useMemo(() => {
+    const incoming = edges.filter((e) => e.target === id);
+    for (const edge of incoming) {
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (sourceNode?.type !== "text") continue;
+      const content = (sourceNode.data as { content?: string }).content;
+      if (typeof content === "string" && content.trim().length > 0) {
+        return content.trim();
+      }
+    }
+    return "";
+  }, [edges, id, nodes]);
+
+  const openAssetBrowser = useCallback(() => {
+    setBrowserState((s) =>
+      linkedSearchTerm
+        ? { ...s, term: linkedSearchTerm, results: [], page: 1, totalPages: 1 }
+        : s,
+    );
+    openForNode(id);
+  }, [id, linkedSearchTerm, openForNode]);
 
   const hasAsset = typeof data.assetId === "number";
   const previewUrl = data.url ?? data.previewUrl;
@@ -143,8 +173,9 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
           <Button
             size="sm"
             variant={hasAsset ? "ghost" : "default"}
-            className="h-6 px-2 text-xs"
-            onClick={() => setPanelOpen(true)}
+            className="nodrag h-6 px-2 text-xs"
+            onClick={openAssetBrowser}
+            onPointerDown={(e) => e.stopPropagation()}
             type="button"
           >
             {hasAsset ? "Change" : "Browse Assets"}
@@ -239,7 +270,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
           canvasId={data.canvasId}
           initialState={browserState}
           onStateChange={setBrowserState}
-          onClose={() => setPanelOpen(false)}
+          onClose={closeAssetBrowser}
         />
       ) : null}
 

@@ -1,73 +1,155 @@
 "use client";
 
-const nodeTemplates = [
-  { type: "image", label: "Bild", icon: "🖼️", category: "Quelle" },
-  { type: "asset", label: "FreePik", icon: "🛍️", category: "Quelle" },
-  { type: "video", label: "Pexels", icon: "🎬", category: "Quelle" },
-  { type: "text", label: "Text", icon: "📝", category: "Quelle" },
-  { type: "prompt", label: "KI-Bild", icon: "✨", category: "Quelle" },
-  { type: "note", label: "Notiz", icon: "📌", category: "Layout" },
-  { type: "frame", label: "Frame", icon: "🖥️", category: "Layout" },
-  { type: "group", label: "Gruppe", icon: "📁", category: "Layout" },
-  { type: "compare", label: "Vergleich", icon: "🔀", category: "Layout" },
-] as const;
+import {
+  Bot,
+  ClipboardList,
+  Crop,
+  FolderOpen,
+  Frame,
+  GitBranch,
+  GitCompare,
+  Image,
+  ImageOff,
+  Layers,
+  LayoutPanelTop,
+  MessageSquare,
+  Package,
+  Palette,
+  Presentation,
+  Repeat,
+  Sparkles,
+  Split,
+  StickyNote,
+  Type,
+  Video,
+  Wand2,
+  type LucideIcon,
+} from "lucide-react";
 
-const categories = [...new Set(nodeTemplates.map((template) => template.category))];
+import { CanvasUserMenu } from "@/components/canvas/canvas-user-menu";
+import { useAuthQuery } from "@/hooks/use-auth-query";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import {
+  NODE_CATEGORY_META,
+  NODE_CATEGORIES_ORDERED,
+  catalogEntriesByCategory,
+  isNodePaletteEnabled,
+  type NodeCatalogEntry,
+} from "@/lib/canvas-node-catalog";
+import { cn } from "@/lib/utils";
 
-function SidebarItem({
-  type,
-  label,
-  icon,
-}: {
-  type: string;
-  label: string;
-  icon: string;
-}) {
+const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
+  image: Image,
+  text: Type,
+  prompt: Sparkles,
+  color: Palette,
+  video: Video,
+  asset: Package,
+  "ai-image": Sparkles,
+  "ai-text": Type,
+  "ai-video": Video,
+  "agent-output": Bot,
+  crop: Crop,
+  "bg-remove": ImageOff,
+  upscale: Wand2,
+  "style-transfer": Wand2,
+  "face-restore": Sparkles,
+  splitter: Split,
+  loop: Repeat,
+  agent: Bot,
+  mixer: Layers,
+  switch: GitBranch,
+  group: FolderOpen,
+  frame: Frame,
+  note: StickyNote,
+  "text-overlay": LayoutPanelTop,
+  compare: GitCompare,
+  comment: MessageSquare,
+  presentation: Presentation,
+};
+
+function SidebarRow({ entry }: { entry: NodeCatalogEntry }) {
+  const enabled = isNodePaletteEnabled(entry);
+  const Icon = CATALOG_ICONS[entry.type] ?? ClipboardList;
+
   const onDragStart = (event: React.DragEvent) => {
-    event.dataTransfer.setData("application/lemonspace-node-type", type);
+    if (!enabled) return;
+    event.dataTransfer.setData("application/lemonspace-node-type", entry.type);
     event.dataTransfer.effectAllowed = "move";
   };
 
+  const hint = entry.disabledHint ?? "Noch nicht verfügbar";
+
   return (
     <div
-      draggable
+      draggable={enabled}
       onDragStart={onDragStart}
-      className="flex cursor-grab items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-accent active:cursor-grabbing"
+      title={enabled ? `${entry.label} — auf den Canvas ziehen` : hint}
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+        enabled
+          ? "cursor-grab border-border/80 bg-card hover:bg-accent active:cursor-grabbing"
+          : "cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground",
+      )}
     >
-      <span>{icon}</span>
-      <span>{label}</span>
+      <Icon className="size-4 shrink-0 opacity-80" />
+      <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+      {entry.phase > 1 ? (
+        <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground/80">
+          P{entry.phase}
+        </span>
+      ) : null}
     </div>
   );
 }
 
-export default function CanvasSidebar() {
+type CanvasSidebarProps = {
+  canvasId: Id<"canvases">;
+};
+
+export default function CanvasSidebar({ canvasId }: CanvasSidebarProps) {
+  const canvas = useAuthQuery(api.canvases.get, { canvasId });
+  const byCategory = catalogEntriesByCategory();
+
   return (
-    <aside className="flex w-56 flex-col border-r bg-background">
-      <div className="border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">Nodes</h2>
-        <p className="text-xs text-muted-foreground">Auf den Canvas ziehen</p>
+    <aside className="flex w-60 shrink-0 flex-col border-r border-border/80 bg-background">
+      <div className="border-b border-border/80 px-4 py-4">
+        {canvas === undefined ? (
+          <div className="h-12 animate-pulse rounded-md bg-muted/50" />
+        ) : (
+          <>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Canvas
+            </p>
+            <h1 className="mt-1 line-clamp-2 text-base font-semibold leading-snug text-foreground">
+              {canvas?.name ?? "…"}
+            </h1>
+          </>
+        )}
       </div>
+
       <div className="flex-1 overflow-y-auto p-3">
-        {categories.map((category) => (
-          <div key={category} className="mb-4">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {category}
-            </h3>
-            <div className="flex flex-col gap-1.5">
-              {nodeTemplates
-                .filter((template) => template.category === category)
-                .map((template) => (
-                  <SidebarItem
-                    key={template.type}
-                    type={template.type}
-                    label={template.label}
-                    icon={template.icon}
-                  />
+        {NODE_CATEGORIES_ORDERED.map((categoryId) => {
+          const entries = byCategory.get(categoryId) ?? [];
+          if (entries.length === 0) return null;
+          const { label } = NODE_CATEGORY_META[categoryId];
+          return (
+            <div key={categoryId} className="mb-4 last:mb-0">
+              <h2 className="mb-2 px-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {label}
+              </h2>
+              <div className="flex flex-col gap-1.5">
+                {entries.map((entry) => (
+                  <SidebarRow key={entry.type} entry={entry} />
                 ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      <CanvasUserMenu />
     </aside>
   );
 }

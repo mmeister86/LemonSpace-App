@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -55,13 +56,20 @@ import {
   DEFAULT_ASPECT_RATIO,
   parseAspectRatioString,
 } from "@/lib/image-formats";
-import CanvasToolbar from "@/components/canvas/canvas-toolbar";
+import CanvasToolbar, {
+  type CanvasNavTool,
+} from "@/components/canvas/canvas-toolbar";
+import { CanvasAppMenu } from "@/components/canvas/canvas-app-menu";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import {
   CanvasConnectionDropMenu,
   type ConnectionDropMenuState,
 } from "@/components/canvas/canvas-connection-drop-menu";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
+import {
+  AssetBrowserTargetContext,
+  type AssetBrowserTargetApi,
+} from "@/components/canvas/asset-browser-panel";
 import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 
@@ -765,12 +773,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     }
   });
 
+  /** Freepik-Panel: State canvas-weit, damit es den optimistic_… → Real-ID-Wechsel überlebt. */
+  const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
+    string | null
+  >(null);
+  const assetBrowserTargetApi: AssetBrowserTargetApi = useMemo(
+    () => ({
+      targetNodeId: assetBrowserTargetNodeId,
+      openForNode: (nodeId: string) => setAssetBrowserTargetNodeId(nodeId),
+      close: () => setAssetBrowserTargetNodeId(null),
+    }),
+    [assetBrowserTargetNodeId],
+  );
+
   /** Pairing: create kann vor oder nach Drag-Ende fertig sein. Kanten-Split + Position in einem Convex-Roundtrip wenn split ansteht. */
   const syncPendingMoveForClientRequest = useCallback(
     (clientRequestId: string | undefined, realId?: Id<"nodes">) => {
       if (!clientRequestId) return;
 
       if (realId !== undefined) {
+        const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
+        setAssetBrowserTargetNodeId((current) =>
+          current === optimisticNodeId ? (realId as string) : current,
+        );
         const pendingMove = pendingMoveAfterCreateRef.current.get(clientRequestId);
         const splitPayload =
           pendingEdgeSplitByClientRequestRef.current.get(clientRequestId);
@@ -866,6 +891,53 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const [scissorStrokePreview, setScissorStrokePreview] = useState<
     { x: number; y: number }[] | null
   >(null);
+  const [navTool, setNavTool] = useState<CanvasNavTool>("select");
+
+  const handleNavToolChange = useCallback((tool: CanvasNavTool) => {
+    if (tool === "scissor") {
+      setScissorsMode(true);
+      setNavTool("scissor");
+      return;
+    }
+    setScissorsMode(false);
+    setNavTool(tool);
+  }, []);
+
+  // Auswahl (V) / Hand (H) — ergänzt die Leertaste (Standard: panActivationKeyCode Space beim Ziehen)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableKeyboardTarget(e.target)) return;
+      const key = e.key.length === 1 ? e.key.toLowerCase() : "";
+      if (key === "v") {
+        e.preventDefault();
+        handleNavToolChange("select");
+        return;
+      }
+      if (key === "h") {
+        e.preventDefault();
+        handleNavToolChange("hand");
+        return;
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [handleNavToolChange]);
+
+  const { flowPanOnDrag, flowSelectionOnDrag } = useMemo(() => {
+    const panMiddleRight: number[] = [1, 2];
+    if (scissorsMode) {
+      return { flowPanOnDrag: panMiddleRight, flowSelectionOnDrag: false };
+    }
+    if (navTool === "hand") {
+      return { flowPanOnDrag: true, flowSelectionOnDrag: false };
+    }
+    if (navTool === "comment") {
+      return { flowPanOnDrag: panMiddleRight, flowSelectionOnDrag: true };
+    }
+    return { flowPanOnDrag: panMiddleRight, flowSelectionOnDrag: true };
+  }, [scissorsMode, navTool]);
+
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
   const scissorsModeRef = useRef(scissorsMode);
@@ -873,6 +945,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
+  // Resize-Lock: kein Convex→lokal während aktiver Größenänderung (veraltete Maße überschreiben sonst den Resize)
+  const isResizing = useRef(false);
 
   // Delete-Lock: Nodes die gerade gelöscht werden, nicht aus Convex-Sync wiederherstellen
   const deletingNodeIds = useRef<Set<string>>(new Set());
@@ -946,7 +1020,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   useEffect(() => {
-    if (!convexNodes || isDragging.current) return;
+    if (!convexNodes || isDragging.current || isResizing.current) return;
     setNodes((previousNodes) => {
       const prevDataById = new Map(
         previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
@@ -1000,6 +1074,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Node Changes (Drag, Select, Remove) ─────────────────────
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      for (const c of changes) {
+        if (c.type === "dimensions") {
+          if (c.resizing === true) {
+            isResizing.current = true;
+          } else if (c.resizing === false) {
+            isResizing.current = false;
+          }
+        }
+      }
+
       const removedIds = new Set<string>();
       for (const c of changes) {
         if (c.type === "remove") {
@@ -1023,6 +1107,22 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             change.resizing === true || change.resizing === false;
 
           if (node.type === "asset") {
+            const nodeResizing = Boolean(
+              (node as { resizing?: boolean }).resizing,
+            );
+            const hasResizingTrueInBatch = changes.some(
+              (c) =>
+                c.type === "dimensions" &&
+                "id" in c &&
+                c.id === change.id &&
+                c.resizing === true,
+            );
+            if (
+              !isActiveResize &&
+              (nodeResizing || hasResizingTrueInBatch)
+            ) {
+              return null;
+            }
             if (!isActiveResize) {
               return change;
             }
@@ -1671,6 +1771,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         deletingNodeIds.current.add(id);
       }
 
+      const removedTargetSet = new Set(idsToDelete);
+      setAssetBrowserTargetNodeId((cur) =>
+        cur !== null && removedTargetSet.has(cur) ? null : cur,
+      );
+
       const bridgeCreates = computeBridgeCreatesForDeletedNodes(
         deletedNodes,
         nodes,
@@ -1805,6 +1910,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && scissorsModeRef.current) {
         setScissorsMode(false);
+        setNavTool("select");
         setScissorStrokePreview(null);
         return;
       }
@@ -1813,7 +1919,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       if (!k) return;
       if (isEditableKeyboardTarget(e.target)) return;
       e.preventDefault();
-      setScissorsMode((prev) => !prev);
+      if (scissorsModeRef.current) {
+        setScissorsMode(false);
+        setNavTool("select");
+      } else {
+        setScissorsMode(true);
+        setNavTool("scissor");
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -1922,8 +2034,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         syncPendingMoveForClientRequest(clientRequestId, realId)
       }
     >
+      <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
       <div className="relative h-full w-full">
-        <CanvasToolbar canvasName={canvas?.name ?? "canvas"} />
+        <CanvasToolbar
+          canvasName={canvas?.name ?? "canvas"}
+          activeTool={navTool}
+          onToolChange={handleNavToolChange}
+        />
+        <CanvasAppMenu canvasId={canvasId} />
         <CanvasCommandPalette />
         <CanvasConnectionDropMenu
           state={connectionDropMenu}
@@ -1931,7 +2049,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onPick={handleConnectionDropPick}
         />
         {scissorsMode ? (
-          <div className="pointer-events-none absolute top-3 left-1/2 z-50 max-w-[min(100%-2rem,28rem)] -translate-x-1/2 rounded-lg bg-popover/95 px-3 py-1.5 text-center text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
+          <div className="pointer-events-none absolute top-14 left-1/2 z-50 max-w-[min(100%-2rem,28rem)] -translate-x-1/2 rounded-lg bg-popover/95 px-3 py-1.5 text-center text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
             Scherenmodus — Kante anklicken oder ziehen zum Durchtrennen ·{" "}
             <span className="whitespace-nowrap">Esc oder K beenden</span> · Mitte/Rechtsklick zum
             Verschieben
@@ -1990,7 +2108,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           deleteKeyCode={["Backspace", "Delete"]}
           multiSelectionKeyCode="Shift"
           nodesConnectable={!scissorsMode}
-          panOnDrag={scissorsMode ? [1, 2] : true}
+          panOnDrag={flowPanOnDrag}
+          selectionOnDrag={flowSelectionOnDrag}
+          panActivationKeyCode="Space"
           proOptions={{ hideAttribution: true }}
           colorMode={resolvedTheme === "dark" ? "dark" : "light"}
           className={cn("bg-background", scissorsMode && "canvas-scissors-mode")}
@@ -2006,6 +2126,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         </ReactFlow>
         </div>
       </div>
+      </AssetBrowserTargetContext.Provider>
     </CanvasPlacementProvider>
   );
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import {
+  FolderOpen,
   Frame,
   GitCompare,
   Image,
+  Package,
   Sparkles,
   StickyNote,
   Type,
+  Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +26,9 @@ const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
   note: StickyNote,
   frame: Frame,
   compare: GitCompare,
+  group: FolderOpen,
+  asset: Package,
+  video: Video,
 };
 
 const NODE_SEARCH_KEYWORDS: Partial<
@@ -33,7 +39,10 @@ const NODE_SEARCH_KEYWORDS: Partial<
   prompt: ["prompt", "ai", "generate", "ki-bild", "ki", "bild"],
   note: ["note", "sticky", "notiz"],
   frame: ["frame", "artboard"],
-  compare: ["compare", "before", "after"],
+  compare: ["compare", "before", "after", "vergleich"],
+  group: ["group", "gruppe", "folder"],
+  asset: ["asset", "freepik", "stock"],
+  video: ["video", "pexels", "clip"],
 };
 
 export type CanvasNodeTemplatePickerProps = {

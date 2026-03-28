@@ -311,7 +311,7 @@ export default function PromptNode({
       <div className="flex h-full flex-col gap-2 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
           <Sparkles className="h-3.5 w-3.5" />
-          Eingabe
+          KI-Bild
         </div>
         {inputMeta.hasTextInput ? (
           <div className="flex-1 overflow-auto rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">

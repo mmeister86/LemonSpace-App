@@ -87,7 +87,7 @@ export function RecentTransactions() {
               Noch keine Aktivität
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Erstelle dein erstes KI-Bild im Canvas
+              Erstelle dein erstes Bild im Canvas (Prompt-Knoten)
             </p>
           </div>
         </div>

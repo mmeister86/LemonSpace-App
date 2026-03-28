@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useAction, useMutation } from "convex/react";
 import { X, Search, Loader2, AlertCircle } from "lucide-react";
@@ -35,6 +43,25 @@ export interface AssetBrowserSessionState {
   totalPages: number;
 }
 
+/** Canvas-weit: bleibt beim Wechsel optimistic_… → echte Node-ID erhalten (sonst remount = Panel zu). */
+export type AssetBrowserTargetApi = {
+  targetNodeId: string | null;
+  openForNode: (nodeId: string) => void;
+  close: () => void;
+};
+
+export const AssetBrowserTargetContext = createContext<AssetBrowserTargetApi | null>(
+  null,
+);
+
+export function useAssetBrowserTarget(): AssetBrowserTargetApi {
+  const v = useContext(AssetBrowserTargetContext);
+  if (!v) {
+    throw new Error("useAssetBrowserTarget must be used within AssetBrowserTargetContext.Provider");
+  }
+  return v;
+}
+
 interface Props {
   nodeId: string;
   canvasId: string;
@@ -50,7 +77,6 @@ export function AssetBrowserPanel({
   initialState,
   onStateChange,
 }: Props) {
-  const [isMounted, setIsMounted] = useState(false);
   const [term, setTerm] = useState(initialState?.term ?? "");
   const [debouncedTerm, setDebouncedTerm] = useState(initialState?.term ?? "");
   const [assetType, setAssetType] = useState<AssetType>(initialState?.assetType ?? "photo");
@@ -68,11 +94,6 @@ export function AssetBrowserPanel({
   const requestSequenceRef = useRef(0);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const isSelecting = selectingAssetKey !== null;
-
-  useEffect(() => {
-    setIsMounted(true);
-    return () => setIsMounted(false);
-  }, []);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -428,10 +449,6 @@ export function AssetBrowserPanel({
       totalPages,
     ],
   );
-
-  if (!isMounted) {
-    return null;
-  }
 
   return createPortal(modal, document.body);
 }

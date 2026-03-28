@@ -50,8 +50,8 @@ export default async function CanvasPage({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      <CanvasSidebar />
-      <div className="relative flex-1">
+      <CanvasSidebar canvasId={typedCanvasId} />
+      <div className="relative min-h-0 min-w-0 flex-1">
         <ConnectionBanner />
         <Canvas canvasId={typedCanvasId} />
       </div>

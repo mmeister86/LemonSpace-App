@@ -15,7 +15,7 @@ export const CANVAS_NODE_TEMPLATES = [
   },
   {
     type: "prompt",
-    label: "KI-Bild",
+    label: "Prompt",
     width: 320,
     height: 220,
     defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
@@ -36,9 +36,30 @@ export const CANVAS_NODE_TEMPLATES = [
   },
   {
     type: "compare",
-    label: "Compare",
+    label: "Vergleich",
     width: 500,
     height: 380,
+    defaultData: {},
+  },
+  {
+    type: "group",
+    label: "Gruppe",
+    width: 400,
+    height: 300,
+    defaultData: { label: "Gruppe" },
+  },
+  {
+    type: "asset",
+    label: "Asset (Stock)",
+    width: 260,
+    height: 240,
+    defaultData: {},
+  },
+  {
+    type: "video",
+    label: "Video",
+    width: 320,
+    height: 180,
     defaultData: {},
   },
 ] as const;
