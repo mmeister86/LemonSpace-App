@@ -20,6 +20,7 @@ import {
   applyEdgeChanges,
   useReactFlow,
   reconnectEdge,
+  getConnectedEdges,
   type Node as RFNode,
   type Edge as RFEdge,
   type NodeChange,
@@ -32,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
+import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
 
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -95,6 +96,33 @@ function clientRequestIdFromOptimisticNodeId(id: string): string | null {
   if (!isOptimisticNodeId(id)) return null;
   const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
   return suffix.length > 0 ? suffix : null;
+}
+
+function isNodeGeometrySyncedWithConvex(
+  node: RFNode,
+  doc: Doc<"nodes">,
+): boolean {
+  const styleW = node.style?.width;
+  const styleH = node.style?.height;
+  const w = typeof styleW === "number" ? styleW : doc.width;
+  const h = typeof styleH === "number" ? styleH : doc.height;
+  return (
+    node.position.x === doc.positionX &&
+    node.position.y === doc.positionY &&
+    w === doc.width &&
+    h === doc.height
+  );
+}
+
+function getNodeDeleteBlockReason(
+  node: RFNode,
+  convexById: Map<string, Doc<"nodes">>,
+): CanvasNodeDeleteBlockReason | null {
+  if (isOptimisticNodeId(node.id)) return "optimistic";
+  const doc = convexById.get(node.id);
+  if (!doc) return "missingInConvex";
+  if (!isNodeGeometrySyncedWithConvex(node, doc)) return "geometryPending";
+  return null;
 }
 
 function getConnectEndClientPoint(
@@ -1167,27 +1195,37 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             let constrainedHeight = change.dimensions.height;
 
             // Axis with larger delta drives resize; the other axis is ratio-locked.
+            // Chrome must be subtracted before ratio math, then re-added.
+            const assetChromeHeight = 88;
+            const assetMinPreviewHeight = 150;
+            const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
+            const assetMinNodeWidth = 200;
+
             if (heightDelta > widthDelta) {
-              constrainedWidth = constrainedHeight * targetRatio;
+              const previewHeight = Math.max(1, constrainedHeight - assetChromeHeight);
+              constrainedWidth = previewHeight * targetRatio;
+              constrainedHeight = assetChromeHeight + previewHeight;
             } else {
-              constrainedHeight = constrainedWidth / targetRatio;
+              const previewHeight = constrainedWidth / targetRatio;
+              constrainedHeight = assetChromeHeight + previewHeight;
             }
 
-            const assetChromeHeight = 88;
-            const assetMinPreviewHeight = 120;
-            const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
-            const assetMinNodeWidth = 140;
-
-            const minWidthFromHeight = assetMinNodeHeight * targetRatio;
-            const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromHeight);
-            const minimumAllowedHeight = minimumAllowedWidth / targetRatio;
-
-            const enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
-            const enforcedHeight = Math.max(
-              constrainedHeight,
-              minimumAllowedHeight,
+            const minWidthFromPreview = assetMinPreviewHeight * targetRatio;
+            const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromPreview);
+            const minPreviewFromWidth = minimumAllowedWidth / targetRatio;
+            const minimumAllowedHeight = Math.max(
               assetMinNodeHeight,
+              assetChromeHeight + minPreviewFromWidth,
             );
+
+            let enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
+            let enforcedHeight = assetChromeHeight + enforcedWidth / targetRatio;
+            if (enforcedHeight < minimumAllowedHeight) {
+              enforcedHeight = minimumAllowedHeight;
+              enforcedWidth = (enforcedHeight - assetChromeHeight) * targetRatio;
+            }
+            enforcedWidth = Math.max(enforcedWidth, minimumAllowedWidth);
+            enforcedHeight = assetChromeHeight + enforcedWidth / targetRatio;
 
             return {
               ...change,
@@ -1759,6 +1797,58 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ],
   );
 
+  const onBeforeDelete = useCallback(
+    async ({
+      nodes: matchingNodes,
+      edges: matchingEdges,
+    }: {
+      nodes: RFNode[];
+      edges: RFEdge[];
+    }) => {
+      if (matchingNodes.length === 0) {
+        return true;
+      }
+
+      const convexById = new Map<string, Doc<"nodes">>(
+        (convexNodes ?? []).map((n) => [n._id as string, n]),
+      );
+
+      const allowed: RFNode[] = [];
+      const blocked: RFNode[] = [];
+      const blockedReasons = new Set<CanvasNodeDeleteBlockReason>();
+      for (const node of matchingNodes) {
+        const reason = getNodeDeleteBlockReason(node, convexById);
+        if (reason !== null) {
+          blocked.push(node);
+          blockedReasons.add(reason);
+        } else {
+          allowed.push(node);
+        }
+      }
+
+      if (allowed.length === 0) {
+        const { title, desc } = msg.canvas.nodeDeleteBlockedExplain(blockedReasons);
+        toast.warning(title, desc);
+        return false;
+      }
+
+      if (blocked.length > 0) {
+        const { title, desc } = msg.canvas.nodeDeleteBlockedPartial(
+          blocked.length,
+          blockedReasons,
+        );
+        toast.warning(title, desc);
+        return {
+          nodes: allowed,
+          edges: getConnectedEdges(allowed, matchingEdges),
+        };
+      }
+
+      return true;
+    },
+    [convexNodes],
+  );
+
   // ─── Node löschen → Convex ────────────────────────────────────
   const onNodesDelete = useCallback(
     (deletedNodes: RFNode[]) => {
@@ -2095,6 +2185,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onReconnect={onReconnect}
           onReconnectStart={onReconnectStart}
           onReconnectEnd={onReconnectEnd}
+          onBeforeDelete={onBeforeDelete}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
           onEdgeClick={scissorsMode ? onEdgeClickScissors : undefined}

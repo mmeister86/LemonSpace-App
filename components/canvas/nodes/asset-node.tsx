@@ -199,7 +199,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
               <img
                 src={previewUrl}
                 alt={data.title ?? "FreePik-Vorschau"}
-                className={`h-full w-full object-cover object-right transition-opacity ${
+                className={`h-full w-full object-contain transition-opacity ${
                   isPreviewLoading ? "opacity-0" : "opacity-100"
                 }`}
                 draggable={false}

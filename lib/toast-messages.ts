@@ -1,6 +1,46 @@
 // Zentrales Dictionary für alle Toast-Strings.
 // Spätere i18n: diese Datei gegen Framework-Lookup ersetzen.
 
+/** Grund, warum ein Node-Löschen bis zur Convex-Synchronisierung blockiert ist. */
+export type CanvasNodeDeleteBlockReason =
+  | "optimistic"
+  | "missingInConvex"
+  | "geometryPending";
+
+function canvasNodeDeleteWhy(
+  reasons: Set<CanvasNodeDeleteBlockReason>,
+): { title: string; desc: string } {
+  if (reasons.size === 0) {
+    return {
+      title: "Löschen momentan nicht möglich",
+      desc: "Bitte kurz warten und erneut versuchen.",
+    };
+  }
+  if (reasons.size === 1) {
+    const only = [...reasons][0]!;
+    if (only === "optimistic") {
+      return {
+        title: "Element wird noch angelegt",
+        desc: "Dieses Element ist noch nicht vollständig auf dem Server gespeichert. Sobald die Synchronisierung fertig ist, kannst du es löschen.",
+      };
+    }
+    if (only === "missingInConvex") {
+      return {
+        title: "Element noch nicht verfügbar",
+        desc: "Dieses Element ist in der Datenbank noch nicht sichtbar. Warte einen Moment und versuche das Löschen erneut.",
+      };
+    }
+    return {
+      title: "Änderungen werden gespeichert",
+      desc: "Position oder Größe ist noch nicht mit dem Server abgeglichen — zum Beispiel direkt nach Verschieben oder nach dem Ziehen an der Größe. Bitte kurz warten.",
+    };
+  }
+  return {
+    title: "Löschen momentan nicht möglich",
+    desc: "Mindestens ein Element wird noch angelegt, oder Position bzw. Größe wird noch gespeichert. Bitte kurz warten und erneut versuchen.",
+  };
+}
+
 export const msg = {
   canvas: {
     imageUploaded: { title: "Bild hochgeladen" },
@@ -17,6 +57,22 @@ export const msg = {
     nodesRemoved: (count: number) => ({
       title: count === 1 ? "Element entfernt" : `${count} Elemente entfernt`,
     }),
+    /** Warum gerade kein (vollständiges) Löschen möglich ist — aus den gesammelten Gründen der blockierten Nodes. */
+    nodeDeleteBlockedExplain: canvasNodeDeleteWhy,
+    nodeDeleteBlockedPartial: (
+      blockedCount: number,
+      reasons: Set<CanvasNodeDeleteBlockReason>,
+    ) => {
+      const why = canvasNodeDeleteWhy(reasons);
+      const suffix =
+        blockedCount === 1
+          ? "Ein Element wurde deshalb nicht gelöscht; die übrige Auswahl wurde entfernt."
+          : `${blockedCount} Elemente wurden deshalb nicht gelöscht; die übrige Auswahl wurde entfernt.`;
+      return {
+        title: "Nicht alle Elemente entfernt",
+        desc: `${why.desc} ${suffix}`,
+      };
+    },
   },
 
   ai: {
