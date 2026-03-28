@@ -38,6 +38,7 @@ import { Sparkles, Loader2, Coins } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
+import { classifyError } from "@/lib/ai-errors";
 
 type PromptNodeData = {
   prompt?: string;
@@ -257,7 +258,21 @@ export default function PromptNode({
         },
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : msg.ai.generationFailed.title);
+      const classified = classifyError(err);
+
+      if (classified.category === "daily_cap") {
+        toast.error(
+          msg.billing.dailyLimitReached(0).title,
+          "Morgen stehen wieder Generierungen zur Verfügung.",
+        );
+      } else if (classified.category === "concurrency") {
+        toast.warning(
+          msg.ai.concurrentLimitReached.title,
+          msg.ai.concurrentLimitReached.desc,
+        );
+      } else {
+        setError(classified.message || msg.ai.generationFailed.title);
+      }
     } finally {
       setIsGenerating(false);
     }

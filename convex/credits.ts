@@ -1,6 +1,7 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
+import { internal } from "./_generated/api";
 
 // ============================================================================
 // Tier-Konfiguration
@@ -344,14 +345,14 @@ export const reserve = mutation({
 
     if (dailyUsage && dailyUsage.generationCount >= config.dailyGenerationCap) {
       throw new Error(
-        `Daily generation limit reached (${config.dailyGenerationCap}/${tier})`
+        `daily_cap:Tageslimit erreicht (${config.dailyGenerationCap} Generierungen/Tag im ${tier}-Tier)`
       );
     }
 
     // Concurrency Limit prüfen
     if (dailyUsage && dailyUsage.concurrentJobs >= config.concurrencyLimit) {
       throw new Error(
-        `Concurrent job limit reached (${config.concurrencyLimit}/${tier})`
+        `concurrency:Bereits ${config.concurrencyLimit} Generierung(en) aktiv — bitte warten`
       );
     }
 
@@ -650,5 +651,111 @@ export const topUp = mutation({
       status: "committed",
       description: `Credit-Nachkauf — ${(amount / 100).toFixed(2)}€`,
     });
+  },
+});
+
+// ============================================================================
+// Internal Mutations — Abuse Prevention (für ai.ts Action)
+// ============================================================================
+
+/**
+ * Prüft Daily Cap und Concurrency — wirft Fehler bei Verstoß.
+ * Wird von generateImage aufgerufen BEVOR Credits reserviert werden.
+ * Wird benötigt, wenn INTERNAL_CREDITS_ENABLED !== "true".
+ */
+export const checkAbuseLimits = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireAuth(ctx);
+
+    const subscription = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .order("desc")
+      .first();
+    const tier = (subscription?.tier ?? "free") as Tier;
+    const config = TIER_CONFIG[tier];
+
+    const today = new Date().toISOString().split("T")[0];
+    const usage = await ctx.db
+      .query("dailyUsage")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", user.userId).eq("date", today)
+      )
+      .unique();
+
+    const dailyCount = usage?.generationCount ?? 0;
+    if (dailyCount >= config.dailyGenerationCap) {
+      throw new Error(
+        `daily_cap:Tageslimit erreicht (${config.dailyGenerationCap} Generierungen/Tag im ${tier}-Tier)`
+      );
+    }
+
+    const currentConcurrency = usage?.concurrentJobs ?? 0;
+    if (currentConcurrency >= config.concurrencyLimit) {
+      throw new Error(
+        `concurrency:Bereits ${config.concurrencyLimit} Generierung(en) aktiv — bitte warten`
+      );
+    }
+  },
+});
+
+/**
+ * Erhöht generationCount und concurrentJobs atomar.
+ * Nur aufrufen wenn INTERNAL_CREDITS_ENABLED !== "true"
+ * (reserve übernimmt das bei aktivierten Credits).
+ */
+export const incrementUsage = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireAuth(ctx);
+    const today = new Date().toISOString().split("T")[0];
+
+    const usage = await ctx.db
+      .query("dailyUsage")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", user.userId).eq("date", today)
+      )
+      .unique();
+
+    if (usage) {
+      await ctx.db.patch(usage._id, {
+        generationCount: usage.generationCount + 1,
+        concurrentJobs: usage.concurrentJobs + 1,
+      });
+    } else {
+      await ctx.db.insert("dailyUsage", {
+        userId: user.userId,
+        date: today,
+        generationCount: 1,
+        concurrentJobs: 1,
+      });
+    }
+  },
+});
+
+/**
+ * Verringert concurrentJobs um 1 (Minimum 0).
+ * Nur aufrufen wenn INTERNAL_CREDITS_ENABLED !== "true"
+ * (commit/release übernehmen das bei aktivierten Credits).
+ */
+export const decrementConcurrency = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireAuth(ctx);
+    const today = new Date().toISOString().split("T")[0];
+
+    const usage = await ctx.db
+      .query("dailyUsage")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", user.userId).eq("date", today)
+      )
+      .unique();
+
+    if (usage && usage.concurrentJobs > 0) {
+      await ctx.db.patch(usage._id, {
+        concurrentJobs: usage.concurrentJobs - 1,
+      });
+    }
   },
 });

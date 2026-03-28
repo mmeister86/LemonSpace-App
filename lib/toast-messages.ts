@@ -45,6 +45,10 @@ export const msg = {
       title: "OpenRouter möglicherweise gestört",
       desc: "Mehrere Generierungen fehlgeschlagen.",
     },
+    concurrentLimitReached: {
+      title: "Generierung bereits aktiv",
+      desc: "Bitte warte, bis die laufende Generierung abgeschlossen ist.",
+    },
   },
 
   export: {

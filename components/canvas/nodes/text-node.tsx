@@ -103,12 +103,14 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
           />
         ) : (
           <div
-            onDoubleClick={() => setIsEditing(true)}
-            className="min-h-[2rem] cursor-text whitespace-pre-wrap break-words text-sm"
+            onClick={() => {
+              if (selected) setIsEditing(true);
+            }}
+            className="nodrag nowheel min-h-[2rem] cursor-text whitespace-pre-wrap break-words text-sm"
           >
             {content || (
               <span className="text-muted-foreground">
-                Doppelklick zum Bearbeiten
+                Auswählen, dann hier klicken
               </span>
             )}
           </div>

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import {
   generateImageViaOpenRouter,
   DEFAULT_IMAGE_MODEL,
@@ -182,6 +182,9 @@ export const generateImage = action({
       throw new Error(`Unknown model: ${modelId}`);
     }
 
+    // Abuse-Check vor allem anderen — immer, unabhängig von Credits
+    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
+
     const reservationId = internalCreditsEnabled
       ? await ctx.runMutation(api.credits.reserve, {
           estimatedCost: modelConfig.creditCost,
@@ -192,15 +195,21 @@ export const generateImage = action({
         })
       : null;
 
-    await ctx.runMutation(api.nodes.updateStatus, {
-      nodeId: args.nodeId,
-      status: "executing",
-      retryCount: 0,
-    });
+    // Usage-Tracking wenn Credits deaktiviert (reserve übernimmt das bei aktivierten Credits)
+    if (!internalCreditsEnabled) {
+      await ctx.runMutation(internal.credits.incrementUsage, {});
+    }
 
     let retryCount = 0;
 
     try {
+      // Status auf "executing" setzen — im try-Block damit Fehler den catch erreichen
+      await ctx.runMutation(api.nodes.updateStatus, {
+        nodeId: args.nodeId,
+        status: "executing",
+        retryCount: 0,
+      });
+
       let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
       if (args.referenceStorageId) {
         referenceImageUrl =
@@ -290,6 +299,12 @@ export const generateImage = action({
       });
 
       throw error;
+    } finally {
+      // Concurrency freigeben wenn Credits deaktiviert
+      // (commit/release übernehmen das bei aktivierten Credits)
+      if (!internalCreditsEnabled) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {});
+      }
     }
   },
 });

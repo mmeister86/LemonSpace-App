@@ -6,6 +6,8 @@ export type AiErrorCategory =
   | "network"
   | "server"
   | "invalid_request"
+  | "daily_cap"
+  | "concurrency"
   | "unknown";
 
 export interface AiError {
@@ -52,6 +54,12 @@ const CATEGORY_ALIASES: Record<string, AiErrorCategory> = {
   invalidrequest: "invalid_request",
   bad_request: "invalid_request",
   badrequest: "invalid_request",
+  daily_cap: "daily_cap",
+  dailycap: "daily_cap",
+  daily_limit: "daily_cap",
+  dailylimit: "daily_cap",
+  concurrency: "concurrency",
+  concurrent: "concurrency",
 };
 
 function normalizeCategory(value: string | undefined): AiErrorCategory | undefined {
@@ -154,6 +162,22 @@ function inferCategoryFromText(text: string): AiErrorCategory {
   }
 
   if (
+    lower.includes("daily_cap") ||
+    lower.includes("tageslimit erreicht") ||
+    lower.includes("daily generation limit")
+  ) {
+    return "daily_cap";
+  }
+
+  if (
+    lower.includes("concurrency") ||
+    lower.includes("generierung(en) aktiv") ||
+    lower.includes("concurrent job limit")
+  ) {
+    return "concurrency";
+  }
+
+  if (
     lower.includes("timeout") ||
     lower.includes("timed out") ||
     lower.includes("deadline exceeded")
@@ -243,6 +267,20 @@ function defaultsForCategory(category: AiErrorCategory): Omit<AiError, "category
       return {
         message: "The request could not be processed",
         retryable: false,
+        creditsNotCharged: true,
+        showTopUp: false,
+      };
+    case "daily_cap":
+      return {
+        message: "Tageslimit erreicht",
+        retryable: false,
+        creditsNotCharged: true,
+        showTopUp: false,
+      };
+    case "concurrency":
+      return {
+        message: "Generierung bereits aktiv",
+        retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
