@@ -2103,8 +2103,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onDrop={onDrop}
           fitView
           minZoom={CANVAS_MIN_ZOOM}
-          snapToGrid
-          snapGrid={[16, 16]}
+          snapToGrid={false}
           deleteKeyCode={["Backspace", "Delete"]}
           multiSelectionKeyCode="Shift"
           nodesConnectable={!scissorsMode}

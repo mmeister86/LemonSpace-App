@@ -138,7 +138,7 @@ export default function CanvasToolbar({
         <Hand className="size-4" />,
         "Hand (H) — schwenken: Leertaste gedrückt halten und ziehen oder linke Maustaste",
       )}
-      {toolBtn("scissor", <Scissors className="size-4" />, "Kanten schneiden")}
+      {toolBtn("scissor", <Scissors className="size-4" />, "Schere (K) — Verbindungen kappen")}
 
       <Button
         type="button"
