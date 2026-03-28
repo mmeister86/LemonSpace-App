@@ -1,5 +1,11 @@
-import type { Node as RFNode, Edge as RFEdge } from "@xyflow/react";
-import type { Doc } from "@/convex/_generated/dataModel";
+import {
+  getConnectedEdges,
+  getIncomers,
+  getOutgoers,
+  type Node as RFNode,
+  type Edge as RFEdge,
+} from "@xyflow/react";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 
 /**
  * Convex Node → React Flow Node
@@ -99,6 +105,35 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   frame: [249, 115, 22],
   compare: [100, 116, 139],
 };
+
+/** Compare: Ziel-Handles blau/smaragd, Quelle compare-out grau (wie in compare-node.tsx). */
+const COMPARE_HANDLE_CONNECTION_RGB: Record<
+  string,
+  readonly [number, number, number]
+> = {
+  left: [59, 130, 246],
+  right: [16, 185, 129],
+  "compare-out": [100, 116, 139],
+};
+
+const CONNECTION_LINE_FALLBACK_RGB: readonly [number, number, number] = [
+  13, 148, 136,
+];
+
+/**
+ * RGB für die temporäre Verbindungslinie (Quell-Node + optional Handle, z. B. Reconnect).
+ */
+export function connectionLineAccentRgb(
+  nodeType: string | undefined,
+  handleId: string | null | undefined,
+): readonly [number, number, number] {
+  if (nodeType === "compare" && handleId) {
+    const byHandle = COMPARE_HANDLE_CONNECTION_RGB[handleId];
+    if (byHandle) return byHandle;
+  }
+  if (!nodeType) return CONNECTION_LINE_FALLBACK_RGB;
+  return SOURCE_NODE_GLOW_RGB[nodeType] ?? CONNECTION_LINE_FALLBACK_RGB;
+}
 
 export type EdgeGlowColorMode = "light" | "dark";
 
@@ -252,4 +287,77 @@ export function computeMediaNodeSize(
     previewHeight,
     aspectRatio,
   };
+}
+
+function reconnectEdgeKey(edge: RFEdge): string {
+  return `${edge.source}\0${edge.target}\0${edge.sourceHandle ?? ""}\0${edge.targetHandle ?? ""}`;
+}
+
+export type BridgeCreatePayload = {
+  sourceNodeId: Id<"nodes">;
+  targetNodeId: Id<"nodes">;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+/**
+ * Nach Löschen mittlerer Knoten: Kanten wie im React-Flow-Beispiel
+ * „Delete Middle Node“ fortschreiben; nur Kanten zurückgeben, die neu
+ * angelegt werden müssen (nicht bereits vor dem Löschen vorhanden).
+ */
+export function computeBridgeCreatesForDeletedNodes(
+  deletedNodes: RFNode[],
+  allNodes: RFNode[],
+  allEdges: RFEdge[],
+): BridgeCreatePayload[] {
+  if (deletedNodes.length === 0) return [];
+
+  const initialPersisted = allEdges.filter((e) => e.className !== "temp");
+  const initialKeys = new Set(initialPersisted.map(reconnectEdgeKey));
+
+  let remainingNodes = [...allNodes];
+  let acc = [...initialPersisted];
+
+  for (const node of deletedNodes) {
+    const incomers = getIncomers(node, remainingNodes, acc);
+    const outgoers = getOutgoers(node, remainingNodes, acc);
+    const connectedEdges = getConnectedEdges([node], acc);
+    const remainingEdges = acc.filter((e) => !connectedEdges.includes(e));
+
+    const createdEdges: RFEdge[] = [];
+    for (const inc of incomers) {
+      for (const out of outgoers) {
+        const inEdge = connectedEdges.find(
+          (e) => e.source === inc.id && e.target === node.id,
+        );
+        const outEdge = connectedEdges.find(
+          (e) => e.source === node.id && e.target === out.id,
+        );
+        if (!inEdge || !outEdge || inc.id === out.id) continue;
+        createdEdges.push({
+          id: `reconnect-${inc.id}-${out.id}-${node.id}-${createdEdges.length}`,
+          source: inc.id,
+          target: out.id,
+          sourceHandle: inEdge.sourceHandle,
+          targetHandle: outEdge.targetHandle,
+        });
+      }
+    }
+
+    acc = [...remainingEdges, ...createdEdges];
+    remainingNodes = remainingNodes.filter((rn) => rn.id !== node.id);
+  }
+
+  const result: BridgeCreatePayload[] = [];
+  for (const e of acc) {
+    if (!initialKeys.has(reconnectEdgeKey(e))) {
+      result.push({
+        sourceNodeId: e.source as Id<"nodes">,
+        targetNodeId: e.target as Id<"nodes">,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+      });
+    }
+  }
+  return result;
 }

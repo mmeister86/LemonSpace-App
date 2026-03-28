@@ -138,6 +138,23 @@
   }
 }
 
+/* Temporäre XYFlow-Verbindungslinie (custom connectionLineComponent) */
+@keyframes ls-connection-dash-offset {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+.ls-connection-line-marching {
+  animation: ls-connection-dash-offset 0.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-connection-line-marching {
+    animation: none;
+  }
+}
+
 @layer utilities {
   .animate-shimmer {
     animation: shimmer 1.5s ease-in-out infinite;

@@ -31,6 +31,7 @@ import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
 import {
+  computeBridgeCreatesForDeletedNodes,
   convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
   convexEdgeToRF,
@@ -48,6 +49,7 @@ import {
 import CanvasToolbar from "@/components/canvas/canvas-toolbar";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
+import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -65,6 +67,17 @@ function clientRequestIdFromOptimisticNodeId(id: string): string | null {
   const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
   return suffix.length > 0 ? suffix : null;
 }
+
+/** Kanten-Split nach Drag: wartet auf echte Node-ID, wenn der Knoten noch optimistisch ist. */
+type PendingEdgeSplit = {
+  intersectedEdgeId: Id<"edges">;
+  sourceNodeId: Id<"nodes">;
+  targetNodeId: Id<"nodes">;
+  intersectedSourceHandle?: string;
+  intersectedTargetHandle?: string;
+  middleSourceHandle?: string;
+  middleTargetHandle?: string;
+};
 
 function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
@@ -380,40 +393,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     new Map<string, { positionX: number; positionY: number }>(),
   );
   const resolvedRealIdByClientRequestRef = useRef(new Map<string, Id<"nodes">>());
-
-  /** Pairing: create kann vor oder nach Drag-Ende fertig sein — was zuerst kommt, speichert; das andere triggert moveNode. */
-  const syncPendingMoveForClientRequest = useCallback(
-    (clientRequestId: string | undefined, realId?: Id<"nodes">) => {
-      if (!clientRequestId) return;
-
-      if (realId !== undefined) {
-        const pending = pendingMoveAfterCreateRef.current.get(clientRequestId);
-        if (pending) {
-          pendingMoveAfterCreateRef.current.delete(clientRequestId);
-          resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
-          void moveNode({
-            nodeId: realId,
-            positionX: pending.positionX,
-            positionY: pending.positionY,
-          });
-          return;
-        }
-        resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
-        return;
-      }
-
-      const r = resolvedRealIdByClientRequestRef.current.get(clientRequestId);
-      const p = pendingMoveAfterCreateRef.current.get(clientRequestId);
-      if (!r || !p) return;
-      pendingMoveAfterCreateRef.current.delete(clientRequestId);
-      resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
-      void moveNode({
-        nodeId: r,
-        positionX: p.positionX,
-        positionY: p.positionY,
-      });
-    },
-    [moveNode],
+  const pendingEdgeSplitByClientRequestRef = useRef(
+    new Map<string, PendingEdgeSplit>(),
   );
 
   const createNode = useMutation(api.nodes.create).withOptimisticUpdate(
@@ -513,9 +494,165 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   });
 
   const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
-  const batchRemoveNodes = useMutation(api.nodes.batchRemove);
-  const createEdge = useMutation(api.edges.create);
-  const removeEdge = useMutation(api.edges.remove);
+
+  const batchRemoveNodes = useMutation(api.nodes.batchRemove).withOptimisticUpdate(
+    (localStore, args) => {
+      const nodeList = localStore.getQuery(api.nodes.list, { canvasId });
+      const edgeList = localStore.getQuery(api.edges.list, { canvasId });
+      if (nodeList === undefined || edgeList === undefined) return;
+
+      const removeSet = new Set<string>(args.nodeIds.map((id) => id as string));
+      localStore.setQuery(
+        api.nodes.list,
+        { canvasId },
+        nodeList.filter((n) => !removeSet.has(n._id)),
+      );
+      localStore.setQuery(
+        api.edges.list,
+        { canvasId },
+        edgeList.filter(
+          (e) =>
+            !removeSet.has(e.sourceNodeId) && !removeSet.has(e.targetNodeId),
+        ),
+      );
+    },
+  );
+
+  const createEdge = useMutation(api.edges.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const edgeList = localStore.getQuery(api.edges.list, {
+        canvasId: args.canvasId,
+      });
+      if (edgeList === undefined) return;
+
+      const tempId = `${OPTIMISTIC_EDGE_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 11)}` as Id<"edges">;
+      const synthetic: Doc<"edges"> = {
+        _id: tempId,
+        _creationTime: Date.now(),
+        canvasId: args.canvasId,
+        sourceNodeId: args.sourceNodeId,
+        targetNodeId: args.targetNodeId,
+        sourceHandle: args.sourceHandle,
+        targetHandle: args.targetHandle,
+      };
+      localStore.setQuery(
+        api.edges.list,
+        { canvasId: args.canvasId },
+        [...edgeList, synthetic],
+      );
+    },
+  );
+
+  const removeEdge = useMutation(api.edges.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const edgeList = localStore.getQuery(api.edges.list, { canvasId });
+      if (edgeList === undefined) return;
+      localStore.setQuery(
+        api.edges.list,
+        { canvasId },
+        edgeList.filter((e) => e._id !== args.edgeId),
+      );
+    },
+  );
+
+  const commitEdgeIntersectionSplit = useCallback(
+    async (
+      middleNodeId: Id<"nodes">,
+      intersectedEdge: RFEdge,
+      handles: NonNullable<(typeof NODE_HANDLE_MAP)[string]>,
+    ) => {
+      await Promise.all([
+        createEdge({
+          canvasId,
+          sourceNodeId: intersectedEdge.source as Id<"nodes">,
+          targetNodeId: middleNodeId,
+          sourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
+          targetHandle: normalizeHandle(handles.target),
+        }),
+        createEdge({
+          canvasId,
+          sourceNodeId: middleNodeId,
+          targetNodeId: intersectedEdge.target as Id<"nodes">,
+          sourceHandle: normalizeHandle(handles.source),
+          targetHandle: normalizeHandle(intersectedEdge.targetHandle),
+        }),
+        removeEdge({ edgeId: intersectedEdge.id as Id<"edges"> }),
+      ]);
+    },
+    [canvasId, createEdge, removeEdge],
+  );
+
+  const flushPendingEdgeSplit = useCallback(
+    (clientRequestId: string, realMiddleNodeId: Id<"nodes">) => {
+      const pending = pendingEdgeSplitByClientRequestRef.current.get(
+        clientRequestId,
+      );
+      if (!pending) return;
+      pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
+      void Promise.all([
+        createEdge({
+          canvasId,
+          sourceNodeId: pending.sourceNodeId,
+          targetNodeId: realMiddleNodeId,
+          sourceHandle: pending.intersectedSourceHandle,
+          targetHandle: pending.middleTargetHandle,
+        }),
+        createEdge({
+          canvasId,
+          sourceNodeId: realMiddleNodeId,
+          targetNodeId: pending.targetNodeId,
+          sourceHandle: pending.middleSourceHandle,
+          targetHandle: pending.intersectedTargetHandle,
+        }),
+        removeEdge({ edgeId: pending.intersectedEdgeId }),
+      ]).catch((error: unknown) => {
+        console.error("[Canvas pending edge split failed]", {
+          clientRequestId,
+          realMiddleNodeId,
+          error: String(error),
+        });
+      });
+    },
+    [canvasId, createEdge, removeEdge],
+  );
+
+  /** Pairing: create kann vor oder nach Drag-Ende fertig sein — was zuerst kommt, speichert; das andere triggert moveNode. Zusätzlich: Kanten-Split erst mit echter Node-ID (nach create). */
+  const syncPendingMoveForClientRequest = useCallback(
+    (clientRequestId: string | undefined, realId?: Id<"nodes">) => {
+      if (!clientRequestId) return;
+
+      if (realId !== undefined) {
+        const pending = pendingMoveAfterCreateRef.current.get(clientRequestId);
+        if (pending) {
+          pendingMoveAfterCreateRef.current.delete(clientRequestId);
+          resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
+          void moveNode({
+            nodeId: realId,
+            positionX: pending.positionX,
+            positionY: pending.positionY,
+          });
+          flushPendingEdgeSplit(clientRequestId, realId);
+          return;
+        }
+        resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
+        flushPendingEdgeSplit(clientRequestId, realId);
+        return;
+      }
+
+      const r = resolvedRealIdByClientRequestRef.current.get(clientRequestId);
+      const p = pendingMoveAfterCreateRef.current.get(clientRequestId);
+      if (!r || !p) return;
+      pendingMoveAfterCreateRef.current.delete(clientRequestId);
+      resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
+      void moveNode({
+        nodeId: r,
+        positionX: p.positionX,
+        positionY: p.positionY,
+      });
+      flushPendingEdgeSplit(clientRequestId, r);
+    },
+    [moveNode, flushPendingEdgeSplit],
+  );
 
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const [nodes, setNodes] = useState<RFNode[]>([]);
@@ -1075,23 +1212,36 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             return;
           }
 
-          await createEdge({
-            canvasId,
-            sourceNodeId: intersectedEdge.source as Id<"nodes">,
-            targetNodeId: node.id as Id<"nodes">,
-            sourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-            targetHandle: normalizeHandle(handles.target),
-          });
+          const optimisticCid = clientRequestIdFromOptimisticNodeId(node.id);
+          let middleNodeId = node.id as Id<"nodes">;
+          if (optimisticCid) {
+            const resolvedMiddle =
+              resolvedRealIdByClientRequestRef.current.get(optimisticCid);
+            if (resolvedMiddle) {
+              middleNodeId = resolvedMiddle;
+            } else {
+              pendingEdgeSplitByClientRequestRef.current.set(optimisticCid, {
+                intersectedEdgeId: intersectedEdge.id as Id<"edges">,
+                sourceNodeId: intersectedEdge.source as Id<"nodes">,
+                targetNodeId: intersectedEdge.target as Id<"nodes">,
+                intersectedSourceHandle: normalizeHandle(
+                  intersectedEdge.sourceHandle,
+                ),
+                intersectedTargetHandle: normalizeHandle(
+                  intersectedEdge.targetHandle,
+                ),
+                middleSourceHandle: normalizeHandle(handles.source),
+                middleTargetHandle: normalizeHandle(handles.target),
+              });
+              return;
+            }
+          }
 
-          await createEdge({
-            canvasId,
-            sourceNodeId: node.id as Id<"nodes">,
-            targetNodeId: intersectedEdge.target as Id<"nodes">,
-            sourceHandle: normalizeHandle(handles.source),
-            targetHandle: normalizeHandle(intersectedEdge.targetHandle),
-          });
-
-          await removeEdge({ edgeId: intersectedEdge.id as Id<"edges"> });
+          await commitEdgeIntersectionSplit(
+            middleNodeId,
+            intersectedEdge,
+            handles,
+          );
         } catch (error) {
           console.error("[Canvas edge intersection split failed]", {
             canvasId,
@@ -1110,10 +1260,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [
       batchMoveNodes,
       canvasId,
-      createEdge,
+      commitEdgeIntersectionSplit,
       edges,
       moveNode,
-      removeEdge,
       setHighlightedIntersectionEdge,
       syncPendingMoveForClientRequest,
     ],
@@ -1147,28 +1296,20 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         deletingNodeIds.current.add(id);
       }
 
-      // Auto-Reconnect: Für jeden gelöschten Node eingehende und ausgehende Edges verbinden
-      const edgePromises: Promise<unknown>[] = [];
-      for (const node of deletedNodes) {
-        const incomingEdges = edges.filter((e) => e.target === node.id);
-        const outgoingEdges = edges.filter((e) => e.source === node.id);
-
-        if (incomingEdges.length > 0 && outgoingEdges.length > 0) {
-          for (const incoming of incomingEdges) {
-            for (const outgoing of outgoingEdges) {
-              edgePromises.push(
-                createEdge({
-                  canvasId,
-                  sourceNodeId: incoming.source as Id<"nodes">,
-                  targetNodeId: outgoing.target as Id<"nodes">,
-                  sourceHandle: incoming.sourceHandle ?? undefined,
-                  targetHandle: outgoing.targetHandle ?? undefined,
-                }),
-              );
-            }
-          }
-        }
-      }
+      const bridgeCreates = computeBridgeCreatesForDeletedNodes(
+        deletedNodes,
+        nodes,
+        edges,
+      );
+      const edgePromises = bridgeCreates.map((b) =>
+        createEdge({
+          canvasId,
+          sourceNodeId: b.sourceNodeId,
+          targetNodeId: b.targetNodeId,
+          sourceHandle: b.sourceHandle,
+          targetHandle: b.targetHandle,
+        }),
+      );
 
       // Batch-Delete + Auto-Reconnect parallel, dann deletingNodeIds aufräumen
       void Promise.all([
@@ -1195,7 +1336,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         toast.info(title);
       }
     },
-    [edges, batchRemoveNodes, createEdge, canvasId],
+    [nodes, edges, batchRemoveNodes, createEdge, canvasId],
   );
 
   // ─── Edge löschen → Convex ────────────────────────────────────
@@ -1294,6 +1435,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           edges={edges}
           onlyRenderVisibleElements
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          connectionLineComponent={CustomConnectionLine}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}

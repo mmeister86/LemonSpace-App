@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { ReactMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
-import { useReactFlow, useStore, type Edge as RFEdge } from "@xyflow/react";
+import { useStore, type Edge as RFEdge } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
@@ -89,6 +89,10 @@ type CreateNodeWithIntersectionInput = {
   width?: number;
   height?: number;
   data?: Record<string, unknown>;
+  /**
+   * Optionaler Bildschirmpunkt für Hit-Test auf eine Kante. Nur wenn gesetzt,
+   * kann eine bestehende Kante gesplittet werden — ohne dieses Feld niemals.
+   */
   clientPosition?: FlowPoint;
   zIndex?: number;
   /** Correlate optimistic node id with server id after create (see canvas move flush). */
@@ -183,7 +187,6 @@ export function CanvasPlacementProvider({
   onCreateNodeSettled,
   children,
 }: CanvasPlacementProviderProps) {
-  const { flowToScreenPosition } = useReactFlow();
   const edges = useStore((store) => store.edges);
 
   const createNodeWithIntersection = useCallback(
@@ -205,17 +208,10 @@ export function CanvasPlacementProvider({
 
       const effectiveWidth = width ?? defaults.width;
       const effectiveHeight = height ?? defaults.height;
-      const centerClientPosition = flowToScreenPosition({
-        x: position.x + effectiveWidth / 2,
-        y: position.y + effectiveHeight / 2,
-      });
 
-      const hitEdgeFromClientPosition = clientPosition
+      const hitEdge = clientPosition
         ? getIntersectedPersistedEdge(clientPosition, edges)
         : undefined;
-      const hitEdge =
-        hitEdgeFromClientPosition ??
-        getIntersectedPersistedEdge(centerClientPosition, edges);
 
       const baseNodePayload = {
         canvasId,
@@ -279,7 +275,6 @@ export function CanvasPlacementProvider({
       createNode,
       createNodeWithEdgeSplit,
       edges,
-      flowToScreenPosition,
       onCreateNodeSettled,
     ],
   );
