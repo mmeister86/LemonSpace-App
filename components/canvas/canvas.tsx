@@ -114,6 +114,26 @@ function isNodeGeometrySyncedWithConvex(
   );
 }
 
+/** Für Delete-Guard: ausreichend sync, wenn Löschen in Convex sicher ist (kein laufendes Move/Resize). */
+function isNodeDeleteGeometryAcceptable(
+  node: RFNode,
+  doc: Doc<"nodes">,
+): boolean {
+  if (isNodeGeometrySyncedWithConvex(node, doc)) return true;
+  const posEq =
+    node.position.x === doc.positionX &&
+    node.position.y === doc.positionY;
+  if (!posEq) return false;
+  const isMedia =
+    node.type === "asset" ||
+    node.type === "image" ||
+    node.type === "ai-image";
+  // mergeNodesPreservingLocalState: ausgewählte Media-Nodes behalten oft Platzhalter-Maße in style,
+  // während Convex bereits echte Breite/Höhe hat — Position ist mit dem Server abgeglichen, Löschen ist ok.
+  if (isMedia && Boolean(node.selected)) return true;
+  return false;
+}
+
 function getNodeDeleteBlockReason(
   node: RFNode,
   convexById: Map<string, Doc<"nodes">>,
@@ -121,7 +141,7 @@ function getNodeDeleteBlockReason(
   if (isOptimisticNodeId(node.id)) return "optimistic";
   const doc = convexById.get(node.id);
   if (!doc) return "missingInConvex";
-  if (!isNodeGeometrySyncedWithConvex(node, doc)) return "geometryPending";
+  if (!isNodeDeleteGeometryAcceptable(node, doc)) return "geometryPending";
   return null;
 }
 
@@ -515,6 +535,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const batchMoveNodes = useMutation(api.nodes.batchMove);
   const pendingMoveAfterCreateRef = useRef(
     new Map<string, { positionX: number; positionY: number }>(),
@@ -1935,19 +1956,100 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [removeEdge],
   );
 
+  async function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const image = new window.Image();
+
+      image.onload = () => {
+        const width = image.naturalWidth;
+        const height = image.naturalHeight;
+        URL.revokeObjectURL(objectUrl);
+
+        if (!width || !height) {
+          reject(new Error("Could not read image dimensions"));
+          return;
+        }
+
+        resolve({ width, height });
+      };
+
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Could not decode image"));
+      };
+
+      image.src = objectUrl;
+    });
+  }
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
+    const hasFiles = event.dataTransfer.types.includes("Files");
+    event.dataTransfer.dropEffect = hasFiles ? "copy" : "move";
   }, []);
 
   const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    async (event: React.DragEvent) => {
       event.preventDefault();
 
       const rawData = event.dataTransfer.getData(
         "application/lemonspace-node-type",
       );
       if (!rawData) {
+        const hasFiles = event.dataTransfer.files && event.dataTransfer.files.length > 0;
+        if (hasFiles) {
+          const file = event.dataTransfer.files[0];
+          if (file.type.startsWith("image/")) {
+            try {
+              let dimensions: { width: number; height: number } | undefined;
+              try {
+                dimensions = await getImageDimensions(file);
+              } catch {
+                dimensions = undefined;
+              }
+
+              const uploadUrl = await generateUploadUrl();
+              const result = await fetch(uploadUrl, {
+                method: "POST",
+                headers: { "Content-Type": file.type },
+                body: file,
+              });
+
+              if (!result.ok) {
+                throw new Error("Upload failed");
+              }
+
+              const { storageId } = (await result.json()) as { storageId: string };
+
+              const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              const clientRequestId = crypto.randomUUID();
+
+              void createNode({
+                canvasId,
+                type: "image",
+                positionX: position.x,
+                positionY: position.y,
+                width: NODE_DEFAULTS.image.width,
+                height: NODE_DEFAULTS.image.height,
+                data: {
+                  storageId,
+                  filename: file.name,
+                  mimeType: file.type,
+                  ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
+                  canvasId,
+                },
+                clientRequestId,
+              }).then((realId) => {
+                syncPendingMoveForClientRequest(clientRequestId, realId);
+              });
+            } catch (err) {
+              console.error("Failed to upload dropped file:", err);
+              toast.error(msg.canvas.uploadFailed.title, err instanceof Error ? err.message : undefined);
+            }
+            return;
+          }
+        }
         return;
       }
 
@@ -1992,7 +2094,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         syncPendingMoveForClientRequest(clientRequestId, realId);
       });
     },
-    [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest],
+    [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest, generateUploadUrl],
   );
 
   // ─── Scherenmodus (K) — Kante klicken oder mit Maus durchschneiden ─

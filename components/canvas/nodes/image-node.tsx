@@ -23,6 +23,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 
 type ImageNodeData = {
   storageId?: string;
@@ -80,6 +81,10 @@ export default function ImageNode({
   const hasAutoSizedRef = useRef(false);
 
   useEffect(() => {
+    if (typeof id === "string" && id.startsWith(OPTIMISTIC_NODE_PREFIX)) {
+      return;
+    }
+
     if (typeof data.width !== "number" || typeof data.height !== "number") {
       return;
     }
