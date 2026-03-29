@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v1.3 | Draft | März 2026 | lemonspace.app |
+| v1.4 | Draft | März 2026 | lemonspace.app |
 
 ---
 
@@ -24,6 +24,7 @@
 | v1.1 | Monorepo verworfen → Zwei unabhängige Repos (lemonspace-web + lemonspace-landing), Auth-Cookie-Sharing via .lemonspace.io |
 | v1.2 | Pricing überarbeitet: Credit-Abstraktion (1 Cr = €0,01 intern), Tiers €8/€59/€119 (Business→Max), Top-Up-System (fix + Custom mit Bonus-Staffel), Marge nach LS-Gebühr + USt validiert |
 | v1.3 | Payment: Lemon Squeezy → Polar.sh (niedrigere Gebühren, Better Auth Plugin, Open Source). Gebührenmodell angepasst: 4% + $0,40 + 1,5% intl. + 0,5% Subscription |
+| v1.4 | Bildbearbeitung: Neue Kategorie 4 „Bildbearbeitung" mit non-destruktivem Adjustment-Stack (zwischen Transformation und Steuerung). 4 Adjustment-Nodes (Kurven, Farbe, Licht, Detail) + Render-Node. Alle Operationen credit-frei (client-seitig via Canvas API / WebGL). Steuerung → Kat. 5, Canvas & Layout → Kat. 6. Phase 2. |
 
 ---
 
@@ -66,7 +67,7 @@ Freepik Spaces ist ein leistungsstarkes Tool für KI-gestützte kreative Workflo
 
 ### 4.2 Node-System
 
-Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt fünf Kategorien.
+Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt sechs Kategorien.
 
 #### Kategorie 1: Quelle
 
@@ -102,7 +103,37 @@ KI-Ausgabe-Nodes sind das Ergebnis einer Modell-Operation. Sie werden vom System
 | Style Transfer | Überträgt visuellen Stil eines Referenzbildes auf einen anderen Input. | 3 |
 | Gesicht | Face Restoration via GFPGAN. Verbessert Gesichtsdetails in generierten oder degradierten Bildern. | 3 |
 
-#### Kategorie 4: Steuerung & Flow
+#### Kategorie 4: Bildbearbeitung
+
+Bildbearbeitungs-Nodes arbeiten **non-destruktiv**. Sie verändern das Originalbild nicht, sondern definieren Adjustments, die als Stack auf das Eingangsbild angewendet werden. Erst der Render-Node materialisiert das Ergebnis als neues Bild. Adjustments sind jederzeit änder-, umsortier- und löschbar — wie Adjustment Layers in Photoshop.
+
+**Architektur-Prinzip: Adjustment-Stack**
+
+```
+Bild-Node (Original)
+  → Kurven-Node (Kontrast-S-Kurve)
+    → Farbe-Node (Sättigung +20, Tint Warm)
+      → Detail-Node (Sharpen 40%)
+        → Render-Node → Neues Bild (materialisiert)
+```
+
+Jeder Adjustment-Node hat einen Eingang (Bild oder vorheriger Adjustment) und einen Ausgang. Die Kette ist beliebig lang und umsortierbar. Das Originalbild bleibt unverändert — identischer Input kann mit verschiedenen Adjustment-Stacks zu verschiedenen Varianten führen (Branching).
+
+**Live-Vorschau:** Jeder Adjustment-Node zeigt eine Echtzeit-Vorschau des Bildes mit allen bisherigen Adjustments. Die Verarbeitung läuft client-seitig (Canvas 2D API / WebGL) — kein Server-Roundtrip, keine Credits.
+
+| Node | Beschreibung | Phase |
+|------|--------------|-------|
+| Kurven | Tonwert-Kurven (RGB + Einzelkanäle). Kontrollpunkte per Drag auf der Kurve. Presets: Kontrast, Aufhellen, Abdunkeln, Film-Look, Cross-Process. Zusätzlich: Levels (Schwarz-/Weißpunkt, Gamma) und Histogram-Anzeige. | 2 |
+| Farbe | HSL-Regler (Hue, Saturation, Luminance — global + pro Farbbereich). Color Balance (Schatten/Mitten/Lichter). Selective Color. Temperature/Tint. Vibrance vs. Saturation. Presets: Warm, Cool, Vintage, Desaturate. | 2 |
+| Licht | Brightness, Contrast, Exposure, Highlights, Shadows, Whites, Blacks. HDR-Tone-Mapping (local contrast). Vignette (Stärke, Größe, Rundheit). Presets: HDR, Low Key, High Key, Flat. | 2 |
+| Detail | Unscharf maskieren (Amount, Radius, Threshold). Clarity / Structure (Midtone Contrast). Denoise (Luminance, Color). Grain (Amount, Size). Presets: Schärfen für Web, Schärfen für Print, Soft Glow, Film Grain. | 2 |
+| Render | Materialisierer: Wendet den gesamten Adjustment-Stack an und erzeugt ein neues Bild (in Convex Storage). Unterstützt Ausgabe-Auflösung (Original, 2×, Custom) und Format (PNG, JPG mit Qualitätsstufe, WebP). Trigger: manueller „Render"-Button am Node. | 2 |
+
+> **Credits:** Alle Adjustment-Nodes (Kurven, Farbe, Licht, Detail) sind **credit-frei** — die Verarbeitung läuft vollständig im Browser. Nur der Render-Node erzeugt serverseitig ein finales Bild in Convex Storage (ebenfalls credit-frei, da keine KI-API involviert).
+
+> **Technische Umsetzung:** Phase-2-Entscheidung zwischen Canvas 2D API (breite Kompatibilität, einfacher) und WebGL/WebGPU (performanter bei großen Bildern, Shader-Pipeline). Für den MVP reicht Canvas 2D; WebGL wird evaluiert wenn Performance-Grenzen erreicht werden.
+
+#### Kategorie 5: Steuerung & Flow
 
 | Node | Semantik | Beschreibung | Phase |
 |------|----------|--------------|-------|
@@ -112,7 +143,7 @@ KI-Ausgabe-Nodes sind das Ergebnis einer Modell-Operation. Sie werden vom System
 | Mixer / Merge | N → 1 | Kombiniert N Inputs zu 1 Output durch Überblendung, Komposition oder Selektion. | 3 |
 | Weiche | 1 → Pfad A/B/... | Bedingter Router. Leitet den Input anhand einer definierbaren Bedingung auf einen von mehreren Ausgangspfaden. | 3 |
 
-#### Kategorie 5: Canvas & Layout
+#### Kategorie 6: Canvas & Layout
 
 | Node | Beschreibung | Phase |
 |------|--------------|-------|
@@ -241,7 +272,7 @@ Dokumentierter Migrations-Pfad bei Skalierung: Convex Cloud mit EU-Standort. Con
 │                                                          │
 │ Node-Kategorien:                                         │
 │ [Quelle] [KI-Ausgabe] [Transformation]                   │
-│ [Steuerung] [Canvas & Layout]                            │
+│ [Bildbearbeitung] [Steuerung] [Canvas & Layout]          │
 └───────────────────────┬──────────────────────────────────┘
                         │
               ┌─────────▼─────────┐
@@ -277,6 +308,7 @@ Node (Basis)
 ├── type (image | text | prompt | color | video | asset |
 │        ai-image | ai-text | ai-video | agent-output |
 │        crop | bg-remove | upscale | style-transfer | face-restore |
+│        curves | color-adjust | light | detail | render |
 │        splitter | loop | agent | mixer | switch |
 │        group | frame | note | text-overlay | compare | comment | presentation)
 ├── position { x, y }
@@ -376,6 +408,8 @@ Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup
 | Upscaling | Real-ESRGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
 | Face Restoration | GFPGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
 | Canvas-Operationen | — | €0 | — | 0 Cr | Alle Tiers |
+| Bildbearbeitung (Kurven, Farbe, Licht, Detail) | Client-seitig | €0 | — | 0 Cr | Alle Tiers |
+| Render (Adjustment-Stack materialisieren) | Server-seitig (jimp/Canvas) | €0 | — | 0 Cr | Alle Tiers |
 | Export (PNG/ZIP) | — | €0 | — | 0 Cr | Alle Tiers |
 
 ### Credit Reservation + Commit
@@ -476,6 +510,7 @@ Agent Status: analyzing
 - Quelle: Prompt, Farbe / Palette, Video, Asset
 - KI-Ausgabe: KI-Text, KI-Video
 - Transformation: Crop / Resize, BG entfernen, Upscale
+- Bildbearbeitung: Kurven, Farbe, Licht, Detail, Render
 - Steuerung: Splitter, Loop, Agent
 - Canvas & Layout: Text-Overlay, Compare
 
@@ -493,6 +528,13 @@ Agent Status: analyzing
 | Self-hosted KI-Services (rembg, Real-ESRGAN) | ☐ Offen |
 | Freepik Asset Browser (Stock-Fotos, Vektoren) | ☐ Offen |
 | Prompt-History und Re-Generation | ☐ Offen |
+| Bildbearbeitung: Non-destruktiver Adjustment-Stack (Client-seitige Architektur) | ☐ Offen |
+| Kurven-Node: RGB/Einzelkanal-Kurven, Levels, Histogram | ☐ Offen |
+| Farbe-Node: HSL, Color Balance, Selective Color, Temperature/Tint | ☐ Offen |
+| Licht-Node: Brightness, Contrast, Exposure, Highlights/Shadows, HDR, Vignette | ☐ Offen |
+| Detail-Node: Sharpen, Clarity, Denoise, Grain | ☐ Offen |
+| Render-Node: Stack-Materialisierung, Auflösungs- und Formatwahl, Convex Storage | ☐ Offen |
+| Preset-System für Adjustment-Nodes (Built-in + User-defined) | ☐ Offen |
 
 ### Phase 3 — Kollaboration & Polish
 
@@ -541,6 +583,9 @@ Agent Status: analyzing
 | Weiche: Bedingungslogik | ⏳ Visueller Rule-Builder vs. Ausdruckssprache |
 | Mixer: Blend Modes | ⏳ min. Normal, Multiply, Screen, Overlay |
 | Canvas-Export | ⏳ PNG, PDF, ZIP (Phase 3, Library TBD) |
+| Bildbearbeitung: Rendering-Engine | ⏳ Canvas 2D API (einfacher, breite Kompatibilität) vs. WebGL/WebGPU (performanter bei großen Bildern). MVP: Canvas 2D, WebGL bei Bedarf. |
+| Bildbearbeitung: Preset-Persistierung | ⏳ User-Presets in Convex speichern vs. nur Built-in-Presets. |
+| Bildbearbeitung: Render-Node Server-Engine | ⏳ jimp (bereits im Stack, pure JS) vs. sharp (performanter, aber arm64-Problem). Alternativ: Client rendert und uploaded Ergebnis. |
 
 ---
 
@@ -595,4 +640,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v1.1 — März 2026*
+*LemonSpace PRD v1.4 — März 2026*

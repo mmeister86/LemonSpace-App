@@ -10,6 +10,7 @@ export type NodeCategoryId =
   | "source"
   | "ai-output"
   | "transform"
+  | "image-edit"
   | "control"
   | "layout";
 
@@ -20,8 +21,9 @@ export const NODE_CATEGORY_META: Record<
   source: { label: "Quelle", order: 0 },
   "ai-output": { label: "KI-Ausgabe", order: 1 },
   transform: { label: "Transformation", order: 2 },
-  control: { label: "Steuerung & Flow", order: 3 },
-  layout: { label: "Canvas & Layout", order: 4 },
+  "image-edit": { label: "Bildbearbeitung", order: 3 },
+  control: { label: "Steuerung & Flow", order: 4 },
+  layout: { label: "Canvas & Layout", order: 5 },
 };
 
 export const NODE_CATEGORIES_ORDERED: NodeCategoryId[] = (
@@ -160,6 +162,47 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     phase: 3,
     implemented: false,
     disabledHint: "Folgt in Phase 3",
+  }),
+  // Bildbearbeitung
+  entry({
+    type: "curves",
+    label: "Kurven",
+    category: "image-edit",
+    phase: 2,
+    implemented: false,
+    disabledHint: "Folgt in Phase 2",
+  }),
+  entry({
+    type: "color-adjust",
+    label: "Farbe",
+    category: "image-edit",
+    phase: 2,
+    implemented: false,
+    disabledHint: "Folgt in Phase 2",
+  }),
+  entry({
+    type: "light-adjust",
+    label: "Licht",
+    category: "image-edit",
+    phase: 2,
+    implemented: false,
+    disabledHint: "Folgt in Phase 2",
+  }),
+  entry({
+    type: "detail-adjust",
+    label: "Detail",
+    category: "image-edit",
+    phase: 2,
+    implemented: false,
+    disabledHint: "Folgt in Phase 2",
+  }),
+  entry({
+    type: "render",
+    label: "Render",
+    category: "image-edit",
+    phase: 2,
+    implemented: false,
+    disabledHint: "Folgt in Phase 2",
   }),
   // Steuerung & Flow
   entry({

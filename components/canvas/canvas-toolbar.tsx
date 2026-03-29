@@ -102,20 +102,23 @@ export default function CanvasToolbar({
         >
           {NODE_CATEGORIES_ORDERED.map((categoryId: NodeCategoryId) => {
             const entries = byCategory.get(categoryId) ?? [];
-            const creatable = entries.filter(isNodePaletteEnabled);
-            if (creatable.length === 0) return null;
+            if (entries.length === 0) return null;
             return (
               <div key={categoryId}>
                 <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
                   {NODE_CATEGORY_META[categoryId].label}
                 </DropdownMenuLabel>
-                {creatable.map((entry) => {
+                {entries.map((entry) => {
                   const template = getTemplateForCatalogType(entry.type);
-                  if (!template) return null;
+                  const enabled = isNodePaletteEnabled(entry) && Boolean(template);
                   return (
                     <DropdownMenuItem
                       key={entry.type}
-                      onSelect={() => void handleAddNode(template)}
+                      disabled={!enabled}
+                      onSelect={() => {
+                        if (!template) return;
+                        void handleAddNode(template);
+                      }}
                     >
                       {entry.label}
                     </DropdownMenuItem>

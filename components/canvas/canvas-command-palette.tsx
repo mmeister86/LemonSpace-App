@@ -2,9 +2,34 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun } from "lucide-react";
+import {
+  Bot,
+  ClipboardList,
+  Crop,
+  FolderOpen,
+  Frame,
+  GitBranch,
+  GitCompare,
+  Image,
+  ImageOff,
+  Layers,
+  LayoutPanelTop,
+  MessageSquare,
+  Moon,
+  Package,
+  Palette,
+  Presentation,
+  Repeat,
+  Sparkles,
+  Split,
+  StickyNote,
+  Sun,
+  Type,
+  Video,
+  Wand2,
+  type LucideIcon,
+} from "lucide-react";
 
-import { CanvasNodeTemplatePicker } from "@/components/canvas/canvas-node-template-picker";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import {
@@ -18,6 +43,48 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
+import {
+  NODE_CATEGORY_META,
+  NODE_CATEGORIES_ORDERED,
+  catalogEntriesByCategory,
+  getTemplateForCatalogType,
+  isNodePaletteEnabled,
+} from "@/lib/canvas-node-catalog";
+
+const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
+  image: Image,
+  text: Type,
+  prompt: Sparkles,
+  color: Palette,
+  video: Video,
+  asset: Package,
+  "ai-image": Sparkles,
+  "ai-text": Type,
+  "ai-video": Video,
+  "agent-output": Bot,
+  crop: Crop,
+  "bg-remove": ImageOff,
+  upscale: Wand2,
+  "style-transfer": Wand2,
+  "face-restore": Sparkles,
+  curves: Sparkles,
+  "color-adjust": Palette,
+  "light-adjust": Sparkles,
+  "detail-adjust": Wand2,
+  render: Image,
+  splitter: Split,
+  loop: Repeat,
+  agent: Bot,
+  mixer: Layers,
+  switch: GitBranch,
+  group: FolderOpen,
+  frame: Frame,
+  note: StickyNote,
+  "text-overlay": LayoutPanelTop,
+  compare: GitCompare,
+  comment: MessageSquare,
+  presentation: Presentation,
+};
 
 export function CanvasCommandPalette() {
   const [open, setOpen] = useState(false);
@@ -25,6 +92,7 @@ export function CanvasCommandPalette() {
   const getCenteredPosition = useCenteredFlowNodePosition();
   const { setTheme } = useTheme();
   const nodeCountRef = useRef(0);
+  const byCategory = catalogEntriesByCategory();
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -64,7 +132,40 @@ export function CanvasCommandPalette() {
         <CommandInput placeholder="Suchen …" />
         <CommandList>
           <CommandEmpty>Keine Treffer.</CommandEmpty>
-          <CanvasNodeTemplatePicker onPick={handleAddNode} />
+          {NODE_CATEGORIES_ORDERED.map((categoryId) => {
+            const entries = byCategory.get(categoryId) ?? [];
+            if (entries.length === 0) return null;
+            return (
+              <CommandGroup
+                key={categoryId}
+                heading={NODE_CATEGORY_META[categoryId].label}
+              >
+                {entries.map((entry) => {
+                  const template = getTemplateForCatalogType(entry.type);
+                  const enabled = isNodePaletteEnabled(entry) && Boolean(template);
+                  const Icon = CATALOG_ICONS[entry.type] ?? ClipboardList;
+                  return (
+                    <CommandItem
+                      key={entry.type}
+                      disabled={!enabled}
+                      keywords={[
+                        entry.label,
+                        entry.type,
+                        NODE_CATEGORY_META[categoryId].label,
+                      ]}
+                      onSelect={() => {
+                        if (!template) return;
+                        handleAddNode(template);
+                      }}
+                    >
+                      <Icon className="size-4" />
+                      {entry.label}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            );
+          })}
           <CommandSeparator />
           <CommandGroup heading="Erscheinungsbild">
             <CommandItem

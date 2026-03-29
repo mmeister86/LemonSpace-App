@@ -2,6 +2,9 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: __dirname,
+  },
   // Reduziert in der Entwicklung Strict-Mode-Doppel-Mounts (häufige Ursache für
   // „Hydration“-Lärm). Echte Server/Client-Mismatches können weiterhin auftreten;
   // dann `pnpm dev:strict` zum Debuggen oder Ursache beheben.

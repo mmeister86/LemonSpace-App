@@ -165,3 +165,7 @@ export function resolveCanvasOp(canvasId: string, opId: string): void {
   payload.updatedAt = Date.now();
   writePayload(opsKey(canvasId), payload);
 }
+
+export function readCanvasOps(canvasId: string): CanvasPendingOp[] {
+  return readOpsPayload(canvasId).ops;
+}

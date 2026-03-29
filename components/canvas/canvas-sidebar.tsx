@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import {
   Bot,
   ClipboardList,
+  ChevronDown,
+  ChevronRight,
   Crop,
   FolderOpen,
   Frame,
@@ -55,6 +58,11 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   upscale: Wand2,
   "style-transfer": Wand2,
   "face-restore": Sparkles,
+  curves: Sparkles,
+  "color-adjust": Palette,
+  "light-adjust": Sparkles,
+  "detail-adjust": Wand2,
+  render: Image,
   splitter: Split,
   loop: Repeat,
   agent: Bot,
@@ -111,6 +119,13 @@ type CanvasSidebarProps = {
 export default function CanvasSidebar({ canvasId }: CanvasSidebarProps) {
   const canvas = useAuthQuery(api.canvases.get, { canvasId });
   const byCategory = catalogEntriesByCategory();
+  const [collapsedByCategory, setCollapsedByCategory] = useState<
+    Partial<Record<(typeof NODE_CATEGORIES_ORDERED)[number], boolean>>
+  >(() =>
+    Object.fromEntries(
+      NODE_CATEGORIES_ORDERED.map((categoryId) => [categoryId, categoryId !== "source"]),
+    ),
+  );
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border/80 bg-background">
@@ -134,16 +149,35 @@ export default function CanvasSidebar({ canvasId }: CanvasSidebarProps) {
           const entries = byCategory.get(categoryId) ?? [];
           if (entries.length === 0) return null;
           const { label } = NODE_CATEGORY_META[categoryId];
+          const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
           return (
             <div key={categoryId} className="mb-4 last:mb-0">
-              <h2 className="mb-2 px-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {label}
-              </h2>
-              <div className="flex flex-col gap-1.5">
-                {entries.map((entry) => (
-                  <SidebarRow key={entry.type} entry={entry} />
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsedByCategory((prev) => ({
+                    ...prev,
+                    [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
+                  }))
+                }
+                className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                aria-expanded={!isCollapsed}
+                aria-controls={`sidebar-category-${categoryId}`}
+              >
+                <span>{label}</span>
+                {isCollapsed ? (
+                  <ChevronRight className="size-3.5 shrink-0" />
+                ) : (
+                  <ChevronDown className="size-3.5 shrink-0" />
+                )}
+              </button>
+              {!isCollapsed ? (
+                <div id={`sidebar-category-${categoryId}`} className="flex flex-col gap-1.5">
+                  {entries.map((entry) => (
+                    <SidebarRow key={entry.type} entry={entry} />
+                  ))}
+                </div>
+              ) : null}
             </div>
           );
         })}

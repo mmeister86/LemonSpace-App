@@ -48,6 +48,12 @@ const nodeType = v.union(
   // Transformation (Phase 3)
   v.literal("style-transfer"),
   v.literal("face-restore"),
+  // Bildbearbeitung (Phase 2)
+  v.literal("curves"),
+  v.literal("color-adjust"),
+  v.literal("light-adjust"),
+  v.literal("detail-adjust"),
+  v.literal("render"),
   // Steuerung (Phase 2)
   v.literal("splitter"),
   v.literal("loop"),

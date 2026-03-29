@@ -37,6 +37,7 @@ import { toast } from "@/lib/toast";
 import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
 import {
   enqueueCanvasOp,
+  readCanvasOps,
   readCanvasSnapshot,
   resolveCanvasOp,
   writeCanvasSnapshot,
@@ -389,6 +390,97 @@ function applyPinnedNodePositions(
     }
     return { ...node, position: { x: pin.x, y: pin.y } };
   });
+}
+
+function applyPinnedNodePositionsReadOnly(
+  nodes: RFNode[],
+  pinned: ReadonlyMap<string, { x: number; y: number }>,
+): RFNode[] {
+  return nodes.map((node) => {
+    const pin = pinned.get(node.id);
+    if (!pin) return node;
+    if (positionsMatchPin(node.position, pin)) return node;
+    return { ...node, position: { x: pin.x, y: pin.y } };
+  });
+}
+
+function inferPendingConnectionNodeHandoff(
+  previousNodes: RFNode[],
+  incomingConvexNodes: Doc<"nodes">[],
+  pendingConnectionCreates: ReadonlySet<string>,
+  resolvedRealIdByClientRequest: Map<string, Id<"nodes">>,
+): void {
+  const unresolvedClientRequestIds: string[] = [];
+  for (const clientRequestId of pendingConnectionCreates) {
+    if (resolvedRealIdByClientRequest.has(clientRequestId)) continue;
+    const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
+    const optimisticNodePresent = previousNodes.some(
+      (node) => node.id === optimisticNodeId,
+    );
+    if (optimisticNodePresent) {
+      unresolvedClientRequestIds.push(clientRequestId);
+    }
+  }
+  if (unresolvedClientRequestIds.length !== 1) return;
+
+  const previousIds = new Set(previousNodes.map((node) => node.id));
+  const newlyAppearedIncomingRealNodeIds = incomingConvexNodes
+    .map((node) => node._id as string)
+    .filter((id) => !isOptimisticNodeId(id))
+    .filter((id) => !previousIds.has(id));
+
+  if (newlyAppearedIncomingRealNodeIds.length !== 1) return;
+
+  const inferredClientRequestId = unresolvedClientRequestIds[0]!;
+  const inferredRealId = newlyAppearedIncomingRealNodeIds[0] as Id<"nodes">;
+  resolvedRealIdByClientRequest.set(inferredClientRequestId, inferredRealId);
+}
+
+function isMoveNodeOpPayload(
+  payload: unknown,
+): payload is { nodeId: Id<"nodes">; positionX: number; positionY: number } {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  return (
+    typeof record.nodeId === "string" &&
+    typeof record.positionX === "number" &&
+    typeof record.positionY === "number"
+  );
+}
+
+function isBatchMoveNodesOpPayload(
+  payload: unknown,
+): payload is {
+  moves: { nodeId: Id<"nodes">; positionX: number; positionY: number }[];
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  if (!Array.isArray(record.moves)) return false;
+  return record.moves.every(isMoveNodeOpPayload);
+}
+
+function getPendingMovePinsFromLocalOps(
+  canvasId: string,
+): Map<string, { x: number; y: number }> {
+  const pins = new Map<string, { x: number; y: number }>();
+  for (const op of readCanvasOps(canvasId)) {
+    if (op.type === "moveNode" && isMoveNodeOpPayload(op.payload)) {
+      pins.set(op.payload.nodeId as string, {
+        x: op.payload.positionX,
+        y: op.payload.positionY,
+      });
+      continue;
+    }
+    if (op.type === "batchMoveNodes" && isBatchMoveNodesOpPayload(op.payload)) {
+      for (const move of op.payload.moves) {
+        pins.set(move.nodeId as string, {
+          x: move.positionX,
+          y: move.positionY,
+        });
+      }
+    }
+  }
+  return pins;
 }
 
 function mergeNodesPreservingLocalState(
@@ -1403,6 +1495,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useLayoutEffect(() => {
     if (!convexNodes || isResizing.current) return;
     setNodes((previousNodes) => {
+      inferPendingConnectionNodeHandoff(
+        previousNodes,
+        convexNodes,
+        pendingConnectionCreatesRef.current,
+        resolvedRealIdByClientRequestRef.current,
+      );
+
       /** RF setzt `node.dragging` + Position oft bevor `onNodeDragStart` `isDraggingRef` setzt — ohne diese Zeile zieht useLayoutEffect Convex-Stand darüber („Kleben“). */
       const anyRfNodeDragging = previousNodes.some((n) =>
         Boolean((n as { dragging?: boolean }).dragging),
@@ -1447,11 +1546,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         ),
         pendingLocalPositionUntilConvexMatchesRef.current,
       );
+      const mergedWithOpPins = applyPinnedNodePositionsReadOnly(
+        merged,
+        getPendingMovePinsFromLocalOps(canvasId as string),
+      );
       /** Nicht am Drag-Ende leeren (moveNode läuft oft async): solange Convex alt ist, Eintrag behalten und erst bei übereinstimmendem Snapshot entfernen. */
       const incomingById = new Map(
         filteredIncoming.map((n) => [n.id, n]),
       );
-      for (const n of merged) {
+      for (const n of mergedWithOpPins) {
         if (!preferLocalPositionNodeIdsRef.current.has(n.id)) continue;
         const inc = incomingById.get(n.id);
         if (!inc) continue;
@@ -1464,9 +1567,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           preferLocalPositionNodeIdsRef.current.delete(n.id);
         }
       }
-      return merged;
+      return mergedWithOpPins;
     });
-  }, [convexNodes, edges, storageUrlsById]);
+  }, [canvasId, convexNodes, edges, storageUrlsById]);
 
   useEffect(() => {
     if (isDragging.current) return;
