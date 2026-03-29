@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -96,6 +97,25 @@ function clientRequestIdFromOptimisticNodeId(id: string): string | null {
   if (!isOptimisticNodeId(id)) return null;
   const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
   return suffix.length > 0 ? suffix : null;
+}
+
+/** Entspricht `optimistic_edge_${clientRequestId}` im createNodeWithEdge*-Optimistic-Update. */
+function clientRequestIdFromOptimisticEdgeId(id: string): string | null {
+  if (!isOptimisticEdgeId(id)) return null;
+  const suffix = id.slice(OPTIMISTIC_EDGE_PREFIX.length);
+  return suffix.length > 0 ? suffix : null;
+}
+
+/** Gleiche Handle-Normalisierung wie bei convexEdgeToRF — für Signatur-Vergleich/Carry-over. */
+function sanitizeHandleForEdgeSignature(
+  h: string | null | undefined,
+): string {
+  if (h === undefined || h === null || h === "null") return "";
+  return h;
+}
+
+function rfEdgeConnectionSignature(edge: RFEdge): string {
+  return `${edge.source}|${edge.target}|${sanitizeHandleForEdgeSignature(edge.sourceHandle)}|${sanitizeHandleForEdgeSignature(edge.targetHandle)}`;
 }
 
 function isNodeGeometrySyncedWithConvex(
@@ -370,13 +390,65 @@ function shallowEqualRecord(
   return true;
 }
 
+/** Solange der Server noch die Erstellposition liefert, lokale Zielposition nach Pending-Move halten. */
+const POSITION_PIN_EPS = 0.5;
+
+function positionsMatchPin(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): boolean {
+  return (
+    Math.abs(a.x - b.x) <= POSITION_PIN_EPS &&
+    Math.abs(a.y - b.y) <= POSITION_PIN_EPS
+  );
+}
+
+function applyPinnedNodePositions(
+  nodes: RFNode[],
+  pinned: Map<string, { x: number; y: number }>,
+): RFNode[] {
+  return nodes.map((node) => {
+    const pin = pinned.get(node.id);
+    if (!pin) return node;
+    if (positionsMatchPin(node.position, pin)) {
+      pinned.delete(node.id);
+      return node;
+    }
+    return { ...node, position: { x: pin.x, y: pin.y } };
+  });
+}
+
 function mergeNodesPreservingLocalState(
   previousNodes: RFNode[],
   incomingNodes: RFNode[],
+  realIdByClientRequest?: ReadonlyMap<string, Id<"nodes">>,
+  /** Nach `onNodesChange` (position) bis `onNodeDragStop`: lokalen Stand gegen veralteten Convex-Snapshot bevorzugen. */
+  preferLocalPositionForNodeIds?: ReadonlySet<string>,
 ): RFNode[] {
   const previousById = new Map(previousNodes.map((node) => [node.id, node]));
 
+  const optimisticPredecessorByRealId = new Map<string, RFNode>();
+  if (realIdByClientRequest && realIdByClientRequest.size > 0) {
+    for (const [clientRequestId, realId] of realIdByClientRequest) {
+      const optId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
+      const pred = previousById.get(optId);
+      if (pred) {
+        optimisticPredecessorByRealId.set(realId as string, pred);
+      }
+    }
+  }
+
   return incomingNodes.map((incomingNode) => {
+    const handoffPrev = optimisticPredecessorByRealId.get(incomingNode.id);
+    if (handoffPrev) {
+      return {
+        ...incomingNode,
+        position: handoffPrev.position,
+        selected: handoffPrev.selected,
+        dragging: handoffPrev.dragging,
+      };
+    }
+
     const previousNode = previousById.get(incomingNode.id);
     if (!previousNode) {
       return incomingNode;
@@ -418,6 +490,9 @@ function mergeNodesPreservingLocalState(
       typeof (previousNode as { resizing?: boolean }).resizing === "boolean"
         ? (previousNode as { resizing?: boolean }).resizing
         : false;
+    const preferLocalPosition =
+      Boolean(previousNode.dragging) ||
+      (preferLocalPositionForNodeIds?.has(incomingNode.id) ?? false);
     const isMediaNode =
       incomingNode.type === "asset" ||
       incomingNode.type === "image" ||
@@ -461,6 +536,7 @@ function mergeNodesPreservingLocalState(
     return {
       ...previousNode,
       ...incomingNode,
+      position: preferLocalPosition ? previousNode.position : incomingNode.position,
       selected: previousNode.selected,
       dragging: previousNode.dragging,
     };
@@ -544,6 +620,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const pendingEdgeSplitByClientRequestRef = useRef(
     new Map<string, PendingEdgeSplit>(),
   );
+  /** Connection-Drop → neue Node: erlaubt Carry-over der Kante in der Rollback-Lücke (ohne Phantom nach Fehler). */
+  const pendingConnectionCreatesRef = useRef(new Set<string>());
+  /** Nach create+drag: Convex liefert oft noch Erstellkoordinaten, bis `moveNode` committed — bis dahin Position pinnen. */
+  const pendingLocalPositionUntilConvexMatchesRef = useRef(
+    new Map<string, { x: number; y: number }>(),
+  );
+  /** Vorheriger Stand von api.nodes.list-IDs — um genau die neu eingetretene Node-ID vor Mutation-.then zu erkennen. */
+  const convexNodeIdsSnapshotForEdgeCarryRef = useRef(new Set<string>());
 
   const createNode = useMutation(api.nodes.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -837,7 +921,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   /** Pairing: create kann vor oder nach Drag-Ende fertig sein. Kanten-Split + Position in einem Convex-Roundtrip wenn split ansteht. */
   const syncPendingMoveForClientRequest = useCallback(
-    (clientRequestId: string | undefined, realId?: Id<"nodes">) => {
+    async (
+      clientRequestId: string | undefined,
+      realId?: Id<"nodes">,
+    ): Promise<void> => {
       if (!clientRequestId) return;
 
       if (realId !== undefined) {
@@ -855,30 +942,41 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             pendingMoveAfterCreateRef.current.delete(clientRequestId);
           }
           resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
-          void splitEdgeAtExistingNodeMut({
-            canvasId,
-            splitEdgeId: splitPayload.intersectedEdgeId,
-            middleNodeId: realId,
-            splitSourceHandle: splitPayload.intersectedSourceHandle,
-            splitTargetHandle: splitPayload.intersectedTargetHandle,
-            newNodeSourceHandle: splitPayload.middleSourceHandle,
-            newNodeTargetHandle: splitPayload.middleTargetHandle,
-            positionX: pendingMove?.positionX ?? splitPayload.positionX,
-            positionY: pendingMove?.positionY ?? splitPayload.positionY,
-          }).catch((error: unknown) => {
+          try {
+            await splitEdgeAtExistingNodeMut({
+              canvasId,
+              splitEdgeId: splitPayload.intersectedEdgeId,
+              middleNodeId: realId,
+              splitSourceHandle: splitPayload.intersectedSourceHandle,
+              splitTargetHandle: splitPayload.intersectedTargetHandle,
+              newNodeSourceHandle: splitPayload.middleSourceHandle,
+              newNodeTargetHandle: splitPayload.middleTargetHandle,
+              positionX: pendingMove?.positionX ?? splitPayload.positionX,
+              positionY: pendingMove?.positionY ?? splitPayload.positionY,
+            });
+          } catch (error: unknown) {
             console.error("[Canvas pending edge split failed]", {
               clientRequestId,
               realId,
               error: String(error),
             });
-          });
+          }
           return;
         }
 
         if (pendingMove) {
           pendingMoveAfterCreateRef.current.delete(clientRequestId);
-          resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
-          void moveNode({
+          // Ref bewusst NICHT löschen: Edge-Sync braucht clientRequestId→realId für
+          // Remap/Carry-over, solange convexNodes/convexEdges nach Mutation kurz auseinanderlaufen.
+          resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
+          pendingLocalPositionUntilConvexMatchesRef.current.set(
+            realId as string,
+            {
+              x: pendingMove.positionX,
+              y: pendingMove.positionY,
+            },
+          );
+          await moveNode({
             nodeId: realId,
             positionX: pendingMove.positionX,
             positionY: pendingMove.positionY,
@@ -900,25 +998,31 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         pendingEdgeSplitByClientRequestRef.current.get(clientRequestId);
       if (splitPayload) {
         pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
-        void splitEdgeAtExistingNodeMut({
-          canvasId,
-          splitEdgeId: splitPayload.intersectedEdgeId,
-          middleNodeId: r,
-          splitSourceHandle: splitPayload.intersectedSourceHandle,
-          splitTargetHandle: splitPayload.intersectedTargetHandle,
-          newNodeSourceHandle: splitPayload.middleSourceHandle,
-          newNodeTargetHandle: splitPayload.middleTargetHandle,
-          positionX: splitPayload.positionX ?? p.positionX,
-          positionY: splitPayload.positionY ?? p.positionY,
-        }).catch((error: unknown) => {
+        try {
+          await splitEdgeAtExistingNodeMut({
+            canvasId,
+            splitEdgeId: splitPayload.intersectedEdgeId,
+            middleNodeId: r,
+            splitSourceHandle: splitPayload.intersectedSourceHandle,
+            splitTargetHandle: splitPayload.intersectedTargetHandle,
+            newNodeSourceHandle: splitPayload.middleSourceHandle,
+            newNodeTargetHandle: splitPayload.middleTargetHandle,
+            positionX: splitPayload.positionX ?? p.positionX,
+            positionY: splitPayload.positionY ?? p.positionY,
+          });
+        } catch (error: unknown) {
           console.error("[Canvas pending edge split failed]", {
             clientRequestId,
             realId: r,
             error: String(error),
           });
-        });
+        }
       } else {
-        void moveNode({
+        pendingLocalPositionUntilConvexMatchesRef.current.set(r as string, {
+          x: p.positionX,
+          y: p.positionY,
+        });
+        await moveNode({
           nodeId: r,
           positionX: p.positionX,
           positionY: p.positionY,
@@ -931,6 +1035,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  /** Erzwingt Edge-Merge nach Mutation, falls clientRequestId→realId-Ref erst im Promise gesetzt wird. */
+  const [edgeSyncNonce, setEdgeSyncNonce] = useState(0);
   const [connectionDropMenu, setConnectionDropMenu] =
     useState<ConnectionDropMenuState | null>(null);
   const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
@@ -994,6 +1100,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
+  /** Convex-Merge: Position nicht mit veraltetem Snapshot überschreiben (RF-`dragging` kommt oft verzögert). */
+  const preferLocalPositionNodeIdsRef = useRef(new Set<string>());
   // Resize-Lock: kein Convex→lokal während aktiver Größenänderung (veraltete Maße überschreiben sonst den Resize)
   const isResizing = useRef(false);
 
@@ -1068,9 +1176,184 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   }, [convexNodes]);
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
-  useEffect(() => {
-    if (!convexNodes || isDragging.current || isResizing.current) return;
+  /**
+   * 1) Kanten: Carry/Inferenz setzt ggf. `resolvedRealIdByClientRequestRef` (auch bevor Mutation-.then läuft).
+   * 2) Nodes: gleicher Commit, vor Paint — echte Node-IDs passen zu Kanten-Endpunkten (verhindert „reißende“ Kanten).
+   * Während Drag (`isDraggingRef` oder `node.dragging`): nur optimistic→real-Handoff.
+   */
+  useLayoutEffect(() => {
+    if (!convexEdges) return;
+    setEdges((prev) => {
+      const prevConvexSnap = convexNodeIdsSnapshotForEdgeCarryRef.current;
+      const currentConvexIdList =
+        convexNodes !== undefined
+          ? convexNodes.map((n) => n._id as string)
+          : [];
+      const currentConvexIdSet = new Set(currentConvexIdList);
+      const newlyAppearedIds: string[] = [];
+      for (const id of currentConvexIdList) {
+        if (!prevConvexSnap.has(id)) newlyAppearedIds.push(id);
+      }
+
+      const tempEdges = prev.filter((e) => e.className === "temp");
+      const sourceTypeByNodeId =
+        convexNodes !== undefined
+          ? new Map(convexNodes.map((n) => [n._id, n.type]))
+          : undefined;
+      const glowMode = resolvedTheme === "dark" ? "dark" : "light";
+      const mapped = convexEdges.map((edge) =>
+        sourceTypeByNodeId
+          ? convexEdgeToRFWithSourceGlow(
+              edge,
+              sourceTypeByNodeId.get(edge.sourceNodeId),
+              glowMode,
+            )
+          : convexEdgeToRF(edge),
+      );
+
+      const mappedSignatures = new Set(mapped.map(rfEdgeConnectionSignature));
+      const convexNodeIds =
+        convexNodes !== undefined
+          ? new Set(convexNodes.map((n) => n._id as string))
+          : null;
+      const realIdByClientRequest = resolvedRealIdByClientRequestRef.current;
+
+      const resolveEndpoint = (nodeId: string): string => {
+        if (!isOptimisticNodeId(nodeId)) return nodeId;
+        const cr = clientRequestIdFromOptimisticNodeId(nodeId);
+        if (!cr) return nodeId;
+        const real = realIdByClientRequest.get(cr);
+        return real !== undefined ? (real as string) : nodeId;
+      };
+
+      /** Wenn Mutation-.then noch nicht lief: echte ID aus Delta (eine neue Node) + gleiche clientRequestId wie Kante. */
+      const resolveEndpointWithInference = (
+        nodeId: string,
+        edge: RFEdge,
+      ): string => {
+        const base = resolveEndpoint(nodeId);
+        if (!isOptimisticNodeId(base)) return base;
+        const nodeCr = clientRequestIdFromOptimisticNodeId(base);
+        if (nodeCr === null) return base;
+        const edgeCr = clientRequestIdFromOptimisticEdgeId(edge.id);
+        if (edgeCr === null || edgeCr !== nodeCr) return base;
+        if (!pendingConnectionCreatesRef.current.has(nodeCr)) return base;
+        if (newlyAppearedIds.length !== 1) return base;
+        const inferred = newlyAppearedIds[0];
+        resolvedRealIdByClientRequestRef.current.set(
+          nodeCr,
+          inferred as Id<"nodes">,
+        );
+        return inferred;
+      };
+
+      const endpointUsable = (nodeId: string): boolean => {
+        const resolved = resolveEndpoint(nodeId);
+        if (convexNodeIds?.has(resolved)) return true;
+        if (convexNodeIds?.has(nodeId)) return true;
+        return false;
+      };
+
+      const optimisticEndpointHasPendingCreate = (nodeId: string): boolean => {
+        if (!isOptimisticNodeId(nodeId)) return false;
+        const cr = clientRequestIdFromOptimisticNodeId(nodeId);
+        return (
+          cr !== null && pendingConnectionCreatesRef.current.has(cr)
+        );
+      };
+
+      const shouldCarryOptimisticEdge = (
+        original: RFEdge,
+        remapped: RFEdge,
+      ): boolean => {
+        if (mappedSignatures.has(rfEdgeConnectionSignature(remapped))) {
+          return false;
+        }
+
+        const sourceOk = endpointUsable(remapped.source);
+        const targetOk = endpointUsable(remapped.target);
+        if (sourceOk && targetOk) return true;
+
+        if (!pendingConnectionCreatesRef.current.size) {
+          return false;
+        }
+
+        if (
+          sourceOk &&
+          optimisticEndpointHasPendingCreate(original.target)
+        ) {
+          return true;
+        }
+
+        if (
+          targetOk &&
+          optimisticEndpointHasPendingCreate(original.source)
+        ) {
+          return true;
+        }
+
+        return false;
+      };
+
+      const carriedOptimistic: RFEdge[] = [];
+      for (const e of prev) {
+        if (e.className === "temp") continue;
+        if (!isOptimisticEdgeId(e.id)) continue;
+
+        const remapped: RFEdge = {
+          ...e,
+          source: resolveEndpointWithInference(e.source, e),
+          target: resolveEndpointWithInference(e.target, e),
+        };
+
+        if (!shouldCarryOptimisticEdge(e, remapped)) continue;
+
+        carriedOptimistic.push(remapped);
+      }
+
+      if (convexNodes !== undefined) {
+        convexNodeIdsSnapshotForEdgeCarryRef.current = currentConvexIdSet;
+      }
+
+      /** Erst löschen, wenn Convex die neue Kante geliefert hat — sonst kurzes Fenster: pending=0, Kanten-Query noch alt, Carry schlägt fehl. */
+      for (const cr of [...pendingConnectionCreatesRef.current]) {
+        const realId = resolvedRealIdByClientRequestRef.current.get(cr);
+        if (realId === undefined) continue;
+        const nodePresent =
+          convexNodes !== undefined &&
+          convexNodes.some((n) => n._id === realId);
+        const edgeTouchesNewNode = convexEdges.some(
+          (e) => e.sourceNodeId === realId || e.targetNodeId === realId,
+        );
+        if (nodePresent && edgeTouchesNewNode) {
+          pendingConnectionCreatesRef.current.delete(cr);
+        }
+      }
+
+      return [...mapped, ...carriedOptimistic, ...tempEdges];
+    });
+  }, [convexEdges, convexNodes, resolvedTheme, edgeSyncNonce]);
+
+  useLayoutEffect(() => {
+    if (!convexNodes || isResizing.current) return;
     setNodes((previousNodes) => {
+      /** RF setzt `node.dragging` + Position oft bevor `onNodeDragStart` `isDraggingRef` setzt — ohne diese Zeile zieht useLayoutEffect Convex-Stand darüber („Kleben“). */
+      const anyRfNodeDragging = previousNodes.some((n) =>
+        Boolean((n as { dragging?: boolean }).dragging),
+      );
+      if (isDragging.current || anyRfNodeDragging) {
+        const needsOptimisticHandoff = previousNodes.some((n) => {
+          const cr = clientRequestIdFromOptimisticNodeId(n.id);
+          return (
+            cr !== null &&
+            resolvedRealIdByClientRequestRef.current.has(cr)
+          );
+        });
+        if (!needsOptimisticHandoff) {
+          return previousNodes;
+        }
+      }
+
       const prevDataById = new Map(
         previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
       );
@@ -1089,31 +1372,35 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const filteredIncoming = deletingNodeIds.current.size > 0
         ? incomingNodes.filter((node) => !deletingNodeIds.current.has(node.id))
         : incomingNodes;
-      return mergeNodesPreservingLocalState(previousNodes, filteredIncoming);
+      const merged = applyPinnedNodePositions(
+        mergeNodesPreservingLocalState(
+          previousNodes,
+          filteredIncoming,
+          resolvedRealIdByClientRequestRef.current,
+          preferLocalPositionNodeIdsRef.current,
+        ),
+        pendingLocalPositionUntilConvexMatchesRef.current,
+      );
+      /** Nicht am Drag-Ende leeren (moveNode läuft oft async): solange Convex alt ist, Eintrag behalten und erst bei übereinstimmendem Snapshot entfernen. */
+      const incomingById = new Map(
+        filteredIncoming.map((n) => [n.id, n]),
+      );
+      for (const n of merged) {
+        if (!preferLocalPositionNodeIdsRef.current.has(n.id)) continue;
+        const inc = incomingById.get(n.id);
+        if (!inc) continue;
+        if (
+          positionsMatchPin(n.position, {
+            x: inc.position.x,
+            y: inc.position.y,
+          })
+        ) {
+          preferLocalPositionNodeIdsRef.current.delete(n.id);
+        }
+      }
+      return merged;
     });
   }, [convexNodes, edges, storageUrlsById]);
-
-  useEffect(() => {
-    if (!convexEdges) return;
-    setEdges((prev) => {
-      const tempEdges = prev.filter((e) => e.className === "temp");
-      const sourceTypeByNodeId =
-        convexNodes !== undefined
-          ? new Map(convexNodes.map((n) => [n._id, n.type]))
-          : undefined;
-      const glowMode = resolvedTheme === "dark" ? "dark" : "light";
-      const mapped = convexEdges.map((edge) =>
-        sourceTypeByNodeId
-          ? convexEdgeToRFWithSourceGlow(
-              edge,
-              sourceTypeByNodeId.get(edge.sourceNodeId),
-              glowMode,
-            )
-          : convexEdgeToRF(edge),
-      );
-      return [...mapped, ...tempEdges];
-    });
-  }, [convexEdges, convexNodes, resolvedTheme]);
 
   useEffect(() => {
     if (isDragging.current) return;
@@ -1141,6 +1428,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       }
 
       setNodes((nds) => {
+        for (const c of changes) {
+          if (c.type === "position" && "id" in c) {
+            pendingLocalPositionUntilConvexMatchesRef.current.delete(c.id);
+            preferLocalPositionNodeIdsRef.current.add(c.id);
+          }
+        }
+
         const adjustedChanges = changes
           .map((change) => {
           if (change.type !== "dimensions" || !change.dimensions) {
@@ -1521,11 +1815,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   // ─── Drag Start → Lock ────────────────────────────────────────
-  const onNodeDragStart = useCallback(() => {
-    isDragging.current = true;
-    overlappedEdgeRef.current = null;
-    setHighlightedIntersectionEdge(null);
-  }, [setHighlightedIntersectionEdge]);
+  const onNodeDragStart = useCallback(
+    (_event: ReactMouseEvent, _node: RFNode, draggedNodes: RFNode[]) => {
+      isDragging.current = true;
+      overlappedEdgeRef.current = null;
+      setHighlightedIntersectionEdge(null);
+      for (const n of draggedNodes) {
+        pendingLocalPositionUntilConvexMatchesRef.current.delete(n.id);
+      }
+    },
+    [setHighlightedIntersectionEdge],
+  );
 
   // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
@@ -1558,7 +1858,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                   positionX: n.position.x,
                   positionY: n.position.y,
                 });
-                syncPendingMoveForClientRequest(cid);
+                await syncPendingMoveForClientRequest(cid);
               }
             }
             const realMoves = draggedNodes.filter((n) => !isOptimisticNodeId(n.id));
@@ -1620,7 +1920,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                 positionX: node.position.x,
                 positionY: node.position.y,
               });
-              syncPendingMoveForClientRequest(cidSingle);
+              await syncPendingMoveForClientRequest(cidSingle);
             } else {
               await moveNode({
                 nodeId: node.id as Id<"nodes">,
@@ -1655,7 +1955,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                 positionX: node.position.x,
                 positionY: node.position.y,
               });
-              syncPendingMoveForClientRequest(singleCid);
+              await syncPendingMoveForClientRequest(singleCid);
               return;
             }
             await splitEdgeAtExistingNodeMut({
@@ -1762,6 +2062,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         data: {},
       };
       const clientRequestId = crypto.randomUUID();
+      pendingConnectionCreatesRef.current.add(clientRequestId);
       const handles = NODE_HANDLE_MAP[template.type];
       const width = template.width ?? defaults.width;
       const height = template.height ?? defaults.height;
@@ -1783,7 +2084,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       };
 
       const settle = (realId: Id<"nodes">) => {
-        syncPendingMoveForClientRequest(clientRequestId, realId);
+        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+          (error: unknown) => {
+            console.error("[Canvas] settle syncPendingMove failed", error);
+          },
+        );
       };
 
       if (ctx.fromHandleType === "source") {
@@ -1793,8 +2098,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           sourceHandle: ctx.fromHandleId,
           targetHandle: handles?.target ?? undefined,
         })
-          .then(settle)
+          .then((realId) => {
+            resolvedRealIdByClientRequestRef.current.set(
+              clientRequestId,
+              realId,
+            );
+            settle(realId);
+            setEdgeSyncNonce((n) => n + 1);
+          })
           .catch((error) => {
+            pendingConnectionCreatesRef.current.delete(clientRequestId);
             console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
           });
       } else {
@@ -1804,8 +2117,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           sourceHandle: handles?.source ?? undefined,
           targetHandle: ctx.fromHandleId,
         })
-          .then(settle)
+          .then((realId) => {
+            resolvedRealIdByClientRequestRef.current.set(
+              clientRequestId,
+              realId,
+            );
+            settle(realId);
+            setEdgeSyncNonce((n) => n + 1);
+          })
           .catch((error) => {
+            pendingConnectionCreatesRef.current.delete(clientRequestId);
             console.error("[Canvas] createNodeWithEdgeToTarget failed", error);
           });
       }
@@ -2041,7 +2362,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                 },
                 clientRequestId,
               }).then((realId) => {
-                syncPendingMoveForClientRequest(clientRequestId, realId);
+                void syncPendingMoveForClientRequest(
+                  clientRequestId,
+                  realId,
+                ).catch((error: unknown) => {
+                  console.error(
+                    "[Canvas] drop createNode syncPendingMove failed",
+                    error,
+                  );
+                });
               });
             } catch (err) {
               console.error("Failed to upload dropped file:", err);
@@ -2091,7 +2420,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         data: { ...defaults.data, ...payloadData, canvasId },
         clientRequestId,
       }).then((realId) => {
-        syncPendingMoveForClientRequest(clientRequestId, realId);
+        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+          (error: unknown) => {
+            console.error(
+              "[Canvas] createNode syncPendingMove failed",
+              error,
+            );
+          },
+        );
       });
     },
     [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest, generateUploadUrl],
@@ -2222,9 +2558,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       createNodeWithEdgeSplit={createNodeWithEdgeSplit}
       createNodeWithEdgeFromSource={createNodeWithEdgeFromSource}
       createNodeWithEdgeToTarget={createNodeWithEdgeToTarget}
-      onCreateNodeSettled={({ clientRequestId, realId }) =>
-        syncPendingMoveForClientRequest(clientRequestId, realId)
-      }
+      onCreateNodeSettled={({ clientRequestId, realId }) => {
+        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+          (error: unknown) => {
+            console.error(
+              "[Canvas] onCreateNodeSettled syncPendingMove failed",
+              error,
+            );
+          },
+        );
+      }}
     >
       <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
       <div className="relative h-full w-full">
