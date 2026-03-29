@@ -14,6 +14,8 @@ import authConfig from "./auth.config";
 const siteUrl = process.env.SITE_URL!;
 const appUrl = process.env.APP_URL;
 
+const lemonspaceAppOrigin = "https://app.lemonspace.io";
+
 const polarClient = new Polar({
   accessToken: process.env.POLAR_ACCESS_TOKEN!,
   server: "production",
@@ -26,7 +28,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
     baseURL: siteUrl,
-    trustedOrigins: [siteUrl, "http://localhost:3000"],
+    trustedOrigins: [siteUrl, lemonspaceAppOrigin, "http://localhost:3000"],
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
