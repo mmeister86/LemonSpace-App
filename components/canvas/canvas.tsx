@@ -35,6 +35,12 @@ import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
 import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
+import {
+  enqueueCanvasOp,
+  readCanvasSnapshot,
+  resolveCanvasOp,
+  writeCanvasSnapshot,
+} from "@/lib/canvas-local-persistence";
 
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -82,6 +88,13 @@ interface CanvasInnerProps {
 const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
 
+function createCanvasOpId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `op_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
 /** @xyflow/react default minZoom ist 0.5 — dreimal weiter raus für große Boards. */
 const CANVAS_MIN_ZOOM = 0.5 / 3;
 
@@ -118,50 +131,10 @@ function rfEdgeConnectionSignature(edge: RFEdge): string {
   return `${edge.source}|${edge.target}|${sanitizeHandleForEdgeSignature(edge.sourceHandle)}|${sanitizeHandleForEdgeSignature(edge.targetHandle)}`;
 }
 
-function isNodeGeometrySyncedWithConvex(
-  node: RFNode,
-  doc: Doc<"nodes">,
-): boolean {
-  const styleW = node.style?.width;
-  const styleH = node.style?.height;
-  const w = typeof styleW === "number" ? styleW : doc.width;
-  const h = typeof styleH === "number" ? styleH : doc.height;
-  return (
-    node.position.x === doc.positionX &&
-    node.position.y === doc.positionY &&
-    w === doc.width &&
-    h === doc.height
-  );
-}
-
-/** Für Delete-Guard: ausreichend sync, wenn Löschen in Convex sicher ist (kein laufendes Move/Resize). */
-function isNodeDeleteGeometryAcceptable(
-  node: RFNode,
-  doc: Doc<"nodes">,
-): boolean {
-  if (isNodeGeometrySyncedWithConvex(node, doc)) return true;
-  const posEq =
-    node.position.x === doc.positionX &&
-    node.position.y === doc.positionY;
-  if (!posEq) return false;
-  const isMedia =
-    node.type === "asset" ||
-    node.type === "image" ||
-    node.type === "ai-image";
-  // mergeNodesPreservingLocalState: ausgewählte Media-Nodes behalten oft Platzhalter-Maße in style,
-  // während Convex bereits echte Breite/Höhe hat — Position ist mit dem Server abgeglichen, Löschen ist ok.
-  if (isMedia && Boolean(node.selected)) return true;
-  return false;
-}
-
 function getNodeDeleteBlockReason(
   node: RFNode,
-  convexById: Map<string, Doc<"nodes">>,
 ): CanvasNodeDeleteBlockReason | null {
   if (isOptimisticNodeId(node.id)) return "optimistic";
-  const doc = convexById.get(node.id);
-  if (!doc) return "missingInConvex";
-  if (!isNodeDeleteGeometryAcceptable(node, doc)) return "geometryPending";
   return null;
 }
 
@@ -846,6 +819,84 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
   );
 
+  const runMoveNodeMutation = useCallback(
+    async (args: { nodeId: Id<"nodes">; positionX: number; positionY: number }) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "moveNode", payload: args });
+      try {
+        return await moveNode(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [canvasId, moveNode],
+  );
+
+  const runBatchMoveNodesMutation = useCallback(
+    async (args: Parameters<typeof batchMoveNodes>[0]) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "batchMoveNodes", payload: args });
+      try {
+        return await batchMoveNodes(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [batchMoveNodes, canvasId],
+  );
+
+  const runResizeNodeMutation = useCallback(
+    async (args: { nodeId: Id<"nodes">; width: number; height: number }) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "resizeNode", payload: args });
+      try {
+        return await resizeNode(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [canvasId, resizeNode],
+  );
+
+  const runBatchRemoveNodesMutation = useCallback(
+    async (args: Parameters<typeof batchRemoveNodes>[0]) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "batchRemoveNodes", payload: args });
+      try {
+        return await batchRemoveNodes(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [batchRemoveNodes, canvasId],
+  );
+
+  const runCreateEdgeMutation = useCallback(
+    async (args: Parameters<typeof createEdge>[0]) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "createEdge", payload: args });
+      try {
+        return await createEdge(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [canvasId, createEdge],
+  );
+
+  const runRemoveEdgeMutation = useCallback(
+    async (args: Parameters<typeof removeEdge>[0]) => {
+      const opId = createCanvasOpId();
+      enqueueCanvasOp(canvasId, { id: opId, type: "removeEdge", payload: args });
+      try {
+        return await removeEdge(args);
+      } finally {
+        resolveCanvasOp(canvasId, opId);
+      }
+    },
+    [canvasId, removeEdge],
+  );
+
   const splitEdgeAtExistingNodeMut = useMutation(
     api.nodes.splitEdgeAtExistingNode,
   ).withOptimisticUpdate((localStore, args) => {
@@ -976,7 +1027,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               y: pendingMove.positionY,
             },
           );
-          await moveNode({
+          await runMoveNodeMutation({
             nodeId: realId,
             positionX: pendingMove.positionX,
             positionY: pendingMove.positionY,
@@ -1022,19 +1073,20 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           x: p.positionX,
           y: p.positionY,
         });
-        await moveNode({
+        await runMoveNodeMutation({
           nodeId: r,
           positionX: p.positionX,
           positionY: p.positionY,
         });
       }
     },
-    [canvasId, moveNode, splitEdgeAtExistingNodeMut],
+    [canvasId, runMoveNodeMutation, splitEdgeAtExistingNodeMut],
   );
 
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  const [hasHydratedLocalSnapshot, setHasHydratedLocalSnapshot] = useState(false);
   /** Erzwingt Edge-Merge nach Mutation, falls clientRequestId→realId-Ref erst im Promise gesetzt wird. */
   const [edgeSyncNonce, setEdgeSyncNonce] = useState(0);
   const [connectionDropMenu, setConnectionDropMenu] =
@@ -1047,6 +1099,20 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     { x: number; y: number }[] | null
   >(null);
   const [navTool, setNavTool] = useState<CanvasNavTool>("select");
+
+  useEffect(() => {
+    const snapshot = readCanvasSnapshot<RFNode, RFEdge>(canvasId as string);
+    if (snapshot) {
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+    }
+    setHasHydratedLocalSnapshot(true);
+  }, [canvasId]);
+
+  useEffect(() => {
+    if (!hasHydratedLocalSnapshot) return;
+    writeCanvasSnapshot(canvasId as string, { nodes, edges });
+  }, [canvasId, edges, hasHydratedLocalSnapshot, nodes]);
 
   const handleNavToolChange = useCallback((tool: CanvasNavTool) => {
     if (tool === "scissor") {
@@ -1646,7 +1712,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           void nextNode;
           if (change.resizing !== false) continue;
 
-          void resizeNode({
+          void runResizeNodeMutation({
             nodeId: change.id as Id<"nodes">,
             width: change.dimensions.width,
             height: change.dimensions.height,
@@ -1660,7 +1726,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         return nextNodes;
       });
     },
-    [resizeNode],
+    [runResizeNodeMutation],
   );
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -1700,7 +1766,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             return;
           }
 
-          void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+          void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
             console.error("[Canvas edge remove failed] reconnect end", {
               edgeId: edge.id,
               edgeClassName: edge.className ?? null,
@@ -1715,7 +1781,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         isReconnectDragActiveRef.current = false;
       }
     },
-    [removeEdge],
+    [runRemoveEdgeMutation],
   );
 
   const setHighlightedIntersectionEdge = useCallback((edgeId: string | null) => {
@@ -1863,7 +1929,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             }
             const realMoves = draggedNodes.filter((n) => !isOptimisticNodeId(n.id));
             if (realMoves.length > 0) {
-              await batchMoveNodes({
+              await runBatchMoveNodesMutation({
                 moves: realMoves.map((n) => ({
                   nodeId: n.id as Id<"nodes">,
                   positionX: n.position.x,
@@ -1922,7 +1988,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               });
               await syncPendingMoveForClientRequest(cidSingle);
             } else {
-              await moveNode({
+              await runMoveNodeMutation({
                 nodeId: node.id as Id<"nodes">,
                 positionX: node.position.x,
                 positionY: node.position.y,
@@ -2000,10 +2066,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       })();
     },
     [
-      batchMoveNodes,
       canvasId,
       edges,
-      moveNode,
+      runBatchMoveNodesMutation,
+      runMoveNodeMutation,
       setHighlightedIntersectionEdge,
       splitEdgeAtExistingNodeMut,
       syncPendingMoveForClientRequest,
@@ -2014,7 +2080,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const onConnect = useCallback(
     (connection: Connection) => {
       if (connection.source && connection.target) {
-        createEdge({
+        void runCreateEdgeMutation({
           canvasId,
           sourceNodeId: connection.source as Id<"nodes">,
           targetNodeId: connection.target as Id<"nodes">,
@@ -2023,7 +2089,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         });
       }
     },
-    [createEdge, canvasId],
+    [canvasId, runCreateEdgeMutation],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(
@@ -2151,15 +2217,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         return true;
       }
 
-      const convexById = new Map<string, Doc<"nodes">>(
-        (convexNodes ?? []).map((n) => [n._id as string, n]),
-      );
-
       const allowed: RFNode[] = [];
       const blocked: RFNode[] = [];
       const blockedReasons = new Set<CanvasNodeDeleteBlockReason>();
       for (const node of matchingNodes) {
-        const reason = getNodeDeleteBlockReason(node, convexById);
+        const reason = getNodeDeleteBlockReason(node);
         if (reason !== null) {
           blocked.push(node);
           blockedReasons.add(reason);
@@ -2188,7 +2250,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
       return true;
     },
-    [convexNodes],
+    [],
   );
 
   // ─── Node löschen → Convex ────────────────────────────────────
@@ -2214,7 +2276,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         edges,
       );
       const edgePromises = bridgeCreates.map((b) =>
-        createEdge({
+        runCreateEdgeMutation({
           canvasId,
           sourceNodeId: b.sourceNodeId,
           targetNodeId: b.targetNodeId,
@@ -2225,7 +2287,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
       // Batch-Delete + Auto-Reconnect parallel, dann deletingNodeIds aufräumen
       void Promise.all([
-        batchRemoveNodes({
+        runBatchRemoveNodesMutation({
           nodeIds: idsToDelete as Id<"nodes">[],
         }),
         ...edgePromises,
@@ -2248,7 +2310,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         toast.info(title);
       }
     },
-    [nodes, edges, batchRemoveNodes, createEdge, canvasId],
+    [nodes, edges, runBatchRemoveNodesMutation, runCreateEdgeMutation, canvasId],
   );
 
   // ─── Edge löschen → Convex ────────────────────────────────────
@@ -2263,7 +2325,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           continue;
         }
 
-        void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+        void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
           console.error("[Canvas edge remove failed] edge delete", {
             edgeId: edge.id,
             edgeClassName: edge.className ?? null,
@@ -2274,7 +2336,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         });
       }
     },
-    [removeEdge],
+    [runRemoveEdgeMutation],
   );
 
   async function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
@@ -2469,14 +2531,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (_event: ReactMouseEvent, edge: RFEdge) => {
       if (!scissorsModeRef.current) return;
       if (!isEdgeCuttable(edge)) return;
-      void removeEdge({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
+      void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
         console.error("[Canvas] scissors edge click remove failed", {
           edgeId: edge.id,
           error: String(error),
         });
       });
     },
-    [removeEdge],
+    [runRemoveEdgeMutation],
   );
 
   const onScissorsFlowPointerDownCapture = useCallback(
@@ -2522,7 +2584,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         setScissorStrokePreview(null);
         if (!scissorsModeRef.current) return;
         for (const id of strokeIds) {
-          void removeEdge({ edgeId: id as Id<"edges"> }).catch((error) => {
+          void runRemoveEdgeMutation({ edgeId: id as Id<"edges"> }).catch((error) => {
             console.error("[Canvas] scissors stroke remove failed", {
               edgeId: id,
               error: String(error),
@@ -2536,7 +2598,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       window.addEventListener("pointercancel", handleUp);
       event.preventDefault();
     },
-    [removeEdge],
+    [runRemoveEdgeMutation],
   );
 
   // ─── Loading State ────────────────────────────────────────────

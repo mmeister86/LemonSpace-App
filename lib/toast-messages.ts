@@ -1,11 +1,8 @@
 // Zentrales Dictionary für alle Toast-Strings.
 // Spätere i18n: diese Datei gegen Framework-Lookup ersetzen.
 
-/** Grund, warum ein Node-Löschen bis zur Convex-Synchronisierung blockiert ist. */
-export type CanvasNodeDeleteBlockReason =
-  | "optimistic"
-  | "missingInConvex"
-  | "geometryPending";
+/** Grund, warum ein Node-Löschen noch blockiert ist. */
+export type CanvasNodeDeleteBlockReason = "optimistic";
 
 function canvasNodeDeleteWhy(
   reasons: Set<CanvasNodeDeleteBlockReason>,
@@ -24,20 +21,14 @@ function canvasNodeDeleteWhy(
         desc: "Dieses Element ist noch nicht vollständig auf dem Server gespeichert. Sobald die Synchronisierung fertig ist, kannst du es löschen.",
       };
     }
-    if (only === "missingInConvex") {
-      return {
-        title: "Element noch nicht verfügbar",
-        desc: "Dieses Element ist in der Datenbank noch nicht sichtbar. Warte einen Moment und versuche das Löschen erneut.",
-      };
-    }
     return {
-      title: "Änderungen werden gespeichert",
-      desc: "Position oder Größe ist noch nicht mit dem Server abgeglichen — zum Beispiel direkt nach Verschieben oder nach dem Ziehen an der Größe. Bitte kurz warten.",
+      title: "Löschen momentan nicht möglich",
+      desc: "Bitte kurz warten und erneut versuchen.",
     };
   }
   return {
     title: "Löschen momentan nicht möglich",
-    desc: "Mindestens ein Element wird noch angelegt, oder Position bzw. Größe wird noch gespeichert. Bitte kurz warten und erneut versuchen.",
+    desc: "Mindestens ein Element wird noch angelegt. Bitte kurz warten und erneut versuchen.",
   };
 }
 
