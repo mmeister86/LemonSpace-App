@@ -102,6 +102,11 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   note: [13, 148, 136],
   asset: [13, 148, 136],
   video: [13, 148, 136],
+  curves: [59, 130, 246],
+  "color-adjust": [236, 72, 153],
+  "light-adjust": [245, 158, 11],
+  "detail-adjust": [168, 85, 247],
+  render: [14, 165, 233],
   group: [100, 116, 139],
   frame: [249, 115, 22],
   compare: [100, 116, 139],
@@ -187,6 +192,11 @@ export const NODE_HANDLE_MAP: Record<
   compare: { source: "compare-out", target: "left" },
   asset: { source: undefined, target: undefined },
   video: { source: undefined, target: undefined },
+  curves: { source: undefined, target: undefined },
+  "color-adjust": { source: undefined, target: undefined },
+  "light-adjust": { source: undefined, target: undefined },
+  "detail-adjust": { source: undefined, target: undefined },
+  render: { source: undefined, target: undefined },
 };
 
 /**
@@ -211,6 +221,63 @@ export const NODE_DEFAULTS: Record<
   compare: { width: 500, height: 380, data: {} },
   asset: { width: 260, height: 240, data: {} },
   video: { width: 320, height: 180, data: {} },
+  curves: {
+    width: 280,
+    height: 380,
+    data: {
+      channelMode: "rgb",
+      levels: { blackPoint: 0, whitePoint: 255, gamma: 1 },
+      preset: null,
+    },
+  },
+  "color-adjust": {
+    width: 280,
+    height: 520,
+    data: {
+      hue: 0,
+      saturation: 0,
+      luminance: 0,
+      vibrance: 0,
+      temperature: 0,
+      tint: 0,
+      preset: null,
+    },
+  },
+  "light-adjust": {
+    width: 280,
+    height: 600,
+    data: {
+      brightness: 0,
+      contrast: 0,
+      exposure: 0,
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0,
+      vignette: 0,
+      preset: null,
+    },
+  },
+  "detail-adjust": {
+    width: 280,
+    height: 620,
+    data: {
+      sharpen: { amount: 0, radius: 1, threshold: 0 },
+      clarity: 0,
+      denoise: { luminance: 0, color: 0 },
+      grain: { amount: 0, size: 1 },
+      preset: null,
+    },
+  },
+  render: {
+    width: 280,
+    height: 460,
+    data: {
+      outputResolution: "original",
+      format: "png",
+      jpegQuality: 90,
+    },
+  },
 };
 
 type MediaNodeKind = "asset" | "image";

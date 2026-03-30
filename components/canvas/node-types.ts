@@ -8,6 +8,11 @@ import NoteNode from "./nodes/note-node";
 import CompareNode from "./nodes/compare-node";
 import AssetNode from "./nodes/asset-node";
 import VideoNode from "./nodes/video-node";
+import CurvesNode from "./nodes/curves-node";
+import ColorAdjustNode from "./nodes/color-adjust-node";
+import LightNode from "./nodes/light-node";
+import DetailNode from "./nodes/detail-node";
+import RenderNode from "./nodes/render-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -27,4 +32,9 @@ export const nodeTypes = {
   compare: CompareNode,
   asset: AssetNode,
   video: VideoNode,
+  curves: CurvesNode,
+  "color-adjust": ColorAdjustNode,
+  "light-adjust": LightNode,
+  "detail-adjust": DetailNode,
+  render: RenderNode,
 } as const;

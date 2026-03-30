@@ -24,6 +24,11 @@ const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   prompt: { minWidth: 260, minHeight: 220 },
   text: { minWidth: 220, minHeight: 90 },
   note: { minWidth: 200, minHeight: 90 },
+  curves: { minWidth: 240, minHeight: 260 },
+  "color-adjust": { minWidth: 240, minHeight: 300 },
+  "light-adjust": { minWidth: 240, minHeight: 320 },
+  "detail-adjust": { minWidth: 240, minHeight: 320 },
+  render: { minWidth: 240, minHeight: 280 },
 };
 
 const DEFAULT_CONFIG: ResizeConfig = { minWidth: 80, minHeight: 50 };
