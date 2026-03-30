@@ -25,6 +25,41 @@ type RenderNodeData = {
 
 export type RenderNode = Node<RenderNodeData, "render">;
 
+function mimeTypeForFormat(format: "png" | "jpeg" | "webp"): string {
+  if (format === "jpeg") return "image/jpeg";
+  if (format === "webp") return "image/webp";
+  return "image/png";
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Bild konnte nicht geladen werden."));
+    image.src = url;
+  });
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  format: "png" | "jpeg" | "webp",
+  jpegQuality: number,
+): Promise<Blob> {
+  const mimeType = mimeTypeForFormat(format);
+  const quality = format === "jpeg" || format === "webp" ? jpegQuality / 100 : undefined;
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Render-Blob konnte nicht erzeugt werden."));
+        return;
+      }
+      resolve(blob);
+    }, mimeType, quality);
+  });
+}
+
 function toPersistedData(data: Record<string, unknown>): Record<string, unknown> {
   const { _status, _statusMessage, retryCount, url, ...rest } = data;
   void _status;
@@ -36,6 +71,7 @@ function toPersistedData(data: Record<string, unknown>): Record<string, unknown>
 
 export default function RenderNode({ id, data, selected }: NodeProps<RenderNode>) {
   const updateData = useMutation(api.nodes.updateData);
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const dataRef = useRef(data as Record<string, unknown>);
   dataRef.current = data as Record<string, unknown>;
 
@@ -55,6 +91,7 @@ export default function RenderNode({ id, data, selected }: NodeProps<RenderNode>
   const [isRendering, setIsRendering] = useState(false);
 
   const outOfDate = Boolean(data.pipelineHash && data.pipelineHash !== pipelineDigest);
+  const previewUrl = data.url ?? sourceUrl;
 
   const persistConfig = (overrides?: Partial<RenderNodeData>) => {
     const base = toPersistedData(dataRef.current);
@@ -80,8 +117,42 @@ export default function RenderNode({ id, data, selected }: NodeProps<RenderNode>
 
     setIsRendering(true);
     try {
-      // Phase 1 der ADR-Umsetzung: Konfiguration + Pipeline-Hash persistieren.
-      // Upload in Convex Storage folgt im nächsten Schritt (WebGL -> Blob -> Storage).
+      const image = await loadImage(sourceUrl);
+      const naturalWidth = image.naturalWidth > 0 ? image.naturalWidth : image.width;
+      const naturalHeight = image.naturalHeight > 0 ? image.naturalHeight : image.height;
+
+      let outputWidth = naturalWidth;
+      let outputHeight = naturalHeight;
+
+      if (outputResolution === "2x") {
+        outputWidth = Math.max(1, Math.round(naturalWidth * 2));
+        outputHeight = Math.max(1, Math.round(naturalHeight * 2));
+      } else if (outputResolution === "custom") {
+        outputWidth = Math.max(64, Math.round(customWidth));
+        outputHeight = Math.max(64, Math.round(customHeight));
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("2D-Render-Context nicht verfügbar.");
+      }
+      ctx.drawImage(image, 0, 0, outputWidth, outputHeight);
+
+      const blob = await canvasToBlob(canvas, format, jpegQuality);
+      const uploadUrl = await generateUploadUrl();
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": mimeTypeForFormat(format) },
+        body: blob,
+      });
+      if (!uploadResponse.ok) {
+        throw new Error("Upload fehlgeschlagen.");
+      }
+      const { storageId } = (await uploadResponse.json()) as { storageId: string };
+
       await updateData({
         nodeId: id as Id<"nodes">,
         data: {
@@ -91,15 +162,19 @@ export default function RenderNode({ id, data, selected }: NodeProps<RenderNode>
           customHeight,
           format,
           jpegQuality,
+          storageId,
           pipelineHash: pipelineDigest,
           lastRenderedAt: Date.now(),
         },
       });
 
-      toast.info("Render konfiguriert", "Blob-Upload wird im nächsten Umsetzungsschritt ergänzt.");
+      toast.success("Render abgeschlossen");
     } catch (error) {
       console.error("[render-node] render update failed", error);
-      toast.error("Render fehlgeschlagen");
+      toast.error(
+        "Render fehlgeschlagen",
+        error instanceof Error ? error.message : undefined,
+      );
     } finally {
       setIsRendering(false);
     }
@@ -127,9 +202,9 @@ export default function RenderNode({ id, data, selected }: NodeProps<RenderNode>
           )}
         </div>
 
-        {sourceUrl ? (
+        {previewUrl ? (
           <img
-            src={sourceUrl}
+            src={previewUrl}
             alt="Render source"
             className="h-28 w-full rounded-md border border-border/70 object-cover"
             loading="lazy"

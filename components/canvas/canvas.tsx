@@ -237,6 +237,28 @@ const EDGE_INTERSECTION_HIGHLIGHT_STYLE: NonNullable<RFEdge["style"]> = {
 
 const GENERATION_FAILURE_WINDOW_MS = 5 * 60 * 1000;
 const GENERATION_FAILURE_THRESHOLD = 3;
+const ADJUSTMENT_NODE_TYPES = new Set([
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
+const ADJUSTMENT_INPUT_NODE_TYPES = new Set([
+  "image",
+  "ai-image",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
+const RENDER_INPUT_NODE_TYPES = new Set([
+  "image",
+  "ai-image",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
 
 function getEdgeIdFromInteractionElement(element: Element): string | null {
   const edgeContainer = element.closest(".react-flow__edge");
@@ -251,6 +273,90 @@ function getEdgeIdFromInteractionElement(element: Element): string | null {
   }
 
   return null;
+}
+
+function isAdjustmentNodeType(type: string | undefined): boolean {
+  if (!type) return false;
+  return ADJUSTMENT_NODE_TYPES.has(type);
+}
+
+function validateConnectionAgainstAdr(
+  connection: Connection,
+  nodes: RFNode[],
+  edges: RFEdge[],
+  options?: { ignoreEdgeId?: string },
+): { valid: boolean; reason?: string } {
+  const sourceId = connection.source;
+  const targetId = connection.target;
+  if (!sourceId || !targetId) return { valid: false };
+  if (sourceId === targetId) {
+    return { valid: false, reason: "Self-Loops sind nicht erlaubt." };
+  }
+
+  const sourceNode = nodes.find((node) => node.id === sourceId);
+  const targetNode = nodes.find((node) => node.id === targetId);
+  if (!sourceNode || !targetNode) return { valid: false };
+
+  const sourceType = sourceNode.type ?? "";
+  const targetType = targetNode.type ?? "";
+  const persistedEdges = edges.filter(
+    (edge) => edge.className !== "temp" && edge.id !== options?.ignoreEdgeId,
+  );
+
+  if (isAdjustmentNodeType(targetType)) {
+    if (!ADJUSTMENT_INPUT_NODE_TYPES.has(sourceType)) {
+      return {
+        valid: false,
+        reason: "Adjustment-Nodes akzeptieren nur Bild-, KI-Bild- oder Adjustment-Input.",
+      };
+    }
+
+    const existingIncomingCount = persistedEdges.filter(
+      (edge) => edge.target === targetId,
+    ).length;
+    if (existingIncomingCount >= 1) {
+      return {
+        valid: false,
+        reason: "Adjustment-Nodes erlauben genau eine eingehende Verbindung.",
+      };
+    }
+  }
+
+  if (targetType === "render") {
+    if (!RENDER_INPUT_NODE_TYPES.has(sourceType)) {
+      return {
+        valid: false,
+        reason: "Render akzeptiert nur Bild-, KI-Bild- oder Adjustment-Input.",
+      };
+    }
+    const existingIncomingCount = persistedEdges.filter(
+      (edge) => edge.target === targetId,
+    ).length;
+    if (existingIncomingCount >= 1) {
+      return {
+        valid: false,
+        reason: "Render-Node erlaubt genau eine eingehende Verbindung.",
+      };
+    }
+  }
+
+  if (isAdjustmentNodeType(sourceType) && (targetType === "prompt" || targetType === "ai-image")) {
+    return {
+      valid: false,
+      reason: "Adjustment-Nodes dürfen nicht mit Prompt- oder KI-Bild-Nodes verbunden werden.",
+    };
+  }
+
+  return { valid: true };
+}
+
+function normalizeEdgeLikeToConnection(edgeLike: Connection | RFEdge): Connection {
+  return {
+    source: edgeLike.source,
+    target: edgeLike.target,
+    sourceHandle: edgeLike.sourceHandle ?? null,
+    targetHandle: edgeLike.targetHandle ?? null,
+  };
 }
 
 function getNodeCenterClientPosition(nodeId: string): { x: number; y: number } | null {
@@ -1849,10 +1955,23 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const onReconnect = useCallback(
     (oldEdge: RFEdge, newConnection: Connection) => {
+      const validation = validateConnectionAgainstAdr(
+        newConnection,
+        nodes,
+        edges,
+        { ignoreEdgeId: oldEdge.id },
+      );
+      if (!validation.valid) {
+        edgeReconnectSuccessful.current = true;
+        if (validation.reason) {
+          toast.warning("Ungültige Verbindung", validation.reason);
+        }
+        return;
+      }
       edgeReconnectSuccessful.current = true;
       setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
     },
-    [],
+    [edges, nodes],
   );
 
   const onReconnectEnd = useCallback(
@@ -2180,19 +2299,34 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   // ─── Neue Verbindung → Convex Edge ────────────────────────────
+  const isValidConnection = useCallback(
+    (edgeLike: Connection | RFEdge) => {
+      const connection = normalizeEdgeLikeToConnection(edgeLike);
+      return validateConnectionAgainstAdr(connection, nodes, edges).valid;
+    },
+    [edges, nodes],
+  );
+
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (connection.source && connection.target) {
-        void runCreateEdgeMutation({
-          canvasId,
-          sourceNodeId: connection.source as Id<"nodes">,
-          targetNodeId: connection.target as Id<"nodes">,
-          sourceHandle: connection.sourceHandle ?? undefined,
-          targetHandle: connection.targetHandle ?? undefined,
-        });
+      if (!connection.source || !connection.target) return;
+      const validation = validateConnectionAgainstAdr(connection, nodes, edges);
+      if (!validation.valid) {
+        if (validation.reason) {
+          toast.warning("Ungültige Verbindung", validation.reason);
+        }
+        return;
       }
+
+      void runCreateEdgeMutation({
+        canvasId,
+        sourceNodeId: connection.source as Id<"nodes">,
+        targetNodeId: connection.target as Id<"nodes">,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      });
     },
-    [canvasId, runCreateEdgeMutation],
+    [canvasId, edges, nodes, runCreateEdgeMutation],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(
@@ -2791,6 +2925,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           onConnect={onConnect}
+          isValidConnection={isValidConnection}
           onConnectEnd={onConnectEnd}
           onReconnect={onReconnect}
           onReconnectStart={onReconnectStart}
