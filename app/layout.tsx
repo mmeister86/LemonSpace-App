@@ -34,9 +34,26 @@ export default async function RootLayout({
   return (
     <html
       lang="de"
-      suppressHydrationWarning
       className={cn("h-full", "antialiased", "font-sans", manrope.variable)}
     >
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+          name="description"
+          content="Lemonspace is a platform for creating and sharing digital content with nodes."
+        />
+        <meta name="keywords" content="Lemonspace, digital content, platform" />
+        <meta name="author" content="Lemonspace" />
+        <meta name="robots" content="index, follow" />
+        <meta name="googlebot" content="index, follow" />
+        <meta name="bingbot" content="index, follow" />
+        <meta name="yandexbot" content="index, follow" />
+        <script
+          src="https://rybbit.matthias.lol/api/script.js"
+          data-site-id="bb1ac546eda7"
+          defer
+        ></script>
+      </head>
       <body className="min-h-full flex flex-col">
         <Providers initialToken={initialToken}>
           <InitUser />
