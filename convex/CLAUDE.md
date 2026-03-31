@@ -1,0 +1,123 @@
+# convex/ — Backend-Schicht
+
+Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscriptions, File Storage und Background-Job-Scheduler in einem. Kein separates API-Layer notwendig.
+
+---
+
+## Dateien im Überblick
+
+| Datei | Zweck |
+|-------|-------|
+| `schema.ts` | Einzige Wahrheitsquelle für alle Tabellen und Typen |
+| `ai.ts` | KI-Bildgenerierungs-Pipeline |
+| `credits.ts` | Credit-System: Balance, Reservation+Commit, Tier-Config |
+| `nodes.ts` | CRUD für Canvas-Nodes |
+| `edges.ts` | CRUD für Canvas-Edges |
+| `canvases.ts` | CRUD für Canvases |
+| `openrouter.ts` | OpenRouter-HTTP-Client + Modell-Config (Backend) |
+| `auth.ts` | Better Auth Integration |
+| `helpers.ts` | `requireAuth()` — von allen Queries/Mutations genutzt |
+| `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
+| `pexels.ts` | Pexels Stock-Bilder API |
+| `freepik.ts` | Freepik Asset-Browser API |
+| `storage.ts` | Convex File Storage Helpers |
+| `export.ts` | Canvas-Export-Logik |
+| `http.ts` | HTTP-Endpunkte (Webhooks) |
+
+---
+
+## Schema (`schema.ts`)
+
+Alle Node-Typen sind in zwei Validators definiert: `phase1NodeTypes` (aktiv) und `nodeType` (alle Phasen). Phase-2/3-Typen werden im Schema vordeklariert, um spätere Schema-Migrationen zu vermeiden — die UI filtert nach Phase.
+
+### Tabellen
+
+**`canvases`** — Canvas pro User. Index: `by_owner`, `by_owner_updated`.
+
+**`nodes`** — Alle Nodes eines Canvas. Felder: `type`, `positionX/Y`, `width`, `height`, `status` (`idle|analyzing|clarifying|executing|done|error`), `statusMessage`, `retryCount`, `data` (v.any()), `parentId`, `zIndex`. Index: `by_canvas`, `by_canvas_type`, `by_parent`.
+
+> `data` ist `v.any()` — Typ-Safety läuft über den `type`-Discriminator + Zod im Frontend. Die Node-Data-Shapes sind in `schema.ts` dokumentiert (`imageNodeData`, `promptNodeData`, etc.).
+
+**`edges`** — Verbindungen zwischen Nodes. Index: `by_canvas`, `by_source`, `by_target`.
+
+**`creditBalances`** — Pro User: `balance`, `reserved`, `monthlyAllocation`. `available = balance - reserved` (computed, nicht gespeichert).
+
+**`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`.
+
+**`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`.
+
+**`dailyUsage`** — Täglicher Zähler pro User für Abuse-Prevention. Key: `userId + date (ISO)`.
+
+---
+
+## AI-Pipeline (`ai.ts`)
+
+```
+generateImage (action, public)
+  → checkAbuseLimits (internalMutation)
+  → reserve (mutation, wenn INTERNAL_CREDITS_ENABLED=true)
+  → markNodeExecuting (internalMutation)
+  → scheduler.runAfter(0, processImageGeneration)   ← Background-Job
+
+processImageGeneration (internalAction)
+  → generateAndStoreImage (internalAction)
+      → generateImageWithAutoRetry (lokal, max 2 Retries)
+          → generateImageViaOpenRouter
+      → ctx.storage.store(blob)
+  → finalizeImageSuccess (internalMutation)
+      → commitInternal (credits)
+  [Fehler] → releaseInternal (credits)
+           → finalizeImageFailure (internalMutation)
+  [finally] → decrementConcurrency
+```
+
+**Wichtig:** `generateImage` gibt `{ queued: true }` zurück, sobald der Background-Job geplant ist. Der Node wechselt sofort auf `status: "executing"`. Der eigentliche API-Call läuft asynchron.
+
+**Retry-Logik:** Max. 2 Retries (`MAX_IMAGE_RETRIES = 2`). Backoff: `min(1500ms, 400ms * retryCount)`. Retryable: `provider` (5xx, 408, 429), `timeout`, `transient`. Nicht retryable: `credits`, `policy`, unbekannte 4xx.
+
+**env-Flags:**
+- `INTERNAL_CREDITS_ENABLED=true` — Aktiviert Reservation+Commit. Bei `false` wird nur Abuse-Prevention geprüft.
+- `OPENROUTER_API_KEY` — Pflicht.
+
+---
+
+## Credit-System (`credits.ts`)
+
+### Tier-Konfiguration (`TIER_CONFIG`)
+
+| Tier | Credits/Monat | Daily Cap | Concurrency | Premium-Modelle |
+|------|--------------|-----------|-------------|-----------------|
+| free | 50 | 10 | 1 | nein |
+| starter | 400 | 50 | 2 | ja |
+| pro | 3.300 | 200 | 2 | ja |
+| max | 6.700 | 500 | 2 | ja |
+
+**1 Credit = €0,01** (Euro-Cent-Einheit durchgängig in DB und UI).
+
+### Reservation+Commit-Flow
+
+1. `reserve()` — Prüft `available >= estimatedCost`, Daily Cap, Concurrency. Erhöht `reserved` + `dailyUsage`. Gibt `transactionId` zurück.
+2. Job läuft...
+3. `commitInternal()` — Zieht `actualCost` von `balance` ab, gibt `estimatedCost` aus `reserved` frei. Schreibt `type: "usage"`.
+4. Bei Fehler: `releaseInternal()` — Gibt `estimatedCost` aus `reserved` frei. `generationCount` bleibt erhöht (Versuch zählt).
+
+**env-Flag:** `ALLOW_TEST_CREDIT_GRANT=true` — Aktiviert `grantTestCredits` Mutation (nur Dev/Staging).
+
+---
+
+## Auth (`helpers.ts`)
+
+```typescript
+requireAuth(ctx) // → { userId: string }
+```
+
+Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genutzt, die User-Daten berühren.
+
+---
+
+## Konventionen
+
+- `internalMutation` / `internalAction` — Nur von anderen Convex-Funktionen aufrufbar, nicht direkt vom Client.
+- `mutation` / `query` / `action` — Öffentlich, direkt vom Frontend nutzbar.
+- Alle User-Daten sind über `userId` (Better Auth User ID, kein Convex-eigenes User-Dokument) indiziert.
+- Schema-Migrationen: `npx convex dev` erkennt Breaking Changes automatisch. Bei `v.any()`-Feldern gibt es keine automatische Migration — Datensätze müssen manuell/scriptmäßig migriert werden.
