@@ -10,15 +10,28 @@ Der Canvas ist das Herzstück von LemonSpace. Er basiert auf `@xyflow/react` (Re
 app/(app)/canvas/[canvasId]/page.tsx
   └── <Canvas canvasId={...} />            ← components/canvas/canvas.tsx
         ├── <ReactFlowProvider>
-        │     └── <CanvasInner>             ← Haupt-Komponente (2800 Zeilen)
+        │     └── <CanvasInner>             ← Haupt-Komponente (~1800 Zeilen)
         │           ├── Convex useQuery     ← Realtime-Sync
         │           ├── nodeTypes Map       ← node-types.ts
         │           ├── localStorage Cache  ← canvas-local-persistence.ts
+        │           ├── Interaction-Hooks   ← canvas-*.ts Helper
         │           └── Panel-Komponenten
         └── Context Providers
 ```
 
-**`canvas.tsx`** ist die zentrale Datei. Sie enthält die gesamte State-Management-Logik, Convex-Mutations, Optimistic Updates und Event-Handler. Sehr groß — vor Änderungen immer den genauen Abschnitt lesen.
+**`canvas.tsx`** ist weiterhin die zentrale Orchestrierungsdatei. Viel Low-Level-Logik wurde in dedizierte Module ausgelagert, aber Mutations-Flow, Event-Wiring und Render-Composition liegen weiterhin hier.
+
+### Interne Module von `canvas.tsx`
+
+| Datei | Zweck |
+|------|-------|
+| `canvas-helpers.ts` | Shared Utility-Layer (Optimistic IDs, Node-Merge, Compare-Resolution, Edge/Hit-Helpers, Konstante Defaults) |
+| `canvas-node-change-helpers.ts` | Dimensions-/Resize-Transformationen für `asset` und `ai-image` Nodes |
+| `canvas-generation-failures.ts` | Hook für AI-Generation-Error-Tracking mit Schwellenwert-Toast |
+| `canvas-scissors.ts` | Hook für Scherenmodus (K/Esc Toggle, Click-Cut, Stroke-Cut) |
+| `canvas-delete-handlers.ts` | Hook für `onBeforeDelete`, `onNodesDelete`, `onEdgesDelete` inkl. Bridge-Edges |
+| `canvas-reconnect.ts` | Hook für Edge-Reconnect (`onReconnectStart`, `onReconnect`, `onReconnectEnd`) |
+| `canvas-media-utils.ts` | Media-Helfer wie `getImageDimensions(file)` |
 
 ---
 

@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useTheme } from "next-themes";
 import {
@@ -20,24 +19,20 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
-  reconnectEdge,
-  getConnectedEdges,
   type Node as RFNode,
   type Edge as RFEdge,
   type NodeChange,
   type EdgeChange,
   type Connection,
-  type DefaultEdgeOptions,
   type OnConnectEnd,
   BackgroundVariant,
 } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
-import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
+import { msg } from "@/lib/toast-messages";
 import {
   enqueueCanvasOp,
-  readCanvasOps,
   readCanvasSnapshot,
   resolveCanvasOp,
   writeCanvasSnapshot,
@@ -50,21 +45,13 @@ import { authClient } from "@/lib/auth-client";
 
 import { nodeTypes } from "./node-types";
 import {
-  computeBridgeCreatesForDeletedNodes,
   convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
   convexEdgeToRF,
   convexEdgeToRFWithSourceGlow,
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
-  resolveMediaAspectRatio,
 } from "@/lib/canvas-utils";
-import {
-  AI_IMAGE_NODE_FOOTER_PX,
-  AI_IMAGE_NODE_HEADER_PX,
-  DEFAULT_ASPECT_RATIO,
-  parseAspectRatioString,
-} from "@/lib/image-formats";
 import CanvasToolbar, {
   type CanvasNavTool,
 } from "@/components/canvas/canvas-toolbar";
@@ -81,531 +68,44 @@ import {
 } from "@/components/canvas/asset-browser-panel";
 import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
+import {
+  applyPinnedNodePositions,
+  applyPinnedNodePositionsReadOnly,
+  CANVAS_MIN_ZOOM,
+  clientRequestIdFromOptimisticEdgeId,
+  clientRequestIdFromOptimisticNodeId,
+  createCanvasOpId,
+  DEFAULT_EDGE_OPTIONS,
+  EDGE_INTERSECTION_HIGHLIGHT_STYLE,
+  getConnectEndClientPoint,
+  getMiniMapNodeColor,
+  getMiniMapNodeStrokeColor,
+  getNodeCenterClientPosition,
+  getIntersectedEdgeId,
+  getPendingMovePinsFromLocalOps,
+  hasHandleKey,
+  inferPendingConnectionNodeHandoff,
+  isEditableKeyboardTarget,
+  isOptimisticEdgeId,
+  isOptimisticNodeId,
+  mergeNodesPreservingLocalState,
+  normalizeHandle,
+  OPTIMISTIC_EDGE_PREFIX,
+  OPTIMISTIC_NODE_PREFIX,
+  positionsMatchPin,
+  type PendingEdgeSplit,
+  rfEdgeConnectionSignature,
+  withResolvedCompareData,
+} from "./canvas-helpers";
+import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
+import { useGenerationFailureWarnings } from "./canvas-generation-failures";
+import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
+import { getImageDimensions } from "./canvas-media-utils";
+import { useCanvasReconnectHandlers } from "./canvas-reconnect";
+import { useCanvasScissors } from "./canvas-scissors";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
-}
-
-const OPTIMISTIC_NODE_PREFIX = "optimistic_";
-const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
-
-function createCanvasOpId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `op_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-}
-
-/** @xyflow/react default minZoom ist 0.5 — dreimal weiter raus für große Boards. */
-const CANVAS_MIN_ZOOM = 0.5 / 3;
-
-function isOptimisticNodeId(id: string): boolean {
-  return id.startsWith(OPTIMISTIC_NODE_PREFIX);
-}
-
-function isOptimisticEdgeId(id: string): boolean {
-  return id.startsWith(OPTIMISTIC_EDGE_PREFIX);
-}
-
-function clientRequestIdFromOptimisticNodeId(id: string): string | null {
-  if (!isOptimisticNodeId(id)) return null;
-  const suffix = id.slice(OPTIMISTIC_NODE_PREFIX.length);
-  return suffix.length > 0 ? suffix : null;
-}
-
-/** Entspricht `optimistic_edge_${clientRequestId}` im createNodeWithEdge*-Optimistic-Update. */
-function clientRequestIdFromOptimisticEdgeId(id: string): string | null {
-  if (!isOptimisticEdgeId(id)) return null;
-  const suffix = id.slice(OPTIMISTIC_EDGE_PREFIX.length);
-  return suffix.length > 0 ? suffix : null;
-}
-
-/** Gleiche Handle-Normalisierung wie bei convexEdgeToRF — für Signatur-Vergleich/Carry-over. */
-function sanitizeHandleForEdgeSignature(
-  h: string | null | undefined,
-): string {
-  if (h === undefined || h === null || h === "null") return "";
-  return h;
-}
-
-function rfEdgeConnectionSignature(edge: RFEdge): string {
-  return `${edge.source}|${edge.target}|${sanitizeHandleForEdgeSignature(edge.sourceHandle)}|${sanitizeHandleForEdgeSignature(edge.targetHandle)}`;
-}
-
-function getNodeDeleteBlockReason(
-  node: RFNode,
-): CanvasNodeDeleteBlockReason | null {
-  if (isOptimisticNodeId(node.id)) return "optimistic";
-  return null;
-}
-
-function getConnectEndClientPoint(
-  event: MouseEvent | TouchEvent,
-): { x: number; y: number } | null {
-  if ("clientX" in event && typeof event.clientX === "number") {
-    return { x: event.clientX, y: event.clientY };
-  }
-  const t = (event as TouchEvent).changedTouches?.[0];
-  if (t) return { x: t.clientX, y: t.clientY };
-  return null;
-}
-
-/** Kanten-Split nach Drag: wartet auf echte Node-ID, wenn der Knoten noch optimistisch ist. */
-type PendingEdgeSplit = {
-  intersectedEdgeId: Id<"edges">;
-  sourceNodeId: Id<"nodes">;
-  targetNodeId: Id<"nodes">;
-  intersectedSourceHandle?: string;
-  intersectedTargetHandle?: string;
-  middleSourceHandle?: string;
-  middleTargetHandle?: string;
-  positionX: number;
-  positionY: number;
-};
-
-function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
-  const persistedEdges = edges.filter((edge) => edge.className !== "temp");
-  let hasNodeUpdates = false;
-
-  const nextNodes = nodes.map((node) => {
-    if (node.type !== "compare") return node;
-
-    const incoming = persistedEdges.filter((edge) => edge.target === node.id);
-    let leftUrl: string | undefined;
-    let rightUrl: string | undefined;
-    let leftLabel: string | undefined;
-    let rightLabel: string | undefined;
-
-    for (const edge of incoming) {
-      const source = nodes.find((candidate) => candidate.id === edge.source);
-      if (!source) continue;
-
-      const srcData = source.data as { url?: string; label?: string };
-
-      if (edge.targetHandle === "left") {
-        leftUrl = srcData.url;
-        leftLabel = srcData.label ?? source.type ?? "Before";
-      } else if (edge.targetHandle === "right") {
-        rightUrl = srcData.url;
-        rightLabel = srcData.label ?? source.type ?? "After";
-      }
-    }
-
-    const current = node.data as {
-      leftUrl?: string;
-      rightUrl?: string;
-      leftLabel?: string;
-      rightLabel?: string;
-    };
-
-    if (
-      current.leftUrl === leftUrl &&
-      current.rightUrl === rightUrl &&
-      current.leftLabel === leftLabel &&
-      current.rightLabel === rightLabel
-    ) {
-      return node;
-    }
-
-    hasNodeUpdates = true;
-
-    return {
-      ...node,
-      data: { ...node.data, leftUrl, rightUrl, leftLabel, rightLabel },
-    };
-  });
-
-  return hasNodeUpdates ? nextNodes : nodes;
-}
-
-function getMiniMapNodeColor(node: RFNode): string {
-  return node.type === "frame" ? "transparent" : "#6366f1";
-}
-
-function getMiniMapNodeStrokeColor(node: RFNode): string {
-  return node.type === "frame" ? "transparent" : "#4f46e5";
-}
-
-const DEFAULT_EDGE_OPTIONS: DefaultEdgeOptions = {
-  interactionWidth: 75,
-};
-
-const EDGE_INTERSECTION_HIGHLIGHT_STYLE: NonNullable<RFEdge["style"]> = {
-  stroke: "var(--xy-edge-stroke)",
-  strokeWidth: 2,
-};
-
-const GENERATION_FAILURE_WINDOW_MS = 5 * 60 * 1000;
-const GENERATION_FAILURE_THRESHOLD = 3;
-
-function getEdgeIdFromInteractionElement(element: Element): string | null {
-  const edgeContainer = element.closest(".react-flow__edge");
-  if (!edgeContainer) return null;
-
-  const dataId = edgeContainer.getAttribute("data-id");
-  if (dataId) return dataId;
-
-  const domId = edgeContainer.getAttribute("id");
-  if (domId?.startsWith("reactflow__edge-")) {
-    return domId.slice("reactflow__edge-".length);
-  }
-
-  return null;
-}
-
-function getNodeCenterClientPosition(nodeId: string): { x: number; y: number } | null {
-  const nodeElement = Array.from(
-    document.querySelectorAll<HTMLElement>(".react-flow__node"),
-  ).find((element) => element.dataset.id === nodeId);
-
-  if (!nodeElement) return null;
-
-  const rect = nodeElement.getBoundingClientRect();
-  return {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2,
-  };
-}
-
-function getIntersectedEdgeId(point: { x: number; y: number }): string | null {
-  const interactionElement = document
-    .elementsFromPoint(point.x, point.y)
-    .find((element) => element.classList.contains("react-flow__edge-interaction"));
-
-  if (!interactionElement) {
-    return null;
-  }
-
-  return getEdgeIdFromInteractionElement(interactionElement);
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return target.closest("input, textarea, select, [contenteditable=true]") !== null;
-}
-
-function isEdgeCuttable(edge: RFEdge): boolean {
-  if (edge.className === "temp") return false;
-  if (isOptimisticEdgeId(edge.id)) return false;
-  return true;
-}
-
-/** Abstand in px zwischen Abtastpunkten beim Durchschneiden (kleiner = zuverlässiger bei schnellen Bewegungen). */
-const SCISSORS_SEGMENT_SAMPLE_STEP_PX = 4;
-
-function addCuttableEdgeIdAtClientPoint(
-  clientX: number,
-  clientY: number,
-  edgesList: RFEdge[],
-  strokeIds: Set<string>,
-): void {
-  const id = getIntersectedEdgeId({ x: clientX, y: clientY });
-  if (!id) return;
-  const found = edgesList.find((e) => e.id === id);
-  if (found && isEdgeCuttable(found)) strokeIds.add(id);
-}
-
-/** Alle Kanten erfassen, deren Hit-Zone die Strecke von (x0,y0) nach (x1,y1) schneidet. */
-function collectCuttableEdgesAlongScreenSegment(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  edgesList: RFEdge[],
-  strokeIds: Set<string>,
-): void {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const dist = Math.hypot(dx, dy);
-  if (dist < 0.5) {
-    addCuttableEdgeIdAtClientPoint(x1, y1, edgesList, strokeIds);
-    return;
-  }
-  const steps = Math.max(1, Math.ceil(dist / SCISSORS_SEGMENT_SAMPLE_STEP_PX));
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    addCuttableEdgeIdAtClientPoint(
-      x0 + dx * t,
-      y0 + dy * t,
-      edgesList,
-      strokeIds,
-    );
-  }
-}
-
-function hasHandleKey(
-  handles: { source?: string; target?: string } | undefined,
-  key: "source" | "target",
-): boolean {
-  if (!handles) return false;
-  return Object.prototype.hasOwnProperty.call(handles, key);
-}
-
-function normalizeHandle(handle: string | null | undefined): string | undefined {
-  return handle ?? undefined;
-}
-
-function shallowEqualRecord(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-
-  if (aKeys.length !== bKeys.length) return false;
-
-  for (const key of aKeys) {
-    if (a[key] !== b[key]) return false;
-  }
-
-  return true;
-}
-
-/** Solange der Server noch die Erstellposition liefert, lokale Zielposition nach Pending-Move halten. */
-const POSITION_PIN_EPS = 0.5;
-
-function positionsMatchPin(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): boolean {
-  return (
-    Math.abs(a.x - b.x) <= POSITION_PIN_EPS &&
-    Math.abs(a.y - b.y) <= POSITION_PIN_EPS
-  );
-}
-
-function applyPinnedNodePositions(
-  nodes: RFNode[],
-  pinned: Map<string, { x: number; y: number }>,
-): RFNode[] {
-  return nodes.map((node) => {
-    const pin = pinned.get(node.id);
-    if (!pin) return node;
-    if (positionsMatchPin(node.position, pin)) {
-      pinned.delete(node.id);
-      return node;
-    }
-    return { ...node, position: { x: pin.x, y: pin.y } };
-  });
-}
-
-function applyPinnedNodePositionsReadOnly(
-  nodes: RFNode[],
-  pinned: ReadonlyMap<string, { x: number; y: number }>,
-): RFNode[] {
-  return nodes.map((node) => {
-    const pin = pinned.get(node.id);
-    if (!pin) return node;
-    if (positionsMatchPin(node.position, pin)) return node;
-    return { ...node, position: { x: pin.x, y: pin.y } };
-  });
-}
-
-function inferPendingConnectionNodeHandoff(
-  previousNodes: RFNode[],
-  incomingConvexNodes: Doc<"nodes">[],
-  pendingConnectionCreates: ReadonlySet<string>,
-  resolvedRealIdByClientRequest: Map<string, Id<"nodes">>,
-): void {
-  const unresolvedClientRequestIds: string[] = [];
-  for (const clientRequestId of pendingConnectionCreates) {
-    if (resolvedRealIdByClientRequest.has(clientRequestId)) continue;
-    const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
-    const optimisticNodePresent = previousNodes.some(
-      (node) => node.id === optimisticNodeId,
-    );
-    if (optimisticNodePresent) {
-      unresolvedClientRequestIds.push(clientRequestId);
-    }
-  }
-  if (unresolvedClientRequestIds.length !== 1) return;
-
-  const previousIds = new Set(previousNodes.map((node) => node.id));
-  const newlyAppearedIncomingRealNodeIds = incomingConvexNodes
-    .map((node) => node._id as string)
-    .filter((id) => !isOptimisticNodeId(id))
-    .filter((id) => !previousIds.has(id));
-
-  if (newlyAppearedIncomingRealNodeIds.length !== 1) return;
-
-  const inferredClientRequestId = unresolvedClientRequestIds[0]!;
-  const inferredRealId = newlyAppearedIncomingRealNodeIds[0] as Id<"nodes">;
-  resolvedRealIdByClientRequest.set(inferredClientRequestId, inferredRealId);
-}
-
-function isMoveNodeOpPayload(
-  payload: unknown,
-): payload is { nodeId: Id<"nodes">; positionX: number; positionY: number } {
-  if (typeof payload !== "object" || payload === null) return false;
-  const record = payload as Record<string, unknown>;
-  return (
-    typeof record.nodeId === "string" &&
-    typeof record.positionX === "number" &&
-    typeof record.positionY === "number"
-  );
-}
-
-function isBatchMoveNodesOpPayload(
-  payload: unknown,
-): payload is {
-  moves: { nodeId: Id<"nodes">; positionX: number; positionY: number }[];
-} {
-  if (typeof payload !== "object" || payload === null) return false;
-  const record = payload as Record<string, unknown>;
-  if (!Array.isArray(record.moves)) return false;
-  return record.moves.every(isMoveNodeOpPayload);
-}
-
-function getPendingMovePinsFromLocalOps(
-  canvasId: string,
-): Map<string, { x: number; y: number }> {
-  const pins = new Map<string, { x: number; y: number }>();
-  for (const op of readCanvasOps(canvasId)) {
-    if (op.type === "moveNode" && isMoveNodeOpPayload(op.payload)) {
-      pins.set(op.payload.nodeId as string, {
-        x: op.payload.positionX,
-        y: op.payload.positionY,
-      });
-      continue;
-    }
-    if (op.type === "batchMoveNodes" && isBatchMoveNodesOpPayload(op.payload)) {
-      for (const move of op.payload.moves) {
-        pins.set(move.nodeId as string, {
-          x: move.positionX,
-          y: move.positionY,
-        });
-      }
-    }
-  }
-  return pins;
-}
-
-function mergeNodesPreservingLocalState(
-  previousNodes: RFNode[],
-  incomingNodes: RFNode[],
-  realIdByClientRequest?: ReadonlyMap<string, Id<"nodes">>,
-  /** Nach `onNodesChange` (position) bis `onNodeDragStop`: lokalen Stand gegen veralteten Convex-Snapshot bevorzugen. */
-  preferLocalPositionForNodeIds?: ReadonlySet<string>,
-): RFNode[] {
-  const previousById = new Map(previousNodes.map((node) => [node.id, node]));
-
-  const optimisticPredecessorByRealId = new Map<string, RFNode>();
-  if (realIdByClientRequest && realIdByClientRequest.size > 0) {
-    for (const [clientRequestId, realId] of realIdByClientRequest) {
-      const optId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
-      const pred = previousById.get(optId);
-      if (pred) {
-        optimisticPredecessorByRealId.set(realId as string, pred);
-      }
-    }
-  }
-
-  return incomingNodes.map((incomingNode) => {
-    const handoffPrev = optimisticPredecessorByRealId.get(incomingNode.id);
-    if (handoffPrev) {
-      return {
-        ...incomingNode,
-        position: handoffPrev.position,
-        selected: handoffPrev.selected,
-        dragging: handoffPrev.dragging,
-      };
-    }
-
-    const previousNode = previousById.get(incomingNode.id);
-    if (!previousNode) {
-      return incomingNode;
-    }
-
-    const previousData = previousNode.data as Record<string, unknown>;
-    const incomingData = incomingNode.data as Record<string, unknown>;
-    const previousWidth = previousNode.style?.width;
-    const previousHeight = previousNode.style?.height;
-    const incomingWidth = incomingNode.style?.width;
-    const incomingHeight = incomingNode.style?.height;
-
-    const isStructurallyEqual =
-      previousNode.type === incomingNode.type &&
-      previousNode.parentId === incomingNode.parentId &&
-      previousNode.zIndex === incomingNode.zIndex &&
-      previousNode.position.x === incomingNode.position.x &&
-      previousNode.position.y === incomingNode.position.y &&
-      previousWidth === incomingWidth &&
-      previousHeight === incomingHeight &&
-      shallowEqualRecord(previousData, incomingData);
-
-    if (isStructurallyEqual) {
-      return previousNode;
-    }
-
-    if (incomingNode.type === "prompt") {
-      const prevW = typeof previousNode.style?.width === "number" ? previousNode.style.width : null;
-      const prevH = typeof previousNode.style?.height === "number" ? previousNode.style.height : null;
-      const inW = typeof incomingNode.style?.width === "number" ? incomingNode.style.width : null;
-      const inH = typeof incomingNode.style?.height === "number" ? incomingNode.style.height : null;
-      void prevW;
-      void prevH;
-      void inW;
-      void inH;
-    }
-
-    const previousResizing =
-      typeof (previousNode as { resizing?: boolean }).resizing === "boolean"
-        ? (previousNode as { resizing?: boolean }).resizing
-        : false;
-    const preferLocalPosition =
-      Boolean(previousNode.dragging) ||
-      (preferLocalPositionForNodeIds?.has(incomingNode.id) ?? false);
-    const isMediaNode =
-      incomingNode.type === "asset" ||
-      incomingNode.type === "image" ||
-      incomingNode.type === "ai-image";
-    const shouldPreserveInteractivePosition =
-      isMediaNode && (Boolean(previousNode.selected) || Boolean(previousNode.dragging) || previousResizing);
-    const shouldPreserveInteractiveSize =
-      isMediaNode && (Boolean(previousNode.dragging) || previousResizing);
-
-    const previousStyleWidth = typeof previousNode.style?.width === "number" ? previousNode.style.width : null;
-    const previousStyleHeight = typeof previousNode.style?.height === "number" ? previousNode.style.height : null;
-    const incomingStyleWidth = typeof incomingNode.style?.width === "number" ? incomingNode.style.width : null;
-    const incomingStyleHeight = typeof incomingNode.style?.height === "number" ? incomingNode.style.height : null;
-    const isAssetSeedSize = previousStyleWidth === 260 && previousStyleHeight === 240;
-    const isImageSeedSize = previousStyleWidth === 280 && previousStyleHeight === 200;
-    const canApplySeedSizeCorrection =
-      isMediaNode &&
-      Boolean(previousNode.selected) &&
-      !previousNode.dragging &&
-      !previousResizing &&
-      ((incomingNode.type === "asset" && isAssetSeedSize) ||
-        (incomingNode.type === "image" && isImageSeedSize)) &&
-      incomingStyleWidth !== null &&
-      incomingStyleHeight !== null &&
-      (incomingStyleWidth !== previousStyleWidth || incomingStyleHeight !== previousStyleHeight);
-
-    if (shouldPreserveInteractivePosition) {
-      const nextStyle = shouldPreserveInteractiveSize || !canApplySeedSizeCorrection
-        ? previousNode.style
-        : incomingNode.style;
-      return {
-        ...previousNode,
-        ...incomingNode,
-        position: previousNode.position,
-        style: nextStyle,
-        selected: previousNode.selected,
-        dragging: previousNode.dragging,
-      };
-    }
-
-    return {
-      ...previousNode,
-      ...incomingNode,
-      position: preferLocalPosition ? previousNode.position : incomingNode.position,
-      selected: previousNode.selected,
-      dragging: previousNode.dragging,
-    };
-  });
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
@@ -1274,64 +774,35 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
     undefined,
   );
-  const recentGenerationFailureTimestampsRef = useRef<number[]>([]);
-  const previousNodeStatusRef = useRef<Map<string, string | undefined>>(new Map());
-  const hasInitializedGenerationFailureTrackingRef = useRef(false);
+  useGenerationFailureWarnings(convexNodes);
 
-  useEffect(() => {
-    if (!convexNodes) return;
+  const { onEdgeClickScissors, onScissorsFlowPointerDownCapture } = useCanvasScissors({
+    scissorsMode,
+    scissorsModeRef,
+    edgesRef,
+    setScissorsMode,
+    setNavTool,
+    setScissorStrokePreview,
+    runRemoveEdgeMutation,
+  });
 
-    const nextNodeStatusMap = new Map<string, string | undefined>();
-    let detectedGenerationFailures = 0;
+  const { onBeforeDelete, onNodesDelete, onEdgesDelete } = useCanvasDeleteHandlers({
+    canvasId,
+    nodes,
+    edges,
+    deletingNodeIds,
+    setAssetBrowserTargetNodeId,
+    runBatchRemoveNodesMutation,
+    runCreateEdgeMutation,
+    runRemoveEdgeMutation,
+  });
 
-    for (const node of convexNodes) {
-      nextNodeStatusMap.set(node._id, node.status);
-
-      if (node.type !== "ai-image") {
-        continue;
-      }
-
-      const previousStatus = previousNodeStatusRef.current.get(node._id);
-      if (
-        hasInitializedGenerationFailureTrackingRef.current &&
-        node.status === "error" &&
-        previousStatus !== "error"
-      ) {
-        detectedGenerationFailures += 1;
-      }
-    }
-
-    previousNodeStatusRef.current = nextNodeStatusMap;
-
-    if (!hasInitializedGenerationFailureTrackingRef.current) {
-      hasInitializedGenerationFailureTrackingRef.current = true;
-      return;
-    }
-
-    if (detectedGenerationFailures === 0) {
-      return;
-    }
-
-    const now = Date.now();
-    const recentFailures = recentGenerationFailureTimestampsRef.current.filter(
-      (timestamp) => now - timestamp <= GENERATION_FAILURE_WINDOW_MS,
-    );
-
-    for (let index = 0; index < detectedGenerationFailures; index += 1) {
-      recentFailures.push(now);
-    }
-
-    if (recentFailures.length >= GENERATION_FAILURE_THRESHOLD) {
-      toast.warning(
-        msg.ai.openrouterIssues.title,
-        msg.ai.openrouterIssues.desc,
-      );
-      recentGenerationFailureTimestampsRef.current = [];
-      return;
-    }
-
-    recentGenerationFailureTimestampsRef.current = recentFailures;
-  }, [convexNodes]);
+  const { onReconnectStart, onReconnect, onReconnectEnd } = useCanvasReconnectHandlers({
+    edgeReconnectSuccessful,
+    isReconnectDragActiveRef,
+    setEdges,
+    runRemoveEdgeMutation,
+  });
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
   /**
@@ -1604,204 +1075,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           }
         }
 
-        const adjustedChanges = changes
-          .map((change) => {
-          if (change.type !== "dimensions" || !change.dimensions) {
-            return change;
-          }
-
-          const node = nds.find((candidate) => candidate.id === change.id);
-          if (!node) {
-            return change;
-          }
-
-          const isActiveResize =
-            change.resizing === true || change.resizing === false;
-
-          if (node.type === "asset") {
-            const nodeResizing = Boolean(
-              (node as { resizing?: boolean }).resizing,
-            );
-            const hasResizingTrueInBatch = changes.some(
-              (c) =>
-                c.type === "dimensions" &&
-                "id" in c &&
-                c.id === change.id &&
-                c.resizing === true,
-            );
-            if (
-              !isActiveResize &&
-              (nodeResizing || hasResizingTrueInBatch)
-            ) {
-              return null;
-            }
-            if (!isActiveResize) {
-              return change;
-            }
-
-            const nodeData = node.data as {
-              intrinsicWidth?: number;
-              intrinsicHeight?: number;
-              orientation?: string;
-            };
-            const hasIntrinsicRatioInput =
-              typeof nodeData.intrinsicWidth === "number" &&
-              nodeData.intrinsicWidth > 0 &&
-              typeof nodeData.intrinsicHeight === "number" &&
-              nodeData.intrinsicHeight > 0;
-            if (!hasIntrinsicRatioInput) {
-              return change;
-            }
-
-            const targetRatio = resolveMediaAspectRatio(
-              nodeData.intrinsicWidth,
-              nodeData.intrinsicHeight,
-              nodeData.orientation,
-            );
-
-            if (!Number.isFinite(targetRatio) || targetRatio <= 0) {
-              return change;
-            }
-
-            const previousWidth =
-              typeof node.style?.width === "number"
-                ? node.style.width
-                : change.dimensions.width;
-            const previousHeight =
-              typeof node.style?.height === "number"
-                ? node.style.height
-                : change.dimensions.height;
-
-            const widthDelta = Math.abs(change.dimensions.width - previousWidth);
-            const heightDelta = Math.abs(change.dimensions.height - previousHeight);
-
-            let constrainedWidth = change.dimensions.width;
-            let constrainedHeight = change.dimensions.height;
-
-            // Axis with larger delta drives resize; the other axis is ratio-locked.
-            // Chrome must be subtracted before ratio math, then re-added.
-            const assetChromeHeight = 88;
-            const assetMinPreviewHeight = 150;
-            const assetMinNodeHeight = assetChromeHeight + assetMinPreviewHeight;
-            const assetMinNodeWidth = 200;
-
-            if (heightDelta > widthDelta) {
-              const previewHeight = Math.max(1, constrainedHeight - assetChromeHeight);
-              constrainedWidth = previewHeight * targetRatio;
-              constrainedHeight = assetChromeHeight + previewHeight;
-            } else {
-              const previewHeight = constrainedWidth / targetRatio;
-              constrainedHeight = assetChromeHeight + previewHeight;
-            }
-
-            const minWidthFromPreview = assetMinPreviewHeight * targetRatio;
-            const minimumAllowedWidth = Math.max(assetMinNodeWidth, minWidthFromPreview);
-            const minPreviewFromWidth = minimumAllowedWidth / targetRatio;
-            const minimumAllowedHeight = Math.max(
-              assetMinNodeHeight,
-              assetChromeHeight + minPreviewFromWidth,
-            );
-
-            let enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
-            let enforcedHeight = assetChromeHeight + enforcedWidth / targetRatio;
-            if (enforcedHeight < minimumAllowedHeight) {
-              enforcedHeight = minimumAllowedHeight;
-              enforcedWidth = (enforcedHeight - assetChromeHeight) * targetRatio;
-            }
-            enforcedWidth = Math.max(enforcedWidth, minimumAllowedWidth);
-            enforcedHeight = assetChromeHeight + enforcedWidth / targetRatio;
-
-            return {
-              ...change,
-              dimensions: {
-                ...change.dimensions,
-                width: enforcedWidth,
-                height: enforcedHeight,
-              },
-            };
-          }
-
-          if (node.type === "ai-image") {
-            if (!isActiveResize) {
-              return change;
-            }
-
-            const nodeData = node.data as { aspectRatio?: string };
-            const arLabel =
-              typeof nodeData.aspectRatio === "string" && nodeData.aspectRatio.trim()
-                ? nodeData.aspectRatio.trim()
-                : DEFAULT_ASPECT_RATIO;
-
-            let arW: number;
-            let arH: number;
-            try {
-              const parsed = parseAspectRatioString(arLabel);
-              arW = parsed.w;
-              arH = parsed.h;
-            } catch {
-              return change;
-            }
-
-            const chrome = AI_IMAGE_NODE_HEADER_PX + AI_IMAGE_NODE_FOOTER_PX;
-            const hPerW = arH / arW;
-
-            const previousWidth =
-              typeof node.style?.width === "number"
-                ? node.style.width
-                : change.dimensions.width;
-            const previousHeight =
-              typeof node.style?.height === "number"
-                ? node.style.height
-                : change.dimensions.height;
-
-            const widthDelta = Math.abs(change.dimensions.width - previousWidth);
-            const heightDelta = Math.abs(change.dimensions.height - previousHeight);
-
-            let constrainedWidth = change.dimensions.width;
-            let constrainedHeight = change.dimensions.height;
-
-            if (heightDelta > widthDelta) {
-              const viewportH = Math.max(1, constrainedHeight - chrome);
-              constrainedWidth = viewportH * (arW / arH);
-              constrainedHeight = chrome + viewportH;
-            } else {
-              constrainedHeight = chrome + constrainedWidth * hPerW;
-            }
-
-            const aiMinViewport = 120;
-            const aiMinOuterHeight = chrome + aiMinViewport;
-            const aiMinOuterWidthBase = 200;
-            const minimumAllowedWidth = Math.max(
-              aiMinOuterWidthBase,
-              aiMinViewport * (arW / arH),
-            );
-            const minimumAllowedHeight = Math.max(
-              aiMinOuterHeight,
-              chrome + minimumAllowedWidth * hPerW,
-            );
-
-            let enforcedWidth = Math.max(constrainedWidth, minimumAllowedWidth);
-            let enforcedHeight = chrome + enforcedWidth * hPerW;
-            if (enforcedHeight < minimumAllowedHeight) {
-              enforcedHeight = minimumAllowedHeight;
-              enforcedWidth = (enforcedHeight - chrome) * (arW / arH);
-            }
-            enforcedWidth = Math.max(enforcedWidth, minimumAllowedWidth);
-            enforcedHeight = chrome + enforcedWidth * hPerW;
-
-            return {
-              ...change,
-              dimensions: {
-                ...change.dimensions,
-                width: enforcedWidth,
-                height: enforcedHeight,
-              },
-            };
-          }
-
-          return change;
-          })
-          .filter((change): change is NodeChange => change !== null);
+        const adjustedChanges = adjustNodeDimensionChanges(changes, nds);
 
         const nextNodes = applyNodeChanges(adjustedChanges, nds);
 
@@ -1840,52 +1114,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (process.env.NODE_ENV === "production") return;
     console.error("[ReactFlow error]", { canvasId, id, error });
   }, [canvasId]);
-
-  // ─── Delete Edge on Drop ──────────────────────────────────────
-  const onReconnectStart = useCallback(() => {
-    edgeReconnectSuccessful.current = false;
-    isReconnectDragActiveRef.current = true;
-  }, []);
-
-  const onReconnect = useCallback(
-    (oldEdge: RFEdge, newConnection: Connection) => {
-      edgeReconnectSuccessful.current = true;
-      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-    },
-    [],
-  );
-
-  const onReconnectEnd = useCallback(
-    (_: MouseEvent | TouchEvent, edge: RFEdge) => {
-      try {
-        if (!edgeReconnectSuccessful.current) {
-          setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-          if (edge.className === "temp") {
-            edgeReconnectSuccessful.current = true;
-            return;
-          }
-
-          if (isOptimisticEdgeId(edge.id)) {
-            return;
-          }
-
-          void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
-            console.error("[Canvas edge remove failed] reconnect end", {
-              edgeId: edge.id,
-              edgeClassName: edge.className ?? null,
-              source: edge.source,
-              target: edge.target,
-              error: String(error),
-            });
-          });
-        }
-        edgeReconnectSuccessful.current = true;
-      } finally {
-        isReconnectDragActiveRef.current = false;
-      }
-    },
-    [runRemoveEdgeMutation],
-  );
 
   const setHighlightedIntersectionEdge = useCallback((edgeId: string | null) => {
     const previousHighlightedEdgeId = highlightedEdgeRef.current;
@@ -2308,167 +1536,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ],
   );
 
-  const onBeforeDelete = useCallback(
-    async ({
-      nodes: matchingNodes,
-      edges: matchingEdges,
-    }: {
-      nodes: RFNode[];
-      edges: RFEdge[];
-    }) => {
-      if (matchingNodes.length === 0) {
-        return true;
-      }
-
-      const allowed: RFNode[] = [];
-      const blocked: RFNode[] = [];
-      const blockedReasons = new Set<CanvasNodeDeleteBlockReason>();
-      for (const node of matchingNodes) {
-        const reason = getNodeDeleteBlockReason(node);
-        if (reason !== null) {
-          blocked.push(node);
-          blockedReasons.add(reason);
-        } else {
-          allowed.push(node);
-        }
-      }
-
-      if (allowed.length === 0) {
-        const { title, desc } = msg.canvas.nodeDeleteBlockedExplain(blockedReasons);
-        toast.warning(title, desc);
-        return false;
-      }
-
-      if (blocked.length > 0) {
-        const { title, desc } = msg.canvas.nodeDeleteBlockedPartial(
-          blocked.length,
-          blockedReasons,
-        );
-        toast.warning(title, desc);
-        return {
-          nodes: allowed,
-          edges: getConnectedEdges(allowed, matchingEdges),
-        };
-      }
-
-      return true;
-    },
-    [],
-  );
-
-  // ─── Node löschen → Convex ────────────────────────────────────
-  const onNodesDelete = useCallback(
-    (deletedNodes: RFNode[]) => {
-      const count = deletedNodes.length;
-      if (count === 0) return;
-
-      // Optimistic: Node-IDs sofort als "wird gelöscht" markieren
-      const idsToDelete = deletedNodes.map((n) => n.id);
-      for (const id of idsToDelete) {
-        deletingNodeIds.current.add(id);
-      }
-
-      const removedTargetSet = new Set(idsToDelete);
-      setAssetBrowserTargetNodeId((cur) =>
-        cur !== null && removedTargetSet.has(cur) ? null : cur,
-      );
-
-      const bridgeCreates = computeBridgeCreatesForDeletedNodes(
-        deletedNodes,
-        nodes,
-        edges,
-      );
-      const edgePromises = bridgeCreates.map((b) =>
-        runCreateEdgeMutation({
-          canvasId,
-          sourceNodeId: b.sourceNodeId,
-          targetNodeId: b.targetNodeId,
-          sourceHandle: b.sourceHandle,
-          targetHandle: b.targetHandle,
-        }),
-      );
-
-      // Batch-Delete + Auto-Reconnect parallel, dann deletingNodeIds aufräumen
-      void Promise.all([
-        runBatchRemoveNodesMutation({
-          nodeIds: idsToDelete as Id<"nodes">[],
-        }),
-        ...edgePromises,
-      ])
-        .then(() => {
-          for (const id of idsToDelete) {
-            deletingNodeIds.current.delete(id);
-          }
-        })
-        .catch((error: unknown) => {
-          console.error("[Canvas] batch remove failed", error);
-          // Bei Fehler: deletingNodeIds aufräumen, damit Nodes wieder erscheinen
-          for (const id of idsToDelete) {
-            deletingNodeIds.current.delete(id);
-          }
-        });
-
-      if (count > 0) {
-        const { title } = msg.canvas.nodesRemoved(count);
-        toast.info(title);
-      }
-    },
-    [nodes, edges, runBatchRemoveNodesMutation, runCreateEdgeMutation, canvasId],
-  );
-
-  // ─── Edge löschen → Convex ────────────────────────────────────
-  const onEdgesDelete = useCallback(
-    (deletedEdges: RFEdge[]) => {
-      for (const edge of deletedEdges) {
-        if (edge.className === "temp") {
-          continue;
-        }
-
-        if (isOptimisticEdgeId(edge.id)) {
-          continue;
-        }
-
-        void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
-          console.error("[Canvas edge remove failed] edge delete", {
-            edgeId: edge.id,
-            edgeClassName: edge.className ?? null,
-            source: edge.source,
-            target: edge.target,
-            error: String(error),
-          });
-        });
-      }
-    },
-    [runRemoveEdgeMutation],
-  );
-
-  async function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
-    return new Promise((resolve, reject) => {
-      const objectUrl = URL.createObjectURL(file);
-      const image = new window.Image();
-
-      image.onload = () => {
-        const width = image.naturalWidth;
-        const height = image.naturalHeight;
-        URL.revokeObjectURL(objectUrl);
-
-        if (!width || !height) {
-          reject(new Error("Could not read image dimensions"));
-          return;
-        }
-
-        resolve({ width, height });
-      };
-
-      image.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error("Could not decode image"));
-      };
-
-      image.src = objectUrl;
-    });
-  }
-
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     const hasFiles = event.dataTransfer.types.includes("Files");
@@ -2596,112 +1663,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       });
     },
     [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest, generateUploadUrl],
-  );
-
-  // ─── Scherenmodus (K) — Kante klicken oder mit Maus durchschneiden ─
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && scissorsModeRef.current) {
-        setScissorsMode(false);
-        setNavTool("select");
-        setScissorStrokePreview(null);
-        return;
-      }
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key.length === 1 && e.key.toLowerCase() === "k";
-      if (!k) return;
-      if (isEditableKeyboardTarget(e.target)) return;
-      e.preventDefault();
-      if (scissorsModeRef.current) {
-        setScissorsMode(false);
-        setNavTool("select");
-      } else {
-        setScissorsMode(true);
-        setNavTool("scissor");
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  useEffect(() => {
-    if (!scissorsMode) {
-      setScissorStrokePreview(null);
-    }
-  }, [scissorsMode]);
-
-  const onEdgeClickScissors = useCallback(
-    (_event: ReactMouseEvent, edge: RFEdge) => {
-      if (!scissorsModeRef.current) return;
-      if (!isEdgeCuttable(edge)) return;
-      void runRemoveEdgeMutation({ edgeId: edge.id as Id<"edges"> }).catch((error) => {
-        console.error("[Canvas] scissors edge click remove failed", {
-          edgeId: edge.id,
-          error: String(error),
-        });
-      });
-    },
-    [runRemoveEdgeMutation],
-  );
-
-  const onScissorsFlowPointerDownCapture = useCallback(
-    (event: ReactPointerEvent) => {
-      if (!scissorsModeRef.current) return;
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-
-      const el = event.target as HTMLElement;
-      if (el.closest(".react-flow__node")) return;
-      if (el.closest(".react-flow__controls")) return;
-      if (el.closest(".react-flow__minimap")) return;
-      if (!el.closest(".react-flow__pane")) return;
-      if (getIntersectedEdgeId({ x: event.clientX, y: event.clientY })) {
-        return;
-      }
-
-      const strokeIds = new Set<string>();
-      const points: { x: number; y: number }[] = [
-        { x: event.clientX, y: event.clientY },
-      ];
-      setScissorStrokePreview(points);
-
-      const handleMove = (ev: PointerEvent) => {
-        const prev = points[points.length - 1]!;
-        const nx = ev.clientX;
-        const ny = ev.clientY;
-        collectCuttableEdgesAlongScreenSegment(
-          prev.x,
-          prev.y,
-          nx,
-          ny,
-          edgesRef.current,
-          strokeIds,
-        );
-        points.push({ x: nx, y: ny });
-        setScissorStrokePreview([...points]);
-      };
-
-      const handleUp = () => {
-        window.removeEventListener("pointermove", handleMove);
-        window.removeEventListener("pointerup", handleUp);
-        window.removeEventListener("pointercancel", handleUp);
-        setScissorStrokePreview(null);
-        if (!scissorsModeRef.current) return;
-        for (const id of strokeIds) {
-          void runRemoveEdgeMutation({ edgeId: id as Id<"edges"> }).catch((error) => {
-            console.error("[Canvas] scissors stroke remove failed", {
-              edgeId: id,
-              error: String(error),
-            });
-          });
-        }
-      };
-
-      window.addEventListener("pointermove", handleMove);
-      window.addEventListener("pointerup", handleUp);
-      window.addEventListener("pointercancel", handleUp);
-      event.preventDefault();
-    },
-    [runRemoveEdgeMutation],
   );
 
   // ─── Loading State ────────────────────────────────────────────
