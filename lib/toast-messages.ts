@@ -70,6 +70,8 @@ export const msg = {
     generating: { title: "Bild wird generiert…" },
     generated: { title: "Bild generiert" },
     generatedDesc: (credits: number) => `${credits} Credits verbraucht`,
+    generationQueued: { title: "Generierung gestartet" },
+    generationQueuedDesc: "Das Bild erscheint automatisch, sobald es fertig ist.",
     generationFailed: { title: "Generierung fehlgeschlagen" },
     creditsNotCharged: "Credits wurden nicht abgebucht",
     insufficientCredits: (needed: number, available: number) => ({

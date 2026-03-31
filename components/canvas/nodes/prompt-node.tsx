@@ -249,10 +249,10 @@ export default function PromptNode({
         }),
         {
           loading: msg.ai.generating.title,
-          success: msg.ai.generated.title,
+          success: msg.ai.generationQueued.title,
           error: msg.ai.generationFailed.title,
           description: {
-            success: msg.ai.generatedDesc(creditCost),
+            success: msg.ai.generationQueuedDesc,
             error: msg.ai.creditsNotCharged,
           },
         },

@@ -1,11 +1,12 @@
 import { v } from "convex/values";
-import { action } from "./_generated/server";
+import { action, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import {
   generateImageViaOpenRouter,
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODELS,
 } from "./openrouter";
+import type { Id } from "./_generated/dataModel";
 
 const MAX_IMAGE_RETRIES = 2;
 
@@ -156,6 +157,228 @@ async function generateImageWithAutoRetry(
   throw lastError ?? new Error("Generation failed");
 }
 
+export const markNodeExecuting = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+  },
+  handler: async (ctx, { nodeId }) => {
+    await ctx.db.patch(nodeId, {
+      status: "executing",
+      retryCount: 0,
+      statusMessage: undefined,
+    });
+  },
+});
+
+export const markNodeRetry = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    retryCount: v.number(),
+    maxRetries: v.number(),
+    failureMessage: v.string(),
+  },
+  handler: async (ctx, { nodeId, retryCount, maxRetries, failureMessage }) => {
+    const reason =
+      typeof failureMessage === "string" && failureMessage.trim().length > 0
+        ? failureMessage
+        : "temporärer Fehler";
+    await ctx.db.patch(nodeId, {
+      status: "executing",
+      retryCount,
+      statusMessage: `Retry ${retryCount}/${maxRetries} — ${reason}`,
+    });
+  },
+});
+
+export const finalizeImageSuccess = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    storageId: v.id("_storage"),
+    aspectRatio: v.optional(v.string()),
+    retryCount: v.number(),
+  },
+  handler: async (
+    ctx,
+    { nodeId, prompt, modelId, storageId, aspectRatio, retryCount }
+  ) => {
+    const modelConfig = IMAGE_MODELS[modelId];
+    if (!modelConfig) {
+      throw new Error(`Unknown model: ${modelId}`);
+    }
+
+    const existing = await ctx.db.get(nodeId);
+    if (!existing) {
+      throw new Error("Node not found");
+    }
+
+    const prev =
+      existing.data && typeof existing.data === "object"
+        ? (existing.data as Record<string, unknown>)
+        : {};
+    const creditCost = modelConfig.creditCost;
+    const resolvedAspectRatio =
+      aspectRatio?.trim() ||
+      (typeof prev.aspectRatio === "string" ? prev.aspectRatio : undefined);
+
+    await ctx.db.patch(nodeId, {
+      status: "done",
+      retryCount,
+      statusMessage: undefined,
+      data: {
+        ...prev,
+        storageId,
+        prompt,
+        model: modelId,
+        modelLabel: modelConfig.name,
+        modelTier: modelConfig.tier,
+        generatedAt: Date.now(),
+        creditCost,
+        ...(resolvedAspectRatio ? { aspectRatio: resolvedAspectRatio } : {}),
+      },
+    });
+
+    return { creditCost };
+  },
+});
+
+export const finalizeImageFailure = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    retryCount: v.number(),
+    statusMessage: v.string(),
+  },
+  handler: async (ctx, { nodeId, retryCount, statusMessage }) => {
+    await ctx.db.patch(nodeId, {
+      status: "error",
+      retryCount,
+      statusMessage,
+    });
+  },
+});
+
+export const generateAndStoreImage = internalAction({
+  args: {
+    nodeId: v.id("nodes"),
+    prompt: v.string(),
+    referenceStorageId: v.optional(v.id("_storage")),
+    referenceImageUrl: v.optional(v.string()),
+    model: v.string(),
+    aspectRatio: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENROUTER_API_KEY is not set");
+    }
+
+    const retryCount = 0;
+    let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
+    if (args.referenceStorageId) {
+      referenceImageUrl =
+        (await ctx.storage.getUrl(args.referenceStorageId)) ?? undefined;
+    }
+
+    const result = await generateImageWithAutoRetry(
+      () =>
+        generateImageViaOpenRouter(apiKey, {
+          prompt: args.prompt,
+          referenceImageUrl,
+          model: args.model,
+          aspectRatio: args.aspectRatio,
+        }),
+      async (nextRetryCount, maxRetries, failure) => {
+        retryCount = nextRetryCount;
+        await ctx.runMutation(internal.ai.markNodeRetry, {
+          nodeId: args.nodeId,
+          retryCount: nextRetryCount,
+          maxRetries,
+          failureMessage: failure.message,
+        });
+      }
+    );
+
+    const binaryString = atob(result.imageBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const blob = new Blob([bytes], { type: result.mimeType });
+    const storageId = await ctx.storage.store(blob);
+
+    return {
+      storageId: storageId as Id<"_storage">,
+      retryCount,
+    };
+  },
+});
+
+export const processImageGeneration = internalAction({
+  args: {
+    nodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    referenceStorageId: v.optional(v.id("_storage")),
+    referenceImageUrl: v.optional(v.string()),
+    aspectRatio: v.optional(v.string()),
+    reservationId: v.optional(v.id("creditTransactions")),
+    shouldDecrementConcurrency: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    let retryCount = 0;
+
+    try {
+      const result = await ctx.runAction(internal.ai.generateAndStoreImage, {
+        nodeId: args.nodeId,
+        prompt: args.prompt,
+        referenceStorageId: args.referenceStorageId,
+        referenceImageUrl: args.referenceImageUrl,
+        model: args.modelId,
+        aspectRatio: args.aspectRatio,
+      });
+      retryCount = result.retryCount;
+
+      const { creditCost } = await ctx.runMutation(internal.ai.finalizeImageSuccess, {
+        nodeId: args.nodeId,
+        prompt: args.prompt,
+        modelId: args.modelId,
+        storageId: result.storageId,
+        aspectRatio: args.aspectRatio,
+        retryCount,
+      });
+
+      if (args.reservationId) {
+        await ctx.runMutation(internal.credits.commitInternal, {
+          transactionId: args.reservationId,
+          actualCost: creditCost,
+        });
+      }
+    } catch (error) {
+      if (args.reservationId) {
+        try {
+          await ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId: args.reservationId,
+          });
+        } catch {
+          // Keep node status updates best-effort even if credit release fails.
+        }
+      }
+
+      await ctx.runMutation(internal.ai.finalizeImageFailure, {
+        nodeId: args.nodeId,
+        retryCount,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+    } finally {
+      if (args.shouldDecrementConcurrency) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {});
+      }
+    }
+  },
+});
+
 export const generateImage = action({
   args: {
     canvasId: v.id("canvases"),
@@ -167,14 +390,8 @@ export const generateImage = action({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Auth: über requireAuth in runMutation — kein verschachteltes getCurrentUser (ConvexError → generische Client-Fehler).
     const internalCreditsEnabled =
       process.env.INTERNAL_CREDITS_ENABLED === "true";
-
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY is not set");
-    }
 
     const modelId = args.model ?? DEFAULT_IMAGE_MODEL;
     const modelConfig = IMAGE_MODELS[modelId];
@@ -182,10 +399,10 @@ export const generateImage = action({
       throw new Error(`Unknown model: ${modelId}`);
     }
 
-    // Abuse-Check vor allem anderen — immer, unabhängig von Credits
     await ctx.runMutation(internal.credits.checkAbuseLimits, {});
 
-    const reservationId = internalCreditsEnabled
+    let usageIncremented = false;
+    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
       ? await ctx.runMutation(api.credits.reserve, {
           estimatedCost: modelConfig.creditCost,
           description: `Bildgenerierung — ${modelConfig.name}`,
@@ -195,114 +412,51 @@ export const generateImage = action({
         })
       : null;
 
-    // Usage-Tracking wenn Credits deaktiviert (reserve übernimmt das bei aktivierten Credits)
     if (!internalCreditsEnabled) {
       await ctx.runMutation(internal.credits.incrementUsage, {});
+      usageIncremented = true;
     }
 
-    let retryCount = 0;
+    const retryCount = 0;
+    let backgroundJobScheduled = false;
 
     try {
-      // Status auf "executing" setzen — im try-Block damit Fehler den catch erreichen
-      await ctx.runMutation(api.nodes.updateStatus, {
+      await ctx.runMutation(internal.ai.markNodeExecuting, {
         nodeId: args.nodeId,
-        status: "executing",
-        retryCount: 0,
       });
 
-      let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
-      if (args.referenceStorageId) {
-        referenceImageUrl =
-          (await ctx.storage.getUrl(args.referenceStorageId)) ?? undefined;
-      }
-
-      const result = await generateImageWithAutoRetry(
-        () =>
-          generateImageViaOpenRouter(apiKey, {
-            prompt: args.prompt,
-            referenceImageUrl,
-            model: modelId,
-            aspectRatio: args.aspectRatio,
-          }),
-        async (nextRetryCount, maxRetries, failure) => {
-          retryCount = nextRetryCount;
-          const reason =
-            typeof failure.message === "string"
-              ? failure.message
-              : "temporärer Fehler";
-          await ctx.runMutation(api.nodes.updateStatus, {
-            nodeId: args.nodeId,
-            status: "executing",
-            retryCount: nextRetryCount,
-            statusMessage: `Retry ${nextRetryCount}/${maxRetries} — ${reason}`,
-          });
-        }
-      );
-
-      const binaryString = atob(result.imageBase64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      const blob = new Blob([bytes], { type: result.mimeType });
-      const storageId = await ctx.storage.store(blob);
-
-      const existing = await ctx.runQuery(api.nodes.get, { nodeId: args.nodeId });
-      if (!existing) throw new Error("Node not found");
-      const prev = (existing.data ?? {}) as Record<string, unknown>;
-      const creditCost = modelConfig.creditCost;
-
-      const aspectRatio =
-        args.aspectRatio?.trim() ||
-        (typeof prev.aspectRatio === "string" ? prev.aspectRatio : undefined);
-
-      await ctx.runMutation(api.nodes.updateData, {
+      await ctx.scheduler.runAfter(0, internal.ai.processImageGeneration, {
         nodeId: args.nodeId,
-        data: {
-          ...prev,
-          storageId,
-          prompt: args.prompt,
-          model: modelId,
-          modelLabel: modelConfig.name,
-          modelTier: modelConfig.tier,
-          generatedAt: Date.now(),
-          creditCost,
-          ...(aspectRatio ? { aspectRatio } : {}),
-        },
+        prompt: args.prompt,
+        modelId,
+        referenceStorageId: args.referenceStorageId,
+        referenceImageUrl: args.referenceImageUrl,
+        aspectRatio: args.aspectRatio,
+        reservationId: reservationId ?? undefined,
+        shouldDecrementConcurrency: usageIncremented,
       });
-
-      await ctx.runMutation(api.nodes.updateStatus, {
-        nodeId: args.nodeId,
-        status: "done",
-        retryCount,
-      });
-
-      if (reservationId) {
-        await ctx.runMutation(api.credits.commit, {
-          transactionId: reservationId,
-          actualCost: creditCost,
-        });
-      }
+      backgroundJobScheduled = true;
+      return { queued: true as const, nodeId: args.nodeId };
     } catch (error) {
       if (reservationId) {
-        await ctx.runMutation(api.credits.release, {
-          transactionId: reservationId,
-        });
+        try {
+          await ctx.runMutation(api.credits.release, {
+            transactionId: reservationId,
+          });
+        } catch {
+          // Prefer returning a clear node error over masking with cleanup failures.
+        }
       }
 
-      await ctx.runMutation(api.nodes.updateStatus, {
+      await ctx.runMutation(internal.ai.finalizeImageFailure, {
         nodeId: args.nodeId,
-        status: "error",
         retryCount,
         statusMessage: formatTerminalStatusMessage(error),
       });
 
       throw error;
     } finally {
-      // Concurrency freigeben wenn Credits deaktiviert
-      // (commit/release übernehmen das bei aktivierten Credits)
-      if (!internalCreditsEnabled) {
+      if (usageIncremented && !backgroundJobScheduled) {
         await ctx.runMutation(internal.credits.decrementConcurrency, {});
       }
     }

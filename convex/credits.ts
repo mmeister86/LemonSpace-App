@@ -394,21 +394,24 @@ export const reserve = mutation({
 });
 
 /**
- * Reservation committen — nach erfolgreichem KI-Call.
- *
- * Schreibt die tatsächlichen Kosten ab (können von Reservation abweichen).
+ * Reservation committen — interne Variante ohne Auth-Kontext.
  */
-export const commit = mutation({
+export const commitInternal = internalMutation({
   args: {
     transactionId: v.id("creditTransactions"),
-    actualCost: v.number(),       // Tatsächliche Kosten in Cent
-    openRouterCost: v.optional(v.number()), // Echte API-Kosten
+    actualCost: v.number(),
+    openRouterCost: v.optional(v.number()),
   },
   handler: async (ctx, { transactionId, actualCost, openRouterCost }) => {
-    const user = await requireAuth(ctx);
     const transaction = await ctx.db.get(transactionId);
-    if (!transaction || transaction.userId !== user.userId) {
+    if (!transaction) {
       throw new Error("Transaction not found");
+    }
+    if (transaction.status === "committed") {
+      return { status: "already_committed" as const };
+    }
+    if (transaction.status === "released") {
+      return { status: "already_released" as const };
     }
     if (transaction.status !== "reserved") {
       throw new Error(`Transaction is ${transaction.status}, expected reserved`);
@@ -419,13 +422,13 @@ export const commit = mutation({
     // Balance aktualisieren
     const balance = await ctx.db
       .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
       .unique();
     if (!balance) throw new Error("No credit balance found");
 
     await ctx.db.patch(balance._id, {
       balance: balance.balance - actualCost,
-      reserved: balance.reserved - estimatedCost,
+      reserved: Math.max(0, balance.reserved - estimatedCost),
       updatedAt: Date.now(),
     });
 
@@ -442,7 +445,7 @@ export const commit = mutation({
     const dailyUsage = await ctx.db
       .query("dailyUsage")
       .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
+        q.eq("userId", transaction.userId).eq("date", today)
       )
       .unique();
     if (dailyUsage && dailyUsage.concurrentJobs > 0) {
@@ -450,6 +453,94 @@ export const commit = mutation({
         concurrentJobs: dailyUsage.concurrentJobs - 1,
       });
     }
+
+    return { status: "committed" as const };
+  },
+});
+
+/**
+ * Reservation committen — nach erfolgreichem KI-Call.
+ *
+ * Schreibt die tatsächlichen Kosten ab (können von Reservation abweichen).
+ */
+export const commit = mutation({
+  args: {
+    transactionId: v.id("creditTransactions"),
+    actualCost: v.number(),
+    openRouterCost: v.optional(v.number()),
+  },
+  handler: async (ctx, { transactionId, actualCost, openRouterCost }) => {
+    const user = await requireAuth(ctx);
+    const transaction = await ctx.db.get(transactionId);
+    if (!transaction || transaction.userId !== user.userId) {
+      throw new Error("Transaction not found");
+    }
+
+    return await ctx.runMutation(internal.credits.commitInternal, {
+      transactionId,
+      actualCost,
+      openRouterCost,
+    });
+  },
+});
+
+/**
+ * Reservation freigeben — interne Variante ohne Auth-Kontext.
+ */
+export const releaseInternal = internalMutation({
+  args: {
+    transactionId: v.id("creditTransactions"),
+  },
+  handler: async (ctx, { transactionId }) => {
+    const transaction = await ctx.db.get(transactionId);
+    if (!transaction) {
+      throw new Error("Transaction not found");
+    }
+    if (transaction.status === "released") {
+      return { status: "already_released" as const };
+    }
+    if (transaction.status === "committed") {
+      return { status: "already_committed" as const };
+    }
+    if (transaction.status !== "reserved") {
+      throw new Error(`Transaction is ${transaction.status}, expected reserved`);
+    }
+
+    const estimatedCost = Math.abs(transaction.amount);
+
+    // Credits freigeben
+    const balance = await ctx.db
+      .query("creditBalances")
+      .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
+      .unique();
+    if (!balance) throw new Error("No credit balance found");
+
+    await ctx.db.patch(balance._id, {
+      reserved: Math.max(0, balance.reserved - estimatedCost),
+      updatedAt: Date.now(),
+    });
+
+    // Transaktion als released markieren
+    await ctx.db.patch(transactionId, {
+      status: "released",
+    });
+
+    // Concurrent Jobs dekrementieren
+    const today = new Date().toISOString().split("T")[0];
+    const dailyUsage = await ctx.db
+      .query("dailyUsage")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", transaction.userId).eq("date", today)
+      )
+      .unique();
+    if (dailyUsage && dailyUsage.concurrentJobs > 0) {
+      await ctx.db.patch(dailyUsage._id, {
+        concurrentJobs: dailyUsage.concurrentJobs - 1,
+      });
+    }
+
+    // Generation Count NICHT zurücksetzen — der Versuch zählt
+    return { status: "released" as const };
   },
 });
 
@@ -468,44 +559,10 @@ export const release = mutation({
     if (!transaction || transaction.userId !== user.userId) {
       throw new Error("Transaction not found");
     }
-    if (transaction.status !== "reserved") {
-      throw new Error(`Transaction is ${transaction.status}, expected reserved`);
-    }
 
-    const estimatedCost = Math.abs(transaction.amount);
-
-    // Credits freigeben
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .unique();
-    if (!balance) throw new Error("No credit balance found");
-
-    await ctx.db.patch(balance._id, {
-      reserved: balance.reserved - estimatedCost,
-      updatedAt: Date.now(),
+    return await ctx.runMutation(internal.credits.releaseInternal, {
+      transactionId,
     });
-
-    // Transaktion als released markieren
-    await ctx.db.patch(transactionId, {
-      status: "released",
-    });
-
-    // Concurrent Jobs dekrementieren
-    const today = new Date().toISOString().split("T")[0];
-    const dailyUsage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
-      )
-      .unique();
-    if (dailyUsage && dailyUsage.concurrentJobs > 0) {
-      await ctx.db.patch(dailyUsage._id, {
-        concurrentJobs: dailyUsage.concurrentJobs - 1,
-      });
-    }
-
-    // Generation Count NICHT zurücksetzen — der Versuch zählt
   },
 });
 

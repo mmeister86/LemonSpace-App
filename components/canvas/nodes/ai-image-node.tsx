@@ -114,7 +114,6 @@ export default function AiImageNode({
       }
 
       const modelId = nodeData.model ?? DEFAULT_MODEL_ID;
-      const regenCreditCost = getModel(modelId)?.creditCost ?? 4;
 
       await toast.promise(
         generateImage({
@@ -128,10 +127,10 @@ export default function AiImageNode({
         }),
         {
           loading: msg.ai.generating.title,
-          success: msg.ai.generated.title,
+          success: msg.ai.generationQueued.title,
           error: msg.ai.generationFailed.title,
           description: {
-            success: msg.ai.generatedDesc(regenCreditCost),
+            success: msg.ai.generationQueuedDesc,
             error: msg.ai.creditsNotCharged,
           },
         },
