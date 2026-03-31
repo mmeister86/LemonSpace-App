@@ -1836,9 +1836,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges((eds) => applyEdgeChanges(changes, eds));
   }, []);
 
-  const onFlowError = useCallback((code: string, message: string) => {
+  const onFlowError = useCallback((id: string, error: string) => {
     if (process.env.NODE_ENV === "production") return;
-    console.error("[ReactFlow error]", { canvasId, code, message });
+    console.error("[ReactFlow error]", { canvasId, id, error });
   }, [canvasId]);
 
   // ─── Delete Edge on Drop ──────────────────────────────────────

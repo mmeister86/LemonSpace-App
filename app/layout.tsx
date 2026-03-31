@@ -34,6 +34,7 @@ export default async function RootLayout({
   return (
     <html
       lang="de"
+      suppressHydrationWarning
       className={cn("h-full", "antialiased", "font-sans", manrope.variable)}
     >
       <head>
