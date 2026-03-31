@@ -8,7 +8,7 @@
 
 ## 1. Entscheidung
 
-Adjustment-Nodes arbeiten non-destruktiv über eine **edge-basierte Pipeline**. Die Edge-Kette im Canvas *ist* der Stack — kein separates Datenmodell. Die Bildverarbeitung läuft client-seitig über **eigene GLSL-Shader** mit einem minimalen WebGL-Wrapper. Keine externen Packages.
+Adjustment-Nodes arbeiten non-destruktiv über eine **edge-basierte Pipeline**. Die Edge-Kette im Canvas *ist* der Stack — kein separates Datenmodell. Die Bildverarbeitung läuft client-seitig primär über eine **Web-Worker-Pipeline** mit OffscreenCanvas/2D-Rendering; ein WebGL-Pfad existiert ergänzend für kompatible Teilpfade. Keine externen Packages.
 
 ---
 
@@ -17,7 +17,7 @@ Adjustment-Nodes arbeiten non-destruktiv über eine **edge-basierte Pipeline**. 
 | Alternative | Warum verworfen |
 |---|---|
 | Expliziter Stack als Datenstruktur | Redundantes Datenmodell neben den Edges; Umsortieren erfordert Array-Manipulation statt Edge-Neuverbindung; widerspricht dem Canvas-Paradigma |
-| Canvas 2D API (CPU) | Zu langsam bei großen Bildern; blockiert Main Thread; kein Parallelismus |
+| Reine Canvas-2D-Pipeline im Main Thread | Bei größeren Bildern und häufiger Interaktion zu teuer; blockiert UI-Thread |
 | glfx.js | Letztes Update 9+ Jahre alt; kein ESM-Support; müsste geforkt und gepflegt werden |
 | PixiJS | 200+ KB Framework-Overhead für einen Use Case (Filter auf Einzelbild); bringt Scene Graph, Sprites, Animation mit die wir nicht brauchen |
 
@@ -53,7 +53,7 @@ Wenn ein Node seine Live-Preview rendern will, traversiert er die Edge-Kette **r
 1. Node fragt: "Wer ist mein Input?" → folge eingehender Edge
 2. Rekursiv weiter bis ein Node mit Bild-Daten erreicht wird (Bild-Node, KI-Bild-Node)
 3. Sammle alle Adjustment-Parameter in Reihenfolge ein
-4. Wende Shader-Pipeline auf das Quell-Bild an
+4. Wende die aktive Bildpipeline (Worker-Renderpfad) auf das Quell-Bild an
 5. Zeige Ergebnis als Preview
 ```
 
@@ -92,27 +92,80 @@ function getSourceImage(nodeId: string, edges: Edge[], nodes: Node[]): string | 
 
 ### Caching-Strategie
 
-Jeder Adjustment-Node cached sein Preview-Ergebnis als WebGL-Texture. Bei einer Parameteränderung wird nur ab diesem Node neu gerendert — Upstream-Ergebnisse bleiben gecached.
+Die aktuelle Produktiv-Implementierung cached im Worker vor allem das Quellbild (`sourceUrl` → `ImageBitmap`). Bei reinen Parameteränderungen bleibt dieser Cache gültig, nur die Verarbeitungsschritte werden neu ausgeführt.
 
 ```
-Bild → Kurven → Farbe → Detail
-               ↑
-         User ändert Farbe-Parameter
-         → Kurven-Cache bleibt gültig
-         → Farbe + Detail werden neu gerendert
+Bild-URL unverändert
+  → Quell-Bitmap bleibt im Worker-Cache
+  → neue Parameter triggern nur Re-Render der Verarbeitung
 ```
 
-Invalidierung: Wenn ein Upstream-Node seine Parameter ändert, werden alle Downstream-Caches invalidiert. Die Invalidierung propagiert über die Edge-Kette vorwärts.
+Invalidierung erfolgt request-basiert: Neue Requests verdrängen veraltete Ergebnisse; stale Bitmaps werden verworfen und freigegeben.
+
+---
+
+## Implementierungsstand (Stand: 31.03.2026)
+
+### Produktiv umgesetzt
+
+- WebWorker-Migration ist produktiv aktiv über `lib/image-pipeline/pipeline.worker.ts`, `lib/image-pipeline/pipeline-bridge.ts` und `lib/image-pipeline/index.ts`.
+- Preview- und Full-Render laufen über Worker-Requests aus `hooks/use-pipeline-preview.ts` und `components/canvas/nodes/render-node.tsx`.
+- Die Worker-Pipeline rendert aktuell über `OffscreenCanvas` + 2D-Kontext (inkl. Kurven-LUT, Canvas-Filter und nachgelagerte Pixel-Adjustments), Histogramm-Berechnung erfolgt im Worker.
+- Render-Node nutzt `bridge.renderFull(...)` und liefert aktuell einen lokalen Download-Export (kein Convex-Upload in diesem Pfad).
+- Lifecycle-Cleanup ist angebunden: `disposePipelineBridge()` wird in `components/canvas/canvas.tsx` beim Unmount ausgeführt.
+
+### Abweichungen zur ursprünglichen ADR-Intention / Zielvision aus dem Guide
+
+- Die ursprünglich beschriebene, primär shader-zentrierte WebGL-Architektur ist nicht 1:1 der produktive Standardpfad.
+- Statt einer reinen „WebGL-im-Worker“-Ausführung nutzt die aktuelle Worker-Pipeline einen OffscreenCanvas/2D-Rendering-Pfad mit ergänzenden ImageData-Operationen.
+- Der Guide skizziert konzeptionell eine zentrale Worker-Instanz; die aktuelle Bridge betreibt getrennte Worker-Kanäle für Preview und Full-Render.
+- Der im ADR beschriebene Render-Node-Flow mit Convex-Storage-Materialisierung ist in der aktuellen UI nicht der Default-Exportpfad.
+
+### Fallback- und Recovery-Mechanismen
+
+- `usePipelinePreview` versucht Worker-Rendering zuerst und schaltet bei Fehlern auf Main-Thread-Fallback (`canvas-render.ts`) um.
+- Während des Fallback-Betriebs werden Worker-Recovery-Retries zeit- und zählbasiert angestoßen; bei erfolgreicher Probe wird zurück auf Worker gewechselt.
+- Stale Ergebnisse werden über Request-Sequenzierung verworfen; betroffene `ImageBitmap`s werden aktiv freigegeben.
+- Preview-Metriken erfassen u. a. Fallback-Switches und Recoveries über `lib/image-pipeline/preview-metrics.ts`.
+
+---
+
+## Einfluss des WebWorker-Migration-Guides
+
+### Übernommene Konzepte
+
+- Entkopplung von UI und Bildpipeline über Worker + Bridge (`pipeline.worker.ts` / `pipeline-bridge.ts`).
+- Request-basierte Worker-API mit korrelierbarer Request-ID.
+- Rückgabe von Preview-Bitmaps und Histogramm-Daten über Worker-Messages.
+- Singleton-Verwaltung der Bridge (`lib/image-pipeline/index.ts`) und Cleanup im Canvas-Lifecycle.
+
+### Bewusst abgewandelte Punkte
+
+- Reine WebGL-im-Worker-Zielarchitektur wurde zugunsten eines OffscreenCanvas/2D-Pfads umgesetzt.
+- Getrennte Worker für Preview und Full-Render statt nur eines universellen Workers.
+- Render-Node-Integration ist aktuell auf clientseitigen Export fokussiert, nicht auf serverseitige Persistierung als Standardfluss.
+
+### Offene Punkte / Follow-ups
+
+- Evaluierung, ob und wo ein stärkerer WebGL-Worker-Pfad wieder sinnvoll ist (insbesondere bei komplexen Anpassungen oder sehr großen Bildern).
+- Fortlaufende Beobachtung der Worker/Fallback-Quote anhand `preview-metrics`.
+- Falls persistierte Render-Artefakte wieder Produktziel werden, separaten Upload-/Persistenzpfad explizit ergänzen.
 
 ---
 
 ## 4. WebGL-Wrapper
+
+> **Hinweis zum Ist-Stand:** Dieser Abschnitt dokumentiert weiterhin die WebGL-Ziel-/Referenzarchitektur der Pipeline. Produktiv läuft die Preview-/Render-Ausführung derzeit primär im Worker über OffscreenCanvas/2D.
 
 ### Dateien
 
 ```
 lib/
   image-pipeline/
+    index.ts               ← Singleton-Lifecycle für PipelineBridge
+    pipeline-bridge.ts     ← Main-Thread-Bridge (Worker API)
+    pipeline.worker.ts     ← Worker-Pipeline (OffscreenCanvas/2D)
+    preview-metrics.ts     ← Laufzeit-Metriken (Worker/Fallback)
     gl-wrapper.ts          ← WebGL-Context, Texture-Management, Shader-Kompilierung
     pipeline.ts            ← Pipeline-Traversierung, Cache, Orchestrierung
     shaders/
@@ -320,7 +373,7 @@ data: {
   preset: string | null, // "warm" | "cool" | "vintage" | "desaturate" | null
 }
 
-// type: "light"
+// type: "light-adjust"
 data: {
   brightness: number,    // -100 bis +100, default 0
   contrast: number,      // -100 bis +100, default 0
@@ -337,7 +390,7 @@ data: {
   preset: string | null, // "hdr" | "lowkey" | "highkey" | "flat" | null
 }
 
-// type: "detail"
+// type: "detail-adjust"
 data: {
   sharpen: {
     amount: number,      // 0–500, default 0 (Prozent)
@@ -371,48 +424,43 @@ data: {
 
 ### Schema-Ergänzung (convex/schema.ts)
 
-Die `nodes`-Tabelle braucht keine Schema-Änderung — das polymorphe `data`-Feld (`v.any()`) trägt die Parameter bereits. Neue `type`-Werte (`curves`, `color-adjust`, `light`, `detail`, `render`) werden in die bestehende Union aufgenommen.
+Die `nodes`-Tabelle braucht keine Schema-Änderung — das polymorphe `data`-Feld (`v.any()`) trägt die Parameter bereits. Neue `type`-Werte (`curves`, `color-adjust`, `light-adjust`, `detail-adjust`, `render`) werden in die bestehende Union aufgenommen.
 
 ---
 
 ## 6. Render-Node
 
-Der Render-Node ist der einzige Node in der Bildbearbeitungs-Kategorie, der serverseitig arbeitet.
+Der Render-Node rendert aktuell client-seitig über die Worker-Bridge und bietet primär einen lokalen Datei-Export.
 
 ### Flow
 
 ```
-1. User klickt "Render" am Render-Node
-2. Client: collectPipeline() → vollständiger Adjustment-Stack
-3. Client: Führt Pipeline client-seitig aus (WebGL)
-4. Client: glWrapper.toBlob() → Ergebnis als Blob
-5. Client: Upload Blob → Convex Storage (wie Bild-Upload)
-6. Client: updateData({ storageId, lastRenderedAt }) → Convex Mutation
-7. Convex Query: storageId → url auflösen (wie bei Bild-/KI-Bild-Node)
-8. Render-Node zeigt finales Bild
+1. User startet Export im Render-Node
+2. Client: `collectPipeline()` + `getSourceImage()`
+3. Client: `PipelineBridge.renderFull(...)` im Worker (OffscreenCanvas)
+4. Worker: `convertToBlob(...)` und Rückgabe von Blob + Output-Dimensionen
+5. Client: Download-Link (`URL.createObjectURL`) wird erzeugt und ausgelöst
 ```
 
-**Warum client-seitig rendern statt server-seitig?**
+**Warum client-seitig rendern?**
 
-- WebGL-Pipeline existiert bereits im Client (Preview)
-- Kein Server-Roundtrip für die Bildverarbeitung nötig
-- Server müsste die gleiche Pipeline in jimp/sharp nachbauen (Aufwand, Parität-Risiko)
-- Nur der Upload des fertigen Blobs geht über Convex Storage
+- Pipeline-Logik und Vorschaupfad sind bereits im Client vorhanden
+- Kein obligatorischer Server-Roundtrip für die Bildberechnung
+- Export ist direkt als Datei verfügbar
 
 **Render-Status am Node:**
 
 ```
-idle → rendering → uploading → done | error
+idle → rendering → done | error
 ```
 
-- `rendering`: Client führt Pipeline aus (schnell, < 1s)
-- `uploading`: Blob wird zu Convex Storage hochgeladen
-- `done`: storageId gesetzt, Bild sichtbar
-- `error`: Pipeline oder Upload fehlgeschlagen
+- `rendering`: Worker rendert und erzeugt Blob
+- `done`: Download wurde angestoßen
+- `error`: Worker-Render oder Download-Erzeugung fehlgeschlagen
 
 ### Re-Render
 
-Wenn Upstream-Adjustments geändert werden, zeigt der Render-Node einen visuellen Hinweis: "Out of date — Re-render". Der Render-Node tracked einen `pipelineHash` (Hash über alle Upstream-Parameter) und vergleicht ihn mit dem Hash zum Zeitpunkt des letzten Renders.
+Pipeline-Hashing bleibt als Basis für Änderungsdetektion relevant (`hashPipeline(...)`). Ein persistierter „Out of date — Re-render“-Flow mit serverseitigem Artefakt ist in der aktuellen Export-Implementierung nicht der zentrale Pfad.
 
 ---
 
@@ -437,17 +485,21 @@ components/canvas/nodes/
 ```tsx
 // Pseudocode
 function AdjustmentPreview({ nodeId }: { nodeId: string }) {
-  const nodes = useNodes();
-  const edges = useEdges();
+  const { nodes, edges } = useCanvasGraph();
+  const nodeWidth = useNodeWidth(nodeId);
 
   // Pipeline rückwärts traversieren
   const sourceUrl = getSourceImage(nodeId, edges, nodes);
   const pipeline = collectPipeline(nodeId, edges, nodes);
 
-  // WebGL-Pipeline ausführen (gecached)
-  const previewUrl = usePipelinePreview(sourceUrl, pipeline);
+  // Worker-Preview (mit Main-Thread-Fallback)
+  const { previewRef, histogram, isRendering } = usePipelinePreview(
+    sourceUrl,
+    pipeline,
+    nodeWidth,
+  );
 
-  return <img src={previewUrl} className="w-full h-auto rounded" />;
+  return <canvas ref={previewRef} className="w-full h-auto rounded" />;
 }
 ```
 
@@ -503,8 +555,8 @@ adjustmentPresets: defineTable({
   nodeType: v.union(                              // Für welchen Adjustment-Typ
     v.literal("curves"),
     v.literal("color-adjust"),
-    v.literal("light"),
-    v.literal("detail"),
+    v.literal("light-adjust"),
+    v.literal("detail-adjust"),
   ),
   params: v.any(),                                // Die gespeicherten Parameter
   createdAt: v.number(),
@@ -558,8 +610,8 @@ Neue Sidebar-Kategorie **"Bildbearbeitung"** mit fünf Einträgen:
 |---|---|---|
 | Kurven | `curves` | `TrendingUp` (lucide) |
 | Farbe | `color-adjust` | `Palette` (lucide) |
-| Licht | `light` | `Sun` (lucide) |
-| Detail | `detail` | `Focus` (lucide) |
+| Licht | `light-adjust` | `Sun` (lucide) |
+| Detail | `detail-adjust` | `Focus` (lucide) |
 | Render | `render` | `ImageDown` (lucide) |
 
 Drag-Data: `application/lemonspace-node-type` mit dem jeweiligen `type`-String (konsistent mit bestehenden Nodes).
@@ -592,17 +644,19 @@ Die Validierung läuft in `canvas.tsx` bei `onConnect` — ungültige Verbindung
 ```
 lib/
   image-pipeline/
-    gl-wrapper.ts                ← WebGL-Context, Texture, Shader-Kompilierung
-    pipeline.ts                  ← Pipeline-Traversierung, Cache, Orchestrierung
-    presets.ts                   ← Built-in Presets für alle Adjustment-Typen
-    curve-interpolation.ts       ← Monotone kubische Interpolation → LUT
-    shaders/
-      passthrough.vert           ← Gemeinsamer Vertex-Shader
-      curves.frag                ← Tonwert-Kurven + Levels
-      color-adjust.frag          ← HSL, Color Balance, Temperature, Vibrance
-      light.frag                 ← Brightness, Contrast, Exposure, H/S, Vignette
-      detail.frag                ← Sharpen, Clarity, Denoise, Grain
-      blur.frag                  ← Hilfshader für Unsharp Mask + Denoise
+    index.ts                     ← get/dispose PipelineBridge (Singleton)
+    pipeline-bridge.ts           ← Main-Thread-Bridge für Worker-Aufrufe
+    pipeline.worker.ts           ← Worker-Pipeline (Preview + Full Render)
+    pipeline.ts                  ← Edge-Traversierung + Pipeline-Hashing
+    canvas-render.ts             ← Main-Thread-Fallback-Rendering
+    webgl-render.ts              ← Optionaler WebGL-Renderpfad
+    gl-wrapper.ts                ← WebGL-Helfer für den optionalen Pfad
+    curve-lut.ts                 ← Kurven-LUT-Berechnung + Anwendung
+    adjustments.ts               ← Aggregation/Anwendung von Adjustment-Parametern
+    histogram.ts                 ← Histogramm-Berechnung und Datentransferformate
+    render-size.ts               ← Zielauflösung/Skalierungslogik
+    preview-metrics.ts           ← Worker/Fallback-Metriken
+    presets.ts                   ← Built-in Presets für Adjustment-Typen
 
 components/canvas/nodes/
   adjustment-preview.tsx         ← Shared Preview für alle Adjustment-Nodes
@@ -610,10 +664,10 @@ components/canvas/nodes/
   color-adjust-node.tsx          ← HSL-Slider, Color Balance, Temperature
   light-node.tsx                 ← Slider-Batterie für Licht-Parameter
   detail-node.tsx                ← Sharpen/Clarity/Denoise/Grain Slider
-  render-node.tsx                ← Render-Button, Format-Auswahl, finales Bild
+  render-node.tsx                ← Download-Export über `bridge.renderFull(...)`
 
 hooks/
-  use-pipeline-preview.ts        ← Hook: Pipeline ausführen → Preview-URL
+  use-pipeline-preview.ts        ← Hook: Worker-Preview mit Fallback + Recovery
 ```
 
 ---
@@ -623,12 +677,12 @@ hooks/
 | Thema | Status | Notizen |
 |---|---|---|
 | User-Presets persistieren | ✅ | Convex-Tabelle `adjustmentPresets` mit userId-Index. Kein Local Storage — Presets überleben Cache-Clear und sind geräteübergreifend verfügbar. |
-| Histogram-UI im Kurven-Node | ✅ | Histogram wird aus dem Pipeline-Output berechnet — zeigt die Tonwertverteilung *nach* allen vorhergehenden Adjustments. `gl.readPixels()` auf den aktuellen Framebuffer, dann Häufigkeitsverteilung über R/G/B/Luminanz in JS berechnen. Downsampled auf Preview-Auflösung (nicht Originalbild), damit der Readback schnell bleibt. |
+| Histogram-UI im Kurven-Node | ✅ | Histogram wird aus dem Pipeline-Output berechnet — zeigt die Tonwertverteilung *nach* allen vorhergehenden Adjustments. Im Worker wird dazu das finale ImageData gelesen und in Histogram-Bins aggregiert. |
 | Preview-Auflösung dynamisch | ✅ | Proportional zur Node-Breite × `devicePixelRatio`, gecapped bei 1024px. Adjustment-Nodes haben eine Mindestbreite von 240px. |
 | Adjustment-Node Resize | ✅ | Resizeable (wie alle Nodes via base-node-wrapper), mit `minWidth: 240`. Preview skaliert mit, Slider-Layout bleibt stabil. |
-| Render-Node: Client- vs. Server-seitig | ✅ | Client-seitig (WebGL → Blob → Upload). Server müsste Pipeline duplizieren. |
-| WebGL-Fallback | ⏳ | Canvas 2D als Fallback? Praktisch alle modernen Browser haben WebGL2. Aufwand vs. Nutzen. |
-| Detail-Node: Multi-Pass-Architektur | ⏳ | Framebuffer-Ping-Pong für Unsharp Mask + Denoise. Exakte Implementierung TBD. |
+| Render-Node: Client- vs. Server-seitig | ✅ | Client-seitig über Worker-Bridge; aktueller Pfad ist Download-Export (`renderFull`) statt serverseitiger Persistierung. |
+| Worker-Fallback/Recovery | ✅ | Bei Worker-Fehlern Fallback auf Main Thread; periodische Recovery-Versuche zurück in den Worker-Pfad. |
+| Reine WebGL-im-Worker-Architektur | ⏳ | Guide-Zielbild; aktuell produktiv ist ein OffscreenCanvas/2D-Pfad im Worker. |
 
 ---
 
@@ -637,12 +691,12 @@ hooks/
 | Aspekt | Wert |
 |---|---|
 | Credit-Kosten Adjustments | 0 Cr (client-seitig) |
-| Credit-Kosten Render | 0 Cr (kein KI-API-Call, nur Convex Storage) |
+| Credit-Kosten Render | 0 Cr (kein KI-API-Call; aktueller Exportpfad ist client-seitig) |
 | Preview-Latenz (Ziel) | < 16ms (60fps bei Slider-Drag) |
 | Preview-Auflösung | Dynamisch: nodeWidth × devicePixelRatio, max 1024px |
 | Mindestbreite Adjustment-Nodes | 240px |
 | Max. Bild-Auflösung Render | Original-Auflösung |
-| WebGL-Version | WebGL2 (ES 3.0 Shaders) |
+| Primärer Renderpfad | Web Worker + OffscreenCanvas/2D |
 
 ---
 
