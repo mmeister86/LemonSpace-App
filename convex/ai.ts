@@ -273,7 +273,7 @@ export const generateAndStoreImage = internalAction({
       throw new Error("OPENROUTER_API_KEY is not set");
     }
 
-    const retryCount = 0;
+    let retryCount = 0;
     let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
     if (args.referenceStorageId) {
       referenceImageUrl =
