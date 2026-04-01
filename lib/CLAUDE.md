@@ -17,6 +17,7 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `auth-server.ts` | Server-Helper: `getAuthUser()`, `getToken()` |
 | `auth-client.ts` | Client-Helper: `authClient` |
 | `canvas-local-persistence.ts` | localStorage-Cache für Canvas-Snapshots und Op-Queue |
+| `canvas-op-queue.ts` | IndexedDB-basierte Canvas-Sync-Queue (Retry, TTL, Remap/Pruning) |
 | `toast.ts` | Toast-Utility-Wrapper |
 | `toast-messages.ts` | Typisierte Toast-Message-Definitionen (`msg`, `CanvasNodeDeleteBlockReason`) |
 | `ai-errors.ts` | Error-Kategorisierung und User-facing Fehlermeldungen |
@@ -81,9 +82,31 @@ writeCanvasSnapshot(canvasId, {nodes, edges})  // Snapshot speichern
 enqueueCanvasOp(canvasId, op)     // Op in Queue schreiben
 resolveCanvasOp(canvasId, opId)   // Op aus Queue entfernen
 readCanvasOps(canvasId)           // Ausstehende Ops lesen
+remapCanvasOpNodeId(canvasId, fromId, toId)     // optimistic→real remap
+dropCanvasOpsByNodeIds(canvasId, ids)           // konfliktbedingtes Pruning
+dropCanvasOpsByClientRequestIds(canvasId, ids)  // Create-Cancel
+dropCanvasOpsByEdgeIds(canvasId, ids)           // Remove-Cancel
 ```
 
 Key-Schema: `lemonspace.canvas:snapshot:v1:<id>` / `lemonspace.canvas:ops:v1:<id>`. Bei Version-Bumps (`SNAPSHOT_VERSION`, `OPS_VERSION`) werden alte Keys automatisch ignoriert.
+
+## `canvas-op-queue.ts` — Sync-Queue
+
+Zentrale, persistente Queue für Canvas-Mutations mit IndexedDB (Fallback: localStorage), Retry-Backoff und 24h-TTL.
+
+Wichtige APIs:
+
+```typescript
+enqueueCanvasSyncOp(...)
+listCanvasSyncOps(canvasId)
+ackCanvasSyncOp(opId)
+markCanvasSyncOpFailed(opId, { nextRetryAt, lastError })
+dropExpiredCanvasSyncOps(canvasId, now)
+remapCanvasSyncNodeId(canvasId, fromId, toId)
+dropCanvasSyncOpsByNodeIds(canvasId, ids)
+dropCanvasSyncOpsByClientRequestIds(canvasId, ids)
+dropCanvasSyncOpsByEdgeIds(canvasId, ids)
+```
 
 ---
 

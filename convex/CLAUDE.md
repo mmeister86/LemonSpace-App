@@ -16,7 +16,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `canvases.ts` | CRUD für Canvases |
 | `openrouter.ts` | OpenRouter-HTTP-Client + Modell-Config (Backend) |
 | `auth.ts` | Better Auth Integration |
-| `helpers.ts` | `requireAuth()` — von allen Queries/Mutations genutzt |
+| `helpers.ts` | `requireAuth()` + `optionalAuth()` für Auth-Checks |
 | `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
 | `pexels.ts` | Pexels Stock-Bilder API |
 | `freepik.ts` | Freepik Asset-Browser API |
@@ -39,6 +39,8 @@ Alle Node-Typen sind in zwei Validators definiert: `phase1NodeTypes` (aktiv) und
 > `data` ist `v.any()` — Typ-Safety läuft über den `type`-Discriminator + Zod im Frontend. Die Node-Data-Shapes sind in `schema.ts` dokumentiert (`imageNodeData`, `promptNodeData`, etc.).
 
 **`edges`** — Verbindungen zwischen Nodes. Index: `by_canvas`, `by_source`, `by_target`.
+
+**`mutationRequests`** — Idempotenz-Layer für Client-Replay (`clientRequestId`) bei offline/Retry-Sync. Felder: `userId`, `mutation`, `clientRequestId`, optionale Ziel-IDs (`canvasId`, `nodeId`, `edgeId`). Index: `by_user_mutation_request`.
 
 **`creditBalances`** — Pro User: `balance`, `reserved`, `monthlyAllocation`. `available = balance - reserved` (computed, nicht gespeichert).
 
@@ -109,9 +111,21 @@ processImageGeneration (internalAction)
 
 ```typescript
 requireAuth(ctx) // → { userId: string }
+optionalAuth(ctx) // → { userId: string } | null
 ```
 
 Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genutzt, die User-Daten berühren.
+
+### Auth-Race-Härtung
+
+- `canvases.get` nutzt optionalen Auth-Check und gibt bei fehlender Session `null` zurück (statt Throw), damit SSR/Client-Hydration bei kurzem Token-Race nicht in `404` kippt.
+- `credits.getBalance` gibt bei fehlender Session einen Default-Stand (`0`-Werte) zurück (statt Throw), damit UI-Widgets nicht mit `Unauthenticated` fehlschlagen.
+
+### Idempotente Canvas-Mutations
+
+- `nodes.create`, `nodes.createWithEdgeFromSource`, `nodes.createWithEdgeToTarget` sind über `clientRequestId` idempotent.
+- `edges.create` ist über `clientRequestId` idempotent.
+- `nodes.batchRemove` ist idempotent tolerant: wenn alle angefragten Nodes bereits entfernt sind, wird die Mutation als No-op beendet.
 
 ---
 

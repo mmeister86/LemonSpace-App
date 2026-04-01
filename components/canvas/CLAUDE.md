@@ -115,11 +115,17 @@ Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right`
 
 **Optimistic Prefix:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix. Sie werden durch echte Convex-IDs ersetzt sobald die Mutation abgeschlossen ist.
 
-**localStorage-Cache** (`lib/canvas-local-persistence.ts`): Snapshot + Ops-Queue pro Canvas-ID.
+**Persistenz-Schichten:**
+
+- `lib/canvas-op-queue.ts` (IndexedDB, mit localStorage-Fallback): robuste Sync-Queue inkl. Retry/TTL.
+- `lib/canvas-local-persistence.ts` (localStorage): Snapshot + leichtgewichtiger Op-Mirror für sofortige UI-Pins/Recovery.
 
 - Key-Schema: `lemonspace.canvas:snapshot:v1:<canvasId>` und `lemonspace.canvas:ops:v1:<canvasId>`
 - Snapshot = letzter bekannter State (Nodes + Edges) für schnellen initialen Render
-- Ops-Queue = ausstehende Mutations (Recovery bei Verbindungsabbruch, Konzept — noch nicht vollständig implementiert)
+- Ops-Queue ist aktiv für: `createNode*`, `createEdge`, `moveNode`, `resizeNode`, `updateData`, `removeEdge`, `batchRemoveNodes`.
+- Reconnect synchronisiert als `createEdge + removeEdge` (statt rein lokalem UI-Umbiegen).
+- ID-Handover `optimistic_* → realId` remappt Folge-Operationen in Queue + localStorage-Mirror, damit Verbindungen während/ nach Replay stabil bleiben.
+- Unsupported offline (weiterhin online-only): `createWithEdgeSplit`, Datei-Upload/Storage-Mutations, AI-Generierung.
 
 ---
 
