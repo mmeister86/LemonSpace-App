@@ -49,6 +49,23 @@ export type CanvasSyncOpPayloadByType = {
     sourceHandle?: string;
     targetHandle?: string;
   };
+  createNodeWithEdgeSplit: {
+    canvasId: Id<"canvases">;
+    type: string;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+    data: unknown;
+    parentId?: Id<"nodes">;
+    zIndex?: number;
+    splitEdgeId: Id<"edges">;
+    newNodeTargetHandle?: string;
+    newNodeSourceHandle?: string;
+    splitSourceHandle?: string;
+    splitTargetHandle?: string;
+    clientRequestId: string;
+  };
   createEdge: {
     canvasId: Id<"canvases">;
     sourceNodeId: Id<"nodes">;
@@ -62,6 +79,18 @@ export type CanvasSyncOpPayloadByType = {
   };
   batchRemoveNodes: {
     nodeIds: Id<"nodes">[];
+  };
+  splitEdgeAtExistingNode: {
+    canvasId: Id<"canvases">;
+    splitEdgeId: Id<"edges">;
+    middleNodeId: Id<"nodes">;
+    splitSourceHandle?: string;
+    splitTargetHandle?: string;
+    newNodeSourceHandle?: string;
+    newNodeTargetHandle?: string;
+    positionX?: number;
+    positionY?: number;
+    clientRequestId: string;
   };
   moveNode: { nodeId: Id<"nodes">; positionX: number; positionY: number };
   resizeNode: { nodeId: Id<"nodes">; width: number; height: number };
@@ -215,9 +244,11 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
     type !== "createNode" &&
     type !== "createNodeWithEdgeFromSource" &&
     type !== "createNodeWithEdgeToTarget" &&
+    type !== "createNodeWithEdgeSplit" &&
     type !== "createEdge" &&
     type !== "removeEdge" &&
     type !== "batchRemoveNodes" &&
+    type !== "splitEdgeAtExistingNode" &&
     type !== "moveNode" &&
     type !== "resizeNode" &&
     type !== "updateData"
@@ -369,6 +400,61 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
   }
 
   if (
+    type === "createNodeWithEdgeSplit" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.type === "string" &&
+    typeof payload.positionX === "number" &&
+    typeof payload.positionY === "number" &&
+    typeof payload.width === "number" &&
+    typeof payload.height === "number" &&
+    typeof payload.splitEdgeId === "string" &&
+    typeof payload.clientRequestId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        type: payload.type,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+        width: payload.width,
+        height: payload.height,
+        data: payload.data,
+        parentId:
+          typeof payload.parentId === "string"
+            ? (payload.parentId as Id<"nodes">)
+            : undefined,
+        zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
+        splitEdgeId: payload.splitEdgeId as Id<"edges">,
+        newNodeTargetHandle:
+          typeof payload.newNodeTargetHandle === "string"
+            ? payload.newNodeTargetHandle
+            : undefined,
+        newNodeSourceHandle:
+          typeof payload.newNodeSourceHandle === "string"
+            ? payload.newNodeSourceHandle
+            : undefined,
+        splitSourceHandle:
+          typeof payload.splitSourceHandle === "string"
+            ? payload.splitSourceHandle
+            : undefined,
+        splitTargetHandle:
+          typeof payload.splitTargetHandle === "string"
+            ? payload.splitTargetHandle
+            : undefined,
+        clientRequestId: payload.clientRequestId,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
     type === "createEdge" &&
     typeof payload.canvasId === "string" &&
     typeof payload.sourceNodeId === "string" &&
@@ -431,6 +517,49 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
       type,
       payload: {
         nodeIds: payload.nodeIds as Id<"nodes">[],
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
+    type === "splitEdgeAtExistingNode" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.splitEdgeId === "string" &&
+    typeof payload.middleNodeId === "string" &&
+    typeof payload.clientRequestId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        splitEdgeId: payload.splitEdgeId as Id<"edges">,
+        middleNodeId: payload.middleNodeId as Id<"nodes">,
+        splitSourceHandle:
+          typeof payload.splitSourceHandle === "string"
+            ? payload.splitSourceHandle
+            : undefined,
+        splitTargetHandle:
+          typeof payload.splitTargetHandle === "string"
+            ? payload.splitTargetHandle
+            : undefined,
+        newNodeSourceHandle:
+          typeof payload.newNodeSourceHandle === "string"
+            ? payload.newNodeSourceHandle
+            : undefined,
+        newNodeTargetHandle:
+          typeof payload.newNodeTargetHandle === "string"
+            ? payload.newNodeTargetHandle
+            : undefined,
+        positionX: typeof payload.positionX === "number" ? payload.positionX : undefined,
+        positionY: typeof payload.positionY === "number" ? payload.positionY : undefined,
+        clientRequestId: payload.clientRequestId,
       },
       enqueuedAt,
       attemptCount,
@@ -727,6 +856,18 @@ function remapNodeIdInPayload(
       return { ...op, payload: next };
     }
   }
+  if (op.type === "createNodeWithEdgeSplit" && op.payload.parentId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, parentId: toNodeId as Id<"nodes"> },
+    };
+  }
+  if (op.type === "splitEdgeAtExistingNode" && op.payload.middleNodeId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, middleNodeId: toNodeId as Id<"nodes"> },
+    };
+  }
   if (op.type === "moveNode" && op.payload.nodeId === fromNodeId) {
     return {
       ...op,
@@ -833,6 +974,12 @@ function opTouchesNodeId(op: CanvasSyncOp, nodeIdSet: ReadonlySet<string>): bool
       (op.payload.parentId !== undefined && nodeIdSet.has(op.payload.parentId))
     );
   }
+  if (op.type === "createNodeWithEdgeSplit") {
+    return op.payload.parentId !== undefined && nodeIdSet.has(op.payload.parentId);
+  }
+  if (op.type === "splitEdgeAtExistingNode") {
+    return nodeIdSet.has(op.payload.middleNodeId);
+  }
   if (op.type === "batchRemoveNodes") {
     return op.payload.nodeIds.some((nodeId) => nodeIdSet.has(nodeId));
   }
@@ -852,12 +999,24 @@ function opHasClientRequestId(op: CanvasSyncOp, clientRequestIdSet: ReadonlySet<
   if (op.type === "createEdge") {
     return clientRequestIdSet.has(op.payload.clientRequestId);
   }
+  if (op.type === "createNodeWithEdgeSplit") {
+    return clientRequestIdSet.has(op.payload.clientRequestId);
+  }
+  if (op.type === "splitEdgeAtExistingNode") {
+    return clientRequestIdSet.has(op.payload.clientRequestId);
+  }
   return false;
 }
 
 function opTouchesEdgeId(op: CanvasSyncOp, edgeIdSet: ReadonlySet<string>): boolean {
   if (op.type === "removeEdge") {
     return edgeIdSet.has(op.payload.edgeId);
+  }
+  if (op.type === "createNodeWithEdgeSplit") {
+    return edgeIdSet.has(op.payload.splitEdgeId);
+  }
+  if (op.type === "splitEdgeAtExistingNode") {
+    return edgeIdSet.has(op.payload.splitEdgeId);
   }
   return false;
 }

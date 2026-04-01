@@ -11,6 +11,7 @@ import { useStore, type Edge as RFEdge } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import { isOptimisticEdgeId } from "./canvas-helpers";
 
 type CreateNodeArgs = {
   canvasId: Id<"canvases">;
@@ -40,6 +41,7 @@ type CreateNodeWithEdgeSplitArgs = {
   newNodeSourceHandle?: string;
   splitSourceHandle?: string;
   splitTargetHandle?: string;
+  clientRequestId?: string;
 };
 
 type CreateNodeWithEdgeFromSourceArgs = CreateNodeArgs & {
@@ -143,7 +145,9 @@ function getIntersectedPersistedEdge(
   if (!edgeId) return undefined;
 
   const edge = edges.find((candidate) => candidate.id === edgeId);
-  if (!edge || edge.className === "temp") return undefined;
+  if (!edge || edge.className === "temp" || isOptimisticEdgeId(edge.id)) {
+    return undefined;
+  }
 
   return edge;
 }
@@ -253,16 +257,11 @@ export function CanvasPlacementProvider({
           newNodeSourceHandle: normalizeHandle(handles.source),
           splitSourceHandle: normalizeHandle(hitEdge.sourceHandle),
           splitTargetHandle: normalizeHandle(hitEdge.targetHandle),
+          ...(clientRequestId !== undefined ? { clientRequestId } : {}),
         });
         notifySettled(realId);
         return realId;
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === "offline-unsupported"
-        ) {
-          throw error;
-        }
         console.error("[Canvas placement] edge split failed", {
           edgeId: hitEdge.id,
           type,

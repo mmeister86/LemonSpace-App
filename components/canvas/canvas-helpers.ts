@@ -366,6 +366,43 @@ function isBatchMoveNodesOpPayload(
   return record.moves.every(isMoveNodeOpPayload);
 }
 
+function isSplitEdgeAtExistingNodeOpPayload(
+  payload: unknown,
+): payload is {
+  middleNodeId: Id<"nodes">;
+  positionX?: number;
+  positionY?: number;
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.middleNodeId !== "string") return false;
+  const hasPositionX =
+    record.positionX === undefined || typeof record.positionX === "number";
+  const hasPositionY =
+    record.positionY === undefined || typeof record.positionY === "number";
+  return hasPositionX && hasPositionY;
+}
+
+function isRemoveEdgeOpPayload(
+  payload: unknown,
+): payload is {
+  edgeId: Id<"edges">;
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  return typeof record.edgeId === "string";
+}
+
+function isSplitEdgeOpPayload(
+  payload: unknown,
+): payload is {
+  splitEdgeId: Id<"edges">;
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  return typeof record.splitEdgeId === "string";
+}
+
 export function getPendingMovePinsFromLocalOps(
   canvasId: string,
 ): Map<string, { x: number; y: number }> {
@@ -385,9 +422,41 @@ export function getPendingMovePinsFromLocalOps(
           y: move.positionY,
         });
       }
+      continue;
+    }
+    if (
+      op.type === "splitEdgeAtExistingNode" &&
+      isSplitEdgeAtExistingNodeOpPayload(op.payload) &&
+      op.payload.positionX !== undefined &&
+      op.payload.positionY !== undefined
+    ) {
+      pins.set(op.payload.middleNodeId as string, {
+        x: op.payload.positionX,
+        y: op.payload.positionY,
+      });
     }
   }
   return pins;
+}
+
+export function getPendingRemovedEdgeIdsFromLocalOps(
+  canvasId: string,
+): Set<string> {
+  const edgeIds = new Set<string>();
+  for (const op of readCanvasOps(canvasId)) {
+    if (op.type === "removeEdge" && isRemoveEdgeOpPayload(op.payload)) {
+      edgeIds.add(op.payload.edgeId as string);
+      continue;
+    }
+    if (
+      (op.type === "createNodeWithEdgeSplit" ||
+        op.type === "splitEdgeAtExistingNode") &&
+      isSplitEdgeOpPayload(op.payload)
+    ) {
+      edgeIds.add(op.payload.splitEdgeId as string);
+    }
+  }
+  return edgeIds;
 }
 
 export function mergeNodesPreservingLocalState(

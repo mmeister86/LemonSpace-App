@@ -190,7 +190,8 @@ function opTouchesNodeId(op: CanvasPendingOp, nodeIdSet: ReadonlySet<string>): b
     (typeof payload.nodeId === "string" && nodeIdSet.has(payload.nodeId)) ||
     (typeof payload.sourceNodeId === "string" && nodeIdSet.has(payload.sourceNodeId)) ||
     (typeof payload.targetNodeId === "string" && nodeIdSet.has(payload.targetNodeId)) ||
-    (typeof payload.parentId === "string" && nodeIdSet.has(payload.parentId))
+    (typeof payload.parentId === "string" && nodeIdSet.has(payload.parentId)) ||
+    (typeof payload.middleNodeId === "string" && nodeIdSet.has(payload.middleNodeId))
   ) {
     return true;
   }
@@ -227,8 +228,10 @@ function opHasClientRequestId(
 function opTouchesEdgeId(op: CanvasPendingOp, edgeIdSet: ReadonlySet<string>): boolean {
   if (!isRecord(op.payload)) return false;
   return (
-    typeof op.payload.edgeId === "string" &&
-    edgeIdSet.has(op.payload.edgeId)
+    (typeof op.payload.edgeId === "string" &&
+      edgeIdSet.has(op.payload.edgeId)) ||
+    (typeof op.payload.splitEdgeId === "string" &&
+      edgeIdSet.has(op.payload.splitEdgeId))
   );
 }
 
@@ -290,6 +293,10 @@ function remapNodeIdInPayload(
       nextPayload[key] = toNodeId;
       changed = true;
     }
+  }
+  if (nextPayload.middleNodeId === fromNodeId) {
+    nextPayload.middleNodeId = toNodeId;
+    changed = true;
   }
 
   const moves = nextPayload.moves;

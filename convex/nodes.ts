@@ -36,6 +36,7 @@ async function getCanvasIfAuthorized(
 
 type NodeCreateMutationName =
   | "nodes.create"
+  | "nodes.createWithEdgeSplit"
   | "nodes.createWithEdgeFromSource"
   | "nodes.createWithEdgeToTarget";
 
@@ -248,10 +249,21 @@ export const createWithEdgeSplit = mutation({
     newNodeSourceHandle: v.optional(v.string()),
     splitSourceHandle: v.optional(v.string()),
     splitTargetHandle: v.optional(v.string()),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeSplit",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+    });
+    if (existingNodeId) {
+      return existingNodeId;
+    }
 
     const edge = await ctx.db.get(args.splitEdgeId);
     if (!edge || edge.canvasId !== args.canvasId) {
@@ -290,6 +302,13 @@ export const createWithEdgeSplit = mutation({
 
     await ctx.db.delete(args.splitEdgeId);
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    await rememberIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeSplit",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+      nodeId,
+    });
 
     return nodeId;
   },
@@ -310,10 +329,33 @@ export const splitEdgeAtExistingNode = mutation({
     newNodeTargetHandle: v.optional(v.string()),
     positionX: v.optional(v.number()),
     positionY: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+    const existingMutationRecord =
+      args.clientRequestId === undefined
+        ? null
+        : await ctx.db
+            .query("mutationRequests")
+            .withIndex("by_user_mutation_request", (q) =>
+              q
+                .eq("userId", user.userId)
+                .eq("mutation", "nodes.splitEdgeAtExistingNode")
+                .eq("clientRequestId", args.clientRequestId!),
+            )
+            .first();
+    if (existingMutationRecord) {
+      if (
+        existingMutationRecord.canvasId &&
+        existingMutationRecord.canvasId !== args.canvasId
+      ) {
+        throw new Error("Client request conflict");
+      }
+      return;
+    }
 
     const edge = await ctx.db.get(args.splitEdgeId);
     if (!edge || edge.canvasId !== args.canvasId) {
@@ -360,6 +402,18 @@ export const splitEdgeAtExistingNode = mutation({
 
     await ctx.db.delete(args.splitEdgeId);
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    if (args.clientRequestId) {
+      await ctx.db.insert("mutationRequests", {
+        userId: user.userId,
+        mutation: "nodes.splitEdgeAtExistingNode",
+        clientRequestId: args.clientRequestId,
+        canvasId: args.canvasId,
+        nodeId: args.middleNodeId,
+        edgeId: args.splitEdgeId,
+        createdAt: Date.now(),
+      });
+    }
   },
 });
 

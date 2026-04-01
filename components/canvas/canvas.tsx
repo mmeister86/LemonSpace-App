@@ -105,6 +105,7 @@ import {
   getMiniMapNodeStrokeColor,
   getNodeCenterClientPosition,
   getIntersectedEdgeId,
+  getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
   hasHandleKey,
   inferPendingConnectionNodeHandoff,
@@ -408,7 +409,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ]);
   });
 
-  const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
+  const createNodeWithEdgeSplitMut = useMutation(api.nodes.createWithEdgeSplit);
 
   const createEdge = useMutation(api.edges.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -445,12 +446,18 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const createNodeWithEdgeToTargetRaw = useMutation(
     api.nodes.createWithEdgeToTarget,
   );
+  const createNodeWithEdgeSplitRaw = useMutation(api.nodes.createWithEdgeSplit);
   const createEdgeRaw = useMutation(api.edges.create);
   const batchRemoveNodesRaw = useMutation(api.nodes.batchRemove);
   const removeEdgeRaw = useMutation(api.edges.remove);
+  const splitEdgeAtExistingNodeRaw = useMutation(
+    api.nodes.splitEdgeAtExistingNode,
+  );
 
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBrowserOnline, setIsBrowserOnline] = useState(
@@ -534,6 +541,84 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     return optimisticEdgeId as Id<"edges">;
   }, []);
 
+  const applyEdgeSplitLocally = useCallback((args: {
+    clientRequestId: string;
+    splitEdgeId: Id<"edges">;
+    middleNodeId: Id<"nodes">;
+    splitSourceHandle?: string;
+    splitTargetHandle?: string;
+    newNodeSourceHandle?: string;
+    newNodeTargetHandle?: string;
+    positionX?: number;
+    positionY?: number;
+  }): boolean => {
+    const splitEdgeId = args.splitEdgeId as string;
+    const splitEdge = edgesRef.current.find(
+      (edge) =>
+        edge.id === splitEdgeId &&
+        edge.className !== "temp" &&
+        !isOptimisticEdgeId(edge.id),
+    );
+    if (!splitEdge) {
+      return false;
+    }
+
+    const optimisticSplitEdgeBase = `${OPTIMISTIC_EDGE_PREFIX}${args.clientRequestId}`;
+    const optimisticSplitEdgeAId = `${optimisticSplitEdgeBase}_split_a`;
+    const optimisticSplitEdgeBId = `${optimisticSplitEdgeBase}_split_b`;
+
+    setEdges((current) => {
+      const existingSplitEdge = current.find((edge) => edge.id === splitEdgeId);
+      if (!existingSplitEdge) {
+        return current;
+      }
+
+      const next = current.filter(
+        (edge) =>
+          edge.id !== splitEdgeId &&
+          edge.id !== optimisticSplitEdgeAId &&
+          edge.id !== optimisticSplitEdgeBId,
+      );
+
+      next.push(
+        {
+          id: optimisticSplitEdgeAId,
+          source: existingSplitEdge.source,
+          target: args.middleNodeId as string,
+          sourceHandle: args.splitSourceHandle,
+          targetHandle: args.newNodeTargetHandle,
+        },
+        {
+          id: optimisticSplitEdgeBId,
+          source: args.middleNodeId as string,
+          target: existingSplitEdge.target,
+          sourceHandle: args.newNodeSourceHandle,
+          targetHandle: args.splitTargetHandle,
+        },
+      );
+
+      return next;
+    });
+
+    if (args.positionX !== undefined && args.positionY !== undefined) {
+      const x = args.positionX;
+      const y = args.positionY;
+      const middleNodeId = args.middleNodeId as string;
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === middleNodeId
+            ? {
+                ...node,
+                position: { x, y },
+              }
+            : node,
+        ),
+      );
+    }
+
+    return true;
+  }, []);
+
   const removeOptimisticCreateLocally = useCallback((args: {
     clientRequestId: string;
     removeNode?: boolean;
@@ -555,8 +640,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     }
 
     if (args.removeEdge) {
+      const optimisticEdgePrefix = `${optimisticEdgeId}_`;
       setEdges((current) =>
-        current.filter((edge) => edge.id !== optimisticEdgeId),
+        current.filter(
+          (edge) =>
+            edge.id !== optimisticEdgeId &&
+            !edge.id.startsWith(optimisticEdgePrefix),
+        ),
       );
     }
 
@@ -702,14 +792,47 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   const runCreateNodeWithEdgeSplitOnlineOnly = useCallback(
-    async (args: Parameters<typeof createNodeWithEdgeSplit>[0]) => {
-      if (!isSyncOnline) {
-        notifyOfflineUnsupported("Kanten-Split");
-        throw new Error("offline-unsupported");
+    async (args: Parameters<typeof createNodeWithEdgeSplitMut>[0]) => {
+      const clientRequestId = args.clientRequestId ?? crypto.randomUUID();
+      const payload = { ...args, clientRequestId };
+
+      if (isSyncOnline) {
+        return await createNodeWithEdgeSplitMut(payload);
       }
-      return await createNodeWithEdgeSplit(args);
+
+      const optimisticNodeId = addOptimisticNodeLocally(payload);
+      const splitApplied = applyEdgeSplitLocally({
+        clientRequestId,
+        splitEdgeId: payload.splitEdgeId,
+        middleNodeId: optimisticNodeId,
+        splitSourceHandle: payload.splitSourceHandle,
+        splitTargetHandle: payload.splitTargetHandle,
+        newNodeSourceHandle: payload.newNodeSourceHandle,
+        newNodeTargetHandle: payload.newNodeTargetHandle,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+      });
+
+      if (splitApplied) {
+        await enqueueSyncMutationRef.current("createNodeWithEdgeSplit", payload);
+      } else {
+        await enqueueSyncMutationRef.current("createNode", {
+          canvasId: payload.canvasId,
+          type: payload.type,
+          positionX: payload.positionX,
+          positionY: payload.positionY,
+          width: payload.width,
+          height: payload.height,
+          data: payload.data,
+          parentId: payload.parentId,
+          zIndex: payload.zIndex,
+          clientRequestId,
+        });
+      }
+
+      return optimisticNodeId;
     },
-    [createNodeWithEdgeSplit, isSyncOnline, notifyOfflineUnsupported],
+    [addOptimisticNodeLocally, applyEdgeSplitLocally, createNodeWithEdgeSplitMut, isSyncOnline],
   );
 
   const refreshPendingSyncCount = useCallback(async () => {
@@ -771,12 +894,23 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               realId,
             );
             setEdgeSyncNonce((value) => value + 1);
+          } else if (op.type === "createNodeWithEdgeSplit") {
+            const realId = await createNodeWithEdgeSplitRaw(op.payload);
+            await remapOptimisticNodeLocally(op.payload.clientRequestId, realId);
+            await syncPendingMoveForClientRequestRef.current(
+              op.payload.clientRequestId,
+              realId,
+            );
+            setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createEdge") {
             await createEdgeRaw(op.payload);
           } else if (op.type === "removeEdge") {
             await removeEdgeRaw(op.payload);
           } else if (op.type === "batchRemoveNodes") {
             await batchRemoveNodesRaw(op.payload);
+          } else if (op.type === "splitEdgeAtExistingNode") {
+            await splitEdgeAtExistingNodeRaw(op.payload);
+            setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "moveNode") {
             await moveNode(op.payload);
           } else if (op.type === "resizeNode") {
@@ -814,11 +948,24 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               removeNode: true,
               removeEdge: true,
             });
+          } else if (op.type === "createNodeWithEdgeSplit") {
+            removeOptimisticCreateLocally({
+              clientRequestId: op.payload.clientRequestId,
+              removeNode: true,
+              removeEdge: true,
+            });
+            setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createEdge") {
             removeOptimisticCreateLocally({
               clientRequestId: op.payload.clientRequestId,
               removeEdge: true,
             });
+          } else if (op.type === "splitEdgeAtExistingNode") {
+            removeOptimisticCreateLocally({
+              clientRequestId: op.payload.clientRequestId,
+              removeEdge: true,
+            });
+            setEdgeSyncNonce((value) => value + 1);
           }
           await ackCanvasSyncOp(op.id);
           resolveCanvasOp(canvasId as string, op.id);
@@ -842,6 +989,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     createEdgeRaw,
     createNodeRaw,
     createNodeWithEdgeFromSourceRaw,
+    createNodeWithEdgeSplitRaw,
     createNodeWithEdgeToTargetRaw,
     isSyncOnline,
     moveNode,
@@ -850,6 +998,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     removeEdgeRaw,
     removeOptimisticCreateLocally,
     resizeNode,
+    splitEdgeAtExistingNodeRaw,
     updateNodeData,
   ]);
 
@@ -1124,13 +1273,34 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const runSplitEdgeAtExistingNodeMutation = useCallback(
     async (args: Parameters<typeof splitEdgeAtExistingNodeMut>[0]) => {
-      if (!isSyncOnline) {
-        notifyOfflineUnsupported("Kanten-Split");
+      const clientRequestId = args.clientRequestId ?? crypto.randomUUID();
+      const payload = { ...args, clientRequestId };
+      if (isSyncOnline) {
+        await splitEdgeAtExistingNodeMut(payload);
         return;
       }
-      await splitEdgeAtExistingNodeMut(args);
+
+      const splitApplied = applyEdgeSplitLocally({
+        clientRequestId,
+        splitEdgeId: payload.splitEdgeId,
+        middleNodeId: payload.middleNodeId,
+        splitSourceHandle: payload.splitSourceHandle,
+        splitTargetHandle: payload.splitTargetHandle,
+        newNodeSourceHandle: payload.newNodeSourceHandle,
+        newNodeTargetHandle: payload.newNodeTargetHandle,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+      });
+      if (!splitApplied) return;
+
+      await enqueueSyncMutation("splitEdgeAtExistingNode", payload);
     },
-    [isSyncOnline, notifyOfflineUnsupported, splitEdgeAtExistingNodeMut],
+    [
+      applyEdgeSplitLocally,
+      enqueueSyncMutation,
+      isSyncOnline,
+      splitEdgeAtExistingNodeMut,
+    ],
   );
 
   /** Freepik-Panel: State canvas-weit, damit es den optimistic_… → Real-ID-Wechsel überlebt. */
@@ -1334,8 +1504,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     return { flowPanOnDrag: panMiddleRight, flowSelectionOnDrag: true };
   }, [scissorsMode, navTool]);
 
-  const edgesRef = useRef(edges);
-  edgesRef.current = edges;
   const scissorsModeRef = useRef(scissorsMode);
   scissorsModeRef.current = scissorsMode;
 
@@ -1408,6 +1576,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       }
 
       const tempEdges = prev.filter((e) => e.className === "temp");
+      const pendingRemovedEdgeIds = getPendingRemovedEdgeIdsFromLocalOps(
+        canvasId as string,
+      );
       const sourceTypeByNodeId =
         convexNodes !== undefined
           ? new Map<string, string>(
@@ -1415,15 +1586,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             )
           : undefined;
       const glowMode = resolvedTheme === "dark" ? "dark" : "light";
-      const mapped = convexEdges.map((edge: Doc<"edges">) =>
-        sourceTypeByNodeId
-          ? convexEdgeToRFWithSourceGlow(
-              edge,
-              sourceTypeByNodeId.get(edge.sourceNodeId),
-              glowMode,
-            )
-          : convexEdgeToRF(edge),
-      );
+      const mapped = convexEdges
+        .filter((edge: Doc<"edges">) => !pendingRemovedEdgeIds.has(edge._id as string))
+        .map((edge: Doc<"edges">) =>
+          sourceTypeByNodeId
+            ? convexEdgeToRFWithSourceGlow(
+                edge,
+                sourceTypeByNodeId.get(edge.sourceNodeId),
+                glowMode,
+              )
+            : convexEdgeToRF(edge),
+        );
 
       const mappedSignatures = new Set(mapped.map(rfEdgeConnectionSignature));
       const convexNodeIds =
@@ -1562,7 +1735,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
       return [...mapped, ...carriedOptimistic, ...tempEdges];
     });
-  }, [convexEdges, convexNodes, resolvedTheme, edgeSyncNonce]);
+  }, [canvasId, convexEdges, convexNodes, resolvedTheme, edgeSyncNonce]);
 
   useLayoutEffect(() => {
     if (!convexNodes || isResizing.current) return;
@@ -1776,7 +1949,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       }
 
       const intersectedEdge = edges.find(
-        (edge) => edge.id === intersectedEdgeId && edge.className !== "temp",
+        (edge) =>
+          edge.id === intersectedEdgeId &&
+          edge.className !== "temp" &&
+          !isOptimisticEdgeId(edge.id),
       );
       if (!intersectedEdge) {
         overlappedEdgeRef.current = null;
@@ -1836,7 +2012,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           const intersectedEdge = intersectedEdgeId
             ? edges.find(
                 (edge) =>
-                  edge.id === intersectedEdgeId && edge.className !== "temp",
+                  edge.id === intersectedEdgeId &&
+                  edge.className !== "temp" &&
+                  !isOptimisticEdgeId(edge.id),
               )
             : undefined;
 

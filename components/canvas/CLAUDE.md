@@ -122,10 +122,10 @@ Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right`
 
 - Key-Schema: `lemonspace.canvas:snapshot:v1:<canvasId>` und `lemonspace.canvas:ops:v1:<canvasId>`
 - Snapshot = letzter bekannter State (Nodes + Edges) für schnellen initialen Render
-- Ops-Queue ist aktiv für: `createNode*`, `createEdge`, `moveNode`, `resizeNode`, `updateData`, `removeEdge`, `batchRemoveNodes`.
+- Ops-Queue ist aktiv für: `createNode*` (inkl. `createNodeWithEdgeSplit`), `createEdge`, `splitEdgeAtExistingNode`, `moveNode`, `resizeNode`, `updateData`, `removeEdge`, `batchRemoveNodes`.
 - Reconnect synchronisiert als `createEdge + removeEdge` (statt rein lokalem UI-Umbiegen).
 - ID-Handover `optimistic_* → realId` remappt Folge-Operationen in Queue + localStorage-Mirror, damit Verbindungen während/ nach Replay stabil bleiben.
-- Unsupported offline (weiterhin online-only): `createWithEdgeSplit`, Datei-Upload/Storage-Mutations, AI-Generierung.
+- Unsupported offline (weiterhin online-only): Datei-Upload/Storage-Mutations, AI-Generierung.
 
 ---
 

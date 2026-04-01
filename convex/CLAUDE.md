@@ -123,8 +123,9 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 
 ### Idempotente Canvas-Mutations
 
-- `nodes.create`, `nodes.createWithEdgeFromSource`, `nodes.createWithEdgeToTarget` sind über `clientRequestId` idempotent.
+- `nodes.create`, `nodes.createWithEdgeSplit`, `nodes.createWithEdgeFromSource`, `nodes.createWithEdgeToTarget` sind über `clientRequestId` idempotent.
 - `edges.create` ist über `clientRequestId` idempotent.
+- `nodes.splitEdgeAtExistingNode` ist über `clientRequestId` idempotent (Replay wird als No-op behandelt).
 - `nodes.batchRemove` ist idempotent tolerant: wenn alle angefragten Nodes bereits entfernt sind, wird die Mutation als No-op beendet.
 
 ---
