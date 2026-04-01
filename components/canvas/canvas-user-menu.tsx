@@ -20,7 +20,11 @@ function getInitials(nameOrEmail: string) {
   return normalized.slice(0, 2).toUpperCase();
 }
 
-export function CanvasUserMenu() {
+type CanvasUserMenuProps = {
+  compact?: boolean;
+};
+
+export function CanvasUserMenu({ compact = false }: CanvasUserMenuProps) {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
 
@@ -37,7 +41,49 @@ export function CanvasUserMenu() {
   if (isPending && !session?.user) {
     return (
       <div className="border-t p-3">
-        <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
+        <div
+          className={
+            compact
+              ? "mx-auto h-9 w-9 animate-pulse rounded-full bg-muted/60"
+              : "h-10 animate-pulse rounded-lg bg-muted/60"
+          }
+        />
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className="border-t border-border/80 p-2">
+        <div className="flex flex-col items-center gap-1.5">
+          <Avatar className="size-9 shrink-0 border border-border/60">
+            <AvatarFallback className="bg-muted text-xs font-medium text-muted-foreground">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground"
+            asChild
+            title="Dashboard"
+          >
+            <Link href="/dashboard" aria-label="Dashboard">
+              <LayoutDashboard className="size-4" />
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground"
+            type="button"
+            title="Abmelden"
+            aria-label="Abmelden"
+            onClick={() => void handleSignOut()}
+          >
+            <LogOut className="size-4" />
+          </Button>
+        </div>
       </div>
     );
   }

@@ -1,8 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import Canvas from "@/components/canvas/canvas";
-import ConnectionBanner from "@/components/canvas/connection-banner";
-import CanvasSidebar from "@/components/canvas/canvas-sidebar";
+import { CanvasShell } from "@/components/canvas/canvas-shell";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
@@ -48,13 +46,5 @@ export default async function CanvasPage({
     notFound();
   }
 
-  return (
-    <div className="flex h-screen w-screen overflow-hidden">
-      <CanvasSidebar canvasId={typedCanvasId} />
-      <div className="relative min-h-0 min-w-0 flex-1">
-        <ConnectionBanner />
-        <Canvas canvasId={typedCanvasId} />
-      </div>
-    </div>
-  );
+  return <CanvasShell canvasId={typedCanvasId} />;
 }

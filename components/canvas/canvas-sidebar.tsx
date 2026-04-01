@@ -77,7 +77,13 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   presentation: Presentation,
 };
 
-function SidebarRow({ entry }: { entry: NodeCatalogEntry }) {
+function SidebarRow({
+  entry,
+  compact = false,
+}: {
+  entry: NodeCatalogEntry;
+  compact?: boolean;
+}) {
   const enabled = isNodePaletteEnabled(entry);
   const Icon = CATALOG_ICONS[entry.type] ?? ClipboardList;
 
@@ -95,28 +101,36 @@ function SidebarRow({ entry }: { entry: NodeCatalogEntry }) {
       onDragStart={onDragStart}
       title={enabled ? `${entry.label} — auf den Canvas ziehen` : hint}
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+        "rounded-lg border transition-colors",
+        compact
+          ? "flex h-10 w-full items-center justify-center p-0"
+          : "flex items-center gap-2 px-3 py-2 text-sm",
         enabled
           ? "cursor-grab border-border/80 bg-card hover:bg-accent active:cursor-grabbing"
           : "cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground",
       )}
     >
       <Icon className="size-4 shrink-0 opacity-80" />
-      <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-      {entry.phase > 1 ? (
+      {!compact ? <span className="min-w-0 flex-1 truncate">{entry.label}</span> : null}
+      {!compact && entry.phase > 1 ? (
         <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground/80">
           P{entry.phase}
         </span>
       ) : null}
+      {compact ? <span className="sr-only">{entry.label}</span> : null}
     </div>
   );
 }
 
 type CanvasSidebarProps = {
   canvasId: Id<"canvases">;
+  railMode?: boolean;
 };
 
-export default function CanvasSidebar({ canvasId }: CanvasSidebarProps) {
+export default function CanvasSidebar({
+  canvasId,
+  railMode = false,
+}: CanvasSidebarProps) {
   const canvas = useAuthQuery(api.canvases.get, { canvasId });
   const byCategory = catalogEntriesByCategory();
   const [collapsedByCategory, setCollapsedByCategory] = useState<
@@ -127,63 +141,95 @@ export default function CanvasSidebar({ canvasId }: CanvasSidebarProps) {
     ),
   );
 
+  const railEntries = NODE_CATEGORIES_ORDERED.flatMap(
+    (categoryId) => byCategory.get(categoryId) ?? [],
+  );
+
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border/80 bg-background">
-      <div className="border-b border-border/80 px-4 py-4">
-        {canvas === undefined ? (
-          <div className="h-12 animate-pulse rounded-md bg-muted/50" />
+    <aside className="flex h-full w-full min-w-0 overflow-hidden flex-col border-r border-border/80 bg-background">
+      {railMode ? (
+        <div className="border-b border-border/80 px-2 py-3">
+          <div className="flex items-center justify-center">
+            <span
+              className="line-clamp-1 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+              title={canvas?.name ?? "Canvas"}
+            >
+              {canvas?.name?.slice(0, 2).toUpperCase() ?? "CV"}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="border-b border-border/80 px-4 py-4">
+          {canvas === undefined ? (
+            <div className="h-12 animate-pulse rounded-md bg-muted/50" />
+          ) : (
+            <>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Canvas
+              </p>
+              <h1 className="mt-1 line-clamp-2 text-base font-semibold leading-snug text-foreground">
+                {canvas?.name ?? "…"}
+              </h1>
+            </>
+          )}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto overscroll-contain",
+          railMode ? "p-2" : "p-3",
+        )}
+      >
+        {railMode ? (
+          <div className="flex flex-col gap-1.5">
+            {railEntries.map((entry) => (
+              <SidebarRow key={entry.type} entry={entry} compact />
+            ))}
+          </div>
         ) : (
           <>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Canvas
-            </p>
-            <h1 className="mt-1 line-clamp-2 text-base font-semibold leading-snug text-foreground">
-              {canvas?.name ?? "…"}
-            </h1>
+            {NODE_CATEGORIES_ORDERED.map((categoryId) => {
+              const entries = byCategory.get(categoryId) ?? [];
+              if (entries.length === 0) return null;
+              const { label } = NODE_CATEGORY_META[categoryId];
+              const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
+              return (
+                <div key={categoryId} className="mb-4 last:mb-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollapsedByCategory((prev) => ({
+                        ...prev,
+                        [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
+                      }))
+                    }
+                    className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                    aria-expanded={!isCollapsed}
+                    aria-controls={`sidebar-category-${categoryId}`}
+                  >
+                    <span>{label}</span>
+                    {isCollapsed ? (
+                      <ChevronRight className="size-3.5 shrink-0" />
+                    ) : (
+                      <ChevronDown className="size-3.5 shrink-0" />
+                    )}
+                  </button>
+                  {!isCollapsed ? (
+                    <div id={`sidebar-category-${categoryId}`} className="flex flex-col gap-1.5">
+                      {entries.map((entry) => (
+                        <SidebarRow key={entry.type} entry={entry} />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
-        {NODE_CATEGORIES_ORDERED.map((categoryId) => {
-          const entries = byCategory.get(categoryId) ?? [];
-          if (entries.length === 0) return null;
-          const { label } = NODE_CATEGORY_META[categoryId];
-          const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
-          return (
-            <div key={categoryId} className="mb-4 last:mb-0">
-              <button
-                type="button"
-                onClick={() =>
-                  setCollapsedByCategory((prev) => ({
-                    ...prev,
-                    [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
-                  }))
-                }
-                className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                aria-expanded={!isCollapsed}
-                aria-controls={`sidebar-category-${categoryId}`}
-              >
-                <span>{label}</span>
-                {isCollapsed ? (
-                  <ChevronRight className="size-3.5 shrink-0" />
-                ) : (
-                  <ChevronDown className="size-3.5 shrink-0" />
-                )}
-              </button>
-              {!isCollapsed ? (
-                <div id={`sidebar-category-${categoryId}`} className="flex flex-col gap-1.5">
-                  {entries.map((entry) => (
-                    <SidebarRow key={entry.type} entry={entry} />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      <CanvasUserMenu />
+      <CanvasUserMenu compact={railMode} />
     </aside>
   );
 }
