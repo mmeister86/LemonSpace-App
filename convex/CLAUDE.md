@@ -119,7 +119,11 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 ### Auth-Race-Härtung
 
 - `canvases.get` nutzt optionalen Auth-Check und gibt bei fehlender Session `null` zurück (statt Throw), damit SSR/Client-Hydration bei kurzem Token-Race nicht in `404` kippt.
+- `canvases.list` gibt bei fehlender Session eine leere Liste zurück (statt Throw), damit Dashboard-Subscriptions beim Logout keinen Error-Spam erzeugen.
 - `credits.getBalance` gibt bei fehlender Session einen Default-Stand (`0`-Werte) zurück (statt Throw), damit UI-Widgets nicht mit `Unauthenticated` fehlschlagen.
+- `credits.getSubscription` fällt bei fehlender Session auf Free/Active zurück (statt Throw), damit Tier-UI stabil bleibt.
+- `credits.getRecentTransactions` gibt bei fehlender Session `[]` zurück (statt Throw), damit Aktivitätslisten beim Logout sauber leeren.
+- `credits.getUsageStats` gibt bei fehlender Session `0`-Statistiken zurück (statt Throw), damit Verbrauchsanzeigen ohne Fehler ausrendern.
 
 ### Idempotente Canvas-Mutations
 

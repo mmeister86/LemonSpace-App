@@ -8,6 +8,7 @@ import { internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { betterAuth } from "better-auth/minimal";
+import { magicLink } from "better-auth/plugins";
 import { Resend } from "resend";
 import authConfig from "./auth.config";
 
@@ -26,6 +27,9 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
 
 // Auth Factory — wird pro Request aufgerufen (Convex ist request-scoped)
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  const authAppUrl = appUrl ?? siteUrl;
+  const signInRedirectUrl = `${authAppUrl}/dashboard`;
+
   return betterAuth({
     baseURL: siteUrl,
     trustedOrigins: [siteUrl, lemonspaceAppOrigin, "http://localhost:3000"],
@@ -78,6 +82,46 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       },
     },
     plugins: [
+      magicLink({
+        disableSignUp: true,
+        expiresIn: 60 * 10, // 10 Minuten
+        sendMagicLink: async ({ email, url }) => {
+          const apiKey = process.env.RESEND_API_KEY;
+          if (!apiKey) {
+            console.error("RESEND_API_KEY is not set — skipping magic link email");
+            return;
+          }
+
+          const magicLinkUrl = new URL(url);
+          magicLinkUrl.searchParams.set("callbackURL", signInRedirectUrl);
+          magicLinkUrl.searchParams.set("errorCallbackURL", `${authAppUrl}/auth/sign-in`);
+
+          const resend = new Resend(apiKey);
+          const { error } = await resend.emails.send({
+            from: "LemonSpace <noreply@lemonspace.io>",
+            to: email,
+            subject: "Dein LemonSpace Magic Link",
+            html: `
+              <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+                <h2>Dein Login-Link für LemonSpace 🍋</h2>
+                <p>Klicke auf den Button, um dich anzumelden:</p>
+                <a href="${magicLinkUrl.toString()}"
+                   style="display: inline-block; background: #facc15; color: #1a1a1a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+                  Jetzt anmelden
+                </a>
+                <p style="color: #666; font-size: 13px;">
+                  Der Link ist 10 Minuten gültig. Falls der Button nicht funktioniert, kopiere diesen Link:<br/>
+                  <a href="${magicLinkUrl.toString()}">${magicLinkUrl.toString()}</a>
+                </p>
+              </div>
+            `,
+          });
+
+          if (error) {
+            console.error("Failed to send magic link email:", error);
+          }
+        },
+      }),
       convex({ authConfig }),
       polar({
         client: polarClient,

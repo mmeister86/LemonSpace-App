@@ -10,7 +10,9 @@ export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [magicLinkMessage, setMagicLinkMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +34,35 @@ export default function SignInPage() {
       setError("Ein unerwarteter Fehler ist aufgetreten");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    setError("");
+    setMagicLinkMessage("");
+
+    if (!email) {
+      setError("Bitte gib deine E-Mail-Adresse ein");
+      return;
+    }
+
+    setMagicLinkLoading(true);
+    try {
+      const result = await authClient.signIn.magicLink({
+        email,
+        callbackURL: "/dashboard",
+        errorCallbackURL: "/auth/sign-in",
+      });
+
+      if (result.error) {
+        setError(result.error.message ?? "Magic Link konnte nicht gesendet werden");
+      } else {
+        setMagicLinkMessage("Magic Link gesendet. Prüfe dein Postfach.");
+      }
+    } catch {
+      setError("Ein unerwarteter Fehler ist aufgetreten");
+    } finally {
+      setMagicLinkLoading(false);
     }
   };
 
@@ -87,6 +118,18 @@ export default function SignInPage() {
           >
             {loading ? "Wird angemeldet…" : "Anmelden"}
           </button>
+
+          <button
+            type="button"
+            disabled={magicLinkLoading}
+            onClick={handleMagicLink}
+            className="w-full rounded-lg border bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors"
+          >
+            {magicLinkLoading ? "Wird gesendet…" : "Magic Link senden"}
+          </button>
+          {magicLinkMessage && (
+            <p className="text-sm text-emerald-600">{magicLinkMessage}</p>
+          )}
         </form>
 
         <p className="text-center text-sm text-muted-foreground">

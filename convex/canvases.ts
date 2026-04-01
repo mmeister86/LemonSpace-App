@@ -12,7 +12,10 @@ import { optionalAuth, requireAuth } from "./helpers";
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return [];
+    }
     return await ctx.db
       .query("canvases")
       .withIndex("by_owner_updated", (q) => q.eq("ownerId", user.userId))

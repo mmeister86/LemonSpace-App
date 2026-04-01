@@ -101,7 +101,13 @@ export const listTransactions = query({
 export const getSubscription = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return {
+        tier: "free" as const,
+        status: "active" as const,
+      };
+    }
     const row = await ctx.db
       .query("subscriptions")
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
@@ -152,7 +158,10 @@ export const getRecentTransactions = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return [];
+    }
     const limit = args.limit ?? 10;
 
     return await ctx.db
@@ -170,7 +179,13 @@ export const getRecentTransactions = query({
 export const getUsageStats = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return {
+        monthlyUsage: 0,
+        totalGenerations: 0,
+      };
+    }
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
