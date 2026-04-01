@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
+import type { Id } from "./_generated/dataModel";
 
 // ============================================================================
 // Queries
@@ -39,12 +40,38 @@ export const create = mutation({
     targetNodeId: v.id("nodes"),
     sourceHandle: v.optional(v.string()),
     targetHandle: v.optional(v.string()),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     const canvas = await ctx.db.get(args.canvasId);
     if (!canvas || canvas.ownerId !== user.userId) {
       throw new Error("Canvas not found");
+    }
+
+    const getExistingEdge = async (): Promise<Id<"edges"> | null> => {
+      const clientRequestId = args.clientRequestId;
+      if (!clientRequestId) return null;
+      const existing = await ctx.db
+        .query("mutationRequests")
+        .withIndex("by_user_mutation_request", (q) =>
+          q
+            .eq("userId", user.userId)
+            .eq("mutation", "edges.create")
+            .eq("clientRequestId", clientRequestId),
+        )
+        .first();
+      if (!existing) return null;
+      if (existing.canvasId && existing.canvasId !== args.canvasId) {
+        throw new Error("Client request conflict");
+      }
+      if (!existing.edgeId) return null;
+      return existing.edgeId;
+    };
+
+    const existingEdgeId = await getExistingEdge();
+    if (existingEdgeId) {
+      return existingEdgeId;
     }
 
     // Prüfen ob beide Nodes existieren und zum gleichen Canvas gehören
@@ -71,6 +98,16 @@ export const create = mutation({
     });
 
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    if (args.clientRequestId) {
+      await ctx.db.insert("mutationRequests", {
+        userId: user.userId,
+        mutation: "edges.create",
+        clientRequestId: args.clientRequestId,
+        canvasId: args.canvasId,
+        edgeId,
+        createdAt: Date.now(),
+      });
+    }
     return edgeId;
   },
 });

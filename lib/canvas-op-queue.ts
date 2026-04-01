@@ -7,6 +7,56 @@ const FALLBACK_STORAGE_KEY = "lemonspace.canvas:sync-fallback:v1";
 export const CANVAS_SYNC_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export type CanvasSyncOpPayloadByType = {
+  createNode: {
+    canvasId: Id<"canvases">;
+    type: string;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+    data: unknown;
+    parentId?: Id<"nodes">;
+    zIndex?: number;
+    clientRequestId: string;
+  };
+  createNodeWithEdgeFromSource: {
+    canvasId: Id<"canvases">;
+    type: string;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+    data: unknown;
+    parentId?: Id<"nodes">;
+    zIndex?: number;
+    clientRequestId: string;
+    sourceNodeId: Id<"nodes">;
+    sourceHandle?: string;
+    targetHandle?: string;
+  };
+  createNodeWithEdgeToTarget: {
+    canvasId: Id<"canvases">;
+    type: string;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+    data: unknown;
+    parentId?: Id<"nodes">;
+    zIndex?: number;
+    clientRequestId: string;
+    targetNodeId: Id<"nodes">;
+    sourceHandle?: string;
+    targetHandle?: string;
+  };
+  createEdge: {
+    canvasId: Id<"canvases">;
+    sourceNodeId: Id<"nodes">;
+    targetNodeId: Id<"nodes">;
+    sourceHandle?: string;
+    targetHandle?: string;
+    clientRequestId: string;
+  };
   moveNode: { nodeId: Id<"nodes">; positionX: number; positionY: number };
   resizeNode: { nodeId: Id<"nodes">; width: number; height: number };
   updateData: { nodeId: Id<"nodes">; data: unknown };
@@ -156,7 +206,13 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
     !id ||
     typeof canvasId !== "string" ||
     !canvasId ||
-    (type !== "moveNode" && type !== "resizeNode" && type !== "updateData")
+    type !== "createNode" &&
+    type !== "createNodeWithEdgeFromSource" &&
+    type !== "createNodeWithEdgeToTarget" &&
+    type !== "createEdge" &&
+    type !== "moveNode" &&
+    type !== "resizeNode" &&
+    type !== "updateData"
   ) {
     return null;
   }
@@ -172,6 +228,170 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
   const lastError = typeof raw.lastError === "string" ? raw.lastError : undefined;
 
   if (!isRecord(payload)) return null;
+
+  if (
+    type === "createNode" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.type === "string" &&
+    typeof payload.positionX === "number" &&
+    typeof payload.positionY === "number" &&
+    typeof payload.width === "number" &&
+    typeof payload.height === "number" &&
+    typeof payload.clientRequestId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        type: payload.type,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+        width: payload.width,
+        height: payload.height,
+        data: payload.data,
+        parentId:
+          typeof payload.parentId === "string"
+            ? (payload.parentId as Id<"nodes">)
+            : undefined,
+        zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
+        clientRequestId: payload.clientRequestId,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
+    type === "createNodeWithEdgeFromSource" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.type === "string" &&
+    typeof payload.positionX === "number" &&
+    typeof payload.positionY === "number" &&
+    typeof payload.width === "number" &&
+    typeof payload.height === "number" &&
+    typeof payload.clientRequestId === "string" &&
+    typeof payload.sourceNodeId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        type: payload.type,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+        width: payload.width,
+        height: payload.height,
+        data: payload.data,
+        parentId:
+          typeof payload.parentId === "string"
+            ? (payload.parentId as Id<"nodes">)
+            : undefined,
+        zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
+        clientRequestId: payload.clientRequestId,
+        sourceNodeId: payload.sourceNodeId as Id<"nodes">,
+        sourceHandle:
+          typeof payload.sourceHandle === "string"
+            ? payload.sourceHandle
+            : undefined,
+        targetHandle:
+          typeof payload.targetHandle === "string"
+            ? payload.targetHandle
+            : undefined,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
+    type === "createNodeWithEdgeToTarget" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.type === "string" &&
+    typeof payload.positionX === "number" &&
+    typeof payload.positionY === "number" &&
+    typeof payload.width === "number" &&
+    typeof payload.height === "number" &&
+    typeof payload.clientRequestId === "string" &&
+    typeof payload.targetNodeId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        type: payload.type,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+        width: payload.width,
+        height: payload.height,
+        data: payload.data,
+        parentId:
+          typeof payload.parentId === "string"
+            ? (payload.parentId as Id<"nodes">)
+            : undefined,
+        zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
+        clientRequestId: payload.clientRequestId,
+        targetNodeId: payload.targetNodeId as Id<"nodes">,
+        sourceHandle:
+          typeof payload.sourceHandle === "string"
+            ? payload.sourceHandle
+            : undefined,
+        targetHandle:
+          typeof payload.targetHandle === "string"
+            ? payload.targetHandle
+            : undefined,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
+    type === "createEdge" &&
+    typeof payload.canvasId === "string" &&
+    typeof payload.sourceNodeId === "string" &&
+    typeof payload.targetNodeId === "string" &&
+    typeof payload.clientRequestId === "string"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        canvasId: payload.canvasId as Id<"canvases">,
+        sourceNodeId: payload.sourceNodeId as Id<"nodes">,
+        targetNodeId: payload.targetNodeId as Id<"nodes">,
+        sourceHandle:
+          typeof payload.sourceHandle === "string"
+            ? payload.sourceHandle
+            : undefined,
+        targetHandle:
+          typeof payload.targetHandle === "string"
+            ? payload.targetHandle
+            : undefined,
+        clientRequestId: payload.clientRequestId,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
 
   if (
     type === "moveNode" &&
@@ -417,4 +637,113 @@ export async function dropExpiredCanvasSyncOps(
   }
   await txDone(tx);
   return expiredIds;
+}
+
+function remapNodeIdInPayload(
+  op: CanvasSyncOp,
+  fromNodeId: string,
+  toNodeId: string,
+): CanvasSyncOp {
+  if (op.type === "createNode" && op.payload.parentId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, parentId: toNodeId as Id<"nodes"> },
+    };
+  }
+  if (op.type === "createNodeWithEdgeFromSource") {
+    let changed = false;
+    const next = { ...op.payload };
+    if (next.parentId === fromNodeId) {
+      next.parentId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (next.sourceNodeId === fromNodeId) {
+      next.sourceNodeId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (changed) {
+      return { ...op, payload: next };
+    }
+  }
+  if (op.type === "createNodeWithEdgeToTarget") {
+    let changed = false;
+    const next = { ...op.payload };
+    if (next.parentId === fromNodeId) {
+      next.parentId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (next.targetNodeId === fromNodeId) {
+      next.targetNodeId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (changed) {
+      return { ...op, payload: next };
+    }
+  }
+  if (op.type === "moveNode" && op.payload.nodeId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, nodeId: toNodeId as Id<"nodes"> },
+    };
+  }
+  if (op.type === "resizeNode" && op.payload.nodeId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, nodeId: toNodeId as Id<"nodes"> },
+    };
+  }
+  if (op.type === "updateData" && op.payload.nodeId === fromNodeId) {
+    return {
+      ...op,
+      payload: { ...op.payload, nodeId: toNodeId as Id<"nodes"> },
+    };
+  }
+  if (op.type === "createEdge") {
+    let changed = false;
+    const next = { ...op.payload };
+    if (next.sourceNodeId === fromNodeId) {
+      next.sourceNodeId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (next.targetNodeId === fromNodeId) {
+      next.targetNodeId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (changed) {
+      return { ...op, payload: next };
+    }
+  }
+  return op;
+}
+
+export async function remapCanvasSyncNodeId(
+  canvasId: string,
+  fromNodeId: string,
+  toNodeId: string,
+): Promise<number> {
+  const queue = await listCanvasSyncOps(canvasId);
+  let changed = 0;
+  const nextOps = queue.map((entry) => {
+    const next = remapNodeIdInPayload(entry, fromNodeId, toNodeId);
+    if (next !== entry) changed += 1;
+    return next;
+  });
+  if (changed === 0) return 0;
+
+  const db = await openDb();
+  if (!db) {
+    const fallback = readFallbackOps()
+      .filter((entry) => entry.canvasId !== canvasId)
+      .concat(nextOps);
+    writeFallbackOps(fallback);
+    return changed;
+  }
+
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  for (const op of nextOps) {
+    store.put(op);
+  }
+  await txDone(tx);
+  return changed;
 }

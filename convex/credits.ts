@@ -1,6 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAuth } from "./helpers";
+import { optionalAuth, requireAuth } from "./helpers";
 import { internal } from "./_generated/api";
 
 // ============================================================================
@@ -58,7 +58,10 @@ export type Tier = keyof typeof TIER_CONFIG;
 export const getBalance = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return { balance: 0, reserved: 0, available: 0, monthlyAllocation: 0 };
+    }
     const balance = await ctx.db
       .query("creditBalances")
       .withIndex("by_user", (q) => q.eq("userId", user.userId))

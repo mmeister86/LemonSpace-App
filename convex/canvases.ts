@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAuth } from "./helpers";
+import { optionalAuth, requireAuth } from "./helpers";
 
 // ============================================================================
 // Queries
@@ -27,7 +27,10 @@ export const list = query({
 export const get = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
-    const user = await requireAuth(ctx);
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return null;
+    }
     const canvas = await ctx.db.get(canvasId);
     if (!canvas || canvas.ownerId !== user.userId) {
       return null;

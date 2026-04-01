@@ -214,6 +214,20 @@ export default defineSchema({
     .index("by_source", ["sourceNodeId"])
     .index("by_target", ["targetNodeId"]),
 
+  mutationRequests: defineTable({
+    userId: v.string(),
+    mutation: v.string(),
+    clientRequestId: v.string(),
+    canvasId: v.optional(v.id("canvases")),
+    nodeId: v.optional(v.id("nodes")),
+    edgeId: v.optional(v.id("edges")),
+    createdAt: v.number(),
+  }).index("by_user_mutation_request", [
+    "userId",
+    "mutation",
+    "clientRequestId",
+  ]),
+
   // ==========================================================================
   // Credit-System
   // ==========================================================================

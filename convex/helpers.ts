@@ -38,6 +38,16 @@ export async function requireAuth(
 /**
  * Gibt den User zurück oder null — für optionale Auth-Checks (z.B. public Queries).
  */
-export async function optionalAuth(ctx: QueryCtx | MutationCtx) {
-  return await authComponent.safeGetAuthUser(ctx);
+export async function optionalAuth(
+  ctx: QueryCtx | MutationCtx
+): Promise<AuthUser | null> {
+  const user = await authComponent.safeGetAuthUser(ctx);
+  if (!user) {
+    return null;
+  }
+  const userId = user.userId ?? String(user._id);
+  if (!userId) {
+    return null;
+  }
+  return { ...user, userId };
 }

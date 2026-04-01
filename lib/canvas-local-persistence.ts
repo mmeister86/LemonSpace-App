@@ -181,3 +181,64 @@ export function resolveCanvasOps(canvasId: string, opIds: string[]): void {
 export function readCanvasOps(canvasId: string): CanvasPendingOp[] {
   return readOpsPayload(canvasId).ops;
 }
+
+function remapNodeIdInPayload(
+  payload: unknown,
+  fromNodeId: string,
+  toNodeId: string,
+): { payload: unknown; changed: boolean } {
+  if (!isRecord(payload)) return { payload, changed: false };
+
+  let changed = false;
+  const nextPayload: JsonRecord = { ...payload };
+
+  for (const key of ["nodeId", "sourceNodeId", "targetNodeId", "parentId"] as const) {
+    if (nextPayload[key] === fromNodeId) {
+      nextPayload[key] = toNodeId;
+      changed = true;
+    }
+  }
+
+  const moves = nextPayload.moves;
+  if (Array.isArray(moves)) {
+    const remappedMoves = moves.map((move) => {
+      if (!isRecord(move)) return move;
+      if (move.nodeId !== fromNodeId) return move;
+      changed = true;
+      return {
+        ...move,
+        nodeId: toNodeId,
+      };
+    });
+    nextPayload.moves = remappedMoves;
+  }
+
+  return { payload: changed ? nextPayload : payload, changed };
+}
+
+export function remapCanvasOpNodeId(
+  canvasId: string,
+  fromNodeId: string,
+  toNodeId: string,
+): number {
+  if (fromNodeId === toNodeId) return 0;
+
+  const payload = readOpsPayload(canvasId);
+  let changedCount = 0;
+
+  payload.ops = payload.ops.map((op) => {
+    const remapped = remapNodeIdInPayload(op.payload, fromNodeId, toNodeId);
+    if (!remapped.changed) return op;
+    changedCount += 1;
+    return {
+      ...op,
+      payload: remapped.payload,
+    };
+  });
+
+  if (changedCount === 0) return 0;
+
+  payload.updatedAt = Date.now();
+  writePayload(opsKey(canvasId), payload);
+  return changedCount;
+}

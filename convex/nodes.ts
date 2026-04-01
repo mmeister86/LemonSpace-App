@@ -34,6 +34,62 @@ async function getCanvasIfAuthorized(
   return canvas;
 }
 
+type NodeCreateMutationName =
+  | "nodes.create"
+  | "nodes.createWithEdgeFromSource"
+  | "nodes.createWithEdgeToTarget";
+
+async function getIdempotentNodeCreateResult(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    mutation: NodeCreateMutationName;
+    clientRequestId?: string;
+    canvasId: Id<"canvases">;
+  },
+): Promise<Id<"nodes"> | null> {
+  const clientRequestId = args.clientRequestId;
+  if (!clientRequestId) return null;
+
+  const existing = await ctx.db
+    .query("mutationRequests")
+    .withIndex("by_user_mutation_request", (q) =>
+      q
+        .eq("userId", args.userId)
+        .eq("mutation", args.mutation)
+        .eq("clientRequestId", clientRequestId),
+    )
+    .first();
+
+  if (!existing) return null;
+  if (existing.canvasId && existing.canvasId !== args.canvasId) {
+    throw new Error("Client request conflict");
+  }
+  if (!existing.nodeId) return null;
+  return existing.nodeId;
+}
+
+async function rememberIdempotentNodeCreateResult(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    mutation: NodeCreateMutationName;
+    clientRequestId?: string;
+    canvasId: Id<"canvases">;
+    nodeId: Id<"nodes">;
+  },
+): Promise<void> {
+  if (!args.clientRequestId) return;
+  await ctx.db.insert("mutationRequests", {
+    userId: args.userId,
+    mutation: args.mutation,
+    clientRequestId: args.clientRequestId,
+    canvasId: args.canvasId,
+    nodeId: args.nodeId,
+    createdAt: Date.now(),
+  });
+}
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -135,7 +191,15 @@ export const create = mutation({
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
 
-    void args.clientRequestId;
+    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.create",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+    });
+    if (existingNodeId) {
+      return existingNodeId;
+    }
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -153,6 +217,13 @@ export const create = mutation({
 
     // Canvas updatedAt aktualisieren
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    await rememberIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.create",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+      nodeId,
+    });
 
     return nodeId;
   },
@@ -315,7 +386,16 @@ export const createWithEdgeFromSource = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
-    void args.clientRequestId;
+
+    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeFromSource",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+    });
+    if (existingNodeId) {
+      return existingNodeId;
+    }
 
     const source = await ctx.db.get(args.sourceNodeId);
     if (!source || source.canvasId !== args.canvasId) {
@@ -345,6 +425,13 @@ export const createWithEdgeFromSource = mutation({
     });
 
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    await rememberIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeFromSource",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+      nodeId,
+    });
 
     return nodeId;
   },
@@ -373,7 +460,16 @@ export const createWithEdgeToTarget = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, args.canvasId, user.userId);
-    void args.clientRequestId;
+
+    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeToTarget",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+    });
+    if (existingNodeId) {
+      return existingNodeId;
+    }
 
     const target = await ctx.db.get(args.targetNodeId);
     if (!target || target.canvasId !== args.canvasId) {
@@ -403,6 +499,13 @@ export const createWithEdgeToTarget = mutation({
     });
 
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    await rememberIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createWithEdgeToTarget",
+      clientRequestId: args.clientRequestId,
+      canvasId: args.canvasId,
+      nodeId,
+    });
 
     return nodeId;
   },
