@@ -153,6 +153,17 @@ function sourceGlowFilterForNodeType(
   return `drop-shadow(0 0 3px rgba(${r},${g},${b},0.42)) drop-shadow(0 0 7px rgba(${r},${g},${b},0.2))`;
 }
 
+function sourceEdgeStrokeForNodeType(
+  type: string | undefined,
+  colorMode: EdgeGlowColorMode,
+): string | undefined {
+  if (colorMode !== "light" || !type) return undefined;
+  const rgb = SOURCE_NODE_GLOW_RGB[type];
+  if (!rgb) return undefined;
+  const [r, g, b] = rgb;
+  return `rgba(${r}, ${g}, ${b}, 0.5)`;
+}
+
 /** Wie convexEdgeToRF, setzt zusätzlich filter am Pfad nach Quell-Node-Typ. */
 export function convexEdgeToRFWithSourceGlow(
   edge: Doc<"edges">,
@@ -161,10 +172,16 @@ export function convexEdgeToRFWithSourceGlow(
 ): RFEdge {
   const base = convexEdgeToRF(edge);
   const filter = sourceGlowFilterForNodeType(sourceNodeType, colorMode);
-  if (!filter) return base;
+  const stroke = sourceEdgeStrokeForNodeType(sourceNodeType, colorMode);
+  if (!filter && !stroke) return base;
+
+  const style: NonNullable<RFEdge["style"]> = { ...(base.style ?? {}) };
+  if (filter) style.filter = filter;
+  if (stroke) style.stroke = stroke;
+
   return {
     ...base,
-    style: { ...(base.style ?? {}), filter },
+    style,
   };
 }
 

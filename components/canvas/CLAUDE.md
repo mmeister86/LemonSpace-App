@@ -109,6 +109,8 @@ Jede Edge bekommt einen `drop-shadow`-Filter entsprechend dem Quell-Node-Typ. Fa
 
 Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right` → Smaragd).
 
+Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzentfarbe abgeleitet und mit **50% Transparenz** gerendert (`rgba(..., 0.5)`), damit Linie und Glow farblich konsistent bleiben.
+
 ---
 
 ## Optimistic Updates & Local Persistence
