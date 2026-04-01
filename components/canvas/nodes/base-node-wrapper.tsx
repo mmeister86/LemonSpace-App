@@ -1,7 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { NodeResizeControl, NodeToolbar, Position, useNodeId, useReactFlow } from "@xyflow/react";
+import {
+  getConnectedEdges,
+  NodeResizeControl,
+  NodeToolbar,
+  Position,
+  useNodeId,
+  useReactFlow,
+} from "@xyflow/react";
 import { Trash2, Copy } from "lucide-react";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { NodeErrorBoundary } from "./node-error-boundary";
@@ -46,11 +53,32 @@ const INTERNAL_FIELDS = new Set([
 
 function NodeToolbarActions() {
   const nodeId = useNodeId();
-  const { deleteElements, getNode, getNodes, setNodes } = useReactFlow();
+  const { deleteElements, getNode, getNodes, getEdges, setNodes } = useReactFlow();
   const { createNodeWithIntersection } = useCanvasPlacement();
   const handleDelete = () => {
     if (!nodeId) return;
-    void deleteElements({ nodes: [{ id: nodeId }] });
+    const node = getNode(nodeId);
+    const resolvedNode =
+      node ??
+      (() => {
+        const selectedNodes = getNodes().filter((candidate) => candidate.selected);
+        if (selectedNodes.length !== 1) return undefined;
+        return selectedNodes[0];
+      })();
+    const targetNodeId = resolvedNode?.id ?? nodeId;
+
+    const connectedEdges = resolvedNode
+      ? getConnectedEdges([resolvedNode], getEdges())
+      : [];
+    void deleteElements({
+      nodes: [{ id: targetNodeId }],
+      edges: connectedEdges.map((edge) => ({ id: edge.id })),
+    }).catch((error: unknown) => {
+      console.error("[NodeToolbar] deleteElements failed", {
+        nodeId: targetNodeId,
+        error: String(error),
+      });
+    });
   };
 
   const handleDuplicate = () => {

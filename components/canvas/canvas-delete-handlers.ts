@@ -130,9 +130,8 @@ export function useCanvasDeleteHandlers({
         ...edgePromises,
       ])
         .then(() => {
-          for (const id of idsToDelete) {
-            deletingNodeIds.current.delete(id);
-          }
+          // Erfolg bedeutet hier nur: Mutation/Queue wurde angenommen.
+          // Den Delete-Lock erst lösen, wenn Convex-Snapshot die Node wirklich nicht mehr enthält.
         })
         .catch((error: unknown) => {
           console.error("[Canvas] batch remove failed", error);

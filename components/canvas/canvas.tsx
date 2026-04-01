@@ -230,6 +230,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const pendingEdgeSplitByClientRequestRef = useRef(
     new Map<string, PendingEdgeSplit>(),
   );
+  const pendingDeleteAfterCreateClientRequestIdsRef = useRef(new Set<string>());
   /** Connection-Drop → neue Node: erlaubt Carry-over der Kante in der Rollback-Lücke (ohne Phantom nach Fehler). */
   const pendingConnectionCreatesRef = useRef(new Set<string>());
   /** Nach create+drag: Convex liefert oft noch Erstellkoordinaten, bis `moveNode` committed — bis dahin Position pinnen. */
@@ -663,6 +664,22 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
     const realNodeId = realId as string;
 
+    if (
+      pendingDeleteAfterCreateClientRequestIdsRef.current.has(clientRequestId)
+    ) {
+      pendingDeleteAfterCreateClientRequestIdsRef.current.delete(clientRequestId);
+      removeOptimisticCreateLocally({
+        clientRequestId,
+        removeNode: true,
+        removeEdge: true,
+      });
+      deletingNodeIds.current.add(realNodeId);
+      await enqueueSyncMutationRef.current("batchRemoveNodes", {
+        nodeIds: [realId],
+      });
+      return;
+    }
+
     setNodes((current) =>
       current.map((node) => {
         const nextParentId =
@@ -712,7 +729,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
     await remapCanvasSyncNodeId(canvasId as string, optimisticNodeId, realNodeId);
     remapCanvasOpNodeId(canvasId as string, optimisticNodeId, realNodeId);
-  }, [canvasId]);
+  }, [canvasId, removeOptimisticCreateLocally]);
 
   const runCreateNodeOnlineOnly = useCallback(
     async (args: Parameters<typeof createNode>[0]) => {
@@ -966,6 +983,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               removeEdge: true,
             });
             setEdgeSyncNonce((value) => value + 1);
+          } else if (op.type === "batchRemoveNodes") {
+            for (const nodeId of op.payload.nodeIds) {
+              deletingNodeIds.current.delete(nodeId as string);
+            }
           }
           await ackCanvasSyncOp(op.id);
           resolveCanvasOp(canvasId as string, op.id);
@@ -1104,6 +1125,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         .filter((id): id is string => id !== null);
 
       if (createClientRequestIds.length > 0) {
+        if (isSyncOnline) {
+          for (const clientRequestId of createClientRequestIds) {
+            pendingDeleteAfterCreateClientRequestIdsRef.current.add(
+              clientRequestId,
+            );
+          }
+        }
+
         const droppedSync = await dropCanvasSyncOpsByClientRequestIds(
           canvasId as string,
           createClientRequestIds,
@@ -1146,6 +1175,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [
       canvasId,
       enqueueSyncMutation,
+      isSyncOnline,
       refreshPendingSyncCount,
       removeOptimisticCreateLocally,
     ],
@@ -1325,6 +1355,31 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         if (isOptimisticNodeId(realId as string)) {
           return;
         }
+        if (
+          pendingDeleteAfterCreateClientRequestIdsRef.current.has(clientRequestId)
+        ) {
+          pendingDeleteAfterCreateClientRequestIdsRef.current.delete(
+            clientRequestId,
+          );
+          pendingMoveAfterCreateRef.current.delete(clientRequestId);
+          pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
+          pendingConnectionCreatesRef.current.delete(clientRequestId);
+          resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
+
+          const realNodeId = realId as string;
+          deletingNodeIds.current.add(realNodeId);
+          setNodes((current) =>
+            current.filter((node) => node.id !== realNodeId),
+          );
+          setEdges((current) =>
+            current.filter(
+              (edge) =>
+                edge.source !== realNodeId && edge.target !== realNodeId,
+            ),
+          );
+          await runBatchRemoveNodesMutation({ nodeIds: [realId] });
+          return;
+        }
         const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
         setAssetBrowserTargetNodeId((current) =>
           current === optimisticNodeId ? (realId as string) : current,
@@ -1426,7 +1481,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         });
       }
     },
-    [canvasId, runMoveNodeMutation, runSplitEdgeAtExistingNodeMutation],
+    [
+      canvasId,
+      runBatchRemoveNodesMutation,
+      runMoveNodeMutation,
+      runSplitEdgeAtExistingNodeMutation,
+    ],
   );
   syncPendingMoveForClientRequestRef.current = syncPendingMoveForClientRequest;
 
