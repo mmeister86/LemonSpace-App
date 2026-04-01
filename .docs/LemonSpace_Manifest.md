@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — Produkt-Manifest
 
-**v1.4 — März 2026**
+**v1.5 — April 2026**
 
 *Self-Hosted, Source-Available Creative Workspace*
 
@@ -112,7 +112,7 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 | Thema | Entscheidung | Status |
 |-------|-------------|--------|
 | Backend | Convex (self-hosted). Bewusster Lock-in für Realtime, Storage, Jobs. Migrations-Pfad: Convex Cloud EU. | ✅ |
-| Auth | Better Auth (self-hosted, open-source) | ✅ |
+| Auth | Better Auth + Magic Link (via polar-sh/better-auth plugin) | ✅ |
 | AI Layer | OpenRouter als primäre AI-Schicht. 9 Image-Modelle, Text/Reasoning via Claude / GPT. | ✅ |
 | Self-hosted KI | rembg, Real-ESRGAN, GFPGAN — kostenlos, separate Repos | ✅ |
 | Payment | Polar.sh (MoR, VAT, Better Auth Plugin @polar-sh/better-auth) | ✅ |
@@ -234,4 +234,4 @@ Folgende Themen werden in eigenen Dokumenten vertieft. Das Manifest bleibt schla
 
 ---
 
-*LemonSpace Manifest v1.4 — März 2026*
+*LemonSpace Manifest v1.5 — April 2026*

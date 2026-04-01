@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v1.4 | Draft | März 2026 | lemonspace.app |
+| v1.5 | Draft | April 2026 | lemonspace.app |
 
 ---
 
@@ -24,7 +24,8 @@
 | v1.1 | Monorepo verworfen → Zwei unabhängige Repos (lemonspace-web + lemonspace-landing), Auth-Cookie-Sharing via .lemonspace.io |
 | v1.2 | Pricing überarbeitet: Credit-Abstraktion (1 Cr = €0,01 intern), Tiers €8/€59/€119 (Business→Max), Top-Up-System (fix + Custom mit Bonus-Staffel), Marge nach LS-Gebühr + USt validiert |
 | v1.3 | Payment: Lemon Squeezy → Polar.sh (niedrigere Gebühren, Better Auth Plugin, Open Source). Gebührenmodell angepasst: 4% + $0,40 + 1,5% intl. + 0,5% Subscription |
-| v1.4 | Bildbearbeitung: Neue Kategorie 4 „Bildbearbeitung" mit non-destruktivem Adjustment-Stack (zwischen Transformation und Steuerung). 4 Adjustment-Nodes (Kurven, Farbe, Licht, Detail) + Render-Node. Alle Operationen credit-frei (client-seitig via Canvas API / WebGL). Steuerung → Kat. 5, Canvas & Layout → Kat. 6. Phase 2. |
+| v1.4 | Bildbearbeitung: Neue Kategorie 4 „Bildbearbeitung" mit non-destruktivem Adjustment-Stack (zwischen Transformation und Steuerung). 4 Adjustment-Nodes (Kurven, Farbe, Licht, Detail) + Render-Node. Alle Operationen credit-frei (client-seitig via Canvas API / WebGL). Steuerung → Kat. 5, Canvas & Layout → Kat. 6. Phase 2. 
+| v1.5 | Stage 3 Offline Sync: Local-First Canvas mit IndexedDB Queue, Optimistic Updates, ID-Remapping. Magic Link Auth via Better Auth Plugin. react-resizable-panels für Sidebar Resizing. Canvas Modularisierung, Dashboard Dialoge, Auth Race-Härtung.|
 
 ---
 
@@ -183,7 +184,7 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Styling | Tailwind CSS | v4 |
 | UI Komponenten | ShadCN/UI | Aktuelle stabile Version |
 | Backend / Realtime | Convex | Self-hosted via convex-backend |
-| Authentifizierung | Better Auth | Self-hosted, open-source |
+| Authentifizierung | Better Auth + Magic Link | Self-hosted, open-source, Magic Link via -sh/better-auth plugin |
 | Canvas / Flow | @xyflow/react | ehem. react-flow-renderer |
 | Drag & Drop | dnd-kit | Empfohlen über react-dnd (bessere Performance) |
 | Deployment | Coolify | VPS-Deployment für alle Self-hosted Services |
@@ -195,6 +196,7 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Analytics | Rybbit | Self-hosted via Coolify |
 | Error Tracking | Sentry Cloud | Free Tier (5.000 Errors/Monat) |
 | DNS / DDoS / CDN | Cloudflare | Domain-Routing, DDoS-Schutz, Asset-Caching |
+| Panel Resizing | react-resizable-panels | ShadCN UI Komponente für Resizable Layouts |
 | Package Manager | pnpm | Je Repo |
 
 ### Zwei-Repo-Strategie
@@ -640,4 +642,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v1.4 — März 2026*
+*LemonSpace PRD v1.5 — April 2026*
