@@ -346,8 +346,16 @@ export const processImageGeneration = internalAction({
     aspectRatio: v.optional(v.string()),
     reservationId: v.optional(v.id("creditTransactions")),
     shouldDecrementConcurrency: v.boolean(),
+    userId: v.string(),
   },
   handler: async (ctx, args) => {
+    console.info("[processImageGeneration] start", {
+      nodeId: args.nodeId,
+      reservationId: args.reservationId ?? null,
+      shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+      userId: args.userId,
+    });
+
     let retryCount = 0;
 
     try {
@@ -394,7 +402,9 @@ export const processImageGeneration = internalAction({
       });
     } finally {
       if (args.shouldDecrementConcurrency) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {});
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId: args.userId,
+        });
       }
     }
   },
@@ -411,6 +421,15 @@ export const generateImage = action({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const canvas = await ctx.runQuery(api.canvases.get, {
+      canvasId: args.canvasId,
+    });
+    if (!canvas) {
+      throw new Error("Canvas not found");
+    }
+
+    const userId = canvas.ownerId;
+
     const internalCreditsEnabled =
       process.env.INTERNAL_CREDITS_ENABLED === "true";
 
@@ -455,6 +474,7 @@ export const generateImage = action({
         aspectRatio: args.aspectRatio,
         reservationId: reservationId ?? undefined,
         shouldDecrementConcurrency: usageIncremented,
+        userId,
       });
       backgroundJobScheduled = true;
       return { queued: true as const, nodeId: args.nodeId };
@@ -478,7 +498,9 @@ export const generateImage = action({
       throw error;
     } finally {
       if (usageIncremented && !backgroundJobScheduled) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {});
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId,
+        });
       }
     }
   },

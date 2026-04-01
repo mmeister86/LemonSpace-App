@@ -833,15 +833,18 @@ export const incrementUsage = internalMutation({
  * (commit/release übernehmen das bei aktivierten Credits).
  */
 export const decrementConcurrency = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const user = await requireAuth(ctx);
+  args: {
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const resolvedUserId =
+      args.userId ?? (await requireAuth(ctx)).userId;
     const today = new Date().toISOString().split("T")[0];
 
     const usage = await ctx.db
       .query("dailyUsage")
       .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
+        q.eq("userId", resolvedUserId).eq("date", today)
       )
       .unique();
 

@@ -23,6 +23,7 @@ import { toast } from "@/lib/toast";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useMutation } from "convex/react";
+import { Progress } from "@/components/ui/progress";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -84,9 +85,27 @@ export default function ImageNode({
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [pendingUploadStorageId, setPendingUploadStorageId] = useState<string | null>(
+    null,
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const hasAutoSizedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isUploading || !pendingUploadStorageId) return;
+
+    if (
+      data.storageId === pendingUploadStorageId &&
+      typeof data.url === "string" &&
+      data.url.length > 0
+    ) {
+      setIsUploading(false);
+      setPendingUploadStorageId(null);
+      setUploadProgress(0);
+    }
+  }, [data.storageId, data.url, isUploading, pendingUploadStorageId]);
 
   useEffect(() => {
     if (typeof id === "string" && id.startsWith(OPTIMISTIC_NODE_PREFIX)) {
@@ -128,6 +147,7 @@ export default function ImageNode({
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (isUploading) return;
       if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
         toast.error(
           t('canvas.uploadFailed'),
@@ -151,6 +171,8 @@ export default function ImageNode({
       }
 
       setIsUploading(true);
+      setUploadProgress(0);
+      setPendingUploadStorageId(null);
 
       try {
         let dimensions: { width: number; height: number } | undefined;
@@ -161,17 +183,39 @@ export default function ImageNode({
         }
 
         const uploadUrl = await generateUploadUrl();
-        const result = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
+        const { storageId } = await new Promise<{ storageId: string }>(
+          (resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", uploadUrl, true);
+            xhr.setRequestHeader("Content-Type", file.type);
 
-        if (!result.ok) {
-          throw new Error("Upload failed");
-        }
+            xhr.upload.onprogress = (event) => {
+              if (!event.lengthComputable) return;
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setUploadProgress(percent);
+            };
 
-        const { storageId } = (await result.json()) as { storageId: string };
+            xhr.onload = async () => {
+              if (xhr.status < 200 || xhr.status >= 300) {
+                reject(new Error(`Upload failed: ${xhr.status}`));
+                return;
+              }
+
+              try {
+                const parsed = JSON.parse(xhr.responseText) as { storageId: string };
+                resolve(parsed);
+              } catch {
+                reject(new Error("Upload fehlgeschlagen"));
+              }
+            };
+
+            xhr.onerror = () => reject(new Error("Upload fehlgeschlagen"));
+            xhr.send(file);
+          },
+        );
+
+        setUploadProgress(100);
+        setPendingUploadStorageId(storageId);
 
         await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
@@ -199,15 +243,23 @@ export default function ImageNode({
         toast.success(t('canvas.imageUploaded'));
       } catch (err) {
         console.error("Upload failed:", err);
+        setPendingUploadStorageId(null);
         toast.error(
           t('canvas.uploadFailed'),
           err instanceof Error ? err.message : undefined,
         );
-      } finally {
+        setUploadProgress(0);
         setIsUploading(false);
       }
     },
-    [generateUploadUrl, id, queueNodeDataUpdate, queueNodeResize, status.isOffline]
+    [
+      generateUploadUrl,
+      id,
+      isUploading,
+      queueNodeDataUpdate,
+      queueNodeResize,
+      status.isOffline,
+    ],
   );
 
   const handleClick = useCallback(() => {
@@ -245,19 +297,25 @@ export default function ImageNode({
       e.stopPropagation();
       setIsDragOver(false);
 
+      if (isUploading) return;
       const file = e.dataTransfer.files?.[0];
       if (file && file.type.startsWith("image/")) {
         uploadFile(file);
       }
     },
-    [uploadFile]
+    [isUploading, uploadFile]
   );
 
   const handleReplace = useCallback(() => {
+    if (isUploading) return;
     fileInputRef.current?.click();
-  }, []);
+  }, [isUploading]);
 
   const showFilename = Boolean(data.filename && data.url);
+  const uploadingLabel =
+    uploadProgress === 100 && pendingUploadStorageId
+      ? "100% — wird synchronisiert…"
+      : "Wird hochgeladen…";
 
   return (
     <>
@@ -293,7 +351,8 @@ export default function ImageNode({
           {data.url && (
             <button
               onClick={handleReplace}
-              className="nodrag text-xs text-muted-foreground transition-colors hover:text-foreground"
+              disabled={isUploading}
+              className="nodrag text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               Ersetzen
             </button>
@@ -304,8 +363,13 @@ export default function ImageNode({
           {isUploading ? (
             <div className="flex h-full w-full items-center justify-center bg-muted">
               <div className="flex flex-col items-center gap-2">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                <span className="text-xs text-muted-foreground">Wird hochgeladen...</span>
+                <span className="text-xs text-muted-foreground">{uploadingLabel}</span>
+                <div className="w-40">
+                  <Progress value={uploadProgress} className="h-1.5" />
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  {uploadProgress}%
+                </span>
               </div>
             </div>
           ) : data.url ? (
@@ -348,6 +412,7 @@ export default function ImageNode({
         ref={fileInputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp"
+        disabled={isUploading}
         onChange={handleFileChange}
         className="hidden"
       />
