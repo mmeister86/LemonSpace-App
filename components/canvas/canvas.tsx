@@ -152,6 +152,11 @@ function isLikelyTransientSyncError(error: unknown): boolean {
   );
 }
 
+function hasStorageId(node: Doc<"nodes">): boolean {
+  const data = node.data as Record<string, unknown> | undefined;
+  return typeof data?.storageId === "string" && data.storageId.length > 0;
+}
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const t = useTranslations('toasts');
   const { screenToFlowPosition } = useReactFlow();
@@ -209,9 +214,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     api.edges.list,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
+  const shouldSkipStorageUrlQuery = useMemo(() => {
+    if (shouldSkipCanvasQueries) return true;
+    if (convexNodes === undefined) return true;
+    return !convexNodes.some(hasStorageId);
+  }, [convexNodes, shouldSkipCanvasQueries]);
   const storageUrlsById = useQuery(
     api.storage.batchGetUrlsForCanvas,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
+    shouldSkipStorageUrlQuery ? "skip" : { canvasId },
   );
   const canvas = useQuery(
     api.canvases.get,
