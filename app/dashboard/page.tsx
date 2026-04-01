@@ -67,6 +67,12 @@ export default function DashboardPage() {
     setHasClientMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!isSessionPending && !session?.user) {
+      router.replace("/auth/sign-in");
+    }
+  }, [isSessionPending, router, session?.user]);
+
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
 

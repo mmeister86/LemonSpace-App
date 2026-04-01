@@ -29,6 +29,12 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   const authAppUrl = appUrl ?? siteUrl;
   const signInRedirectUrl = `${authAppUrl}/dashboard`;
+  const authAppOrigin = new URL(authAppUrl).origin;
+
+  const toAuthAppUrl = (url: string) => {
+    const incoming = new URL(url);
+    return new URL(`${incoming.pathname}${incoming.search}`, authAppOrigin);
+  };
 
   return betterAuth({
     baseURL: siteUrl,
@@ -42,7 +48,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     emailVerification: {
       sendOnSignUp: true,
       sendVerificationEmail: async ({ user, url }) => {
-        const verificationUrl = new URL(url);
+        const verificationUrl = toAuthAppUrl(url);
 
         if (appUrl) {
           verificationUrl.searchParams.set("callbackURL", `${appUrl}/dashboard`);
@@ -92,7 +98,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             return;
           }
 
-          const magicLinkUrl = new URL(url);
+          const magicLinkUrl = toAuthAppUrl(url);
           magicLinkUrl.searchParams.set("callbackURL", signInRedirectUrl);
           magicLinkUrl.searchParams.set("errorCallbackURL", `${authAppUrl}/auth/sign-in`);
 
