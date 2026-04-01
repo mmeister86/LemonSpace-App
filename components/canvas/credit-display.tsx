@@ -2,10 +2,10 @@
 
 import { useMutation } from "convex/react";
 import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useTranslations } from "next-intl";
 import { api } from "@/convex/_generated/api";
 import { Coins } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 const TIER_LABELS: Record<string, string> = {
   free: "Free",
@@ -28,6 +28,7 @@ const showTestCreditGrant =
   process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "true";
 
 export function CreditDisplay() {
+  const t = useTranslations('toasts');
   const balance = useAuthQuery(api.credits.getBalance);
   const subscription = useAuthQuery(api.credits.getSubscription);
   const grantTestCredits = useMutation(api.credits.grantTestCredits);
@@ -92,15 +93,14 @@ export function CreditDisplay() {
           onClick={() => {
             void grantTestCredits({ amount: 2000 })
               .then((r) => {
-                const { title, desc } = msg.billing.creditsAdded(2000);
                 toast.success(
-                  title,
-                  `${desc} — Stand: ${r.newBalance.toLocaleString("de-DE")}`,
+                  t('billing.creditsAddedTitle'),
+                  `${t('billing.creditsAddedDesc', { credits: 2000 })} — Stand: ${r.newBalance.toLocaleString("de-DE")}`,
                 );
               })
               .catch((e: unknown) => {
                 toast.error(
-                  msg.billing.testGrantFailed.title,
+                  t('billing.testGrantFailedTitle'),
                   e instanceof Error ? e.message : undefined,
                 );
               });

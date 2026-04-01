@@ -6,15 +6,19 @@ import {
   type Node as RFNode,
   type OnBeforeDelete,
 } from "@xyflow/react";
+import { useTranslations } from "next-intl";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { computeBridgeCreatesForDeletedNodes } from "@/lib/canvas-utils";
 import { toast } from "@/lib/toast";
-import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
+import { type CanvasNodeDeleteBlockReason } from "@/lib/toast";
 
 import { getNodeDeleteBlockReason } from "./canvas-helpers";
 
+type ToastTranslations = ReturnType<typeof useTranslations<'toasts'>>;
+
 type UseCanvasDeleteHandlersParams = {
+  t: ToastTranslations;
   canvasId: Id<"canvases">;
   nodes: RFNode[];
   edges: RFEdge[];
@@ -32,6 +36,7 @@ type UseCanvasDeleteHandlersParams = {
 };
 
 export function useCanvasDeleteHandlers({
+  t,
   canvasId,
   nodes,
   edges,
@@ -71,16 +76,20 @@ export function useCanvasDeleteHandlers({
       }
 
       if (allowed.length === 0) {
-        const { title, desc } = msg.canvas.nodeDeleteBlockedExplain(blockedReasons);
+        const title = t('canvas.nodeDeleteBlockedTitle');
+        const desc = t('canvas.nodeDeleteBlockedDesc');
         toast.warning(title, desc);
         return false;
       }
 
       if (blocked.length > 0) {
-        const { title, desc } = msg.canvas.nodeDeleteBlockedPartial(
-          blocked.length,
-          blockedReasons,
-        );
+        const title = t('canvas.nodeDeleteBlockedPartialTitle');
+        const whyDesc = t('canvas.nodeDeleteBlockedDesc');
+        const suffix =
+          blocked.length === 1
+            ? t('canvas.nodeDeleteBlockedPartialSuffixOne')
+            : t('canvas.nodeDeleteBlockedPartialSuffixOther', { count: blocked.length });
+        const desc = `${whyDesc} ${suffix}`;
         toast.warning(title, desc);
         return {
           nodes: allowed,
@@ -140,10 +149,11 @@ export function useCanvasDeleteHandlers({
           }
         });
 
-      const { title } = msg.canvas.nodesRemoved(count);
+      const title = t('canvas.nodesRemoved', { count });
       toast.info(title);
     },
     [
+      t,
       canvasId,
       deletingNodeIds,
       edges,

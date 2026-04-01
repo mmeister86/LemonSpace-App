@@ -310,4 +310,16 @@ export default defineSchema({
     concurrentJobs: v.number(),                    // Aktuell laufende Jobs
   })
     .index("by_user_date", ["userId", "date"]),
+
+  // ==========================================================================
+  // User Settings
+  // ==========================================================================
+
+  userSettings: defineTable({
+    userId: v.string(),                            // Better Auth User ID
+    locale: v.optional(v.union(v.literal('de'), v.literal('en'))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"]),
 });

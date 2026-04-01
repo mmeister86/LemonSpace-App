@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useTheme } from "next-themes";
+import { useTranslations } from "next-intl";
 import {
   Monitor,
   Moon,
@@ -36,7 +37,6 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 
 type CanvasAppMenuProps = {
@@ -44,6 +44,7 @@ type CanvasAppMenuProps = {
 };
 
 export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
+  const t = useTranslations('toasts');
   const router = useRouter();
   const canvas = useAuthQuery(api.canvases.get, { canvasId });
   const removeCanvas = useMutation(api.canvases.remove);
@@ -65,8 +66,7 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
   const handleRename = async () => {
     const trimmed = renameValue.trim();
     if (!trimmed) {
-      const { title, desc } = msg.dashboard.renameEmpty;
-      toast.error(title, desc);
+      toast.error(t('dashboard.renameEmptyTitle'), t('dashboard.renameEmptyDesc'));
       return;
     }
     if (trimmed === canvas?.name) {
@@ -76,10 +76,10 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
     setRenameSaving(true);
     try {
       await renameCanvas({ canvasId, name: trimmed });
-      toast.success(msg.dashboard.renameSuccess.title);
+      toast.success(t('dashboard.renameSuccess'));
       setRenameOpen(false);
     } catch {
-      toast.error(msg.dashboard.renameFailed.title);
+      toast.error(t('dashboard.renameFailed'));
     } finally {
       setRenameSaving(false);
     }

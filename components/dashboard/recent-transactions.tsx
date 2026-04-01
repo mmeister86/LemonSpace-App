@@ -1,12 +1,12 @@
 "use client";
 
 import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useFormatter } from "next-intl";
 import { Activity, Coins } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/convex/_generated/api";
-import { formatEurFromCents, cn } from "@/lib/utils";
-import { formatRelativeTime } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,9 +45,27 @@ function truncatedDescription(text: string, maxLen = 40) {
 // ---------------------------------------------------------------------------
 
 export function RecentTransactions() {
+  const format = useFormatter();
   const transactions = useAuthQuery(api.credits.getRecentTransactions, {
     limit: 10,
   });
+
+  const formatEurFromCents = (cents: number) =>
+    format.number(cents / 100, { style: "currency", currency: "EUR" });
+
+  const formatRelativeTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return "Gerade eben";
+    if (minutes < 60) return `vor ${minutes} Min.`;
+    if (hours < 24) return `vor ${hours} Std.`;
+    if (days < 7) return days === 1 ? "vor 1 Tag" : `vor ${days} Tagen`;
+    return format.dateTime(timestamp, { day: "numeric", month: "short" });
+  };
 
   // ── Loading State ──────────────────────────────────────────────────────
   if (transactions === undefined) {
@@ -102,7 +120,7 @@ export function RecentTransactions() {
         Letzte Aktivität
       </div>
       <div className="divide-y">
-        {transactions.map((t) => {
+        {transactions.map((t: NonNullable<typeof transactions>[number]) => {
           const isCredit = t.amount > 0;
           return (
             <div

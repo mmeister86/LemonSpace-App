@@ -44,7 +44,7 @@ export const exportFrame = action({
     });
 
     // Find image/ai-image nodes visually within the frame
-    const imageNodes = allNodes.filter((node) => {
+    const imageNodes = allNodes.filter((node: (typeof allNodes)[number]) => {
       if (node.type !== "image" && node.type !== "ai-image") return false;
       const data = node.data as { storageId?: string };
       if (!data.storageId) return false;

@@ -38,12 +38,11 @@ export function CanvasShell({ canvasId }: CanvasShellProps) {
   return (
     <div className="h-screen w-screen overflow-hidden overscroll-none">
       <ResizablePanelGroup
-        direction="horizontal"
+        orientation="horizontal"
         className="h-full w-full min-h-0 min-w-0 overflow-hidden"
       >
         <ResizablePanel
           id="canvas-sidebar-panel"
-          order={1}
           defaultSize={SIDEBAR_DEFAULT_SIZE}
           minSize={SIDEBAR_COLLAPSE_THRESHOLD}
           maxSize={SIDEBAR_MAX_SIZE}
@@ -62,7 +61,6 @@ export function CanvasShell({ canvasId }: CanvasShellProps) {
 
         <ResizablePanel
           id="canvas-main-panel"
-          order={2}
           minSize={MAIN_PANEL_MIN_SIZE}
           className="min-h-0 min-w-0"
         >

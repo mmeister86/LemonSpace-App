@@ -3,18 +3,19 @@
 import { useCallback, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useAction } from "convex/react";
+import { useTranslations } from "next-intl";
 import JSZip from "jszip";
 import { Archive, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 interface ExportButtonProps {
   canvasName?: string;
 }
 
 export function ExportButton({ canvasName = "canvas" }: ExportButtonProps) {
+  const t = useTranslations('toasts');
   const { getNodes } = useReactFlow();
   const exportFrame = useAction(api.export.exportFrame);
   const [isExporting, setIsExporting] = useState(false);
@@ -72,19 +73,19 @@ export function ExportButton({ canvasName = "canvas" }: ExportButtonProps) {
 
     try {
       await toast.promise(runExport(), {
-        loading: msg.export.exportingFrames.title,
-        success: msg.export.zipReady.title,
+        loading: t('export.exportingFrames'),
+        success: t('export.zipReady'),
         error: (err) => {
           const m = err instanceof Error ? err.message : "";
-          if (m === NO_FRAMES) return msg.export.noFramesOnCanvas.title;
-          if (m.includes("No images found")) return msg.export.frameEmpty.title;
-          return msg.export.exportFailed.title;
+          if (m === NO_FRAMES) return t('export.noFramesOnCanvasTitle');
+          if (m.includes("No images found")) return t('export.frameEmptyTitle');
+          return t('export.exportFailed');
         },
         description: {
           error: (err) => {
             const m = err instanceof Error ? err.message : "";
-            if (m === NO_FRAMES) return msg.export.noFramesOnCanvas.desc;
-            if (m.includes("No images found")) return msg.export.frameEmpty.desc;
+            if (m === NO_FRAMES) return t('export.noFramesOnCanvasDesc');
+            if (m.includes("No images found")) return t('export.frameEmptyDesc');
             return m || undefined;
           },
         },
@@ -92,17 +93,17 @@ export function ExportButton({ canvasName = "canvas" }: ExportButtonProps) {
     } catch (err) {
       const m = err instanceof Error ? err.message : "";
       if (m === NO_FRAMES) {
-        setError(msg.export.noFramesOnCanvas.desc);
+        setError(t('export.noFramesOnCanvasDesc'));
       } else if (m.includes("No images found")) {
-        setError(msg.export.frameEmpty.desc);
+        setError(t('export.frameEmptyDesc'));
       } else {
-        setError(m || msg.export.exportFailed.title);
+        setError(m || t('export.exportFailed'));
       }
     } finally {
       setIsExporting(false);
       setProgress(null);
     }
-  }, [canvasName, exportFrame, getNodes, isExporting]);
+  }, [t, canvasName, exportFrame, getNodes, isExporting]);
 
   return (
     <div className="relative">

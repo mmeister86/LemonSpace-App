@@ -5,8 +5,8 @@ import { useMutation } from "convex/react";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 /**
  * Initialisiert die Credit-Balance für neue User.
@@ -14,6 +14,7 @@ import { msg } from "@/lib/toast-messages";
  * dass jeder eingeloggte User eine Balance + Free-Subscription hat.
  */
 export function InitUser() {
+  const t = useTranslations('toasts');
   const { data: session } = authClient.useSession();
 
   const balance = useAuthQuery(api.credits.getBalance);
@@ -34,12 +35,12 @@ export function InitUser() {
 
     void initBalance()
       .then(() => {
-        toast.success(msg.auth.initialSetup.title, msg.auth.initialSetup.desc);
+        toast.success(t('auth.initialSetupTitle'), t('auth.initialSetupDesc'));
       })
       .catch(() => {
         initStartedRef.current = false;
       });
-  }, [session?.user, balance, initBalance]);
+  }, [t, session?.user, balance, initBalance]);
 
   return null;
 }

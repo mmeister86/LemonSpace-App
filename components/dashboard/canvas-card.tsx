@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
+import { useTranslations } from "next-intl";
 import { ArrowUpRight, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,7 @@ interface CanvasCardProps {
 }
 
 export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
+  const t = useTranslations('toasts');
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(canvas.name);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,8 +61,7 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
   const handleSave = useCallback(async () => {
     const trimmedName = editName.trim();
     if (!trimmedName) {
-      const { title, desc } = msg.dashboard.renameEmpty;
-      toast.error(title, desc);
+      toast.error(t('dashboard.renameEmptyTitle'), t('dashboard.renameEmptyDesc'));
       return;
     }
     if (trimmedName === canvas.name) {
@@ -74,15 +74,15 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
     setIsSaving(true);
     try {
       await updateCanvas({ canvasId: canvas._id, name: trimmedName });
-      toast.success(msg.dashboard.renameSuccess.title);
+      toast.success(t('dashboard.renameSuccess'));
       setIsEditing(false);
     } catch {
-      toast.error(msg.dashboard.renameFailed.title);
+      toast.error(t('dashboard.renameFailed'));
     } finally {
       setIsSaving(false);
       saveInFlightRef.current = false;
     }
-  }, [editName, canvas.name, canvas._id, updateCanvas]);
+  }, [t, editName, canvas.name, canvas._id, updateCanvas]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -115,14 +115,14 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
     setDeleteBusy(true);
     try {
       await removeCanvas({ canvasId: canvas._id });
-      toast.success(msg.dashboard.deleteSuccess.title);
+      toast.success(t('dashboard.deleteSuccess'));
       setDeleteOpen(false);
     } catch {
-      toast.error(msg.dashboard.deleteFailed.title);
+      toast.error(t('dashboard.deleteFailed'));
     } finally {
       setDeleteBusy(false);
     }
-  }, [canvas._id, removeCanvas]);
+  }, [t, canvas._id, removeCanvas]);
 
   return (
     <>

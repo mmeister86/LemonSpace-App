@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import {
@@ -18,6 +18,19 @@ type ErrorCategory =
   | "provider"
   | "unknown";
 
+interface ErrorData {
+  code?: string;
+  [key: string]: unknown;
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  if (error instanceof ConvexError) {
+    const data = error.data as ErrorData;
+    return data?.code;
+  }
+  return undefined;
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error ?? "Generation failed");
@@ -34,20 +47,23 @@ function categorizeError(error: unknown): {
   category: ErrorCategory;
   retryable: boolean;
 } {
+  const code = getErrorCode(error);
   const message = errorMessage(error);
   const lower = message.toLowerCase();
   const status = parseOpenRouterStatus(message);
 
   if (
-    lower.includes("insufficient credits") ||
-    lower.includes("daily generation limit") ||
-    lower.includes("concurrent job limit")
+    code === "CREDITS_TEST_DISABLED" ||
+    code === "CREDITS_INVALID_AMOUNT" ||
+    code === "CREDITS_BALANCE_NOT_FOUND" ||
+    code === "CREDITS_DAILY_CAP_REACHED" ||
+    code === "CREDITS_CONCURRENCY_LIMIT"
   ) {
     return { category: "credits", retryable: false };
   }
 
   if (
-    lower.includes("modell lehnt ab") ||
+    code === "OPENROUTER_MODEL_REFUSAL" ||
     lower.includes("content policy") ||
     lower.includes("policy") ||
     lower.includes("moderation") ||
@@ -94,6 +110,11 @@ function categorizeError(error: unknown): {
 }
 
 function formatTerminalStatusMessage(error: unknown): string {
+  const code = getErrorCode(error);
+  if (code) {
+    return code;
+  }
+
   const message = errorMessage(error).trim() || "Generation failed";
   const { category } = categorizeError(error);
 

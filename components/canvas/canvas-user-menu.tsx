@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { LayoutDashboard, LogOut } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 function getInitials(nameOrEmail: string) {
   const normalized = nameOrEmail.trim();
@@ -25,6 +25,7 @@ type CanvasUserMenuProps = {
 };
 
 export function CanvasUserMenu({ compact = false }: CanvasUserMenuProps) {
+  const t = useTranslations('toasts');
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
 
@@ -32,7 +33,7 @@ export function CanvasUserMenu({ compact = false }: CanvasUserMenuProps) {
   const initials = getInitials(displayName);
 
   const handleSignOut = async () => {
-    toast.info(msg.auth.signedOut.title);
+    toast.info(t('auth.signedOut'));
     await authClient.signOut();
     router.replace("/auth/sign-in");
     router.refresh();

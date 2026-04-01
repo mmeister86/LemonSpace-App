@@ -2,16 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConvexConnectionState } from "convex/react";
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 import { toast, toastDuration } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 type BannerState = "hidden" | "reconnecting" | "disconnected" | "reconnected";
 
 const RECONNECTED_HIDE_DELAY_MS = 1800;
 
 export default function ConnectionBanner() {
+  const t = useTranslations('toasts');
   const connectionState = useConvexConnectionState();
   const previousConnectedRef = useRef(connectionState.isWebSocketConnected);
   const disconnectToastIdRef = useRef<string | number | undefined>(undefined);
@@ -77,8 +78,8 @@ export default function ConnectionBanner() {
     if (shouldAlertDisconnect) {
       if (disconnectToastIdRef.current === undefined) {
         disconnectToastIdRef.current = toast.error(
-          msg.system.connectionLost.title,
-          msg.system.connectionLost.desc,
+          t('system.connectionLostTitle'),
+          t('system.connectionLostDesc'),
           { duration: Number.POSITIVE_INFINITY },
         );
       }
@@ -88,11 +89,12 @@ export default function ConnectionBanner() {
     if (connected && disconnectToastIdRef.current !== undefined) {
       toast.dismiss(disconnectToastIdRef.current);
       disconnectToastIdRef.current = undefined;
-      toast.success(msg.system.reconnected.title, undefined, {
+      toast.success(t('system.reconnected'), undefined, {
         duration: toastDuration.successShort,
       });
     }
   }, [
+    t,
     connectionState.connectionRetries,
     connectionState.hasEverConnected,
     connectionState.isWebSocketConnected,

@@ -1,23 +1,22 @@
-export type AiErrorCategory =
-  | "insufficient_credits"
-  | "rate_limited"
-  | "content_policy"
+export type ErrorType =
   | "timeout"
-  | "network"
-  | "server"
-  | "invalid_request"
-  | "daily_cap"
-  | "concurrency"
-  | "unknown";
+  | "insufficientCredits"
+  | "networkError"
+  | "rateLimited"
+  | "modelUnavailable"
+  | "generic"
+  | "contentPolicy"
+  | "invalidRequest"
+  | "dailyCap"
+  | "concurrency";
 
 export interface AiError {
-  category: AiErrorCategory;
-  message: string;
-  detail?: string;
+  type: ErrorType;
   retryable: boolean;
   creditsNotCharged: boolean;
   showTopUp: boolean;
   retryCount?: number;
+  rawMessage?: string;
 }
 
 type RawErrorObject = {
@@ -27,45 +26,50 @@ type RawErrorObject = {
   retryCount?: unknown;
 };
 
-const CATEGORY_ALIASES: Record<string, AiErrorCategory> = {
-  insufficient_credits: "insufficient_credits",
-  insufficientcredits: "insufficient_credits",
-  not_enough_credits: "insufficient_credits",
-  notenoughcredits: "insufficient_credits",
-  credits: "insufficient_credits",
-  payment_required: "insufficient_credits",
-  paymentrequired: "insufficient_credits",
-  rate_limit: "rate_limited",
-  ratelimit: "rate_limited",
-  rate_limited: "rate_limited",
-  ratelimited: "rate_limited",
-  too_many_requests: "rate_limited",
-  toomanyrequests: "rate_limited",
-  content_policy: "content_policy",
-  contentpolicy: "content_policy",
-  safety: "content_policy",
+const TYPE_ALIASES: Record<string, ErrorType> = {
+  insufficient_credits: "insufficientCredits",
+  insufficientcredits: "insufficientCredits",
+  not_enough_credits: "insufficientCredits",
+  notenoughcredits: "insufficientCredits",
+  credits: "insufficientCredits",
+  payment_required: "insufficientCredits",
+  paymentrequired: "insufficientCredits",
+  rate_limit: "rateLimited",
+  ratelimit: "rateLimited",
+  rate_limited: "rateLimited",
+  ratelimited: "rateLimited",
+  too_many_requests: "rateLimited",
+  toomanyrequests: "rateLimited",
+  content_policy: "contentPolicy",
+  contentpolicy: "contentPolicy",
+  safety: "contentPolicy",
   timeout: "timeout",
   timed_out: "timeout",
   timedout: "timeout",
-  network: "network",
-  connection: "network",
-  server: "server",
-  invalid_request: "invalid_request",
-  invalidrequest: "invalid_request",
-  bad_request: "invalid_request",
-  badrequest: "invalid_request",
-  daily_cap: "daily_cap",
-  dailycap: "daily_cap",
-  daily_limit: "daily_cap",
-  dailylimit: "daily_cap",
+  network: "networkError",
+  connection: "networkError",
+  networkerror: "networkError",
+  server: "modelUnavailable",
+  model_unavailable: "modelUnavailable",
+  modelunavailable: "modelUnavailable",
+  invalid_request: "invalidRequest",
+  invalidrequest: "invalidRequest",
+  bad_request: "invalidRequest",
+  badrequest: "invalidRequest",
+  unknown_model: "invalidRequest",
+  daily_cap: "dailyCap",
+  dailycap: "dailyCap",
+  daily_limit: "dailyCap",
+  dailylimit: "dailyCap",
   concurrency: "concurrency",
   concurrent: "concurrency",
+  unknown: "generic",
 };
 
-function normalizeCategory(value: string | undefined): AiErrorCategory | undefined {
+function normalizeType(value: string | undefined): ErrorType | undefined {
   if (!value) return undefined;
   const normalized = value.toLowerCase().replace(/[^a-z]/g, "");
-  return CATEGORY_ALIASES[normalized];
+  return TYPE_ALIASES[normalized];
 }
 
 function extractRetryCount(rawText: string, rawObj: RawErrorObject | null): number | undefined {
@@ -86,15 +90,15 @@ function extractRetryCount(rawText: string, rawObj: RawErrorObject | null): numb
   return undefined;
 }
 
-function cleanPrefixMessage(text: string): { category?: AiErrorCategory; message: string } {
+function cleanPrefixMessage(text: string): { type?: ErrorType; message: string } {
   const trimmed = text.trim();
 
   const bracketPrefix = trimmed.match(/^\[([a-zA-Z_\- ]+)\]\s*[:\-]?\s*(.+)$/);
   if (bracketPrefix?.[1] && bracketPrefix[2]) {
-    const category = normalizeCategory(bracketPrefix[1]);
-    if (category) {
+    const type = normalizeType(bracketPrefix[1]);
+    if (type) {
       return {
-        category,
+        type,
         message: bracketPrefix[2].trim(),
       };
     }
@@ -102,10 +106,10 @@ function cleanPrefixMessage(text: string): { category?: AiErrorCategory; message
 
   const plainPrefix = trimmed.match(/^([a-zA-Z_\- ]{3,40})\s*[:|\-]\s*(.+)$/);
   if (plainPrefix?.[1] && plainPrefix[2]) {
-    const category = normalizeCategory(plainPrefix[1]);
-    if (category) {
+    const type = normalizeType(plainPrefix[1]);
+    if (type) {
       return {
-        category,
+        type,
         message: plainPrefix[2].trim(),
       };
     }
@@ -129,17 +133,17 @@ function splitMessageAndDetail(message: string): { message: string; detail?: str
   return { message };
 }
 
-function inferCategoryFromText(text: string): AiErrorCategory {
+function inferTypeFromText(text: string): ErrorType {
   const lower = text.toLowerCase();
 
   const openRouterStatus = lower.match(/openrouter api error\s*(\d{3})/i);
   if (openRouterStatus?.[1]) {
     const status = Number.parseInt(openRouterStatus[1], 10);
-    if (status === 402) return "insufficient_credits";
+    if (status === 402) return "insufficientCredits";
     if (status === 408 || status === 504) return "timeout";
-    if (status === 429) return "rate_limited";
-    if (status >= 500) return "server";
-    if (status >= 400) return "invalid_request";
+    if (status === 429) return "rateLimited";
+    if (status >= 500) return "modelUnavailable";
+    if (status >= 400) return "invalidRequest";
   }
 
   if (
@@ -149,7 +153,7 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("guthaben") ||
     lower.includes("nicht genug credits")
   ) {
-    return "insufficient_credits";
+    return "insufficientCredits";
   }
 
   if (
@@ -158,7 +162,7 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("ratelimit") ||
     lower.includes("429")
   ) {
-    return "rate_limited";
+    return "rateLimited";
   }
 
   if (
@@ -166,7 +170,7 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("tageslimit erreicht") ||
     lower.includes("daily generation limit")
   ) {
-    return "daily_cap";
+    return "dailyCap";
   }
 
   if (
@@ -191,7 +195,7 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("fetch failed") ||
     lower.includes("econn")
   ) {
-    return "network";
+    return "networkError";
   }
 
   if (
@@ -200,7 +204,7 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("refusal") ||
     lower.includes("modell lehnt ab")
   ) {
-    return "content_policy";
+    return "contentPolicy";
   }
 
   if (
@@ -209,85 +213,75 @@ function inferCategoryFromText(text: string): AiErrorCategory {
     lower.includes("unknown model") ||
     lower.includes("missing")
   ) {
-    return "invalid_request";
+    return "invalidRequest";
   }
 
   if (lower.includes("server") || lower.includes("5xx")) {
-    return "server";
+    return "modelUnavailable";
   }
 
-  return "unknown";
+  return "generic";
 }
 
-function defaultsForCategory(category: AiErrorCategory): Omit<AiError, "category" | "detail" | "retryCount"> {
-  switch (category) {
-    case "insufficient_credits":
+function defaultsForType(type: ErrorType): Omit<AiError, "type" | "retryCount" | "rawMessage"> {
+  switch (type) {
+    case "insufficientCredits":
       return {
-        message: "Not enough credits for this generation",
         retryable: false,
         creditsNotCharged: true,
         showTopUp: true,
       };
-    case "rate_limited":
+    case "rateLimited":
       return {
-        message: "The model is busy right now",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "content_policy":
+    case "contentPolicy":
       return {
-        message: "The request was blocked by model safety rules",
         retryable: false,
         creditsNotCharged: true,
         showTopUp: false,
       };
     case "timeout":
       return {
-        message: "The generation timed out",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "network":
+    case "networkError":
       return {
-        message: "Network issue while contacting the model",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "server":
+    case "modelUnavailable":
       return {
-        message: "The AI service returned a server error",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "invalid_request":
+    case "invalidRequest":
       return {
-        message: "The request could not be processed",
         retryable: false,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "daily_cap":
+    case "dailyCap":
       return {
-        message: "Tageslimit erreicht",
         retryable: false,
         creditsNotCharged: true,
         showTopUp: false,
       };
     case "concurrency":
       return {
-        message: "Generierung bereits aktiv",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
       };
-    case "unknown":
+    case "generic":
     default:
       return {
-        message: "Generation failed",
         retryable: true,
         creditsNotCharged: true,
         showTopUp: false,
@@ -313,22 +307,20 @@ export function classifyError(rawError: unknown): AiError {
   const rawDetail = typeof rawObj?.detail === "string" ? rawObj.detail.trim() : undefined;
 
   const prefixed = cleanPrefixMessage(rawMessage);
-  const explicitCategory =
-    normalizeCategory(typeof rawObj?.category === "string" ? rawObj.category : undefined) ??
-    prefixed.category;
-  const category = explicitCategory ?? inferCategoryFromText(prefixed.message);
+  const explicitType =
+    normalizeType(typeof rawObj?.category === "string" ? rawObj.category : undefined) ??
+    prefixed.type;
+  const type = explicitType ?? inferTypeFromText(prefixed.message);
 
-  const defaults = defaultsForCategory(category);
+  const defaults = defaultsForType(type);
   const split = splitMessageAndDetail(prefixed.message);
-  const message = split.message || defaults.message;
 
   return {
-    category,
-    message,
-    detail: split.detail ?? rawDetail,
+    type,
     retryable: defaults.retryable,
     creditsNotCharged: defaults.creditsNotCharged,
     showTopUp: defaults.showTopUp,
     retryCount: extractRetryCount(rawMessage, rawObj),
+    rawMessage: split.message || rawMessage || undefined,
   };
 }

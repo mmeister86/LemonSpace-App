@@ -10,6 +10,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import { useAction } from "convex/react";
+import { useTranslations } from "next-intl";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -38,7 +39,6 @@ import {
 import { Sparkles, Loader2, Coins } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { classifyError } from "@/lib/ai-errors";
 
 type PromptNodeData = {
@@ -57,6 +57,7 @@ export default function PromptNode({
   data,
   selected,
 }: NodeProps<PromptNode>) {
+  const t = useTranslations('toasts');
   const nodeData = data as PromptNodeData;
   const router = useRouter();
   const { getEdges, getNode } = useReactFlow();
@@ -166,13 +167,9 @@ export default function PromptNode({
     }
 
     if (availableCredits !== null && !hasEnoughCredits) {
-      const { title, desc } = msg.ai.insufficientCredits(
-        creditCost,
-        availableCredits,
-      );
-      toast.action(title, {
-        description: desc,
-        label: msg.billing.topUp,
+      toast.action(t('ai.insufficientCreditsTitle'), {
+        description: t('ai.insufficientCreditsDesc', { needed: creditCost, available: availableCredits }),
+        label: t('billing.topUp'),
         onClick: () => router.push("/settings/billing"),
         type: "warning",
       });
@@ -256,30 +253,30 @@ export default function PromptNode({
           aspectRatio,
         }),
         {
-          loading: msg.ai.generating.title,
-          success: msg.ai.generationQueued.title,
-          error: msg.ai.generationFailed.title,
+          loading: t('ai.generating'),
+          success: t('ai.generationQueued'),
+          error: t('ai.generationFailed'),
           description: {
-            success: msg.ai.generationQueuedDesc,
-            error: msg.ai.creditsNotCharged,
+            success: t('ai.generationQueuedDesc'),
+            error: t('ai.creditsNotCharged'),
           },
         },
       );
     } catch (err) {
       const classified = classifyError(err);
 
-      if (classified.category === "daily_cap") {
+      if (classified.type === "dailyCap") {
         toast.error(
-          msg.billing.dailyLimitReached(0).title,
+          t('billing.dailyLimitReachedTitle'),
           "Morgen stehen wieder Generierungen zur Verfügung.",
         );
-      } else if (classified.category === "concurrency") {
+      } else if (classified.type === "concurrency") {
         toast.warning(
-          msg.ai.concurrentLimitReached.title,
-          msg.ai.concurrentLimitReached.desc,
+          t('ai.concurrentLimitReachedTitle'),
+          t('ai.concurrentLimitReachedDesc'),
         );
       } else {
-        setError(classified.message || msg.ai.generationFailed.title);
+        setError(classified.rawMessage || t('ai.generationFailed'));
       }
     } finally {
       setIsGenerating(false);

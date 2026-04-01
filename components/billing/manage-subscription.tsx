@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useTranslations } from "next-intl";
 import { ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,6 @@ import { api } from "@/convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
 import { normalizeTier, TIER_MONTHLY_CREDITS } from "@/lib/polar-products";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 const TIER_LABELS: Record<keyof typeof TIER_MONTHLY_CREDITS, string> = {
   free: "Free",
@@ -19,6 +19,7 @@ const TIER_LABELS: Record<keyof typeof TIER_MONTHLY_CREDITS, string> = {
 };
 
 export function ManageSubscription() {
+  const t = useTranslations('toasts');
   const subscription = useAuthQuery(api.credits.getSubscription);
   const tier = normalizeTier(subscription?.tier);
 
@@ -45,8 +46,8 @@ export function ManageSubscription() {
           variant="outline"
           onClick={() => {
             toast.info(
-              msg.billing.openingPortal.title,
-              msg.billing.openingPortal.desc,
+              t('billing.openingPortalTitle'),
+              t('billing.openingPortalDesc'),
             );
             void authClient.customer.portal();
           }}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useTranslations } from "next-intl";
 import { Check } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,18 +14,18 @@ import {
   TIER_MONTHLY_CREDITS,
 } from "@/lib/polar-products";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 const TIER_ORDER = ["free", "starter", "pro", "max"] as const;
 
 export function PricingCards() {
+  const t = useTranslations('toasts');
   const subscription = useAuthQuery(api.credits.getSubscription);
   const currentTier = normalizeTier(subscription?.tier);
 
   async function handleCheckout(polarProductId: string) {
     toast.info(
-      msg.billing.redirectingToCheckout.title,
-      msg.billing.redirectingToCheckout.desc,
+      t('billing.redirectingToCheckoutTitle'),
+      t('billing.redirectingToCheckoutDesc'),
     );
     await authClient.checkout({ products: [polarProductId] });
   }

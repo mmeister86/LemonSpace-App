@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 
 import type { Doc } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 import {
   GENERATION_FAILURE_THRESHOLD,
@@ -10,6 +10,7 @@ import {
 } from "./canvas-helpers";
 
 export function useGenerationFailureWarnings(
+  t: ReturnType<typeof useTranslations<'toasts'>>,
   convexNodes: Doc<"nodes">[] | undefined,
 ): void {
   const recentGenerationFailureTimestampsRef = useRef<number[]>([]);
@@ -60,11 +61,11 @@ export function useGenerationFailureWarnings(
     }
 
     if (recentFailures.length >= GENERATION_FAILURE_THRESHOLD) {
-      toast.warning(msg.ai.openrouterIssues.title, msg.ai.openrouterIssues.desc);
+      toast.warning(t('ai.openrouterIssuesTitle'), t('ai.openrouterIssuesDesc'));
       recentGenerationFailureTimestampsRef.current = [];
       return;
     }
 
     recentGenerationFailureTimestampsRef.current = recentFailures;
-  }, [convexNodes]);
+  }, [t, convexNodes]);
 }

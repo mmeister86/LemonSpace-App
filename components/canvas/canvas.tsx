@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useTheme } from "next-themes";
+import { useTranslations } from "next-intl";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -30,7 +31,6 @@ import {
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import {
   dropCanvasOpsByClientRequestIds,
   dropCanvasOpsByEdgeIds,
@@ -153,6 +153,7 @@ function isLikelyTransientSyncError(error: unknown): boolean {
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
+  const t = useTranslations('toasts');
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
@@ -1583,7 +1584,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
     undefined,
   );
-  useGenerationFailureWarnings(convexNodes);
+  useGenerationFailureWarnings(t, convexNodes);
 
   const { onEdgeClickScissors, onScissorsFlowPointerDownCapture } = useCanvasScissors({
     scissorsMode,
@@ -1596,6 +1597,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   });
 
   const { onBeforeDelete, onNodesDelete, onEdgesDelete } = useCanvasDeleteHandlers({
+    t,
     canvasId,
     nodes,
     edges,
@@ -2456,7 +2458,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               });
             } catch (err) {
               console.error("Failed to upload dropped file:", err);
-              toast.error(msg.canvas.uploadFailed.title, err instanceof Error ? err.message : undefined);
+              toast.error(t('canvas.uploadFailed'), err instanceof Error ? err.message : undefined);
             }
             return;
           }

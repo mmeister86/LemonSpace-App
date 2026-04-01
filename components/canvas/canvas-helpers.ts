@@ -2,7 +2,7 @@ import type { DefaultEdgeOptions, Edge as RFEdge, Node as RFNode } from "@xyflow
 
 import { readCanvasOps } from "@/lib/canvas-local-persistence";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import type { CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
+import type { CanvasNodeDeleteBlockReason } from "@/lib/toast";
 
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 export const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";

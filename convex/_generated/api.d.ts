@@ -22,6 +22,7 @@ import type * as openrouter from "../openrouter.js";
 import type * as pexels from "../pexels.js";
 import type * as polar from "../polar.js";
 import type * as storage from "../storage.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   pexels: typeof pexels;
   polar: typeof polar;
   storage: typeof storage;
+  users: typeof users;
 }>;
 
 /**

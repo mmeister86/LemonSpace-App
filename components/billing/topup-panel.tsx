@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { CreditCard, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,18 +10,18 @@ import { authClient } from "@/lib/auth-client";
 import { TOPUP_PRODUCTS } from "@/lib/polar-products";
 import { calculateCustomTopup } from "@/lib/topup-calculator";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 const CUSTOM_TOPUP_PRODUCT_ID = "POLAR_PRODUCT_ID_TOPUP_CUSTOM";
 
 export function TopupPanel() {
+  const t = useTranslations('toasts');
   const [customAmount, setCustomAmount] = useState(20);
   const { credits, bonusRate } = calculateCustomTopup(customAmount);
 
   async function handleTopup(polarProductId: string) {
     toast.info(
-      msg.billing.redirectingToCheckout.title,
-      msg.billing.redirectingToCheckout.desc,
+      t('billing.redirectingToCheckoutTitle'),
+      t('billing.redirectingToCheckoutDesc'),
     );
     await authClient.checkout({ products: [polarProductId] });
   }

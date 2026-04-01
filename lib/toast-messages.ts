@@ -1,194 +1,207 @@
-// Zentrales Dictionary für alle Toast-Strings.
-// Spätere i18n: diese Datei gegen Framework-Lookup ersetzen.
+'use client';
 
-/** Grund, warum ein Node-Löschen noch blockiert ist. */
-export type CanvasNodeDeleteBlockReason = "optimistic";
+import { useTranslations } from 'next-intl';
+import { toast, type ToastDurationOverrides } from './toast';
+import type { CanvasNodeDeleteBlockReason } from './toast';
+
+const DURATION = {
+  success: 4000,
+  successShort: 2000,
+  error: 6000,
+  warning: 5000,
+  info: 4000,
+} as const;
+
+type ToastTranslations = ReturnType<typeof useTranslations<'toasts'>>;
 
 function canvasNodeDeleteWhy(
+  t: ToastTranslations,
   reasons: Set<CanvasNodeDeleteBlockReason>,
 ): { title: string; desc: string } {
   if (reasons.size === 0) {
     return {
-      title: "Löschen momentan nicht möglich",
-      desc: "Bitte kurz warten und erneut versuchen.",
+      title: t('canvas.nodeDeleteBlockedTitle'),
+      desc: t('canvas.nodeDeleteBlockedDesc'),
     };
   }
   if (reasons.size === 1) {
     const only = [...reasons][0]!;
-    if (only === "optimistic") {
+    if (only === 'optimistic') {
       return {
-        title: "Element wird noch angelegt",
-        desc: "Dieses Element ist noch nicht vollständig auf dem Server gespeichert. Sobald die Synchronisierung fertig ist, kannst du es löschen.",
+        title: t('canvas.nodeDeleteOptimisticTitle'),
+        desc: t('canvas.nodeDeleteOptimisticDesc'),
       };
     }
     return {
-      title: "Löschen momentan nicht möglich",
-      desc: "Bitte kurz warten und erneut versuchen.",
+      title: t('canvas.nodeDeleteBlockedTitle'),
+      desc: t('canvas.nodeDeleteBlockedDesc'),
     };
   }
   return {
-    title: "Löschen momentan nicht möglich",
-    desc: "Mindestens ein Element wird noch angelegt. Bitte kurz warten und erneut versuchen.",
+    title: t('canvas.nodeDeleteBlockedTitle'),
+    desc: t('canvas.nodeDeleteBlockedMultiDesc'),
   };
 }
 
 export const msg = {
   canvas: {
-    imageUploaded: { title: "Bild hochgeladen" },
-    uploadFailed: { title: "Upload fehlgeschlagen" },
-    uploadFormatError: (format: string) => ({
-      title: "Upload fehlgeschlagen",
-      desc: `Format „${format}“ wird nicht unterstützt. Erlaubt: PNG, JPG, WebP.`,
+    imageUploaded: (t: ToastTranslations) => ({
+      title: t('canvas.imageUploaded'),
     }),
-    uploadSizeError: (maxMb: number) => ({
-      title: "Upload fehlgeschlagen",
-      desc: `Maximale Dateigröße: ${maxMb} MB.`,
+    uploadFailed: (t: ToastTranslations) => ({
+      title: t('canvas.uploadFailed'),
     }),
-    nodeRemoved: { title: "Element entfernt" },
-    nodesRemoved: (count: number) => ({
-      title: count === 1 ? "Element entfernt" : `${count} Elemente entfernt`,
+    uploadFormatError: (t: ToastTranslations, format: string) => ({
+      title: t('canvas.uploadFailed'),
+      desc: t('canvas.uploadFormatError', { format }),
     }),
-    /** Warum gerade kein (vollständiges) Löschen möglich ist — aus den gesammelten Gründen der blockierten Nodes. */
-    nodeDeleteBlockedExplain: canvasNodeDeleteWhy,
-    nodeDeleteBlockedPartial: (
-      blockedCount: number,
-      reasons: Set<CanvasNodeDeleteBlockReason>,
-    ) => {
-      const why = canvasNodeDeleteWhy(reasons);
+    uploadSizeError: (t: ToastTranslations, maxMb: number) => ({
+      title: t('canvas.uploadFailed'),
+      desc: t('canvas.uploadSizeError', { maxMb }),
+    }),
+    nodeRemoved: (t: ToastTranslations) => ({
+      title: t('canvas.nodeRemoved'),
+    }),
+    nodesRemoved: (t: ToastTranslations, count: number) => ({
+      title: t('canvas.nodesRemoved', { count }),
+    }),
+    nodeDeleteBlockedExplain: (t: ToastTranslations, reasons: Set<CanvasNodeDeleteBlockReason>) => canvasNodeDeleteWhy(t, reasons),
+    nodeDeleteBlockedPartial: (t: ToastTranslations, blockedCount: number, reasons: Set<CanvasNodeDeleteBlockReason>) => {
+      const why = canvasNodeDeleteWhy(t, reasons);
       const suffix =
         blockedCount === 1
-          ? "Ein Element wurde deshalb nicht gelöscht; die übrige Auswahl wurde entfernt."
-          : `${blockedCount} Elemente wurden deshalb nicht gelöscht; die übrige Auswahl wurde entfernt.`;
+          ? t('canvas.nodeDeleteBlockedPartialSuffixOne')
+          : t('canvas.nodeDeleteBlockedPartialSuffixOther', { count: blockedCount });
       return {
-        title: "Nicht alle Elemente entfernt",
+        title: t('canvas.nodeDeleteBlockedPartialTitle'),
         desc: `${why.desc} ${suffix}`,
       };
     },
   },
-
   ai: {
-    generating: { title: "Bild wird generiert…" },
-    generated: { title: "Bild generiert" },
-    generatedDesc: (credits: number) => `${credits} Credits verbraucht`,
-    generationQueued: { title: "Generierung gestartet" },
-    generationQueuedDesc: "Das Bild erscheint automatisch, sobald es fertig ist.",
-    generationFailed: { title: "Generierung fehlgeschlagen" },
-    creditsNotCharged: "Credits wurden nicht abgebucht",
-    insufficientCredits: (needed: number, available: number) => ({
-      title: "Nicht genügend Credits",
-      desc: `${needed} Credits benötigt, ${available} verfügbar.`,
+    generating: (t: ToastTranslations) => ({ title: t('ai.generating') }),
+    generated: (t: ToastTranslations, credits: number) => ({
+      title: t('ai.generated'),
+      desc: t('ai.generatedDesc', { credits }),
     }),
-    modelUnavailable: {
-      title: "Modell vorübergehend nicht verfügbar",
-      desc: "Versuche ein anderes Modell oder probiere es später erneut.",
-    },
-    contentPolicy: {
-      title: "Anfrage durch Inhaltsrichtlinie blockiert",
-      desc: "Versuche, den Prompt umzuformulieren.",
-    },
-    timeout: {
-      title: "Generierung abgelaufen",
-      desc: "Credits wurden nicht abgebucht.",
-    },
-    openrouterIssues: {
-      title: "OpenRouter möglicherweise gestört",
-      desc: "Mehrere Generierungen fehlgeschlagen.",
-    },
-    concurrentLimitReached: {
-      title: "Generierung bereits aktiv",
-      desc: "Bitte warte, bis die laufende Generierung abgeschlossen ist.",
-    },
+    generatedDesc: (t: ToastTranslations, credits: number) => t('ai.generatedDesc', { credits }),
+    generationQueued: (t: ToastTranslations) => ({ title: t('ai.generationQueued') }),
+    generationQueuedDesc: (t: ToastTranslations) => t('ai.generationQueuedDesc'),
+    generationFailed: (t: ToastTranslations) => ({ title: t('ai.generationFailed') }),
+    creditsNotCharged: (t: ToastTranslations) => t('ai.creditsNotCharged'),
+    insufficientCredits: (t: ToastTranslations, needed: number, available: number) => ({
+      title: t('ai.insufficientCreditsTitle'),
+      desc: t('ai.insufficientCreditsDesc', { needed, available }),
+    }),
+    modelUnavailable: (t: ToastTranslations) => ({
+      title: t('ai.modelUnavailableTitle'),
+      desc: t('ai.modelUnavailableDesc'),
+    }),
+    contentPolicy: (t: ToastTranslations) => ({
+      title: t('ai.contentPolicyTitle'),
+      desc: t('ai.contentPolicyDesc'),
+    }),
+    timeout: (t: ToastTranslations) => ({
+      title: t('ai.timeoutTitle'),
+      desc: t('ai.timeoutDesc'),
+    }),
+    openrouterIssues: (t: ToastTranslations) => ({
+      title: t('ai.openrouterIssuesTitle'),
+      desc: t('ai.openrouterIssuesDesc'),
+    }),
+    concurrentLimitReached: (t: ToastTranslations) => ({
+      title: t('ai.concurrentLimitReachedTitle'),
+      desc: t('ai.concurrentLimitReachedDesc'),
+    }),
   },
-
   export: {
-    frameExported: { title: "Frame exportiert" },
-    exportingFrames: { title: "Frames werden exportiert…" },
-    zipReady: { title: "ZIP bereit" },
-    exportFailed: { title: "Export fehlgeschlagen" },
-    frameEmpty: {
-      title: "Export fehlgeschlagen",
-      desc: "Frame hat keinen sichtbaren Inhalt.",
-    },
-    noFramesOnCanvas: {
-      title: "Export fehlgeschlagen",
-      desc: "Keine Frames auf dem Canvas — zuerst einen Frame anlegen.",
-    },
-    download: "Herunterladen",
-    downloaded: "Heruntergeladen!",
+    frameExported: (t: ToastTranslations) => ({ title: t('export.frameExported') }),
+    exportingFrames: (t: ToastTranslations) => ({ title: t('export.exportingFrames') }),
+    zipReady: (t: ToastTranslations) => ({ title: t('export.zipReady') }),
+    exportFailed: (t: ToastTranslations) => ({ title: t('export.exportFailed') }),
+    frameEmpty: (t: ToastTranslations) => ({
+      title: t('export.frameEmptyTitle'),
+      desc: t('export.frameEmptyDesc'),
+    }),
+    noFramesOnCanvas: (t: ToastTranslations) => ({
+      title: t('export.noFramesOnCanvasTitle'),
+      desc: t('export.noFramesOnCanvasDesc'),
+    }),
+    download: (t: ToastTranslations) => t('export.download'),
+    downloaded: (t: ToastTranslations) => t('export.downloaded'),
   },
-
   auth: {
-    welcomeBack: { title: "Willkommen zurück" },
-    welcomeOnDashboard: { title: "Schön, dass du da bist" },
-    checkEmail: (email: string) => ({
-      title: "E-Mail prüfen",
-      desc: `Bestätigungslink an ${email} gesendet.`,
+    welcomeBack: (t: ToastTranslations) => ({ title: t('auth.welcomeBack') }),
+    welcomeOnDashboard: (t: ToastTranslations) => ({ title: t('auth.welcomeOnDashboard') }),
+    checkEmail: (t: ToastTranslations, email: string) => ({
+      title: t('auth.checkEmailTitle'),
+      desc: t('auth.checkEmailDesc', { email }),
     }),
-    sessionExpired: {
-      title: "Sitzung abgelaufen",
-      desc: "Bitte erneut anmelden.",
-    },
-    signedOut: { title: "Abgemeldet" },
-    signIn: "Anmelden",
-    initialSetup: {
-      title: "Startguthaben aktiv",
-      desc: "Du kannst loslegen.",
-    },
+    sessionExpired: (t: ToastTranslations) => ({
+      title: t('auth.sessionExpiredTitle'),
+      desc: t('auth.sessionExpiredDesc'),
+    }),
+    signedOut: (t: ToastTranslations) => ({ title: t('auth.signedOut') }),
+    signIn: (t: ToastTranslations) => t('auth.signIn'),
+    initialSetup: (t: ToastTranslations) => ({
+      title: t('auth.initialSetupTitle'),
+      desc: t('auth.initialSetupDesc'),
+    }),
   },
-
   billing: {
-    subscriptionActivated: (credits: number) => ({
-      title: "Abo aktiviert",
-      desc: `${credits} Credits deinem Guthaben hinzugefügt.`,
+    subscriptionActivated: (t: ToastTranslations, credits: number) => ({
+      title: t('billing.subscriptionActivatedTitle'),
+      desc: t('billing.subscriptionActivatedDesc', { credits }),
     }),
-    creditsAdded: (credits: number) => ({
-      title: "Credits hinzugefügt",
-      desc: `+${credits} Credits`,
+    creditsAdded: (t: ToastTranslations, credits: number) => ({
+      title: t('billing.creditsAddedTitle'),
+      desc: t('billing.creditsAddedDesc', { credits }),
     }),
-    subscriptionCancelled: (periodEnd: string) => ({
-      title: "Abo gekündigt",
-      desc: `Deine Credits bleiben bis ${periodEnd} verfügbar.`,
+    subscriptionCancelled: (t: ToastTranslations, periodEnd: string) => ({
+      title: t('billing.subscriptionCancelledTitle'),
+      desc: t('billing.subscriptionCancelledDesc', { periodEnd }),
     }),
-    paymentFailed: {
-      title: "Zahlung fehlgeschlagen",
-      desc: "Bitte Zahlungsmethode aktualisieren.",
-    },
-    dailyLimitReached: (limit: number) => ({
-      title: "Tageslimit erreicht",
-      desc: `Maximal ${limit} Generierungen pro Tag in deinem Tarif.`,
+    paymentFailed: (t: ToastTranslations) => ({
+      title: t('billing.paymentFailedTitle'),
+      desc: t('billing.paymentFailedDesc'),
     }),
-    lowCredits: (remaining: number) => ({
-      title: "Credits fast aufgebraucht",
-      desc: `Noch ${remaining} Credits übrig.`,
+    dailyLimitReached: (t: ToastTranslations, limit: number) => ({
+      title: t('billing.dailyLimitReachedTitle'),
+      desc: t('billing.dailyLimitReachedDesc', { limit }),
     }),
-    topUp: "Aufladen",
-    upgrade: "Upgrade",
-    manage: "Verwalten",
-    redirectingToCheckout: {
-      title: "Weiterleitung…",
-      desc: "Du wirst zum sicheren Checkout weitergeleitet.",
-    },
-    openingPortal: {
-      title: "Portal wird geöffnet…",
-      desc: "Du wirst zur Aboverwaltung weitergeleitet.",
-    },
-    testGrantFailed: { title: "Gutschrift fehlgeschlagen" },
+    lowCredits: (t: ToastTranslations, remaining: number) => ({
+      title: t('billing.lowCreditsTitle'),
+      desc: t('billing.lowCreditsDesc', { remaining }),
+    }),
+    topUp: (t: ToastTranslations) => t('billing.topUp'),
+    upgrade: (t: ToastTranslations) => t('billing.upgrade'),
+    manage: (t: ToastTranslations) => t('billing.manage'),
+    redirectingToCheckout: (t: ToastTranslations) => ({
+      title: t('billing.redirectingToCheckoutTitle'),
+      desc: t('billing.redirectingToCheckoutDesc'),
+    }),
+    openingPortal: (t: ToastTranslations) => ({
+      title: t('billing.openingPortalTitle'),
+      desc: t('billing.openingPortalDesc'),
+    }),
+    testGrantFailed: (t: ToastTranslations) => ({ title: t('billing.testGrantFailedTitle') }),
   },
-
   system: {
-    reconnected: { title: "Verbindung wiederhergestellt" },
-    connectionLost: {
-      title: "Verbindung verloren",
-      desc: "Änderungen werden möglicherweise nicht gespeichert.",
-    },
-    copiedToClipboard: { title: "In Zwischenablage kopiert" },
+    reconnected: (t: ToastTranslations) => ({ title: t('system.reconnected') }),
+    connectionLost: (t: ToastTranslations) => ({
+      title: t('system.connectionLostTitle'),
+      desc: t('system.connectionLostDesc'),
+    }),
+    copiedToClipboard: (t: ToastTranslations) => ({ title: t('system.copiedToClipboard') }),
   },
-
   dashboard: {
-    renameEmpty: { title: "Name ungültig", desc: "Name darf nicht leer sein." },
-    renameSuccess: { title: "Arbeitsbereich umbenannt" },
-    renameFailed: { title: "Umbenennen fehlgeschlagen" },
-    deleteSuccess: { title: "Arbeitsbereich gelöscht" },
-    deleteFailed: { title: "Löschen fehlgeschlagen" },
+    renameEmpty: (t: ToastTranslations) => ({
+      title: t('dashboard.renameEmptyTitle'),
+      desc: t('dashboard.renameEmptyDesc'),
+    }),
+    renameSuccess: (t: ToastTranslations) => ({ title: t('dashboard.renameSuccess') }),
+    renameFailed: (t: ToastTranslations) => ({ title: t('dashboard.renameFailed') }),
+    deleteSuccess: (t: ToastTranslations) => ({ title: t('dashboard.deleteSuccess') }),
+    deleteFailed: (t: ToastTranslations) => ({ title: t('dashboard.deleteFailed') }),
   },
 } as const;

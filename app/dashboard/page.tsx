@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation } from "convex/react";
+import { useTranslations } from "next-intl";
 import {
   ChevronDown,
   Coins,
@@ -29,12 +30,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import { CreditOverview } from "@/components/dashboard/credit-overview";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import CanvasCard from "@/components/dashboard/canvas-card";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 
 
@@ -51,6 +52,7 @@ function getInitials(nameOrEmail: string) {
 }
 
 export default function DashboardPage() {
+  const t = useTranslations('toasts');
   const router = useRouter();
   const welcomeToastSentRef = useRef(false);
   const { theme = "system", setTheme } = useTheme();
@@ -82,11 +84,11 @@ export default function DashboardPage() {
     if (typeof window !== "undefined" && sessionStorage.getItem(key)) return;
     welcomeToastSentRef.current = true;
     sessionStorage.setItem(key, "1");
-    toast.success(msg.auth.welcomeOnDashboard.title);
-  }, [session?.user]);
+    toast.success(t('auth.welcomeOnDashboard'));
+  }, [t, session?.user]);
 
   const handleSignOut = async () => {
-    toast.info(msg.auth.signedOut.title);
+    toast.info(t('auth.signedOut'));
     await authClient.signOut();
     router.replace("/auth/sign-in");
     router.refresh();
@@ -240,7 +242,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
-              {canvases.map((canvas) => (
+              {canvases.map((canvas: Doc<"canvases">) => (
                 <CanvasCard
                   key={canvas._id}
                   canvas={canvas}

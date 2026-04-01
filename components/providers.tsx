@@ -6,6 +6,8 @@ import { ConvexReactClient } from "convex/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { AuthUIProvider } from "@daveyplate/better-auth-ui";
 import { ThemeProvider } from "next-themes";
+import { NextIntlClientProvider } from "next-intl";
+import type { AbstractIntlMessages } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GooeyToaster } from "goey-toast";
@@ -35,37 +37,43 @@ function SentryAuthUserSync() {
 export function Providers({
   children,
   initialToken,
+  locale,
+  messages,
 }: {
   children: ReactNode;
   initialToken?: string | null;
+  locale?: string;
+  messages?: AbstractIntlMessages;
 }) {
   const router = useRouter();
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <ConvexBetterAuthProvider
-        client={convex}
-        authClient={authClient}
-        initialToken={initialToken}
-      >
-        <SentryAuthUserSync />
-        <AuthUIProvider
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        <ConvexBetterAuthProvider
+          client={convex}
           authClient={authClient}
-          navigate={router.push}
-          replace={router.replace}
-          onSessionChange={() => router.refresh()}
-          Link={Link}
+          initialToken={initialToken}
         >
-          {children}
-          <GooeyToaster
-            position="bottom-right"
-            theme="dark"
-            visibleToasts={4}
-            maxQueue={8}
-            queueOverflow="drop-oldest"
-          />
-        </AuthUIProvider>
-      </ConvexBetterAuthProvider>
+          <SentryAuthUserSync />
+          <AuthUIProvider
+            authClient={authClient}
+            navigate={router.push}
+            replace={router.replace}
+            onSessionChange={() => router.refresh()}
+            Link={Link}
+          >
+            {children}
+            <GooeyToaster
+              position="bottom-right"
+              theme="dark"
+              visibleToasts={4}
+              maxQueue={8}
+              queueOverflow="drop-oldest"
+            />
+          </AuthUIProvider>
+        </ConvexBetterAuthProvider>
+      </NextIntlClientProvider>
     </ThemeProvider>
   );
 }

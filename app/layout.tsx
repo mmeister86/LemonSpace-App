@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Providers } from "@/components/providers";
 import { InitUser } from "@/components/init-user";
 import { getAuthUser, getToken } from "@/lib/auth-server";
+import { getLocale, getMessages } from "next-intl/server";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -20,6 +21,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const initialToken = await getToken();
+  const locale = await getLocale();
+  const messages = await getMessages();
   const user = await getAuthUser();
   if (user) {
     const id = user.userId ?? String(user._id);
@@ -33,7 +36,7 @@ export default async function RootLayout({
 
   return (
     <html
-      lang="de"
+      lang={locale}
       suppressHydrationWarning
       className={cn("h-full", "antialiased", "font-sans", manrope.variable)}
     >
@@ -56,7 +59,7 @@ export default async function RootLayout({
         ></script>
       </head>
       <body className="min-h-full flex flex-col">
-        <Providers initialToken={initialToken}>
+        <Providers initialToken={initialToken} locale={locale} messages={messages}>
           <InitUser />
           {children}
         </Providers>

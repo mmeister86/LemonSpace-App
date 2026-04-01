@@ -3,10 +3,11 @@
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 export default function Home() {
+  const t = useTranslations('toasts');
   const { data: session, isPending } = authClient.useSession();
   const router = useRouter();
 
@@ -35,7 +36,7 @@ export default function Home() {
           </Link>
           <button
             onClick={() => {
-              toast.info(msg.auth.signedOut.title);
+              toast.info(t('auth.signedOut'));
               void authClient.signOut().then(() => router.refresh());
             }}
             className="rounded-lg border border-border px-6 py-3 text-sm hover:bg-accent"

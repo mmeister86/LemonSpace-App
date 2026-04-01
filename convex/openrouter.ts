@@ -1,3 +1,5 @@
+import { ConvexError } from "convex/values";
+
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 export interface OpenRouterModel {
@@ -144,7 +146,7 @@ export async function generateImageViaOpenRouter(
 
   const message = data?.choices?.[0]?.message as Record<string, unknown> | undefined;
   if (!message) {
-    throw new Error("OpenRouter: choices[0].message fehlt");
+    throw new ConvexError({ code: "OPENROUTER_MISSING_MESSAGE" });
   }
 
   let rawImage: string | undefined;
@@ -186,7 +188,10 @@ export async function generateImageViaOpenRouter(
   ) {
     const r =
       typeof refusal === "string" ? refusal : JSON.stringify(refusal);
-    throw new Error(`OpenRouter: Modell lehnt ab — ${r.slice(0, 500)}`);
+    throw new ConvexError({
+      code: "OPENROUTER_MODEL_REFUSAL",
+      data: { reason: r.slice(0, 500) },
+    });
   }
 
   if (
@@ -205,19 +210,23 @@ export async function generateImageViaOpenRouter(
         : Array.isArray(content)
           ? JSON.stringify(content).slice(0, 400)
           : "";
-    throw new Error(
-      `OpenRouter: kein Bild in der Antwort. Keys: ${Object.keys(message).join(", ")}. ` +
-        (reasoning ? `reasoning: ${reasoning}` : `content: ${contentPreview}`),
-    );
+    throw new ConvexError({
+      code: "OPENROUTER_NO_IMAGE_IN_RESPONSE",
+      data: {
+        keys: Object.keys(message).join(", "),
+        reasoningOrContent: reasoning || contentPreview,
+      },
+    });
   }
 
   let dataUri = rawImage;
   if (rawImage.startsWith("http://") || rawImage.startsWith("https://")) {
     const imgRes = await fetch(rawImage);
     if (!imgRes.ok) {
-      throw new Error(
-        `OpenRouter: Bild-URL konnte nicht geladen werden (${imgRes.status})`,
-      );
+      throw new ConvexError({
+        code: "OPENROUTER_IMAGE_URL_LOAD_FAILED",
+        data: { status: imgRes.status },
+      });
     }
     const mimeTypeFromRes =
       imgRes.headers.get("content-type") ?? "image/png";
@@ -237,12 +246,12 @@ export async function generateImageViaOpenRouter(
   }
 
   if (!dataUri.startsWith("data:")) {
-    throw new Error("OpenRouter: Bild konnte nicht als data-URI erstellt werden");
+    throw new ConvexError({ code: "OPENROUTER_DATA_URI_CREATION_FAILED" });
   }
 
   const comma = dataUri.indexOf(",");
   if (comma === -1) {
-    throw new Error("OpenRouter: data-URI ohne Base64-Teil");
+    throw new ConvexError({ code: "OPENROUTER_DATA_URI_MISSING_BASE64" });
   }
   const meta = dataUri.slice(0, comma);
   const base64Data = dataUri.slice(comma + 1);

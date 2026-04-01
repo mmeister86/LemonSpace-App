@@ -9,11 +9,11 @@ import {
   type DragEvent,
 } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { useTranslations } from "next-intl";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useMutation } from "convex/react";
@@ -73,6 +73,7 @@ export default function ImageNode({
   width,
   height,
 }: NodeProps<ImageNode>) {
+  const t = useTranslations('toasts');
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -121,17 +122,17 @@ export default function ImageNode({
   const uploadFile = useCallback(
     async (file: File) => {
       if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-        const { title, desc } = msg.canvas.uploadFormatError(
-          file.type || file.name.split(".").pop() || "—",
+        toast.error(
+          t('canvas.uploadFailed'),
+          t('canvas.uploadFormatError', { format: file.type || file.name.split(".").pop() || "—" }),
         );
-        toast.error(title, desc);
         return;
       }
       if (file.size > MAX_IMAGE_BYTES) {
-        const { title, desc } = msg.canvas.uploadSizeError(
-          Math.round(MAX_IMAGE_BYTES / (1024 * 1024)),
+        toast.error(
+          t('canvas.uploadFailed'),
+          t('canvas.uploadSizeError', { maxMb: Math.round(MAX_IMAGE_BYTES / (1024 * 1024)) }),
         );
-        toast.error(title, desc);
         return;
       }
       if (status.isOffline) {
@@ -188,11 +189,11 @@ export default function ImageNode({
           });
         }
 
-        toast.success(msg.canvas.imageUploaded.title);
+        toast.success(t('canvas.imageUploaded'));
       } catch (err) {
         console.error("Upload failed:", err);
         toast.error(
-          msg.canvas.uploadFailed.title,
+          t('canvas.uploadFailed'),
           err instanceof Error ? err.message : undefined,
         );
       } finally {

@@ -1,5 +1,5 @@
 import { query, mutation, internalMutation } from "./_generated/server";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
 import { internal } from "./_generated/api";
 
@@ -275,10 +275,10 @@ export const grantTestCredits = mutation({
   },
   handler: async (ctx, { amount = 2000 }) => {
     if (process.env.ALLOW_TEST_CREDIT_GRANT !== "true") {
-      throw new Error("Test-Gutschriften sind deaktiviert (ALLOW_TEST_CREDIT_GRANT).");
+      throw new ConvexError({ code: "CREDITS_TEST_DISABLED" });
     }
     if (amount <= 0 || amount > 1_000_000) {
-      throw new Error("Ungültiger Betrag.");
+      throw new ConvexError({ code: "CREDITS_INVALID_AMOUNT" });
     }
     const user = await requireAuth(ctx);
     const balance = await ctx.db
@@ -287,7 +287,7 @@ export const grantTestCredits = mutation({
       .unique();
 
     if (!balance) {
-      throw new Error("Keine Credit-Balance — zuerst einloggen / initBalance.");
+      throw new ConvexError({ code: "CREDITS_BALANCE_NOT_FOUND" });
     }
 
     const next = balance.balance + amount;
@@ -362,16 +362,18 @@ export const reserve = mutation({
       .unique();
 
     if (dailyUsage && dailyUsage.generationCount >= config.dailyGenerationCap) {
-      throw new Error(
-        `daily_cap:Tageslimit erreicht (${config.dailyGenerationCap} Generierungen/Tag im ${tier}-Tier)`
-      );
+      throw new ConvexError({
+        code: "CREDITS_DAILY_CAP_REACHED",
+        data: { limit: config.dailyGenerationCap, tier },
+      });
     }
 
     // Concurrency Limit prüfen
     if (dailyUsage && dailyUsage.concurrentJobs >= config.concurrencyLimit) {
-      throw new Error(
-        `concurrency:Bereits ${config.concurrencyLimit} Generierung(en) aktiv — bitte warten`
-      );
+      throw new ConvexError({
+        code: "CREDITS_CONCURRENCY_LIMIT",
+        data: { limit: config.concurrencyLimit },
+      });
     }
 
     // Credits reservieren
@@ -487,7 +489,14 @@ export const commit = mutation({
     actualCost: v.number(),
     openRouterCost: v.optional(v.number()),
   },
-  handler: async (ctx, { transactionId, actualCost, openRouterCost }) => {
+  handler: async (
+    ctx,
+    { transactionId, actualCost, openRouterCost }
+  ): Promise<
+    { status: "already_committed" } |
+    { status: "already_released" } |
+    { status: "committed" }
+  > => {
     const user = await requireAuth(ctx);
     const transaction = await ctx.db.get(transactionId);
     if (!transaction || transaction.userId !== user.userId) {
@@ -571,7 +580,14 @@ export const release = mutation({
   args: {
     transactionId: v.id("creditTransactions"),
   },
-  handler: async (ctx, { transactionId }) => {
+  handler: async (
+    ctx,
+    { transactionId }
+  ): Promise<
+    { status: "already_released" } |
+    { status: "already_committed" } |
+    { status: "released" }
+  > => {
     const user = await requireAuth(ctx);
     const transaction = await ctx.db.get(transactionId);
     if (!transaction || transaction.userId !== user.userId) {
@@ -761,16 +777,18 @@ export const checkAbuseLimits = internalMutation({
 
     const dailyCount = usage?.generationCount ?? 0;
     if (dailyCount >= config.dailyGenerationCap) {
-      throw new Error(
-        `daily_cap:Tageslimit erreicht (${config.dailyGenerationCap} Generierungen/Tag im ${tier}-Tier)`
-      );
+      throw new ConvexError({
+        code: "CREDITS_DAILY_CAP_REACHED",
+        data: { limit: config.dailyGenerationCap, tier },
+      });
     }
 
     const currentConcurrency = usage?.concurrentJobs ?? 0;
     if (currentConcurrency >= config.concurrencyLimit) {
-      throw new Error(
-        `concurrency:Bereits ${config.concurrencyLimit} Generierung(en) aktiv — bitte warten`
-      );
+      throw new ConvexError({
+        code: "CREDITS_CONCURRENCY_LIMIT",
+        data: { limit: config.concurrencyLimit },
+      });
     }
   },
 });

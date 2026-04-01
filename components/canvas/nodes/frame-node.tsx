@@ -3,13 +3,13 @@
 import { useCallback, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
+import { useTranslations } from "next-intl";
 import { Download, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 interface FrameNodeData {
@@ -19,6 +19,7 @@ interface FrameNodeData {
 }
 
 export default function FrameNode({ id, data, selected, width, height }: NodeProps) {
+  const t = useTranslations('toasts');
   const nodeData = data as FrameNodeData;
   const { queueNodeDataUpdate, status } = useCanvasSync();
   const exportFrame = useAction(api.export.exportFrame);
@@ -54,23 +55,23 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
     try {
       const result = await exportFrame({ frameNodeId: id as Id<"nodes"> });
       const fileLabel = `${label.trim() || "frame"}.png`;
-      toast.action(msg.export.frameExported.title, {
+      toast.action(t('export.frameExported'), {
         description: fileLabel,
-        label: msg.export.download,
+        label: t('export.download'),
         onClick: () => {
           window.open(result.url, "_blank", "noopener,noreferrer");
         },
-        successLabel: msg.export.downloaded,
+        successLabel: t('export.downloaded'),
         type: "success",
       });
     } catch (error) {
       const m = error instanceof Error ? error.message : "";
       if (m.includes("No images found")) {
-        toast.error(msg.export.frameEmpty.title, msg.export.frameEmpty.desc);
-        setExportError(msg.export.frameEmpty.desc);
+        toast.error(t('export.frameEmptyTitle'), t('export.frameEmptyDesc'));
+        setExportError(t('export.frameEmptyDesc'));
       } else {
-        toast.error(msg.export.exportFailed.title, m || undefined);
-        setExportError(m || msg.export.exportFailed.title);
+        toast.error(t('export.exportFailed'), m || undefined);
+        setExportError(m || t('export.exportFailed'));
       }
     } finally {
       setIsExporting(false);

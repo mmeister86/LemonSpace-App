@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useFormatter, useTranslations } from "next-intl";
 import { CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,10 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
-import { formatEurFromCents } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 
 // ---------------------------------------------------------------------------
 // Tier-Config — monatliches Credit-Kontingent pro Tier (in Cent)
@@ -42,7 +41,12 @@ const TIER_BADGE_STYLES: Record<string, string> = {
 const LOW_CREDITS_THRESHOLD = 20;
 
 export function CreditOverview() {
+  const t = useTranslations('toasts');
   const router = useRouter();
+  const format = useFormatter();
+
+  const formatEurFromCents = (cents: number) =>
+    format.number(cents / 100, { style: "currency", currency: "EUR" });
   const balance = useAuthQuery(api.credits.getBalance);
   const subscription = useAuthQuery(api.credits.getSubscription);
   const usageStats = useAuthQuery(api.credits.getUsageStats);
@@ -56,14 +60,13 @@ export function CreditOverview() {
     if (typeof window !== "undefined" && sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
 
-    const { title, desc } = msg.billing.lowCredits(available);
-    toast.action(title, {
-      description: desc,
-      label: msg.billing.topUp,
+    toast.action(t('billing.lowCreditsTitle'), {
+      description: t('billing.lowCreditsDesc', { remaining: available }),
+      label: t('billing.topUp'),
       onClick: () => router.push("/settings/billing"),
       type: "warning",
     });
-  }, [balance, router]);
+  }, [t, balance, router]);
 
   // ── Loading State ──────────────────────────────────────────────────────
   if (

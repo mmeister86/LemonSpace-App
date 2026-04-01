@@ -2,16 +2,16 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
-import { classifyError, type AiErrorCategory } from "@/lib/ai-errors";
+import { classifyError, type ErrorType } from "@/lib/ai-errors";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
 import { toast } from "@/lib/toast";
-import { msg } from "@/lib/toast-messages";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import {
   Loader2,
@@ -59,6 +59,7 @@ export default function AiImageNode({
   data,
   selected,
 }: NodeProps<AiImageNode>) {
+  const t = useTranslations('toasts');
   const nodeData = data as AiImageNodeData;
   const { getEdges, getNode } = useReactFlow();
   const { status: syncStatus } = useCanvasSync();
@@ -135,17 +136,17 @@ export default function AiImageNode({
           aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
         }),
         {
-          loading: msg.ai.generating.title,
-          success: msg.ai.generationQueued.title,
-          error: msg.ai.generationFailed.title,
+          loading: t('ai.generating'),
+          success: t('ai.generationQueued'),
+          error: t('ai.generationFailed'),
           description: {
-            success: msg.ai.generationQueuedDesc,
-            error: msg.ai.creditsNotCharged,
+            success: t('ai.generationQueuedDesc'),
+            error: t('ai.creditsNotCharged'),
           },
         },
       );
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : msg.ai.generationFailed.title);
+      setLocalError(err instanceof Error ? err.message : t('ai.generationFailed'));
     } finally {
       setIsGenerating(false);
     }
@@ -154,16 +155,16 @@ export default function AiImageNode({
   const modelName =
     getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";
 
-  const renderErrorIcon = (category: AiErrorCategory) => {
-    switch (category) {
-      case "insufficient_credits":
+  const renderErrorIcon = (type: ErrorType) => {
+    switch (type) {
+      case "insufficientCredits":
         return <Coins className="h-8 w-8 text-amber-500" />;
-      case "rate_limited":
+      case "rateLimited":
       case "timeout":
         return <Clock3 className="h-8 w-8 text-amber-500" />;
-      case "content_policy":
+      case "contentPolicy":
         return <ShieldAlert className="h-8 w-8 text-destructive" />;
-      case "network":
+      case "networkError":
         return <WifiOff className="h-8 w-8 text-destructive" />;
       default:
         return <AlertCircle className="h-8 w-8 text-destructive" />;
@@ -226,15 +227,10 @@ export default function AiImageNode({
 
         {status === "error" && !isLoading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted">
-            {renderErrorIcon(classifiedError.category)}
+            {renderErrorIcon(classifiedError.type)}
             <p className="px-4 text-center text-xs font-medium text-destructive">
-              {classifiedError.message}
+              {classifiedError.rawMessage}
             </p>
-            {classifiedError.detail && (
-              <p className="px-6 text-center text-[10px] text-muted-foreground">
-                {classifiedError.detail}
-              </p>
-            )}
             {classifiedError.creditsNotCharged && (
               <p className="px-6 text-center text-[10px] text-muted-foreground">
                 Credits not charged
