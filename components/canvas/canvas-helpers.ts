@@ -51,7 +51,7 @@ export function rfEdgeConnectionSignature(edge: RFEdge): string {
 export function getNodeDeleteBlockReason(
   node: RFNode,
 ): CanvasNodeDeleteBlockReason | null {
-  if (isOptimisticNodeId(node.id)) return "optimistic";
+  void node;
   return null;
 }
 

@@ -742,9 +742,18 @@ export const batchRemove = mutation({
     const user = await requireAuth(ctx);
     if (nodeIds.length === 0) return;
 
-    // Canvas-Zugriff über den ersten Node prüfen
-    const firstNode = await ctx.db.get(nodeIds[0]);
-    if (!firstNode) throw new Error("Node not found");
+    // Idempotent: wenn alle Nodes bereits weg sind, no-op.
+    const firstExistingNode = await (async () => {
+      for (const nodeId of nodeIds) {
+        const node = await ctx.db.get(nodeId);
+        if (node) return node;
+      }
+      return null;
+    })();
+    if (!firstExistingNode) return;
+
+    // Canvas-Zugriff über den ersten vorhandenen Node prüfen
+    const firstNode = firstExistingNode;
     await getCanvasOrThrow(ctx, firstNode.canvasId, user.userId);
 
     for (const nodeId of nodeIds) {

@@ -182,6 +182,99 @@ export function readCanvasOps(canvasId: string): CanvasPendingOp[] {
   return readOpsPayload(canvasId).ops;
 }
 
+function opTouchesNodeId(op: CanvasPendingOp, nodeIdSet: ReadonlySet<string>): boolean {
+  if (!isRecord(op.payload)) return false;
+  const payload = op.payload;
+
+  if (
+    (typeof payload.nodeId === "string" && nodeIdSet.has(payload.nodeId)) ||
+    (typeof payload.sourceNodeId === "string" && nodeIdSet.has(payload.sourceNodeId)) ||
+    (typeof payload.targetNodeId === "string" && nodeIdSet.has(payload.targetNodeId)) ||
+    (typeof payload.parentId === "string" && nodeIdSet.has(payload.parentId))
+  ) {
+    return true;
+  }
+
+  if (Array.isArray(payload.nodeIds)) {
+    return payload.nodeIds.some(
+      (entry) => typeof entry === "string" && nodeIdSet.has(entry),
+    );
+  }
+
+  if (Array.isArray(payload.moves)) {
+    return payload.moves.some(
+      (move) =>
+        isRecord(move) &&
+        typeof move.nodeId === "string" &&
+        nodeIdSet.has(move.nodeId),
+    );
+  }
+
+  return false;
+}
+
+function opHasClientRequestId(
+  op: CanvasPendingOp,
+  clientRequestIdSet: ReadonlySet<string>,
+): boolean {
+  if (!isRecord(op.payload)) return false;
+  return (
+    typeof op.payload.clientRequestId === "string" &&
+    clientRequestIdSet.has(op.payload.clientRequestId)
+  );
+}
+
+function opTouchesEdgeId(op: CanvasPendingOp, edgeIdSet: ReadonlySet<string>): boolean {
+  if (!isRecord(op.payload)) return false;
+  return (
+    typeof op.payload.edgeId === "string" &&
+    edgeIdSet.has(op.payload.edgeId)
+  );
+}
+
+function dropCanvasOpsByPredicate(
+  canvasId: string,
+  predicate: (op: CanvasPendingOp) => boolean,
+): string[] {
+  const payload = readOpsPayload(canvasId);
+  const idsToDrop = payload.ops.filter(predicate).map((op) => op.id);
+  if (idsToDrop.length === 0) return [];
+  const idSet = new Set(idsToDrop);
+  payload.ops = payload.ops.filter((op) => !idSet.has(op.id));
+  payload.updatedAt = Date.now();
+  writePayload(opsKey(canvasId), payload);
+  return idsToDrop;
+}
+
+export function dropCanvasOpsByNodeIds(
+  canvasId: string,
+  nodeIds: string[],
+): string[] {
+  if (nodeIds.length === 0) return [];
+  const nodeIdSet = new Set(nodeIds);
+  return dropCanvasOpsByPredicate(canvasId, (op) => opTouchesNodeId(op, nodeIdSet));
+}
+
+export function dropCanvasOpsByClientRequestIds(
+  canvasId: string,
+  clientRequestIds: string[],
+): string[] {
+  if (clientRequestIds.length === 0) return [];
+  const clientRequestIdSet = new Set(clientRequestIds);
+  return dropCanvasOpsByPredicate(canvasId, (op) =>
+    opHasClientRequestId(op, clientRequestIdSet),
+  );
+}
+
+export function dropCanvasOpsByEdgeIds(
+  canvasId: string,
+  edgeIds: string[],
+): string[] {
+  if (edgeIds.length === 0) return [];
+  const edgeIdSet = new Set(edgeIds);
+  return dropCanvasOpsByPredicate(canvasId, (op) => opTouchesEdgeId(op, edgeIdSet));
+}
+
 function remapNodeIdInPayload(
   payload: unknown,
   fromNodeId: string,

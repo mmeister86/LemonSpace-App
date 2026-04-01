@@ -12,11 +12,10 @@ import { computeBridgeCreatesForDeletedNodes } from "@/lib/canvas-utils";
 import { toast } from "@/lib/toast";
 import { msg, type CanvasNodeDeleteBlockReason } from "@/lib/toast-messages";
 
-import { getNodeDeleteBlockReason, isOptimisticEdgeId } from "./canvas-helpers";
+import { getNodeDeleteBlockReason } from "./canvas-helpers";
 
 type UseCanvasDeleteHandlersParams = {
   canvasId: Id<"canvases">;
-  isOffline: boolean;
   nodes: RFNode[];
   edges: RFEdge[];
   deletingNodeIds: MutableRefObject<Set<string>>;
@@ -34,7 +33,6 @@ type UseCanvasDeleteHandlersParams = {
 
 export function useCanvasDeleteHandlers({
   canvasId,
-  isOffline,
   nodes,
   edges,
   deletingNodeIds,
@@ -55,14 +53,6 @@ export function useCanvasDeleteHandlers({
       nodes: RFNode[];
       edges: RFEdge[];
     }) => {
-      if (isOffline && (matchingNodes.length > 0 || matchingEdges.length > 0)) {
-        toast.warning(
-          "Offline aktuell nicht unterstützt",
-          "Löschen ist in Stufe 1 nur online verfügbar.",
-        );
-        return false;
-      }
-
       if (matchingNodes.length === 0) {
         return true;
       }
@@ -100,7 +90,7 @@ export function useCanvasDeleteHandlers({
 
       return true;
     },
-    [isOffline],
+    [],
   );
 
   const onNodesDelete = useCallback(
@@ -169,9 +159,6 @@ export function useCanvasDeleteHandlers({
     (deletedEdges: RFEdge[]) => {
       for (const edge of deletedEdges) {
         if (edge.className === "temp") {
-          continue;
-        }
-        if (isOptimisticEdgeId(edge.id)) {
           continue;
         }
 

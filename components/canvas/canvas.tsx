@@ -32,6 +32,9 @@ import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
 import {
+  dropCanvasOpsByClientRequestIds,
+  dropCanvasOpsByEdgeIds,
+  dropCanvasOpsByNodeIds,
   enqueueCanvasOp,
   readCanvasSnapshot,
   remapCanvasOpNodeId,
@@ -43,6 +46,9 @@ import {
   ackCanvasSyncOp,
   type CanvasSyncOpPayloadByType,
   countCanvasSyncOps,
+  dropCanvasSyncOpsByClientRequestIds,
+  dropCanvasSyncOpsByEdgeIds,
+  dropCanvasSyncOpsByNodeIds,
   dropExpiredCanvasSyncOps,
   enqueueCanvasSyncOp,
   listCanvasSyncOps,
@@ -404,31 +410,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const createNodeWithEdgeSplit = useMutation(api.nodes.createWithEdgeSplit);
 
-  const batchRemoveNodes = useMutation(api.nodes.batchRemove).withOptimisticUpdate(
-    (localStore, args) => {
-      const nodeList = localStore.getQuery(api.nodes.list, { canvasId });
-      const edgeList = localStore.getQuery(api.edges.list, { canvasId });
-      if (nodeList === undefined || edgeList === undefined) return;
-
-      const removeSet = new Set<string>(
-        args.nodeIds.map((id: Id<"nodes">) => id as string),
-      );
-      localStore.setQuery(
-        api.nodes.list,
-        { canvasId },
-        nodeList.filter((n: Doc<"nodes">) => !removeSet.has(n._id)),
-      );
-      localStore.setQuery(
-        api.edges.list,
-        { canvasId },
-        edgeList.filter(
-          (e: Doc<"edges">) =>
-            !removeSet.has(e.sourceNodeId) && !removeSet.has(e.targetNodeId),
-        ),
-      );
-    },
-  );
-
   const createEdge = useMutation(api.edges.create).withOptimisticUpdate(
     (localStore, args) => {
       const edgeList = localStore.getQuery(api.edges.list, {
@@ -465,18 +446,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     api.nodes.createWithEdgeToTarget,
   );
   const createEdgeRaw = useMutation(api.edges.create);
-
-  const removeEdge = useMutation(api.edges.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      const edgeList = localStore.getQuery(api.edges.list, { canvasId });
-      if (edgeList === undefined) return;
-      localStore.setQuery(
-        api.edges.list,
-        { canvasId },
-        edgeList.filter((e: Doc<"edges">) => e._id !== args.edgeId),
-      );
-    },
-  );
+  const batchRemoveNodesRaw = useMutation(api.nodes.batchRemove);
+  const removeEdgeRaw = useMutation(api.edges.remove);
 
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
@@ -802,6 +773,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createEdge") {
             await createEdgeRaw(op.payload);
+          } else if (op.type === "removeEdge") {
+            await removeEdgeRaw(op.payload);
+          } else if (op.type === "batchRemoveNodes") {
+            await batchRemoveNodesRaw(op.payload);
           } else if (op.type === "moveNode") {
             await moveNode(op.payload);
           } else if (op.type === "resizeNode") {
@@ -862,6 +837,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       await refreshPendingSyncCount();
     }
   }, [
+    batchRemoveNodesRaw,
     canvasId,
     createEdgeRaw,
     createNodeRaw,
@@ -871,6 +847,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     moveNode,
     refreshPendingSyncCount,
     remapOptimisticNodeLocally,
+    removeEdgeRaw,
     removeOptimisticCreateLocally,
     resizeNode,
     updateNodeData,
@@ -968,14 +945,61 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   const runBatchRemoveNodesMutation = useCallback(
-    async (args: Parameters<typeof batchRemoveNodes>[0]) => {
-      if (!isSyncOnline) {
-        notifyOfflineUnsupported("Löschen");
+    async (args: { nodeIds: Id<"nodes">[] }) => {
+      const ids = args.nodeIds.map((id) => id as string);
+      const optimisticNodeIds = ids.filter((id) => isOptimisticNodeId(id));
+      const persistedNodeIds = ids.filter((id) => !isOptimisticNodeId(id));
+
+      const createClientRequestIds = optimisticNodeIds
+        .map((id) => clientRequestIdFromOptimisticNodeId(id))
+        .filter((id): id is string => id !== null);
+
+      if (createClientRequestIds.length > 0) {
+        const droppedSync = await dropCanvasSyncOpsByClientRequestIds(
+          canvasId as string,
+          createClientRequestIds,
+        );
+        const droppedLocal = dropCanvasOpsByClientRequestIds(
+          canvasId as string,
+          createClientRequestIds,
+        );
+        for (const clientRequestId of createClientRequestIds) {
+          removeOptimisticCreateLocally({
+            clientRequestId,
+            removeNode: true,
+            removeEdge: true,
+          });
+        }
+        resolveCanvasOps(canvasId as string, droppedSync);
+        resolveCanvasOps(canvasId as string, droppedLocal);
+      }
+
+      if (persistedNodeIds.length === 0) {
+        await refreshPendingSyncCount();
         return;
       }
-      await batchRemoveNodes(args);
+
+      const droppedSyncByNode = await dropCanvasSyncOpsByNodeIds(
+        canvasId as string,
+        persistedNodeIds,
+      );
+      const droppedLocalByNode = dropCanvasOpsByNodeIds(
+        canvasId as string,
+        persistedNodeIds,
+      );
+      resolveCanvasOps(canvasId as string, droppedSyncByNode);
+      resolveCanvasOps(canvasId as string, droppedLocalByNode);
+
+      await enqueueSyncMutation("batchRemoveNodes", {
+        nodeIds: persistedNodeIds as Id<"nodes">[],
+      });
     },
-    [batchRemoveNodes, isSyncOnline, notifyOfflineUnsupported],
+    [
+      canvasId,
+      enqueueSyncMutation,
+      refreshPendingSyncCount,
+      removeOptimisticCreateLocally,
+    ],
   );
 
   const runCreateEdgeMutation = useCallback(
@@ -1001,14 +1025,37 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   const runRemoveEdgeMutation = useCallback(
-    async (args: Parameters<typeof removeEdge>[0]) => {
-      if (!isSyncOnline) {
-        notifyOfflineUnsupported("Kante entfernen");
+    async (args: { edgeId: Id<"edges"> }) => {
+      const edgeId = args.edgeId as string;
+      setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+      if (isOptimisticEdgeId(edgeId)) {
+        const clientRequestId = clientRequestIdFromOptimisticEdgeId(edgeId);
+        if (clientRequestId) {
+          const droppedSync = await dropCanvasSyncOpsByClientRequestIds(
+            canvasId as string,
+            [clientRequestId],
+          );
+          const droppedLocal = dropCanvasOpsByClientRequestIds(
+            canvasId as string,
+            [clientRequestId],
+          );
+          resolveCanvasOps(canvasId as string, droppedSync);
+          resolveCanvasOps(canvasId as string, droppedLocal);
+        }
+        await refreshPendingSyncCount();
         return;
       }
-      await removeEdge(args);
+
+      const droppedSync = await dropCanvasSyncOpsByEdgeIds(canvasId as string, [edgeId]);
+      const droppedLocal = dropCanvasOpsByEdgeIds(canvasId as string, [edgeId]);
+      resolveCanvasOps(canvasId as string, droppedSync);
+      resolveCanvasOps(canvasId as string, droppedLocal);
+
+      await enqueueSyncMutation("removeEdge", {
+        edgeId: edgeId as Id<"edges">,
+      });
     },
-    [isSyncOnline, notifyOfflineUnsupported, removeEdge],
+    [canvasId, enqueueSyncMutation, refreshPendingSyncCount],
   );
 
   const splitEdgeAtExistingNodeMut = useMutation(
@@ -1322,7 +1369,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const { onBeforeDelete, onNodesDelete, onEdgesDelete } = useCanvasDeleteHandlers({
     canvasId,
-    isOffline: !isSyncOnline,
     nodes,
     edges,
     deletingNodeIds,
@@ -1333,9 +1379,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   });
 
   const { onReconnectStart, onReconnect, onReconnectEnd } = useCanvasReconnectHandlers({
+    canvasId,
     edgeReconnectSuccessful,
     isReconnectDragActiveRef,
     setEdges,
+    runCreateEdgeMutation,
     runRemoveEdgeMutation,
   });
 
@@ -1349,7 +1397,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (!convexEdges) return;
     setEdges((prev) => {
       const prevConvexSnap = convexNodeIdsSnapshotForEdgeCarryRef.current;
-      const currentConvexIdList =
+      const currentConvexIdList: string[] =
         convexNodes !== undefined
           ? convexNodes.map((n: Doc<"nodes">) => n._id as string)
           : [];
@@ -1362,8 +1410,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const tempEdges = prev.filter((e) => e.className === "temp");
       const sourceTypeByNodeId =
         convexNodes !== undefined
-          ? new Map(
-              convexNodes.map((n: Doc<"nodes">) => [n._id as string, n.type]),
+          ? new Map<string, string>(
+              convexNodes.map((n: Doc<"nodes">) => [n._id as string, n.type as string]),
             )
           : undefined;
       const glowMode = resolvedTheme === "dark" ? "dark" : "light";
