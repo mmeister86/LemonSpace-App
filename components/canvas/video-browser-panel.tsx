@@ -10,7 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { X, Search, Loader2, AlertCircle, Play, Pause } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import type { PexelsVideo, PexelsVideoFile } from "@/lib/pexels-types";
 import { pickPreviewVideoFile, pickVideoFile } from "@/lib/pexels-types";
 import { toast } from "@/lib/toast";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type Orientation = "" | "landscape" | "portrait" | "square";
 type DurationFilter = "all" | "short" | "medium" | "long";
@@ -82,8 +83,7 @@ export function VideoBrowserPanel({
 
   const searchVideos = useAction(api.pexels.searchVideos);
   const popularVideos = useAction(api.pexels.popularVideos);
-  const updateData = useMutation(api.nodes.updateData);
-  const resizeNode = useMutation(api.nodes.resize);
+  const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(
     Boolean(initialState?.results?.length),
   );
@@ -197,6 +197,13 @@ export function VideoBrowserPanel({
   const handleSelect = useCallback(
     async (video: PexelsVideo) => {
       if (isSelecting) return;
+      if (status.isOffline) {
+        toast.warning(
+          "Offline aktuell nicht unterstützt",
+          "Video-Auswahl benötigt eine aktive Verbindung.",
+        );
+        return;
+      }
       setSelectingVideoId(video.id);
       let file: PexelsVideoFile;
       try {
@@ -209,7 +216,7 @@ export function VideoBrowserPanel({
         return;
       }
       try {
-        await updateData({
+        await queueNodeDataUpdate({
           nodeId: nodeId as Id<"nodes">,
           data: {
             pexelsId: video.id,
@@ -234,7 +241,7 @@ export function VideoBrowserPanel({
             : 16 / 9;
         const targetWidth = 320;
         const targetHeight = Math.round(targetWidth / aspectRatio);
-        await resizeNode({
+        await queueNodeResize({
           nodeId: nodeId as Id<"nodes">,
           width: targetWidth,
           height: targetHeight,
@@ -246,7 +253,7 @@ export function VideoBrowserPanel({
         setSelectingVideoId(null);
       }
     },
-    [canvasId, isSelecting, nodeId, onClose, resizeNode, updateData],
+    [canvasId, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
   );
 
   const handlePreviousPage = useCallback(() => {

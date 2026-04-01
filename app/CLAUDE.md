@@ -13,7 +13,7 @@ app/
 ├── globals.css                   ← Tailwind v4 + Design-Tokens
 ├── (app)/                        ← Authentifizierte App-Routen
 │   ├── canvas/[canvasId]/        ← Canvas-Editor
-│   │   └── page.tsx
+│   │   └── page.tsx              ← SSR-Auth/ID-Validation, rendert dann `CanvasShell`
 │   └── settings/
 │       └── billing/              ← Billing-Einstellungen
 ├── auth/                         ← Auth-Routen (Better Auth)

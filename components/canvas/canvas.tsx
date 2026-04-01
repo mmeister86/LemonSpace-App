@@ -35,10 +35,25 @@ import {
   enqueueCanvasOp,
   readCanvasSnapshot,
   resolveCanvasOp,
+  resolveCanvasOps,
   writeCanvasSnapshot,
 } from "@/lib/canvas-local-persistence";
+import {
+  ackCanvasSyncOp,
+  type CanvasSyncOpPayloadByType,
+  countCanvasSyncOps,
+  dropExpiredCanvasSyncOps,
+  enqueueCanvasSyncOp,
+  listCanvasSyncOps,
+  markCanvasSyncOpFailed,
+} from "@/lib/canvas-op-queue";
 
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import {
+  useConvexAuth,
+  useConvexConnectionState,
+  useMutation,
+  useQuery,
+} from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
@@ -103,9 +118,29 @@ import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
 import { getImageDimensions } from "./canvas-media-utils";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import { useCanvasScissors } from "./canvas-scissors";
+import { CanvasSyncProvider } from "./canvas-sync-context";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
+}
+
+function isLikelyTransientSyncError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("network") ||
+    message.includes("websocket") ||
+    message.includes("fetch") ||
+    message.includes("timeout") ||
+    message.includes("temporarily") ||
+    message.includes("connection")
+  );
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
@@ -176,8 +211,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
+  const updateNodeData = useMutation(api.nodes.updateData);
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
-  const batchMoveNodes = useMutation(api.nodes.batchMove);
+  const connectionState = useConvexConnectionState();
   const pendingMoveAfterCreateRef = useRef(
     new Map<string, { positionX: number; positionY: number }>(),
   );
@@ -357,17 +393,19 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const edgeList = localStore.getQuery(api.edges.list, { canvasId });
       if (nodeList === undefined || edgeList === undefined) return;
 
-      const removeSet = new Set<string>(args.nodeIds.map((id) => id as string));
+      const removeSet = new Set<string>(
+        args.nodeIds.map((id: Id<"nodes">) => id as string),
+      );
       localStore.setQuery(
         api.nodes.list,
         { canvasId },
-        nodeList.filter((n) => !removeSet.has(n._id)),
+        nodeList.filter((n: Doc<"nodes">) => !removeSet.has(n._id)),
       );
       localStore.setQuery(
         api.edges.list,
         { canvasId },
         edgeList.filter(
-          (e) =>
+          (e: Doc<"edges">) =>
             !removeSet.has(e.sourceNodeId) && !removeSet.has(e.targetNodeId),
         ),
       );
@@ -406,87 +444,279 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       localStore.setQuery(
         api.edges.list,
         { canvasId },
-        edgeList.filter((e) => e._id !== args.edgeId),
+        edgeList.filter((e: Doc<"edges">) => e._id !== args.edgeId),
       );
     },
   );
 
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isBrowserOnline, setIsBrowserOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const syncInFlightRef = useRef(false);
+  const lastOfflineUnsupportedToastAtRef = useRef(0);
+
+  const isSyncOnline =
+    isBrowserOnline === true && connectionState.isWebSocketConnected === true;
+
+  useEffect(() => {
+    const handleOnline = () => setIsBrowserOnline(true);
+    const handleOffline = () => setIsBrowserOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  const notifyOfflineUnsupported = useCallback((label: string) => {
+    const now = Date.now();
+    if (now - lastOfflineUnsupportedToastAtRef.current < 1500) return;
+    lastOfflineUnsupportedToastAtRef.current = now;
+    toast.warning(
+      "Offline aktuell nicht unterstützt",
+      `${label} ist in Stufe 1 nur online verfügbar.`,
+    );
+  }, []);
+
+  const runCreateNodeOnlineOnly = useCallback(
+    async (args: Parameters<typeof createNode>[0]) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Node erstellen");
+        throw new Error("offline-unsupported");
+      }
+      return await createNode(args);
+    },
+    [createNode, isSyncOnline, notifyOfflineUnsupported],
+  );
+
+  const runCreateNodeWithEdgeFromSourceOnlineOnly = useCallback(
+    async (args: Parameters<typeof createNodeWithEdgeFromSource>[0]) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Node mit Verbindung erstellen");
+        throw new Error("offline-unsupported");
+      }
+      return await createNodeWithEdgeFromSource(args);
+    },
+    [createNodeWithEdgeFromSource, isSyncOnline, notifyOfflineUnsupported],
+  );
+
+  const runCreateNodeWithEdgeToTargetOnlineOnly = useCallback(
+    async (args: Parameters<typeof createNodeWithEdgeToTarget>[0]) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Node mit Verbindung erstellen");
+        throw new Error("offline-unsupported");
+      }
+      return await createNodeWithEdgeToTarget(args);
+    },
+    [createNodeWithEdgeToTarget, isSyncOnline, notifyOfflineUnsupported],
+  );
+
+  const runCreateNodeWithEdgeSplitOnlineOnly = useCallback(
+    async (args: Parameters<typeof createNodeWithEdgeSplit>[0]) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Kanten-Split");
+        throw new Error("offline-unsupported");
+      }
+      return await createNodeWithEdgeSplit(args);
+    },
+    [createNodeWithEdgeSplit, isSyncOnline, notifyOfflineUnsupported],
+  );
+
+  const refreshPendingSyncCount = useCallback(async () => {
+    const count = await countCanvasSyncOps(canvasId as string);
+    setPendingSyncCount(count);
+  }, [canvasId]);
+
+  const flushCanvasSyncQueue = useCallback(async () => {
+    if (!isSyncOnline) return;
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    setIsSyncing(true);
+
+    try {
+      const now = Date.now();
+      const expiredIds = await dropExpiredCanvasSyncOps(canvasId as string, now);
+      if (expiredIds.length > 0) {
+        resolveCanvasOps(canvasId as string, expiredIds);
+        toast.info(
+          "Lokale Änderungen verworfen",
+          `${expiredIds.length} ältere Offline-Änderungen (älter als 24h) wurden entfernt.`,
+        );
+      }
+
+      const queue = await listCanvasSyncOps(canvasId as string);
+      let permanentFailures = 0;
+
+      for (const op of queue) {
+        if (op.expiresAt <= now) continue;
+        if (op.nextRetryAt > now) continue;
+
+        try {
+          if (op.type === "moveNode") {
+            await moveNode(op.payload);
+          } else if (op.type === "resizeNode") {
+            await resizeNode(op.payload);
+          } else if (op.type === "updateData") {
+            await updateNodeData(op.payload);
+          }
+
+          await ackCanvasSyncOp(op.id);
+          resolveCanvasOp(canvasId as string, op.id);
+        } catch (error: unknown) {
+          const transient =
+            !isSyncOnline || isLikelyTransientSyncError(error);
+          if (transient) {
+            const backoffMs = Math.min(30_000, 1000 * 2 ** Math.min(op.attemptCount, 5));
+            await markCanvasSyncOpFailed(op.id, {
+              nextRetryAt: Date.now() + backoffMs,
+              lastError: getErrorMessage(error),
+            });
+            break;
+          }
+
+          permanentFailures += 1;
+          await ackCanvasSyncOp(op.id);
+          resolveCanvasOp(canvasId as string, op.id);
+        }
+      }
+
+      if (permanentFailures > 0) {
+        toast.warning(
+          "Einige Änderungen konnten nicht synchronisiert werden",
+          `${permanentFailures} lokale Änderungen wurden übersprungen.`,
+        );
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      setIsSyncing(false);
+      await refreshPendingSyncCount();
+    }
+  }, [canvasId, isSyncOnline, moveNode, refreshPendingSyncCount, resizeNode, updateNodeData]);
+
+  const enqueueSyncMutation = useCallback(
+    async <TType extends keyof CanvasSyncOpPayloadByType>(
+      type: TType,
+      payload: CanvasSyncOpPayloadByType[TType],
+    ) => {
+      const opId = createCanvasOpId();
+      const now = Date.now();
+      const result = await enqueueCanvasSyncOp({
+        id: opId,
+        canvasId: canvasId as string,
+        type,
+        payload,
+        now,
+      });
+      enqueueCanvasOp(canvasId as string, {
+        id: opId,
+        type,
+        payload,
+        enqueuedAt: now,
+      });
+      resolveCanvasOps(canvasId as string, result.replacedIds);
+      await refreshPendingSyncCount();
+      void flushCanvasSyncQueue();
+    },
+    [canvasId, flushCanvasSyncQueue, refreshPendingSyncCount],
+  );
+
+  useEffect(() => {
+    void refreshPendingSyncCount();
+  }, [refreshPendingSyncCount]);
+
+  useEffect(() => {
+    if (!isSyncOnline) return;
+    void flushCanvasSyncQueue();
+  }, [flushCanvasSyncQueue, isSyncOnline]);
+
+  useEffect(() => {
+    if (!isSyncOnline || pendingSyncCount <= 0) return;
+    const interval = window.setInterval(() => {
+      void flushCanvasSyncQueue();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [flushCanvasSyncQueue, isSyncOnline, pendingSyncCount]);
+
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (!isSyncOnline) return;
+      void flushCanvasSyncQueue();
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [flushCanvasSyncQueue, isSyncOnline]);
+
   const runMoveNodeMutation = useCallback(
     async (args: { nodeId: Id<"nodes">; positionX: number; positionY: number }) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "moveNode", payload: args });
-      try {
-        return await moveNode(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
-      }
+      await enqueueSyncMutation("moveNode", args);
     },
-    [canvasId, moveNode],
+    [enqueueSyncMutation],
   );
 
   const runBatchMoveNodesMutation = useCallback(
-    async (args: Parameters<typeof batchMoveNodes>[0]) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "batchMoveNodes", payload: args });
-      try {
-        return await batchMoveNodes(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
+    async (args: {
+      moves: { nodeId: Id<"nodes">; positionX: number; positionY: number }[];
+    }) => {
+      for (const move of args.moves) {
+        await enqueueSyncMutation("moveNode", move);
       }
     },
-    [batchMoveNodes, canvasId],
+    [enqueueSyncMutation],
   );
 
   const runResizeNodeMutation = useCallback(
     async (args: { nodeId: Id<"nodes">; width: number; height: number }) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "resizeNode", payload: args });
-      try {
-        return await resizeNode(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
-      }
+      await enqueueSyncMutation("resizeNode", args);
     },
-    [canvasId, resizeNode],
+    [enqueueSyncMutation],
+  );
+
+  const runUpdateNodeDataMutation = useCallback(
+    async (args: { nodeId: Id<"nodes">; data: unknown }) => {
+      await enqueueSyncMutation("updateData", args);
+    },
+    [enqueueSyncMutation],
   );
 
   const runBatchRemoveNodesMutation = useCallback(
     async (args: Parameters<typeof batchRemoveNodes>[0]) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "batchRemoveNodes", payload: args });
-      try {
-        return await batchRemoveNodes(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Löschen");
+        return;
       }
+      await batchRemoveNodes(args);
     },
-    [batchRemoveNodes, canvasId],
+    [batchRemoveNodes, isSyncOnline, notifyOfflineUnsupported],
   );
 
   const runCreateEdgeMutation = useCallback(
     async (args: Parameters<typeof createEdge>[0]) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "createEdge", payload: args });
-      try {
-        return await createEdge(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Kante erstellen");
+        return;
       }
+      await createEdge(args);
     },
-    [canvasId, createEdge],
+    [createEdge, isSyncOnline, notifyOfflineUnsupported],
   );
 
   const runRemoveEdgeMutation = useCallback(
     async (args: Parameters<typeof removeEdge>[0]) => {
-      const opId = createCanvasOpId();
-      enqueueCanvasOp(canvasId, { id: opId, type: "removeEdge", payload: args });
-      try {
-        return await removeEdge(args);
-      } finally {
-        resolveCanvasOp(canvasId, opId);
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Kante entfernen");
+        return;
       }
+      await removeEdge(args);
     },
-    [canvasId, removeEdge],
+    [isSyncOnline, notifyOfflineUnsupported, removeEdge],
   );
 
   const splitEdgeAtExistingNodeMut = useMutation(
@@ -500,14 +730,18 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     });
     if (edgeList === undefined || nodeList === undefined) return;
 
-    const removed = edgeList.find((e) => e._id === args.splitEdgeId);
+    const removed = edgeList.find(
+      (e: Doc<"edges">) => e._id === args.splitEdgeId,
+    );
     if (!removed) return;
 
     const t1 = `${OPTIMISTIC_EDGE_PREFIX}s1_${Date.now()}_${Math.random().toString(36).slice(2, 10)}` as Id<"edges">;
     const t2 = `${OPTIMISTIC_EDGE_PREFIX}s2_${Date.now()}_${Math.random().toString(36).slice(2, 10)}` as Id<"edges">;
     const now = Date.now();
 
-    const nextEdges = edgeList.filter((e) => e._id !== args.splitEdgeId);
+    const nextEdges = edgeList.filter(
+      (e: Doc<"edges">) => e._id !== args.splitEdgeId,
+    );
     nextEdges.push(
       {
         _id: t1,
@@ -536,7 +770,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       localStore.setQuery(
         api.nodes.list,
         { canvasId: args.canvasId },
-        nodeList.map((n) =>
+        nodeList.map((n: Doc<"nodes">) =>
           n._id === args.middleNodeId
             ? {
                 ...n,
@@ -548,6 +782,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       );
     }
   });
+
+  const runSplitEdgeAtExistingNodeMutation = useCallback(
+    async (args: Parameters<typeof splitEdgeAtExistingNodeMut>[0]) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Kanten-Split");
+        return;
+      }
+      await splitEdgeAtExistingNodeMut(args);
+    },
+    [isSyncOnline, notifyOfflineUnsupported, splitEdgeAtExistingNodeMut],
+  );
 
   /** Freepik-Panel: State canvas-weit, damit es den optimistic_… → Real-ID-Wechsel überlebt. */
   const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
@@ -586,7 +831,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           }
           resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
           try {
-            await splitEdgeAtExistingNodeMut({
+            await runSplitEdgeAtExistingNodeMutation({
               canvasId,
               splitEdgeId: splitPayload.intersectedEdgeId,
               middleNodeId: realId,
@@ -642,7 +887,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       if (splitPayload) {
         pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
         try {
-          await splitEdgeAtExistingNodeMut({
+          await runSplitEdgeAtExistingNodeMutation({
             canvasId,
             splitEdgeId: splitPayload.intersectedEdgeId,
             middleNodeId: r,
@@ -672,12 +917,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         });
       }
     },
-    [canvasId, runMoveNodeMutation, splitEdgeAtExistingNodeMut],
+    [canvasId, runMoveNodeMutation, runSplitEdgeAtExistingNodeMutation],
   );
 
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  const nodesRef = useRef<RFNode[]>(nodes);
+  nodesRef.current = nodes;
   const [hasHydratedLocalSnapshot, setHasHydratedLocalSnapshot] = useState(false);
   /** Erzwingt Edge-Merge nach Mutation, falls clientRequestId→realId-Ref erst im Promise gesetzt wird. */
   const [edgeSyncNonce, setEdgeSyncNonce] = useState(0);
@@ -788,6 +1035,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const { onBeforeDelete, onNodesDelete, onEdgesDelete } = useCanvasDeleteHandlers({
     canvasId,
+    isOffline: !isSyncOnline,
     nodes,
     edges,
     deletingNodeIds,
@@ -816,7 +1064,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const prevConvexSnap = convexNodeIdsSnapshotForEdgeCarryRef.current;
       const currentConvexIdList =
         convexNodes !== undefined
-          ? convexNodes.map((n) => n._id as string)
+          ? convexNodes.map((n: Doc<"nodes">) => n._id as string)
           : [];
       const currentConvexIdSet = new Set(currentConvexIdList);
       const newlyAppearedIds: string[] = [];
@@ -827,10 +1075,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const tempEdges = prev.filter((e) => e.className === "temp");
       const sourceTypeByNodeId =
         convexNodes !== undefined
-          ? new Map(convexNodes.map((n) => [n._id, n.type]))
+          ? new Map(
+              convexNodes.map((n: Doc<"nodes">) => [n._id as string, n.type]),
+            )
           : undefined;
       const glowMode = resolvedTheme === "dark" ? "dark" : "light";
-      const mapped = convexEdges.map((edge) =>
+      const mapped = convexEdges.map((edge: Doc<"edges">) =>
         sourceTypeByNodeId
           ? convexEdgeToRFWithSourceGlow(
               edge,
@@ -843,14 +1093,27 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const mappedSignatures = new Set(mapped.map(rfEdgeConnectionSignature));
       const convexNodeIds =
         convexNodes !== undefined
-          ? new Set(convexNodes.map((n) => n._id as string))
+          ? new Set(convexNodes.map((n: Doc<"nodes">) => n._id as string))
           : null;
       const realIdByClientRequest = resolvedRealIdByClientRequestRef.current;
+      const isAnyNodeDragging =
+        isDragging.current ||
+        nodesRef.current.some((n) =>
+          Boolean((n as { dragging?: boolean }).dragging),
+        );
+
+      const localHasOptimisticNode = (nodeId: string): boolean => {
+        if (!isOptimisticNodeId(nodeId)) return false;
+        return nodesRef.current.some((n) => n.id === nodeId);
+      };
 
       const resolveEndpoint = (nodeId: string): string => {
         if (!isOptimisticNodeId(nodeId)) return nodeId;
         const cr = clientRequestIdFromOptimisticNodeId(nodeId);
         if (!cr) return nodeId;
+        if (isAnyNodeDragging && localHasOptimisticNode(nodeId)) {
+          return nodeId;
+        }
         const real = realIdByClientRequest.get(cr);
         return real !== undefined ? (real as string) : nodeId;
       };
@@ -862,6 +1125,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       ): string => {
         const base = resolveEndpoint(nodeId);
         if (!isOptimisticNodeId(base)) return base;
+        if (isAnyNodeDragging) return base;
         const nodeCr = clientRequestIdFromOptimisticNodeId(base);
         if (nodeCr === null) return base;
         const edgeCr = clientRequestIdFromOptimisticEdgeId(edge.id);
@@ -877,6 +1141,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       };
 
       const endpointUsable = (nodeId: string): boolean => {
+        if (isAnyNodeDragging && localHasOptimisticNode(nodeId)) return true;
         const resolved = resolveEndpoint(nodeId);
         if (convexNodeIds?.has(resolved)) return true;
         if (convexNodeIds?.has(nodeId)) return true;
@@ -950,9 +1215,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         if (realId === undefined) continue;
         const nodePresent =
           convexNodes !== undefined &&
-          convexNodes.some((n) => n._id === realId);
+          convexNodes.some((n: Doc<"nodes">) => n._id === realId);
         const edgeTouchesNewNode = convexEdges.some(
-          (e) => e.sourceNodeId === realId || e.targetNodeId === realId,
+          (e: Doc<"edges">) =>
+            e.sourceNodeId === realId || e.targetNodeId === realId,
         );
         if (nodePresent && edgeTouchesNewNode) {
           pendingConnectionCreatesRef.current.delete(cr);
@@ -978,22 +1244,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         Boolean((n as { dragging?: boolean }).dragging),
       );
       if (isDragging.current || anyRfNodeDragging) {
-        const needsOptimisticHandoff = previousNodes.some((n) => {
-          const cr = clientRequestIdFromOptimisticNodeId(n.id);
-          return (
-            cr !== null &&
-            resolvedRealIdByClientRequestRef.current.has(cr)
-          );
-        });
-        if (!needsOptimisticHandoff) {
-          return previousNodes;
-        }
+        // Kritisch für UX: Kein optimistic->real-ID-Handoff während aktivem Drag.
+        // Sonst kann React Flow den Drag verlieren ("Node klebt"), sobald der
+        // Server-Create zurückkommt und die ID im laufenden Pointer-Stream wechselt.
+        return previousNodes;
       }
 
       const prevDataById = new Map(
         previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
       );
-      const enriched = convexNodes.map((node) =>
+      const enriched = convexNodes.map((node: Doc<"nodes">) =>
         convexNodeDocWithMergedStorageUrl(
           node,
           storageUrlsById,
@@ -1227,9 +1487,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
+      const primaryNode = (node as RFNode | undefined) ?? draggedNodes[0];
       const intersectedEdgeId = overlappedEdgeRef.current;
 
       void (async () => {
+        if (!primaryNode) {
+          overlappedEdgeRef.current = null;
+          setHighlightedIntersectionEdge(null);
+          isDragging.current = false;
+          return;
+        }
         try {
           const intersectedEdge = intersectedEdgeId
             ? edges.find(
@@ -1238,12 +1505,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               )
             : undefined;
 
-          const splitHandles = NODE_HANDLE_MAP[node.type ?? ""];
+          const splitHandles = NODE_HANDLE_MAP[primaryNode.type ?? ""];
           const splitEligible =
             intersectedEdge !== undefined &&
             splitHandles !== undefined &&
-            intersectedEdge.source !== node.id &&
-            intersectedEdge.target !== node.id &&
+            intersectedEdge.source !== primaryNode.id &&
+            intersectedEdge.target !== primaryNode.id &&
             hasHandleKey(splitHandles, "source") &&
             hasHandleKey(splitHandles, "target");
 
@@ -1273,8 +1540,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               return;
             }
 
-            const multiCid = clientRequestIdFromOptimisticNodeId(node.id);
-            let middleId = node.id as Id<"nodes">;
+            const multiCid = clientRequestIdFromOptimisticNodeId(primaryNode.id);
+            let middleId = primaryNode.id as Id<"nodes">;
             if (multiCid) {
               const r = resolvedRealIdByClientRequestRef.current.get(multiCid);
               if (!r) {
@@ -1290,15 +1557,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                   ),
                   middleSourceHandle: normalizeHandle(splitHandles.source),
                   middleTargetHandle: normalizeHandle(splitHandles.target),
-                  positionX: node.position.x,
-                  positionY: node.position.y,
+                  positionX: primaryNode.position.x,
+                  positionY: primaryNode.position.y,
                 });
                 return;
               }
               middleId = r;
             }
 
-            await splitEdgeAtExistingNodeMut({
+            await runSplitEdgeAtExistingNodeMutation({
               canvasId,
               splitEdgeId: intersectedEdge.id as Id<"edges">,
               middleNodeId: middleId,
@@ -1311,31 +1578,31 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           }
 
           if (!splitEligible || !intersectedEdge) {
-            const cidSingle = clientRequestIdFromOptimisticNodeId(node.id);
+            const cidSingle = clientRequestIdFromOptimisticNodeId(primaryNode.id);
             if (cidSingle) {
               pendingMoveAfterCreateRef.current.set(cidSingle, {
-                positionX: node.position.x,
-                positionY: node.position.y,
+                positionX: primaryNode.position.x,
+                positionY: primaryNode.position.y,
               });
               await syncPendingMoveForClientRequest(cidSingle);
             } else {
               await runMoveNodeMutation({
-                nodeId: node.id as Id<"nodes">,
-                positionX: node.position.x,
-                positionY: node.position.y,
+                nodeId: primaryNode.id as Id<"nodes">,
+                positionX: primaryNode.position.x,
+                positionY: primaryNode.position.y,
               });
             }
             return;
           }
 
-          const singleCid = clientRequestIdFromOptimisticNodeId(node.id);
+          const singleCid = clientRequestIdFromOptimisticNodeId(primaryNode.id);
           if (singleCid) {
             const resolvedSingle =
               resolvedRealIdByClientRequestRef.current.get(singleCid);
             if (!resolvedSingle) {
               pendingMoveAfterCreateRef.current.set(singleCid, {
-                positionX: node.position.x,
-                positionY: node.position.y,
+                positionX: primaryNode.position.x,
+                positionY: primaryNode.position.y,
               });
               pendingEdgeSplitByClientRequestRef.current.set(singleCid, {
                 intersectedEdgeId: intersectedEdge.id as Id<"edges">,
@@ -1349,13 +1616,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                 ),
                 middleSourceHandle: normalizeHandle(splitHandles.source),
                 middleTargetHandle: normalizeHandle(splitHandles.target),
-                positionX: node.position.x,
-                positionY: node.position.y,
+                positionX: primaryNode.position.x,
+                positionY: primaryNode.position.y,
               });
               await syncPendingMoveForClientRequest(singleCid);
               return;
             }
-            await splitEdgeAtExistingNodeMut({
+            await runSplitEdgeAtExistingNodeMutation({
               canvasId,
               splitEdgeId: intersectedEdge.id as Id<"edges">,
               middleNodeId: resolvedSingle,
@@ -1363,29 +1630,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
               newNodeSourceHandle: normalizeHandle(splitHandles.source),
               newNodeTargetHandle: normalizeHandle(splitHandles.target),
-              positionX: node.position.x,
-              positionY: node.position.y,
+              positionX: primaryNode.position.x,
+              positionY: primaryNode.position.y,
             });
             pendingMoveAfterCreateRef.current.delete(singleCid);
             return;
           }
 
-          await splitEdgeAtExistingNodeMut({
+          await runSplitEdgeAtExistingNodeMutation({
             canvasId,
             splitEdgeId: intersectedEdge.id as Id<"edges">,
-            middleNodeId: node.id as Id<"nodes">,
+            middleNodeId: primaryNode.id as Id<"nodes">,
             splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
             splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
             newNodeSourceHandle: normalizeHandle(splitHandles.source),
             newNodeTargetHandle: normalizeHandle(splitHandles.target),
-            positionX: node.position.x,
-            positionY: node.position.y,
+            positionX: primaryNode.position.x,
+            positionY: primaryNode.position.y,
           });
         } catch (error) {
           console.error("[Canvas edge intersection split failed]", {
             canvasId,
-            nodeId: node.id,
-            nodeType: node.type,
+            nodeId: primaryNode?.id ?? null,
+            nodeType: primaryNode?.type ?? null,
             intersectedEdgeId,
             error: String(error),
           });
@@ -1402,7 +1669,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       runBatchMoveNodesMutation,
       runMoveNodeMutation,
       setHighlightedIntersectionEdge,
-      splitEdgeAtExistingNodeMut,
+      runSplitEdgeAtExistingNodeMutation,
       syncPendingMoveForClientRequest,
     ],
   );
@@ -1450,6 +1717,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const handleConnectionDropPick = useCallback(
     (template: CanvasNodeTemplate) => {
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Node mit Verbindung erstellen");
+        return;
+      }
       const ctx = connectionDropMenuRef.current;
       if (!ctx) return;
 
@@ -1489,7 +1760,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       };
 
       if (ctx.fromHandleType === "source") {
-        void createNodeWithEdgeFromSource({
+        void runCreateNodeWithEdgeFromSourceOnlineOnly({
           ...base,
           sourceNodeId: ctx.fromNodeId,
           sourceHandle: ctx.fromHandleId,
@@ -1508,7 +1779,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
           });
       } else {
-        void createNodeWithEdgeToTarget({
+        void runCreateNodeWithEdgeToTargetOnlineOnly({
           ...base,
           targetNodeId: ctx.fromNodeId,
           sourceHandle: handles?.source ?? undefined,
@@ -1530,8 +1801,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
     [
       canvasId,
-      createNodeWithEdgeFromSource,
-      createNodeWithEdgeToTarget,
+      isSyncOnline,
+      notifyOfflineUnsupported,
+      runCreateNodeWithEdgeFromSourceOnlineOnly,
+      runCreateNodeWithEdgeToTargetOnlineOnly,
       syncPendingMoveForClientRequest,
     ],
   );
@@ -1545,6 +1818,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const onDrop = useCallback(
     async (event: React.DragEvent) => {
       event.preventDefault();
+      if (!isSyncOnline) {
+        notifyOfflineUnsupported("Node erstellen");
+        return;
+      }
 
       const rawData = event.dataTransfer.getData(
         "application/lemonspace-node-type",
@@ -1578,7 +1855,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
               const clientRequestId = crypto.randomUUID();
 
-              void createNode({
+              void runCreateNodeOnlineOnly({
                 canvasId,
                 type: "image",
                 positionX: position.x,
@@ -1642,7 +1919,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       };
 
       const clientRequestId = crypto.randomUUID();
-      void createNode({
+      void runCreateNodeOnlineOnly({
         canvasId,
         type: nodeType,
         positionX: position.x,
@@ -1662,7 +1939,28 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         );
       });
     },
-    [screenToFlowPosition, createNode, canvasId, syncPendingMoveForClientRequest, generateUploadUrl],
+    [
+      screenToFlowPosition,
+      canvasId,
+      generateUploadUrl,
+      isSyncOnline,
+      notifyOfflineUnsupported,
+      runCreateNodeOnlineOnly,
+      syncPendingMoveForClientRequest,
+    ],
+  );
+
+  const canvasSyncContextValue = useMemo(
+    () => ({
+      queueNodeDataUpdate: runUpdateNodeDataMutation,
+      queueNodeResize: runResizeNodeMutation,
+      status: {
+        pendingCount: pendingSyncCount,
+        isSyncing,
+        isOffline: !isSyncOnline,
+      },
+    }),
+    [isSyncOnline, isSyncing, pendingSyncCount, runResizeNodeMutation, runUpdateNodeDataMutation],
   );
 
   // ─── Loading State ────────────────────────────────────────────
@@ -1678,24 +1976,25 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   }
 
   return (
-    <CanvasPlacementProvider
-      canvasId={canvasId}
-      createNode={createNode}
-      createNodeWithEdgeSplit={createNodeWithEdgeSplit}
-      createNodeWithEdgeFromSource={createNodeWithEdgeFromSource}
-      createNodeWithEdgeToTarget={createNodeWithEdgeToTarget}
-      onCreateNodeSettled={({ clientRequestId, realId }) => {
-        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-          (error: unknown) => {
-            console.error(
-              "[Canvas] onCreateNodeSettled syncPendingMove failed",
-              error,
-            );
-          },
-        );
-      }}
-    >
-      <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
+    <CanvasSyncProvider value={canvasSyncContextValue}>
+      <CanvasPlacementProvider
+        canvasId={canvasId}
+        createNode={runCreateNodeOnlineOnly}
+        createNodeWithEdgeSplit={runCreateNodeWithEdgeSplitOnlineOnly}
+        createNodeWithEdgeFromSource={runCreateNodeWithEdgeFromSourceOnlineOnly}
+        createNodeWithEdgeToTarget={runCreateNodeWithEdgeToTargetOnlineOnly}
+        onCreateNodeSettled={({ clientRequestId, realId }) => {
+          void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+            (error: unknown) => {
+              console.error(
+                "[Canvas] onCreateNodeSettled syncPendingMove failed",
+                error,
+              );
+            },
+          );
+        }}
+      >
+        <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
       <div className="relative h-full w-full">
         <CanvasToolbar
           canvasName={canvas?.name ?? "canvas"}
@@ -1787,8 +2086,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         </ReactFlow>
         </div>
       </div>
-      </AssetBrowserTargetContext.Provider>
-    </CanvasPlacementProvider>
+        </AssetBrowserTargetContext.Provider>
+      </CanvasPlacementProvider>
+    </CanvasSyncProvider>
   );
 }
 

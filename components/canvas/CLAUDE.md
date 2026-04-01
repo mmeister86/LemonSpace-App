@@ -8,15 +8,18 @@ Der Canvas ist das Herzstück von LemonSpace. Er basiert auf `@xyflow/react` (Re
 
 ```
 app/(app)/canvas/[canvasId]/page.tsx
-  └── <Canvas canvasId={...} />            ← components/canvas/canvas.tsx
-        ├── <ReactFlowProvider>
-        │     └── <CanvasInner>             ← Haupt-Komponente (~1800 Zeilen)
-        │           ├── Convex useQuery     ← Realtime-Sync
-        │           ├── nodeTypes Map       ← node-types.ts
-        │           ├── localStorage Cache  ← canvas-local-persistence.ts
-        │           ├── Interaction-Hooks   ← canvas-*.ts Helper
-        │           └── Panel-Komponenten
-        └── Context Providers
+  └── <CanvasShell canvasId={...} />       ← components/canvas/canvas-shell.tsx
+        ├── Resizable Sidebar/Main Layout  ← shadcn `resizable`
+        ├── <CanvasSidebar railMode={...}> ← collapsible Rail/Fulllayout
+        └── <Canvas canvasId={...} />      ← components/canvas/canvas.tsx
+              ├── <ReactFlowProvider>
+              │     └── <CanvasInner>      ← Haupt-Komponente (~1800 Zeilen)
+              │           ├── Convex useQuery     ← Realtime-Sync
+              │           ├── nodeTypes Map       ← node-types.ts
+              │           ├── localStorage Cache  ← canvas-local-persistence.ts
+              │           ├── Interaction-Hooks   ← canvas-*.ts Helper
+              │           └── Panel-Komponenten
+              └── Context Providers
 ```
 
 **`canvas.tsx`** ist weiterhin die zentrale Orchestrierungsdatei. Viel Low-Level-Logik wurde in dedizierte Module ausgelagert, aber Mutations-Flow, Event-Wiring und Render-Composition liegen weiterhin hier.
@@ -124,9 +127,10 @@ Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right`
 
 | Datei | Zweck |
 |-------|-------|
+| `canvas-shell.tsx` | Client-Layout-Wrapper für Sidebar/Main inkl. Resizing, Auto-Collapse und Rail-Mode-Umschaltung |
 | `canvas-toolbar.tsx` | Werkzeug-Leiste (Select, Pan, Zoom-Controls) |
 | `canvas-app-menu.tsx` | App-Menü (Einstellungen, Logout, Canvas-Name) |
-| `canvas-sidebar.tsx` | Node-Palette (linke Seite) |
+| `canvas-sidebar.tsx` | Node-Palette links; unterstützt Full-Mode und Rail-Mode (icon-only) |
 | `canvas-command-palette.tsx` | Cmd+K Command Palette |
 | `canvas-connection-drop-menu.tsx` | Kontext-Menü beim Loslassen einer Verbindung |
 | `canvas-node-template-picker.tsx` | Node aus Template einfügen |
@@ -138,6 +142,18 @@ Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right`
 | `export-button.tsx` | Export-Button mit Format-Auswahl |
 | `connection-banner.tsx` | Offline-Banner bei Convex-Verbindungsverlust |
 | `custom-connection-line.tsx` | Angepasste temporäre Verbindungslinie |
+
+---
+
+## Sidebar Resizing & Rail-Mode
+
+- Resizing läuft über `react-resizable-panels` via `components/ui/resizable.tsx` in `canvas-shell.tsx`.
+- Wichtige Größen werden als **Strings mit Einheit** gesetzt (z. B. `"18%"`, `"40%"`, `"64px"`). In der verwendeten Library-Version werden numerische Werte als Pixel interpretiert.
+- Sidebar ist `collapsible`; bei Unterschreiten von `minSize` wird auf `collapsedSize` reduziert.
+- Eingeklappt bedeutet nicht „unsichtbar“: `collapsedSize` ist absichtlich > 0 (`64px`), damit ein sichtbarer Rail bleibt.
+- `canvas-shell.tsx` schaltet per `onResize` abhängig von der tatsächlichen Pixelbreite zwischen Full-Mode und Rail-Mode um (`railMode` Prop an `CanvasSidebar`).
+- `CanvasUserMenu` unterstützt ebenfalls einen kompakten Rail-Mode über `compact`.
+- Scroll-Chaining ist begrenzt (`overscroll-contain` in der Sidebar-Scrollfläche + `overscroll-none` am Shell-Root), um visuelle Artefakte beim Scrollen am Ende zu verhindern.
 
 ---
 

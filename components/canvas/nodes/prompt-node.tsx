@@ -9,12 +9,13 @@ import {
   type NodeProps,
   type Node,
 } from "@xyflow/react";
-import { useMutation, useAction } from "convex/react";
+import { useAction } from "convex/react";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { DEFAULT_MODEL_ID, getModel } from "@/lib/ai-models";
 import {
@@ -118,7 +119,7 @@ export default function PromptNode({
   const hasEnoughCredits =
     availableCredits !== null && availableCredits >= creditCost;
 
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate, status } = useCanvasSync();
   const generateImage = useAction(api.ai.generateImage);
   const { createNodeConnectedFromSource } = useCanvasPlacement();
 
@@ -127,7 +128,7 @@ export default function PromptNode({
     const { _status, _statusMessage, ...rest } = raw;
     void _status;
     void _statusMessage;
-    updateData({
+    void queueNodeDataUpdate({
       nodeId: id as Id<"nodes">,
       data: {
         ...rest,
@@ -156,6 +157,13 @@ export default function PromptNode({
 
   const handleGenerate = useCallback(async () => {
     if (!effectivePrompt.trim() || isGenerating) return;
+    if (status.isOffline) {
+      toast.warning(
+        "Offline aktuell nicht unterstützt",
+        "KI-Generierung benötigt eine aktive Verbindung.",
+      );
+      return;
+    }
 
     if (availableCredits !== null && !hasEnoughCredits) {
       const { title, desc } = msg.ai.insufficientCredits(
@@ -291,6 +299,7 @@ export default function PromptNode({
     availableCredits,
     hasEnoughCredits,
     router,
+    status.isOffline,
   ]);
 
   return (

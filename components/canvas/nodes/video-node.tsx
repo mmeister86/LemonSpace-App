@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { Play } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/canvas/video-browser-panel";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type VideoNodeData = {
   canvasId?: string;
@@ -50,8 +51,7 @@ export default function VideoNode({
     page: 1,
     totalPages: 1,
   });
-  const resizeNode = useMutation(api.nodes.resize);
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate, queueNodeResize } = useCanvasSync();
   const refreshPexelsPlayback = useAction(api.pexels.getVideoByPexelsId);
 
   const edges = useStore((s) => s.edges);
@@ -95,7 +95,7 @@ export default function VideoNode({
     void (async () => {
       try {
         const fresh = await refreshPexelsPlayback({ pexelsId });
-        await updateData({
+        await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
           data: {
             ...d,
@@ -109,7 +109,7 @@ export default function VideoNode({
         playbackRefreshAttempted.current = false;
       }
     })();
-  }, [d, id, refreshPexelsPlayback, updateData]);
+  }, [d, id, queueNodeDataUpdate, refreshPexelsPlayback]);
 
   useEffect(() => {
     if (!hasVideo) return;
@@ -134,12 +134,12 @@ export default function VideoNode({
     const targetWidth = 320;
     const targetHeight = Math.round(targetWidth / aspectRatio);
 
-    void resizeNode({
+    void queueNodeResize({
       nodeId: id as Id<"nodes">,
       width: targetWidth,
       height: targetHeight,
     });
-  }, [d.width, d.height, hasVideo, height, id, resizeNode, width]);
+  }, [d.width, d.height, hasVideo, height, id, queueNodeResize, width]);
 
   const showPreview = hasVideo && d.thumbnailUrl;
 

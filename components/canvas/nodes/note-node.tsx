@@ -2,11 +2,10 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type NoteNodeData = {
   content?: string;
@@ -17,7 +16,7 @@ type NoteNodeData = {
 export type NoteNode = Node<NoteNodeData, "note">;
 
 export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate } = useCanvasSync();
   const [content, setContent] = useState(data.content ?? "");
   const [isEditing, setIsEditing] = useState(false);
 
@@ -30,7 +29,7 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
 
   const saveContent = useDebouncedCallback(
     (newContent: string) => {
-      updateData({
+      void queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
         data: {
           ...data,

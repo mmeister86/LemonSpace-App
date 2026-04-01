@@ -151,6 +151,7 @@ export function enqueueCanvasOp(
     enqueuedAt: op.enqueuedAt ?? Date.now(),
   };
   const payload = readOpsPayload(canvasId);
+  payload.ops = payload.ops.filter((candidate) => candidate.id !== entry.id);
   payload.ops.push(entry);
   payload.updatedAt = Date.now();
   writePayload(opsKey(canvasId), payload);
@@ -160,6 +161,17 @@ export function enqueueCanvasOp(
 export function resolveCanvasOp(canvasId: string, opId: string): void {
   const payload = readOpsPayload(canvasId);
   const nextOps = payload.ops.filter((op) => op.id !== opId);
+  if (nextOps.length === payload.ops.length) return;
+  payload.ops = nextOps;
+  payload.updatedAt = Date.now();
+  writePayload(opsKey(canvasId), payload);
+}
+
+export function resolveCanvasOps(canvasId: string, opIds: string[]): void {
+  if (opIds.length === 0) return;
+  const idSet = new Set(opIds);
+  const payload = readOpsPayload(canvasId);
+  const nextOps = payload.ops.filter((op) => !idSet.has(op.id));
   if (nextOps.length === payload.ops.length) return;
   payload.ops = nextOps;
   payload.updatedAt = Date.now();

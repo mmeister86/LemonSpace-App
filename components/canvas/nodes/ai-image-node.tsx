@@ -12,6 +12,7 @@ import { classifyError, type AiErrorCategory } from "@/lib/ai-errors";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/image-formats";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import {
   Loader2,
   AlertCircle,
@@ -60,6 +61,7 @@ export default function AiImageNode({
 }: NodeProps<AiImageNode>) {
   const nodeData = data as AiImageNodeData;
   const { getEdges, getNode } = useReactFlow();
+  const { status: syncStatus } = useCanvasSync();
   const router = useRouter();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -84,6 +86,13 @@ export default function AiImageNode({
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
+    if (syncStatus.isOffline) {
+      toast.warning(
+        "Offline aktuell nicht unterstützt",
+        "KI-Generierung benötigt eine aktive Verbindung.",
+      );
+      return;
+    }
     setLocalError(null);
     setIsGenerating(true);
 
@@ -140,7 +149,7 @@ export default function AiImageNode({
     } finally {
       setIsGenerating(false);
     }
-  }, [isLoading, nodeData, id, getEdges, getNode, generateImage]);
+  }, [isLoading, syncStatus.isOffline, nodeData, id, getEdges, getNode, generateImage]);
 
   const modelName =
     getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";

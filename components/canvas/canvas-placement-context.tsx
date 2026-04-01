@@ -7,102 +7,63 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import type { ReactMutation } from "convex/react";
-import type { FunctionReference } from "convex/server";
 import { useStore, type Edge as RFEdge } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
-type CreateNodeMutation = ReactMutation<
-  FunctionReference<
-    "mutation",
-    "public",
-    {
-      canvasId: Id<"canvases">;
-      type: string;
-      positionX: number;
-      positionY: number;
-      width: number;
-      height: number;
-      data: unknown;
-      parentId?: Id<"nodes">;
-      zIndex?: number;
-      clientRequestId?: string;
-    },
-    Id<"nodes">
-  >
->;
+type CreateNodeArgs = {
+  canvasId: Id<"canvases">;
+  type: string;
+  positionX: number;
+  positionY: number;
+  width: number;
+  height: number;
+  data: unknown;
+  parentId?: Id<"nodes">;
+  zIndex?: number;
+  clientRequestId?: string;
+};
 
-type CreateNodeWithEdgeSplitMutation = ReactMutation<
-  FunctionReference<
-    "mutation",
-    "public",
-    {
-      canvasId: Id<"canvases">;
-      type: string;
-      positionX: number;
-      positionY: number;
-      width: number;
-      height: number;
-      data: unknown;
-      parentId?: Id<"nodes">;
-      zIndex?: number;
-      splitEdgeId: Id<"edges">;
-      newNodeTargetHandle?: string;
-      newNodeSourceHandle?: string;
-      splitSourceHandle?: string;
-      splitTargetHandle?: string;
-    },
-    Id<"nodes">
-  >
->;
+type CreateNodeWithEdgeSplitArgs = {
+  canvasId: Id<"canvases">;
+  type: string;
+  positionX: number;
+  positionY: number;
+  width: number;
+  height: number;
+  data: unknown;
+  parentId?: Id<"nodes">;
+  zIndex?: number;
+  splitEdgeId: Id<"edges">;
+  newNodeTargetHandle?: string;
+  newNodeSourceHandle?: string;
+  splitSourceHandle?: string;
+  splitTargetHandle?: string;
+};
 
-type CreateNodeWithEdgeFromSourceMutation = ReactMutation<
-  FunctionReference<
-    "mutation",
-    "public",
-    {
-      canvasId: Id<"canvases">;
-      type: string;
-      positionX: number;
-      positionY: number;
-      width: number;
-      height: number;
-      data: unknown;
-      parentId?: Id<"nodes">;
-      zIndex?: number;
-      clientRequestId?: string;
-      sourceNodeId: Id<"nodes">;
-      sourceHandle?: string;
-      targetHandle?: string;
-    },
-    Id<"nodes">
-  >
->;
+type CreateNodeWithEdgeFromSourceArgs = CreateNodeArgs & {
+  sourceNodeId: Id<"nodes">;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
 
-type CreateNodeWithEdgeToTargetMutation = ReactMutation<
-  FunctionReference<
-    "mutation",
-    "public",
-    {
-      canvasId: Id<"canvases">;
-      type: string;
-      positionX: number;
-      positionY: number;
-      width: number;
-      height: number;
-      data: unknown;
-      parentId?: Id<"nodes">;
-      zIndex?: number;
-      clientRequestId?: string;
-      targetNodeId: Id<"nodes">;
-      sourceHandle?: string;
-      targetHandle?: string;
-    },
-    Id<"nodes">
-  >
->;
+type CreateNodeWithEdgeToTargetArgs = CreateNodeArgs & {
+  targetNodeId: Id<"nodes">;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+type CreateNodeMutation = (args: CreateNodeArgs) => Promise<Id<"nodes">>;
+type CreateNodeWithEdgeSplitMutation = (
+  args: CreateNodeWithEdgeSplitArgs,
+) => Promise<Id<"nodes">>;
+type CreateNodeWithEdgeFromSourceMutation = (
+  args: CreateNodeWithEdgeFromSourceArgs,
+) => Promise<Id<"nodes">>;
+type CreateNodeWithEdgeToTargetMutation = (
+  args: CreateNodeWithEdgeToTargetArgs,
+) => Promise<Id<"nodes">>;
 
 type FlowPoint = { x: number; y: number };
 
@@ -296,6 +257,12 @@ export function CanvasPlacementProvider({
         notifySettled(realId);
         return realId;
       } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "offline-unsupported"
+        ) {
+          throw error;
+        }
         console.error("[Canvas placement] edge split failed", {
           edgeId: hitEdge.id,
           type,

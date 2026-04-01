@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { Download, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -10,6 +10,7 @@ import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 interface FrameNodeData {
   label?: string;
@@ -19,7 +20,7 @@ interface FrameNodeData {
 
 export default function FrameNode({ id, data, selected, width, height }: NodeProps) {
   const nodeData = data as FrameNodeData;
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate, status } = useCanvasSync();
   const exportFrame = useAction(api.export.exportFrame);
 
   const [label, setLabel] = useState(nodeData.label ?? "Frame");
@@ -27,7 +28,10 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
   const [exportError, setExportError] = useState<string | null>(null);
 
   const debouncedSave = useDebouncedCallback((value: string) => {
-    void updateData({ nodeId: id as Id<"nodes">, data: { ...nodeData, label: value } });
+    void queueNodeDataUpdate({
+      nodeId: id as Id<"nodes">,
+      data: { ...nodeData, label: value },
+    });
   }, 500);
 
   const handleLabelChange = useCallback(
@@ -40,6 +44,10 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
 
   const handleExport = useCallback(async () => {
     if (isExporting) return;
+    if (status.isOffline) {
+      toast.warning("Offline aktuell nicht unterstützt", "Export benötigt eine aktive Verbindung.");
+      return;
+    }
     setIsExporting(true);
     setExportError(null);
 
@@ -67,7 +75,7 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
     } finally {
       setIsExporting(false);
     }
-  }, [exportFrame, id, isExporting, label]);
+  }, [exportFrame, id, isExporting, label, status.isOffline]);
 
   const frameW = Math.round(width ?? 400);
   const frameH = Math.round(height ?? 300);

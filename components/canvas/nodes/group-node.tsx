@@ -2,10 +2,9 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type GroupNodeData = {
   label?: string;
@@ -16,7 +15,7 @@ type GroupNodeData = {
 export type GroupNode = Node<GroupNodeData, "group">;
 
 export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) {
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate } = useCanvasSync();
   const [label, setLabel] = useState(data.label ?? "Gruppe");
   const [isEditing, setIsEditing] = useState(false);
 
@@ -30,7 +29,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
     if (label !== data.label) {
-      updateData({
+      void queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
         data: {
           ...data,
@@ -40,7 +39,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
         },
       });
     }
-  }, [label, data, id, updateData]);
+  }, [label, data, id, queueNodeDataUpdate]);
 
   return (
     <BaseNodeWrapper

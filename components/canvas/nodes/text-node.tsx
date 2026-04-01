@@ -8,11 +8,10 @@ import {
   type NodeProps,
   type Node,
 } from "@xyflow/react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type TextNodeData = {
   content?: string;
@@ -24,7 +23,7 @@ export type TextNode = Node<TextNodeData, "text">;
 
 export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
   const { setNodes } = useReactFlow();
-  const updateData = useMutation(api.nodes.updateData);
+  const { queueNodeDataUpdate } = useCanvasSync();
   const [content, setContent] = useState(data.content ?? "");
   const [isEditing, setIsEditing] = useState(false);
 
@@ -39,7 +38,7 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
   // Debounced Save — 500ms nach letztem Tastendruck
   const saveContent = useDebouncedCallback(
     (newContent: string) => {
-      updateData({
+      void queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
         data: {
           ...data,

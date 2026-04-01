@@ -9,13 +9,14 @@ import {
   type DragEvent,
 } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useMutation } from "convex/react";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -73,8 +74,7 @@ export default function ImageNode({
   height,
 }: NodeProps<ImageNode>) {
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
-  const updateData = useMutation(api.nodes.updateData);
-  const resizeNode = useMutation(api.nodes.resize);
+  const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -111,12 +111,12 @@ export default function ImageNode({
     }
 
     hasAutoSizedRef.current = true;
-    void resizeNode({
+    void queueNodeResize({
       nodeId: id as Id<"nodes">,
       width: targetSize.width,
       height: targetSize.height,
     });
-  }, [data.height, data.width, height, id, resizeNode, width]);
+  }, [data.height, data.width, height, id, queueNodeResize, width]);
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -132,6 +132,13 @@ export default function ImageNode({
           Math.round(MAX_IMAGE_BYTES / (1024 * 1024)),
         );
         toast.error(title, desc);
+        return;
+      }
+      if (status.isOffline) {
+        toast.warning(
+          "Offline aktuell nicht unterstützt",
+          "Bild-Uploads benötigen eine aktive Verbindung.",
+        );
         return;
       }
 
@@ -158,7 +165,7 @@ export default function ImageNode({
 
         const { storageId } = (await result.json()) as { storageId: string };
 
-        await updateData({
+        await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
           data: {
             storageId,
@@ -174,7 +181,7 @@ export default function ImageNode({
             intrinsicHeight: dimensions.height,
           });
 
-          await resizeNode({
+          await queueNodeResize({
             nodeId: id as Id<"nodes">,
             width: targetSize.width,
             height: targetSize.height,
@@ -192,7 +199,7 @@ export default function ImageNode({
         setIsUploading(false);
       }
     },
-    [id, generateUploadUrl, resizeNode, updateData]
+    [generateUploadUrl, id, queueNodeDataUpdate, queueNodeResize, status.isOffline]
   );
 
   const handleClick = useCallback(() => {

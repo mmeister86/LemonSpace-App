@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { X, Search, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { toast } from "@/lib/toast";
 
 type AssetType = "photo" | "vector" | "icon";
 
@@ -88,8 +90,7 @@ export function AssetBrowserPanel({
   const [selectingAssetKey, setSelectingAssetKey] = useState<string | null>(null);
 
   const searchFreepik = useAction(api.freepik.search);
-  const updateData = useMutation(api.nodes.updateData);
-  const resizeNode = useMutation(api.nodes.resize);
+  const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(Boolean(initialState?.results?.length));
   const requestSequenceRef = useRef(0);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -187,10 +188,17 @@ export function AssetBrowserPanel({
   const handleSelect = useCallback(
     async (asset: FreepikResult) => {
       if (isSelecting) return;
+      if (status.isOffline) {
+        toast.warning(
+          "Offline aktuell nicht unterstützt",
+          "Asset-Auswahl benötigt eine aktive Verbindung.",
+        );
+        return;
+      }
       const assetKey = `${asset.assetType}-${asset.id}`;
       setSelectingAssetKey(assetKey);
       try {
-        await updateData({
+        await queueNodeDataUpdate({
           nodeId: nodeId as Id<"nodes">,
           data: {
             assetId: asset.id,
@@ -214,7 +222,7 @@ export function AssetBrowserPanel({
           orientation: asset.orientation,
         });
 
-        await resizeNode({
+        await queueNodeResize({
           nodeId: nodeId as Id<"nodes">,
           width: targetSize.width,
           height: targetSize.height,
@@ -226,7 +234,7 @@ export function AssetBrowserPanel({
         setSelectingAssetKey(null);
       }
     },
-    [canvasId, isSelecting, nodeId, onClose, resizeNode, updateData],
+    [canvasId, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
   );
 
   const handlePreviousPage = useCallback(() => {

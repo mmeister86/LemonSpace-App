@@ -9,7 +9,6 @@ import {
   type MouseEvent,
 } from "react";
 import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
-import { useMutation } from "convex/react";
 import { ExternalLink, ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import {
@@ -17,11 +16,11 @@ import {
   useAssetBrowserTarget,
   type AssetBrowserSessionState,
 } from "@/components/canvas/asset-browser-panel";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
 type AssetNodeData = {
   assetId?: number;
@@ -55,7 +54,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     page: 1,
     totalPages: 1,
   });
-  const resizeNode = useMutation(api.nodes.resize);
+  const { queueNodeResize } = useCanvasSync();
 
   const edges = useStore((s) => s.edges);
   const nodes = useStore((s) => s.nodes);
@@ -124,7 +123,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     }
 
     hasAutoSizedRef.current = true;
-    void resizeNode({
+    void queueNodeResize({
       nodeId: id as Id<"nodes">,
       width: targetSize.width,
       height: targetSize.height,
@@ -136,7 +135,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
     hasAsset,
     height,
     id,
-    resizeNode,
+    queueNodeResize,
     width,
   ]);
 
