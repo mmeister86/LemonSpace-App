@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -174,8 +176,14 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
                   <span className="sr-only">Optionen</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={handleStartEdit}>
+              <DropdownMenuContent
+                align="end"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DropdownMenuItem
+                  onSelect={handleStartEdit}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Pencil className="size-4" />
                   Umbenennen
                 </DropdownMenuItem>
@@ -185,6 +193,7 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
                   onSelect={() => {
                     setDeleteOpen(true);
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <Trash2 className="size-4" />
                   Löschen
@@ -199,11 +208,11 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
         <DialogContent className="sm:max-w-md" showCloseButton>
           <DialogHeader>
             <DialogTitle>Arbeitsbereich löschen?</DialogTitle>
+            <DialogDescription>
+              &ldquo;{canvas.name}&rdquo; und alle Knoten werden dauerhaft gelöscht. Das
+              lässt sich nicht rückgängig machen.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            „{canvas.name}“ und alle Knoten werden dauerhaft gelöscht. Das
-            lässt sich nicht rückgängig machen.
-          </p>
           <DialogFooter>
             <Button
               type="button"

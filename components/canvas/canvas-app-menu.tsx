@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -163,6 +164,9 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
         <DialogContent className="sm:max-w-md" showCloseButton>
           <DialogHeader>
             <DialogTitle>Projekt umbenennen</DialogTitle>
+            <DialogDescription>
+              Gib einen neuen Namen für dein Projekt ein.
+            </DialogDescription>
           </DialogHeader>
           <Input
             value={renameValue}
@@ -196,11 +200,11 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
         <DialogContent className="sm:max-w-md" showCloseButton>
           <DialogHeader>
             <DialogTitle>Projekt löschen?</DialogTitle>
+            <DialogDescription>
+              &ldquo;{canvas?.name ?? "dieses Projekt"}&rdquo; und alle Knoten werden dauerhaft
+              gelöscht. Das lässt sich nicht rückgängig machen.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            „{canvas?.name ?? "dieses Projekt"}“ und alle Knoten werden dauerhaft
-            gelöscht. Das lässt sich nicht rückgängig machen.
-          </p>
           <DialogFooter>
             <Button
               type="button"
