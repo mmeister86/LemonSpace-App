@@ -39,17 +39,23 @@ export function Providers({
   initialToken,
   locale,
   messages,
+  timeZone,
 }: {
   children: ReactNode;
   initialToken?: string | null;
   locale?: string;
   messages?: AbstractIntlMessages;
+  timeZone?: string;
 }) {
   const router = useRouter();
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <NextIntlClientProvider locale={locale} messages={messages}>
+      <NextIntlClientProvider
+        locale={locale}
+        messages={messages}
+        timeZone={timeZone}
+      >
         <ConvexBetterAuthProvider
           client={convex}
           authClient={authClient}

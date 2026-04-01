@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Providers } from "@/components/providers";
 import { InitUser } from "@/components/init-user";
 import { getAuthUser, getToken } from "@/lib/auth-server";
-import { getLocale, getMessages } from "next-intl/server";
+import { getLocale, getMessages, getTimeZone } from "next-intl/server";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -23,6 +23,7 @@ export default async function RootLayout({
   const initialToken = await getToken();
   const locale = await getLocale();
   const messages = await getMessages();
+  const timeZone = await getTimeZone();
   const user = await getAuthUser();
   if (user) {
     const id = user.userId ?? String(user._id);
@@ -59,7 +60,12 @@ export default async function RootLayout({
         ></script>
       </head>
       <body className="min-h-full flex flex-col">
-        <Providers initialToken={initialToken} locale={locale} messages={messages}>
+        <Providers
+          initialToken={initialToken}
+          locale={locale}
+          messages={messages}
+          timeZone={timeZone}
+        >
           <InitUser />
           {children}
         </Providers>
