@@ -9,10 +9,16 @@ import {
   type DragEvent,
 } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Maximize2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "@/lib/toast";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
@@ -79,6 +85,7 @@ export default function ImageNode({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const hasAutoSizedRef = useRef(false);
 
   useEffect(() => {
@@ -253,11 +260,21 @@ export default function ImageNode({
   const showFilename = Boolean(data.filename && data.url);
 
   return (
-    <BaseNodeWrapper
-      nodeType="image"
-      selected={selected}
-      status={data._status}
-    >
+    <>
+      <BaseNodeWrapper
+        nodeType="image"
+        selected={selected}
+        status={data._status}
+        toolbarActions={[
+          {
+            id: "fullscreen",
+            label: "Fullscreen",
+            icon: <Maximize2 size={14} />,
+            onClick: () => setIsFullscreenOpen(true),
+            disabled: !data.url,
+          },
+        ]}
+      >
       <Handle
         type="target"
         position={Position.Left}
@@ -335,11 +352,44 @@ export default function ImageNode({
         className="hidden"
       />
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="h-3! w-3! bg-primary! border-2! border-background!"
-      />
-    </BaseNodeWrapper>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="h-3! w-3! bg-primary! border-2! border-background!"
+        />
+      </BaseNodeWrapper>
+
+      <Dialog open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
+        <DialogContent
+          className="inset-0 left-0 top-0 h-screen w-screen max-w-none -translate-x-0 -translate-y-0 place-items-center gap-0 rounded-none border-none bg-transparent p-0 ring-0 shadow-none sm:max-w-none"
+          showCloseButton={false}
+        >
+          <DialogTitle className="sr-only">{data.filename ?? "Bild"}</DialogTitle>
+          <button
+            type="button"
+            onClick={() => setIsFullscreenOpen(false)}
+            aria-label="Close image preview"
+            className="absolute right-6 top-6 z-50 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/20 text-white/90 transition-colors hover:bg-black/30"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div className="flex h-full w-full items-center justify-center">
+            {data.url ? (
+              // eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node
+              <img
+                src={data.url}
+                alt={data.filename ?? "Bild"}
+                className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
+                draggable={false}
+              />
+            ) : (
+              <div className="rounded-lg bg-popover/95 px-4 py-3 text-sm text-muted-foreground shadow-lg">
+                Kein Bild verfügbar
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

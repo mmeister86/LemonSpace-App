@@ -22,7 +22,14 @@ import {
   Clock3,
   ShieldAlert,
   WifiOff,
+  Maximize2,
+  X,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type AiImageNodeData = {
   storageId?: string;
@@ -67,6 +74,7 @@ export default function AiImageNode({
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [isOutputFullscreenOpen, setIsOutputFullscreenOpen] = useState(false);
 
   const generateImage = useAction(api.ai.generateImage);
 
@@ -175,6 +183,15 @@ export default function AiImageNode({
     <BaseNodeWrapper
       nodeType="ai-image"
       selected={selected}
+      toolbarActions={[
+        {
+          id: "fullscreen-output",
+          label: "Fullscreen",
+          icon: <Maximize2 size={14} />,
+          onClick: () => setIsOutputFullscreenOpen(true),
+          disabled: !nodeData.url,
+        },
+      ]}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
     >
       <Handle
@@ -320,6 +337,41 @@ export default function AiImageNode({
         id="image-out"
         className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
+
+      <Dialog
+        open={isOutputFullscreenOpen}
+        onOpenChange={setIsOutputFullscreenOpen}
+      >
+        <DialogContent
+          className="inset-0 left-0 top-0 h-screen w-screen max-w-none -translate-x-0 -translate-y-0 place-items-center gap-0 rounded-none border-none bg-transparent p-0 ring-0 shadow-none sm:max-w-none"
+          showCloseButton={false}
+        >
+          <DialogTitle className="sr-only">KI-Bildausgabe</DialogTitle>
+          <button
+            type="button"
+            onClick={() => setIsOutputFullscreenOpen(false)}
+            aria-label="Close image preview"
+            className="absolute right-6 top-6 z-50 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/20 text-white/90 transition-colors hover:bg-black/30"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div className="flex h-full w-full items-center justify-center">
+            {nodeData.url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={nodeData.url}
+                alt={nodeData.prompt ?? "AI generated image"}
+                className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
+                draggable={false}
+              />
+            ) : (
+              <div className="rounded-lg bg-popover/95 px-4 py-3 text-sm text-muted-foreground shadow-lg">
+                Keine Bildausgabe verfügbar
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </BaseNodeWrapper>
   );
 }

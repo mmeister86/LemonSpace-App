@@ -19,6 +19,15 @@ interface ResizeConfig {
   keepAspectRatio?: boolean;
 }
 
+export interface NodeToolbarAction {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}
+
 const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   frame: { minWidth: 200, minHeight: 150 },
   group: { minWidth: 150, minHeight: 100 },
@@ -51,7 +60,11 @@ const INTERNAL_FIELDS = new Set([
   "canvasId",
 ]);
 
-function NodeToolbarActions() {
+function NodeToolbarActions({
+  actions = [],
+}: {
+  actions?: NodeToolbarAction[];
+}) {
   const nodeId = useNodeId();
   const { deleteElements, getNode, getNodes, getEdges, setNodes } = useReactFlow();
   const { createNodeWithIntersection } = useCanvasPlacement();
@@ -135,6 +148,22 @@ function NodeToolbarActions() {
   return (
     <NodeToolbar position={Position.Top} offset={8}>
       <div className="flex items-center gap-1 rounded-lg border bg-card p-1 shadow-md">
+        {actions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            onClick={(e) => {
+              stopPropagation(e);
+              action.onClick();
+            }}
+            onPointerDown={stopPropagation}
+            title={action.label}
+            disabled={action.disabled}
+            className={`flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 ${action.className ?? ""}`}
+          >
+            {action.icon}
+          </button>
+        ))}
         <button
           type="button"
           onClick={(e) => { stopPropagation(e); handleDuplicate(); }}
@@ -163,6 +192,7 @@ interface BaseNodeWrapperProps {
   selected?: boolean;
   status?: string;
   statusMessage?: string;
+  toolbarActions?: NodeToolbarAction[];
   children: ReactNode;
   className?: string;
 }
@@ -172,6 +202,7 @@ export default function BaseNodeWrapper({
   selected,
   status = "idle",
   statusMessage,
+  toolbarActions,
   children,
   className = "",
 }: BaseNodeWrapperProps) {
@@ -255,7 +286,7 @@ export default function BaseNodeWrapper({
           {statusMessage}
         </div>
       )}
-      <NodeToolbarActions />
+      <NodeToolbarActions actions={toolbarActions} />
     </div>
   );
 }
