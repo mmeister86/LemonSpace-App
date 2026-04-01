@@ -3,7 +3,21 @@ import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Id } from "./_generated/dataModel";
 
+const STORAGE_URL_BATCH_SIZE = 12;
+
 type StorageUrlMap = Record<string, string | undefined>;
+
+type StorageUrlResult =
+  | {
+      storageId: Id<"_storage">;
+      url: string | undefined;
+      error: null;
+    }
+  | {
+      storageId: Id<"_storage">;
+      url: null;
+      error: string;
+    };
 
 async function assertCanvasOwner(
   ctx: QueryCtx,
@@ -43,13 +57,41 @@ async function resolveStorageUrls(
   ctx: QueryCtx,
   storageIds: Array<Id<"_storage">>,
 ): Promise<StorageUrlMap> {
-  const entries = await Promise.all(
-    storageIds.map(
-      async (id) => [id, (await ctx.storage.getUrl(id)) ?? undefined] as const,
-    ),
-  );
+  const resolved: StorageUrlMap = {};
 
-  return Object.fromEntries(entries) as StorageUrlMap;
+  for (let i = 0; i < storageIds.length; i += STORAGE_URL_BATCH_SIZE) {
+    const batch = storageIds.slice(i, i + STORAGE_URL_BATCH_SIZE);
+
+    const entries = await Promise.all(
+      batch.map(async (id): Promise<StorageUrlResult> => {
+        try {
+          const url = await ctx.storage.getUrl(id);
+          return { storageId: id, url: url ?? undefined, error: null };
+        } catch (error) {
+          return {
+            storageId: id,
+            url: null,
+            error: String(error),
+          };
+        }
+      }),
+    );
+
+    for (const entry of entries) {
+      if (entry.error) {
+        console.warn("[storage.batchGetUrlsForCanvas] getUrl failed", {
+          storageId: entry.storageId,
+          error: entry.error,
+        });
+        continue;
+      }
+
+      const { storageId, url } = entry;
+      resolved[storageId] = url;
+    }
+  }
+
+  return resolved;
 }
 
 export const generateUploadUrl = mutation({

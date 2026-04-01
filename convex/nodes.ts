@@ -126,17 +126,27 @@ export const get = query({
       return null;
     }
 
-    const data = node.data as Record<string, unknown> | undefined;
-    if (!data?.storageId) {
-      return node;
-    }
+  const data = node.data as Record<string, unknown> | undefined;
+  if (!data?.storageId) {
+    return node;
+  }
 
-    const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+  let url: string | null;
+  try {
+    url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+  } catch (error) {
+    console.warn("[nodes.get] failed to resolve storage URL", {
+      nodeId: node._id,
+      storageId: data.storageId,
+      error: String(error),
+    });
+    return node;
+  }
 
-    return {
-      ...node,
-      data: {
-        ...data,
+  return {
+    ...node,
+    data: {
+      ...data,
         url: url ?? undefined,
       },
     };
