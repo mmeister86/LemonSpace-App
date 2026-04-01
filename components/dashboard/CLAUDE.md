@@ -8,7 +8,7 @@ UI-Komponenten für die Startseite nach dem Login.
 
 | Datei | Zweck |
 |-------|-------|
-| `canvas-card.tsx` | Karte für einen Canvas in der Übersicht (Thumbnail, Name, Datum) |
+| `canvas-card.tsx` | Karte für einen Canvas in der Übersicht (Navigation, Umbenennen, Löschen mit Confirm-Dialog) |
 | `credit-overview.tsx` | Monatsverbrauch und verfügbare Credits als Balken-Visualisierung |
 | `recent-transactions.tsx` | Liste der letzten Credit-Transaktionen |
 
@@ -23,6 +23,12 @@ Alle Daten kommen aus Convex-Queries via `useAuthQuery` (aus `hooks/use-auth-que
 | `canvas-card.tsx` | `api.canvases.list` |
 | `credit-overview.tsx` | `api.credits.getBalance`, `api.credits.getUsageStats` |
 | `recent-transactions.tsx` | `api.credits.getRecentTransactions` |
+
+## Mutations
+
+| Komponente | Mutation |
+|-----------|----------|
+| `canvas-card.tsx` | `api.canvases.update`, `api.canvases.remove` |
 
 ---
 

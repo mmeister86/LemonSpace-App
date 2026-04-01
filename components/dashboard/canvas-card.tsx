@@ -2,15 +2,23 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
-import { ArrowUpRight, MoreHorizontal, Pencil } from "lucide-react";
+import { ArrowUpRight, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { msg } from "@/lib/toast-messages";
 
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -31,6 +39,9 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
   const suppressCardNavigationRef = useRef(false);
   const saveInFlightRef = useRef(false);
   const updateCanvas = useMutation(api.canvases.update);
+  const removeCanvas = useMutation(api.canvases.remove);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const handleStartEdit = useCallback(() => {
     suppressCardNavigationRef.current = true;
@@ -98,66 +109,120 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
     }
   }, [isEditing, onNavigate, canvas._id]);
 
+  const handleDelete = useCallback(async () => {
+    setDeleteBusy(true);
+    try {
+      await removeCanvas({ canvasId: canvas._id });
+      toast.success(msg.dashboard.deleteSuccess.title);
+      setDeleteOpen(false);
+    } catch {
+      toast.error(msg.dashboard.deleteFailed.title);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [canvas._id, removeCanvas]);
+
   return (
-    <div
-      className={cn(
-        "group relative flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
-        "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
-        isEditing && "ring-2 ring-primary/50"
-      )}
-      onClick={handleCardClick}
-    >
-      {/* Avatar */}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
-        {canvas.name.slice(0, 1).toUpperCase()}
-      </div>
-
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        {isEditing ? (
-          <Input
-            ref={inputRef}
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleBlur}
-            disabled={isSaving}
-            autoFocus
-            onClick={(e) => e.stopPropagation()}
-            className="h-auto py-0.5 text-sm font-medium bg-transparent border px-1.5 focus-visible:ring-1"
-          />
-        ) : (
-          <p className="truncate text-sm font-medium">{canvas.name}</p>
+    <>
+      <div
+        className={cn(
+          "group relative flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
+          "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
+          isEditing && "ring-2 ring-primary/50"
         )}
-        <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
+        onClick={handleCardClick}
+      >
+        {/* Avatar */}
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
+          {canvas.name.slice(0, 1).toUpperCase()}
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          {isEditing ? (
+            <Input
+              ref={inputRef}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={handleBlur}
+              disabled={isSaving}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              className="h-auto border bg-transparent px-1.5 py-0.5 text-sm font-medium focus-visible:ring-1"
+            />
+          ) : (
+            <p className="truncate text-sm font-medium">{canvas.name}</p>
+          )}
+          <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
+        </div>
+
+        {/* Actions - positioned to not overlap with content */}
+        {!isEditing && (
+          <div className="ml-2 flex shrink-0 items-center gap-2">
+            <ArrowUpRight className="size-4 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Optionen</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={handleStartEdit}>
+                  <Pencil className="size-4" />
+                  Umbenennen
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => {
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  Löschen
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
 
-      {/* Actions - positioned to not overlap with content */}
-      {!isEditing && (
-        <div className="flex shrink-0 items-center gap-2 ml-2">
-          <ArrowUpRight className="size-4 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="size-4" />
-                <span className="sr-only">Optionen</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={handleStartEdit}>
-                <Pencil className="size-4" />
-                Umbenennen
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
-    </div>
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Arbeitsbereich löschen?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            „{canvas.name}“ und alle Knoten werden dauerhaft gelöscht. Das
+            lässt sich nicht rückgängig machen.
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={deleteBusy}
+            >
+              Löschen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

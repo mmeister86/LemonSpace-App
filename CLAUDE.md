@@ -17,6 +17,18 @@ Jeder Ordner hat eine eigene CLAUDE.md als Single Source of Truth:
 
 ---
 
+## Auth-Status (Kurzüberblick)
+
+- Better Auth ist aktiv (Convex-Integration).
+- Login unterstützt:
+  - E-Mail + Passwort
+  - Magic Link (Better-Auth Plugin)
+- Details und Caveats (inkl. `SITE_URL`/`APP_URL`-Origin-Thema) stehen in:
+  - `convex/CLAUDE.md`
+  - `app/CLAUDE.md`
+
+---
+
 ## Design Context
 
 ### Users

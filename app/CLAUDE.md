@@ -66,6 +66,8 @@ Server Component. Initialisiert:
 - Client-Helper: `authClient` aus `lib/auth-client.ts`
 - Convex-Integration: `convex/auth.config.ts` + `convex/auth.ts`
 - Trusted Origins: `https://app.lemonspace.io`, `http://localhost:3000`
+- Sign-In unterstützt `email+password` **und** `magic link` (`authClient.signIn.magicLink`)
+- Dashboard-Route (`app/dashboard/page.tsx`) redirectet bei fehlender Session explizit nach `/auth/sign-in`, damit kein permanenter Loading-State entsteht
 
 ---
 

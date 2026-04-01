@@ -116,6 +116,20 @@ optionalAuth(ctx) // → { userId: string } | null
 
 Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genutzt, die User-Daten berühren.
 
+### Better-Auth Setup (`auth.ts`)
+
+- Auth-Library läuft in Convex (`createAuth`) und wird via `authComponent.registerRoutes(http, createAuth)` in `http.ts` registriert.
+- Login-Modi:
+  - `emailAndPassword` (mit `requireEmailVerification: true`)
+  - `magicLink` Plugin (`better-auth/plugins`)
+- Magic-Link-Konfiguration:
+  - `disableSignUp: true` (Magic Link nur für bestehende Accounts)
+  - `expiresIn: 600` (10 Minuten)
+  - Versand über Resend (`sendMagicLink`)
+- **Wichtig für Multi-Domain-Setup (`SITE_URL` + `APP_URL`)**:
+  - Verify-Links aus Better Auth werden vor dem Versand auf die App-Origin umgeschrieben (`toAuthAppUrl(...)`), damit Session-Cookies auf der korrekten Origin gesetzt werden.
+  - Ohne dieses Umschreiben kann Login per Magic Link zwar erfolgreich sein, aber das Dashboard in einem permanenten Loading-State hängen (fehlende Session auf App-Origin).
+
 ### Auth-Race-Härtung
 
 - `canvases.get` nutzt optionalen Auth-Check und gibt bei fehlender Session `null` zurück (statt Throw), damit SSR/Client-Hydration bei kurzem Token-Race nicht in `404` kippt.

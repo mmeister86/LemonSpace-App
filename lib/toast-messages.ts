@@ -188,5 +188,7 @@ export const msg = {
     renameEmpty: { title: "Name ungültig", desc: "Name darf nicht leer sein." },
     renameSuccess: { title: "Arbeitsbereich umbenannt" },
     renameFailed: { title: "Umbenennen fehlgeschlagen" },
+    deleteSuccess: { title: "Arbeitsbereich gelöscht" },
+    deleteFailed: { title: "Löschen fehlgeschlagen" },
   },
 } as const;
