@@ -40,6 +40,7 @@ import {
   isNodePaletteEnabled,
   type NodeCatalogEntry,
 } from "@/lib/canvas-node-catalog";
+import { CANVAS_NODE_DND_MIME } from "@/lib/canvas-connection-policy";
 import { cn } from "@/lib/utils";
 
 const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
@@ -89,7 +90,7 @@ function SidebarRow({
 
   const onDragStart = (event: React.DragEvent) => {
     if (!enabled) return;
-    event.dataTransfer.setData("application/lemonspace-node-type", entry.type);
+    event.dataTransfer.setData(CANVAS_NODE_DND_MIME, entry.type);
     event.dataTransfer.effectAllowed = "move";
   };
 

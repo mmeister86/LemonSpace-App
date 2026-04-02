@@ -32,6 +32,12 @@ import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { toast } from "@/lib/toast";
 import {
+  CANVAS_NODE_DND_MIME,
+  type CanvasConnectionValidationReason,
+  validateCanvasConnectionPolicy,
+} from "@/lib/canvas-connection-policy";
+import { showCanvasConnectionRejectedToast } from "@/lib/toast-messages";
+import {
   dropCanvasOpsByClientRequestIds,
   dropCanvasOpsByEdgeIds,
   dropCanvasOpsByNodeIds,
@@ -66,7 +72,6 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import {
-  isAdjustmentNodeType,
   isCanvasNodeType,
   type CanvasNodeType,
 } from "@/lib/canvas-node-types";
@@ -162,56 +167,53 @@ function hasStorageId(node: Doc<"nodes">): boolean {
   return typeof data?.storageId === "string" && data.storageId.length > 0;
 }
 
-const ADJUSTMENT_ALLOWED_SOURCE_TYPES = new Set([
-  "image",
-  "asset",
-  "ai-image",
-  "curves",
-  "color-adjust",
-  "light-adjust",
-  "detail-adjust",
-]);
-
-const ADJUSTMENT_DISALLOWED_TARGET_TYPES = new Set(["prompt", "ai-image"]);
-
 function validateCanvasConnection(
   connection: Connection,
   nodes: RFNode[],
   edges: RFEdge[],
   edgeToReplaceId?: string,
-): string | null {
-  if (!connection.source || !connection.target) return "Unvollstaendige Verbindung.";
-  if (connection.source === connection.target) return "Node kann nicht mit sich selbst verbunden werden.";
+): CanvasConnectionValidationReason | null {
+  if (!connection.source || !connection.target) return "incomplete";
+  if (connection.source === connection.target) return "self-loop";
 
   const sourceNode = nodes.find((node) => node.id === connection.source);
   const targetNode = nodes.find((node) => node.id === connection.target);
-  if (!sourceNode || !targetNode) return "Verbindung enthaelt unbekannte Nodes.";
+  if (!sourceNode || !targetNode) return "unknown-node";
 
-  const sourceType = sourceNode.type ?? "";
-  const targetType = targetNode.type ?? "";
-
-  if (isAdjustmentNodeType(targetType)) {
-    if (!ADJUSTMENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
-      return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
-    }
-
-    const incomingCount = edges.filter(
+  return validateCanvasConnectionPolicy({
+    sourceType: sourceNode.type ?? "",
+    targetType: targetNode.type ?? "",
+    targetIncomingCount: edges.filter(
       (edge) => edge.target === connection.target && edge.id !== edgeToReplaceId,
-    ).length;
-    if (incomingCount >= 1) {
-      return "Adjustment-Nodes erlauben genau eine eingehende Verbindung.";
-    }
-  }
+    ).length,
+  });
+}
 
-  if (isAdjustmentNodeType(sourceType) && ADJUSTMENT_DISALLOWED_TARGET_TYPES.has(targetType)) {
-    return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
-  }
+function validateCanvasConnectionByType(args: {
+  sourceType: string;
+  targetType: string;
+  targetNodeId: string;
+  edges: RFEdge[];
+}): CanvasConnectionValidationReason | null {
+  const targetIncomingCount = args.edges.filter(
+    (edge) => edge.target === args.targetNodeId,
+  ).length;
 
-  return null;
+  return validateCanvasConnectionPolicy({
+    sourceType: args.sourceType,
+    targetType: args.targetType,
+    targetIncomingCount,
+  });
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const t = useTranslations('toasts');
+  const showConnectionRejectedToast = useCallback(
+    (reason: CanvasConnectionValidationReason) => {
+      showCanvasConnectionRejectedToast(t, reason);
+    },
+    [t],
+  );
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
@@ -1688,8 +1690,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runRemoveEdgeMutation,
     validateConnection: (oldEdge, nextConnection) =>
       validateCanvasConnection(nextConnection, nodes, edges, oldEdge.id),
-    onInvalidConnection: (message) => {
-      toast.warning("Verbindung abgelehnt", message);
+    onInvalidConnection: (reason) => {
+      showConnectionRejectedToast(reason as CanvasConnectionValidationReason);
     },
   });
 
@@ -2330,7 +2332,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (connection: Connection) => {
       const validationError = validateCanvasConnection(connection, nodes, edges);
       if (validationError) {
-        toast.warning("Verbindung abgelehnt", validationError);
+        showConnectionRejectedToast(validationError);
         return;
       }
 
@@ -2344,7 +2346,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         targetHandle: connection.targetHandle ?? undefined,
       });
     },
-    [canvasId, edges, nodes, runCreateEdgeMutation],
+    [canvasId, edges, nodes, runCreateEdgeMutation, showConnectionRejectedToast],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(
@@ -2376,6 +2378,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     (template: CanvasNodeTemplate) => {
       const ctx = connectionDropMenuRef.current;
       if (!ctx) return;
+
+      const fromNode = nodesRef.current.find((node) => node.id === ctx.fromNodeId);
+      if (!fromNode) {
+        showConnectionRejectedToast("unknown-node");
+        return;
+      }
 
       const defaults = NODE_DEFAULTS[template.type] ?? {
         width: 200,
@@ -2413,6 +2421,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       };
 
       if (ctx.fromHandleType === "source") {
+        const validationError = validateCanvasConnectionByType({
+          sourceType: fromNode.type ?? "",
+          targetType: template.type,
+          targetNodeId: `__pending_${template.type}_${Date.now()}`,
+          edges: edgesRef.current,
+        });
+        if (validationError) {
+          showConnectionRejectedToast(validationError);
+          return;
+        }
+
         void runCreateNodeWithEdgeFromSourceOnlineOnly({
           ...base,
           sourceNodeId: ctx.fromNodeId,
@@ -2435,6 +2454,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
           });
       } else {
+        const validationError = validateCanvasConnectionByType({
+          sourceType: template.type,
+          targetType: fromNode.type ?? "",
+          targetNodeId: fromNode.id,
+          edges: edgesRef.current,
+        });
+        if (validationError) {
+          showConnectionRejectedToast(validationError);
+          return;
+        }
+
         void runCreateNodeWithEdgeToTargetOnlineOnly({
           ...base,
           targetNodeId: ctx.fromNodeId,
@@ -2462,6 +2492,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       canvasId,
       runCreateNodeWithEdgeFromSourceOnlineOnly,
       runCreateNodeWithEdgeToTargetOnlineOnly,
+      showConnectionRejectedToast,
       syncPendingMoveForClientRequest,
     ],
   );
@@ -2477,7 +2508,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       event.preventDefault();
 
       const rawData = event.dataTransfer.getData(
-        "application/lemonspace-node-type",
+        CANVAS_NODE_DND_MIME,
       );
       if (!rawData) {
         const hasFiles = event.dataTransfer.files && event.dataTransfer.files.length > 0;

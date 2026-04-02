@@ -3,6 +3,10 @@ import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
+import {
+  getCanvasConnectionValidationMessage,
+  validateCanvasConnectionPolicy,
+} from "../lib/canvas-connection-policy";
 import { nodeTypeValidator } from "./node_type_validator";
 
 // ============================================================================
@@ -373,22 +377,13 @@ function normalizeNodeDataForWrite(
   return data;
 }
 
-async function assertTargetAllowsIncomingEdge(
+async function countIncomingEdges(
   ctx: MutationCtx,
   args: {
     targetNodeId: Id<"nodes">;
     edgeIdToIgnore?: Id<"edges">;
   },
-): Promise<void> {
-  const targetNode = await ctx.db.get(args.targetNodeId);
-  if (!targetNode) {
-    throw new Error("Target node not found");
-  }
-
-  if (!isAdjustmentNodeType(targetNode.type)) {
-    return;
-  }
-
+): Promise<number> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
     .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
@@ -399,9 +394,11 @@ async function assertTargetAllowsIncomingEdge(
   );
   const checkDurationMs = Date.now() - checkStartedAt;
 
-  const hasAnyIncoming = Array.isArray(incomingEdges)
-    ? incomingEdges.some((edge) => edge._id !== args.edgeIdToIgnore)
-    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore;
+  const incomingCount = Array.isArray(incomingEdges)
+    ? incomingEdges.filter((edge) => edge._id !== args.edgeIdToIgnore).length
+    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore
+      ? 1
+      : 0;
   if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
     const inspected = Array.isArray(incomingEdges)
       ? incomingEdges.length
@@ -409,7 +406,7 @@ async function assertTargetAllowsIncomingEdge(
         ? 0
         : 1;
 
-    console.warn("[nodes.assertTargetAllowsIncomingEdge] slow incoming edge check", {
+    console.warn("[nodes.countIncomingEdges] slow incoming edge check", {
       targetNodeId: args.targetNodeId,
       edgeIdToIgnore: args.edgeIdToIgnore,
       inspected,
@@ -417,8 +414,29 @@ async function assertTargetAllowsIncomingEdge(
     });
   }
 
-  if (hasAnyIncoming) {
-    throw new Error("Adjustment nodes allow only one incoming edge.");
+  return incomingCount;
+}
+
+async function assertConnectionPolicyForTypes(
+  ctx: MutationCtx,
+  args: {
+    sourceType: Doc<"nodes">["type"];
+    targetType: Doc<"nodes">["type"];
+    targetNodeId: Id<"nodes">;
+    edgeIdToIgnore?: Id<"edges">;
+  },
+): Promise<void> {
+  const reason = validateCanvasConnectionPolicy({
+    sourceType: args.sourceType,
+    targetType: args.targetType,
+    targetIncomingCount: await countIncomingEdges(ctx, {
+      targetNodeId: args.targetNodeId,
+      edgeIdToIgnore: args.edgeIdToIgnore,
+    }),
+  });
+
+  if (reason) {
+    throw new Error(getCanvasConnectionValidationMessage(reason));
   }
 }
 
@@ -699,6 +717,28 @@ export const createWithEdgeSplit = mutation({
       throw new Error("Edge not found");
     }
 
+    const sourceNode = await ctx.db.get(edge.sourceNodeId);
+    const targetNode = await ctx.db.get(edge.targetNodeId);
+    if (!sourceNode || !targetNode) {
+      throw new Error("Source or target node not found");
+    }
+
+    const firstEdgeReason = validateCanvasConnectionPolicy({
+      sourceType: sourceNode.type,
+      targetType: args.type,
+      targetIncomingCount: 0,
+    });
+    if (firstEdgeReason) {
+      throw new Error(getCanvasConnectionValidationMessage(firstEdgeReason));
+    }
+
+    await assertConnectionPolicyForTypes(ctx, {
+      sourceType: args.type,
+      targetType: targetNode.type,
+      targetNodeId: edge.targetNodeId,
+      edgeIdToIgnore: args.splitEdgeId,
+    });
+
     const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
@@ -805,6 +845,12 @@ export const splitEdgeAtExistingNode = mutation({
       throw new Error("Middle node not found");
     }
 
+    const sourceNode = await ctx.db.get(edge.sourceNodeId);
+    const targetNode = await ctx.db.get(edge.targetNodeId);
+    if (!sourceNode || !targetNode) {
+      throw new Error("Source or target node not found");
+    }
+
     if (
       args.positionX !== undefined &&
       args.positionY !== undefined
@@ -815,6 +861,12 @@ export const splitEdgeAtExistingNode = mutation({
       });
     }
 
+    await assertConnectionPolicyForTypes(ctx, {
+      sourceType: sourceNode.type,
+      targetType: middle.type,
+      targetNodeId: args.middleNodeId,
+    });
+
     await ctx.db.insert("edges", {
       canvasId: args.canvasId,
       sourceNodeId: edge.sourceNodeId,
@@ -823,7 +875,9 @@ export const splitEdgeAtExistingNode = mutation({
       targetHandle: args.newNodeTargetHandle,
     });
 
-    await assertTargetAllowsIncomingEdge(ctx, {
+    await assertConnectionPolicyForTypes(ctx, {
+      sourceType: middle.type,
+      targetType: targetNode.type,
       targetNodeId: edge.targetNodeId,
       edgeIdToIgnore: args.splitEdgeId,
     });
@@ -890,6 +944,15 @@ export const createWithEdgeFromSource = mutation({
     const source = await ctx.db.get(args.sourceNodeId);
     if (!source || source.canvasId !== args.canvasId) {
       throw new Error("Source node not found");
+    }
+
+    const fromSourceReason = validateCanvasConnectionPolicy({
+      sourceType: source.type,
+      targetType: args.type,
+      targetIncomingCount: 0,
+    });
+    if (fromSourceReason) {
+      throw new Error(getCanvasConnectionValidationMessage(fromSourceReason));
     }
 
     const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
@@ -968,6 +1031,12 @@ export const createWithEdgeToTarget = mutation({
       throw new Error("Target node not found");
     }
 
+    await assertConnectionPolicyForTypes(ctx, {
+      sourceType: args.type,
+      targetType: target.type,
+      targetNodeId: args.targetNodeId,
+    });
+
     const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
@@ -982,10 +1051,6 @@ export const createWithEdgeToTarget = mutation({
       data: normalizedData,
       parentId: args.parentId,
       zIndex: args.zIndex,
-    });
-
-    await assertTargetAllowsIncomingEdge(ctx, {
-      targetNodeId: args.targetNodeId,
     });
 
     await ctx.db.insert("edges", {

@@ -3,6 +3,7 @@ import type { DefaultEdgeOptions, Edge as RFEdge, Node as RFNode } from "@xyflow
 import { readCanvasOps } from "@/lib/canvas-local-persistence";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNodeDeleteBlockReason } from "@/lib/toast";
+import { getSourceImage } from "@/lib/image-pipeline/contracts";
 
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 export const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
@@ -81,6 +82,50 @@ export type PendingEdgeSplit = {
 
 export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
+  const pipelineNodes = nodes.map((node) => ({
+    id: node.id,
+    type: node.type ?? "",
+    data: node.data,
+  }));
+  const pipelineEdges = persistedEdges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+  }));
+
+  const resolveImageFromNode = (node: RFNode): string | undefined => {
+    const nodeData = node.data as { url?: string; previewUrl?: string };
+    if (typeof nodeData.url === "string" && nodeData.url.length > 0) {
+      return nodeData.url;
+    }
+    if (typeof nodeData.previewUrl === "string" && nodeData.previewUrl.length > 0) {
+      return nodeData.previewUrl;
+    }
+    return undefined;
+  };
+
+  const resolvePipelineImageUrl = (sourceNode: RFNode): string | undefined => {
+    const direct = resolveImageFromNode(sourceNode);
+    if (direct) {
+      return direct;
+    }
+
+    return getSourceImage({
+      nodeId: sourceNode.id,
+      nodes: pipelineNodes,
+      edges: pipelineEdges,
+      isSourceNode: (node) =>
+        node.type === "image" ||
+        node.type === "ai-image" ||
+        node.type === "asset" ||
+        node.type === "render",
+      getSourceImageFromNode: (node) => {
+        const candidate = nodes.find((entry) => entry.id === node.id);
+        if (!candidate) return null;
+        return resolveImageFromNode(candidate) ?? null;
+      },
+    }) ?? undefined;
+  };
+
   let hasNodeUpdates = false;
 
   const nextNodes = nodes.map((node) => {
@@ -97,12 +142,13 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
       if (!source) continue;
 
       const srcData = source.data as { url?: string; label?: string };
+      const resolvedUrl = resolvePipelineImageUrl(source);
 
       if (edge.targetHandle === "left") {
-        leftUrl = srcData.url;
+        leftUrl = resolvedUrl;
         leftLabel = srcData.label ?? source.type ?? "Before";
       } else if (edge.targetHandle === "right") {
-        rightUrl = srcData.url;
+        rightUrl = resolvedUrl;
         rightLabel = srcData.label ?? source.type ?? "After";
       }
     }

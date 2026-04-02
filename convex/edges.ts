@@ -2,25 +2,20 @@ import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
-import { isAdjustmentNodeType } from "../lib/canvas-node-types";
+import {
+  getCanvasConnectionValidationMessage,
+  validateCanvasConnectionPolicy,
+} from "../lib/canvas-connection-policy";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
 
-async function assertTargetAllowsIncomingEdge(
+async function countIncomingEdges(
   ctx: MutationCtx,
   args: {
     targetNodeId: Id<"nodes">;
     edgeIdToIgnore?: Id<"edges">;
   },
-): Promise<void> {
-  const targetNode = await ctx.db.get(args.targetNodeId);
-  if (!targetNode) {
-    throw new Error("Target node not found");
-  }
-  if (!isAdjustmentNodeType(targetNode.type)) {
-    return;
-  }
-
+): Promise<number> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
     .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
@@ -33,9 +28,11 @@ async function assertTargetAllowsIncomingEdge(
   );
   const checkDurationMs = Date.now() - checkStartedAt;
 
-  const hasAnyIncoming = Array.isArray(incomingEdges)
-    ? incomingEdges.some((edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore)
-    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore;
+  const incomingCount = Array.isArray(incomingEdges)
+    ? incomingEdges.filter((edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore).length
+    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore
+      ? 1
+      : 0;
   if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
     const inspected = Array.isArray(incomingEdges)
       ? incomingEdges.length
@@ -51,8 +48,34 @@ async function assertTargetAllowsIncomingEdge(
     });
   }
 
-  if (hasAnyIncoming) {
-    throw new Error("Adjustment nodes allow only one incoming edge.");
+  return incomingCount;
+}
+
+async function assertConnectionPolicy(
+  ctx: MutationCtx,
+  args: {
+    sourceNodeId: Id<"nodes">;
+    targetNodeId: Id<"nodes">;
+    edgeIdToIgnore?: Id<"edges">;
+  },
+): Promise<void> {
+  const sourceNode = await ctx.db.get(args.sourceNodeId);
+  const targetNode = await ctx.db.get(args.targetNodeId);
+  if (!sourceNode || !targetNode) {
+    throw new Error("Source or target node not found");
+  }
+
+  const reason = validateCanvasConnectionPolicy({
+    sourceType: sourceNode.type,
+    targetType: targetNode.type,
+    targetIncomingCount: await countIncomingEdges(ctx, {
+      targetNodeId: args.targetNodeId,
+      edgeIdToIgnore: args.edgeIdToIgnore,
+    }),
+  });
+
+  if (reason) {
+    throw new Error(getCanvasConnectionValidationMessage(reason));
   }
 }
 
@@ -142,7 +165,8 @@ export const create = mutation({
       throw new Error("Cannot connect a node to itself");
     }
 
-    await assertTargetAllowsIncomingEdge(ctx, {
+    await assertConnectionPolicy(ctx, {
+      sourceNodeId: args.sourceNodeId,
       targetNodeId: args.targetNodeId,
     });
 

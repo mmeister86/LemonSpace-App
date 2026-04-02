@@ -3,6 +3,10 @@
 import { useTranslations } from 'next-intl';
 import { toast, type ToastDurationOverrides } from './toast';
 import type { CanvasNodeDeleteBlockReason } from './toast';
+import {
+  getCanvasConnectionValidationMessage,
+  type CanvasConnectionValidationReason,
+} from '@/lib/canvas-connection-policy';
 
 const DURATION = {
   success: 4000,
@@ -77,6 +81,13 @@ export const msg = {
         desc: `${why.desc} ${suffix}`,
       };
     },
+    connectionRejected: (
+      _t: ToastTranslations,
+      reason: CanvasConnectionValidationReason,
+    ) => ({
+      title: 'Verbindung abgelehnt',
+      desc: getCanvasConnectionValidationMessage(reason),
+    }),
   },
   ai: {
     generating: (t: ToastTranslations) => ({ title: t('ai.generating') }),
@@ -205,3 +216,12 @@ export const msg = {
     deleteFailed: (t: ToastTranslations) => ({ title: t('dashboard.deleteFailed') }),
   },
 } as const;
+
+export function showCanvasConnectionRejectedToast(
+  t: ToastTranslations,
+  reason: CanvasConnectionValidationReason,
+  duration?: ToastDurationOverrides,
+): void {
+  const payload = msg.canvas.connectionRejected(t, reason);
+  toast.warning(payload.title, payload.desc, duration ?? { duration: DURATION.warning });
+}
