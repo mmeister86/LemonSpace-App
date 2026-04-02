@@ -19,13 +19,24 @@ export const exportFrame = action({
     frameNodeId: v.id("nodes"),
   },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
     // ── 1. Load the frame node ─────────────────────────────────────────────
-    const frame = await ctx.runQuery(api.nodes.get, { nodeId: args.frameNodeId });
+    const frame = await ctx.runQuery(api.nodes.get, {
+      nodeId: args.frameNodeId,
+      includeStorageUrl: false,
+    });
     if (!frame) throw new Error("Frame node not found");
     if (frame.type !== "frame") throw new Error("Node is not a frame");
+
+    const authorizedCanvas = await ctx.runQuery(api.canvases.get, {
+      canvasId: frame.canvasId,
+    });
+    if (!authorizedCanvas) {
+      throw new Error("Not authorized for canvas");
+    }
 
     const frameData = frame.data as {
       label?: string;
@@ -73,10 +84,39 @@ export const exportFrame = action({
       color: 0xffffffff, // white background
     });
 
+    const resolveUrlsAt = Date.now();
+    const imageNodeUrlEntries = await Promise.all(
+      imageNodes.map(async (node) => {
+        const data = node.data as { storageId: string };
+        try {
+          const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+          return { nodeId: node._id, url };
+        } catch (error) {
+          console.warn("[exportFrame] failed to resolve storage URL", {
+            nodeId: node._id,
+            storageId: data.storageId,
+            error: String(error),
+          });
+          return { nodeId: node._id, url: null };
+        }
+      }),
+    );
+    const resolveUrlsDurationMs = Date.now() - resolveUrlsAt;
+    if (resolveUrlsDurationMs >= 250) {
+      console.warn("[exportFrame] slow storage URL resolution", {
+        frameNodeId: args.frameNodeId,
+        imageCount: imageNodes.length,
+        resolvedCount: imageNodeUrlEntries.filter((entry) => entry?.url).length,
+        durationMs: resolveUrlsDurationMs,
+      });
+    }
+
     // ── 4. Fetch, resize and composite each image ──────────────────────────
+    const urlByNodeId = new Map(imageNodeUrlEntries.map((entry) => [entry.nodeId, entry.url]));
+
+    const resolveImageDataAt = Date.now();
     for (const node of imageNodes) {
-      const data = node.data as { storageId: string };
-      const url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+      const url = urlByNodeId.get(node._id) ?? null;
       if (!url) continue;
 
       const response = await fetch(url);
@@ -95,6 +135,14 @@ export const exportFrame = action({
       base.composite(img, relX, relY);
     }
 
+    const resolveImageDataDurationMs = Date.now() - resolveImageDataAt;
+    if (resolveImageDataDurationMs >= 250) {
+      console.warn("[exportFrame] slow image download loop", {
+        frameNodeId: args.frameNodeId,
+        durationMs: resolveImageDataDurationMs,
+      });
+    }
+
     // ── 5. Encode to PNG buffer ────────────────────────────────────────────
     const outputBuffer = await base.getBuffer("image/png");
 
@@ -104,6 +152,14 @@ export const exportFrame = action({
 
     const downloadUrl = await ctx.storage.getUrl(storageId);
     if (!downloadUrl) throw new Error("Failed to generate download URL");
+
+    const totalDurationMs = Date.now() - startedAt;
+    if (totalDurationMs >= 500) {
+      console.warn("[exportFrame] slow total export execution", {
+        frameNodeId: args.frameNodeId,
+        durationMs: totalDurationMs,
+      });
+    }
 
     return {
       url: downloadUrl,

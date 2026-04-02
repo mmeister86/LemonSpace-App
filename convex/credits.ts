@@ -47,6 +47,8 @@ export const TIER_CONFIG = {
 
 export type Tier = keyof typeof TIER_CONFIG;
 
+const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -189,19 +191,36 @@ export const getUsageStats = query({
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const startedAt = Date.now();
 
     const transactions = await ctx.db
       .query("creditTransactions")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .withIndex("by_user_type", (q) =>
+        q.eq("userId", user.userId).eq("type", "usage")
+      )
       .order("desc")
       .collect();
 
-    const monthlyTransactions = transactions.filter(
-      (t) =>
-        t._creationTime >= monthStart &&
-        t.status === "committed" &&
-        t.type === "usage"
-    );
+    const monthlyTransactions = [] as Array<typeof transactions[0]>;
+
+    for (const transaction of transactions) {
+      if (transaction._creationTime < monthStart) {
+        break;
+      }
+      if (transaction.status === "committed") {
+        monthlyTransactions.push(transaction);
+      }
+    }
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+      console.warn("[credits.getUsageStats] slow usage stats query", {
+        userId: user.userId,
+        durationMs,
+        scannedTransactionCount: transactions.length,
+        includedCount: monthlyTransactions.length,
+      });
+    }
 
     return {
       monthlyUsage: monthlyTransactions.reduce(

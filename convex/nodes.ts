@@ -62,6 +62,8 @@ const DEFAULT_RENDER_FORMAT = "png" as const;
 const DEFAULT_RENDER_JPEG_QUALITY = 90;
 const ADJUSTMENT_MIN_WIDTH = 240;
 
+const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+
 type RenderOutputResolution = (typeof RENDER_OUTPUT_RESOLUTIONS)[number];
 type RenderFormat = (typeof RENDER_FORMATS)[number];
 
@@ -387,12 +389,35 @@ async function assertTargetAllowsIncomingEdge(
     return;
   }
 
-  const incomingEdges = await ctx.db
+  const incomingEdgesQuery = ctx.db
     .query("edges")
-    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId))
-    .collect();
-  const existingIncoming = incomingEdges.filter((edge) => edge._id !== args.edgeIdToIgnore);
-  if (existingIncoming.length >= 1) {
+    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
+
+  const checkStartedAt = Date.now();
+  const incomingEdges = await (
+    args.edgeIdToIgnore ? incomingEdgesQuery.take(2) : incomingEdgesQuery.first()
+  );
+  const checkDurationMs = Date.now() - checkStartedAt;
+
+  const hasAnyIncoming = Array.isArray(incomingEdges)
+    ? incomingEdges.some((edge) => edge._id !== args.edgeIdToIgnore)
+    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore;
+  if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+    const inspected = Array.isArray(incomingEdges)
+      ? incomingEdges.length
+      : incomingEdges === null
+        ? 0
+        : 1;
+
+    console.warn("[nodes.assertTargetAllowsIncomingEdge] slow incoming edge check", {
+      targetNodeId: args.targetNodeId,
+      edgeIdToIgnore: args.edgeIdToIgnore,
+      inspected,
+      checkDurationMs,
+    });
+  }
+
+  if (hasAnyIncoming) {
     throw new Error("Adjustment nodes allow only one incoming edge.");
   }
 }
@@ -472,9 +497,14 @@ export const list = query({
  * Einzelnen Node laden.
  */
 export const get = query({
-  args: { nodeId: v.id("nodes") },
-  handler: async (ctx, { nodeId }) => {
+  args: {
+    nodeId: v.id("nodes"),
+    includeStorageUrl: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { nodeId, includeStorageUrl }) => {
     const user = await requireAuth(ctx);
+    const startedAt = Date.now();
+    const shouldIncludeStorageUrl = includeStorageUrl ?? true;
     const node = await ctx.db.get(nodeId);
     if (!node) return null;
 
@@ -483,27 +513,57 @@ export const get = query({
       return null;
     }
 
-  const data = node.data as Record<string, unknown> | undefined;
-  if (!data?.storageId) {
-    return node;
-  }
+    if (!shouldIncludeStorageUrl) {
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+        console.warn("[nodes.get] fast path query", {
+          nodeId,
+          durationMs,
+          includeStorageUrl,
+          shouldIncludeStorageUrl,
+        });
+      }
+      return node;
+    }
 
-  let url: string | null;
-  try {
-    url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
-  } catch (error) {
-    console.warn("[nodes.get] failed to resolve storage URL", {
-      nodeId: node._id,
-      storageId: data.storageId,
-      error: String(error),
-    });
-    return node;
-  }
+    const data = node.data as Record<string, unknown> | undefined;
+    if (!data?.storageId) {
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+        console.warn("[nodes.get] no storage URL query", {
+          nodeId,
+          durationMs,
+        });
+      }
+      return node;
+    }
 
-  return {
-    ...node,
-    data: {
-      ...data,
+    let url: string | null;
+    try {
+      const getUrlStartedAt = Date.now();
+      url = await ctx.storage.getUrl(data.storageId as Id<"_storage">);
+      const getUrlDurationMs = Date.now() - getUrlStartedAt;
+      if (getUrlDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+        console.warn("[nodes.get] slow storage URL resolution", {
+          nodeId: node._id,
+          storageId: data.storageId,
+          getUrlDurationMs,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+    } catch (error) {
+      console.warn("[nodes.get] failed to resolve storage URL", {
+        nodeId: node._id,
+        storageId: data.storageId,
+        error: String(error),
+      });
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...data,
         url: url ?? undefined,
       },
     };

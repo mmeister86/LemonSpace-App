@@ -4,6 +4,8 @@ import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
 
+const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+
 async function assertTargetAllowsIncomingEdge(
   ctx: MutationCtx,
   args: {
@@ -19,15 +21,37 @@ async function assertTargetAllowsIncomingEdge(
     return;
   }
 
-  const incomingEdges = await ctx.db
+  const incomingEdgesQuery = ctx.db
     .query("edges")
-    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId))
-    .collect();
+    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
 
-  const existingIncoming = incomingEdges.filter(
-    (edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore,
+  const checkStartedAt = Date.now();
+  const incomingEdges = await (
+    args.edgeIdToIgnore
+      ? incomingEdgesQuery.take(2)
+      : incomingEdgesQuery.first()
   );
-  if (existingIncoming.length >= 1) {
+  const checkDurationMs = Date.now() - checkStartedAt;
+
+  const hasAnyIncoming = Array.isArray(incomingEdges)
+    ? incomingEdges.some((edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore)
+    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore;
+  if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+    const inspected = Array.isArray(incomingEdges)
+      ? incomingEdges.length
+      : incomingEdges === null
+        ? 0
+        : 1;
+
+    console.warn("[edges.assertTargetAllowsIncomingEdge] slow incoming edge check", {
+      targetNodeId: args.targetNodeId,
+      edgeIdToIgnore: args.edgeIdToIgnore,
+      inspected,
+      checkDurationMs,
+    });
+  }
+
+  if (hasAnyIncoming) {
     throw new Error("Adjustment nodes allow only one incoming edge.");
   }
 }

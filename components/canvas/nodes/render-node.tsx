@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
-import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2 } from "lucide-react";
-import { useConvex, useMutation } from "convex/react";
+import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2, Maximize2, X } from "lucide-react";
+import { useMutation } from "convex/react";
 
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/image-pipeline/contracts";
 import { bridge } from "@/lib/image-pipeline/bridge";
 import type { Id } from "@/convex/_generated/dataModel";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type RenderResolutionOption = "original" | "2x" | "custom";
 type RenderFormatOption = "png" | "jpeg" | "webp";
@@ -438,7 +439,6 @@ async function uploadBlobToConvex(args: {
 }
 
 export default function RenderNode({ id, data, selected, width, height }: NodeProps<RenderNodeType>) {
-  const convex = useConvex();
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const nodes = useStore((state) => state.nodes);
@@ -450,6 +450,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const [isRendering, setIsRendering] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
   const localDataRef = useRef(localData);
   const renderRunIdRef = useRef(0);
@@ -604,6 +605,19 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     maxPreviewWidth: 960,
   });
 
+  const fullscreenPreviewWidth = Math.max(960, Math.round((width ?? 320) * 3));
+  const {
+    canvasRef: fullscreenCanvasRef,
+    isRendering: isFullscreenPreviewRendering,
+    error: fullscreenPreviewError,
+  } = usePipelinePreview({
+    sourceUrl: isFullscreenOpen && sourceUrl ? sourceUrl : null,
+    steps,
+    nodeWidth: fullscreenPreviewWidth,
+    previewScale: 1,
+    maxPreviewWidth: 3072,
+  });
+
   const targetAspectRatio = useMemo(() => {
     const sourceAspectRatio = resolveSourceAspectRatio(sourceNode);
     if (sourceAspectRatio && Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0) {
@@ -693,6 +707,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     (localData.outputResolution !== "custom" ||
       (typeof localData.customWidth === "number" && typeof localData.customHeight === "number"));
   const canUpload = canRender && !status.isOffline;
+  const canOpenFullscreen = hasSource || Boolean(localData.url);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -840,24 +855,8 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
         if (runId !== renderRunIdRef.current) return;
 
-        try {
-          const refreshed = await convex.query(api.nodes.get, { nodeId: id as Id<"nodes"> });
-          const refreshedData = refreshed?.data as Record<string, unknown> | undefined;
-          const resolvedUrl =
-            typeof refreshedData?.url === "string" && refreshedData.url.length > 0
-              ? refreshedData.url
-              : undefined;
-
-          if (resolvedUrl && runId === renderRunIdRef.current) {
-            await persistImmediately({
-              ...localDataRef.current,
-              url: resolvedUrl,
-              lastUploadUrl: resolvedUrl,
-            });
-          }
-        } catch {
-          // URL-Aufloesung ist optional; storageId bleibt die persistente Referenz.
-        }
+        // URL-Aufloesung findet ueber den Canvas-Subscription-Cache statt.
+        // Optionaler Nachlade-Lookup ist hier nicht erforderlich.
       } catch (uploadError: unknown) {
         if (runId !== renderRunIdRef.current) return;
 
@@ -901,13 +900,23 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const wrapperStatus = renderState === "rendering" ? "executing" : renderState;
 
   return (
-    <BaseNodeWrapper
-      nodeType="render"
-      selected={selected}
-      status={wrapperStatus}
-      statusMessage={currentError ?? data._statusMessage}
-      className="flex h-full min-w-[280px] flex-col overflow-hidden border-sky-500/30"
-    >
+    <>
+      <BaseNodeWrapper
+        nodeType="render"
+        selected={selected}
+        status={wrapperStatus}
+        statusMessage={currentError ?? data._statusMessage}
+        toolbarActions={[
+          {
+            id: "fullscreen-output",
+            label: "Fullscreen",
+            icon: <Maximize2 size={14} />,
+            onClick: () => setIsFullscreenOpen(true),
+            disabled: !canOpenFullscreen,
+          },
+        ]}
+        className="flex h-full min-w-[280px] flex-col overflow-hidden border-sky-500/30"
+      >
       <Handle
         type="target"
         position={Position.Left}
@@ -1203,11 +1212,61 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         </div>
       </div>
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
-      />
-    </BaseNodeWrapper>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
+        />
+      </BaseNodeWrapper>
+
+      <Dialog open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
+        <DialogContent
+          className="inset-0 left-0 top-0 h-screen w-screen max-w-none -translate-x-0 -translate-y-0 place-items-center gap-0 rounded-none border-none bg-transparent p-0 ring-0 shadow-none sm:max-w-none"
+          showCloseButton={false}
+        >
+          <DialogTitle className="sr-only">Render-Ausgabe</DialogTitle>
+          <button
+            type="button"
+            onClick={() => setIsFullscreenOpen(false)}
+            aria-label="Close render preview"
+            className="absolute right-6 top-6 z-50 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/20 text-white/90 transition-colors hover:bg-black/30"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div className="flex h-full w-full items-center justify-center">
+            {hasSource ? (
+              <div className="relative flex h-full w-full items-center justify-center">
+                <canvas
+                  ref={fullscreenCanvasRef}
+                  className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
+                />
+                {isFullscreenPreviewRendering ? (
+                  <div className="pointer-events-none absolute bottom-6 rounded-md border border-border/80 bg-background/85 px-3 py-1 text-xs text-muted-foreground backdrop-blur-sm">
+                    Rendering preview...
+                  </div>
+                ) : null}
+                {fullscreenPreviewError ? (
+                  <div className="pointer-events-none absolute bottom-6 rounded-md border border-red-500/40 bg-background/90 px-3 py-1 text-xs text-red-600 backdrop-blur-sm">
+                    Preview: {fullscreenPreviewError}
+                  </div>
+                ) : null}
+              </div>
+            ) : localData.url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={localData.url}
+                alt="Render output"
+                className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
+                draggable={false}
+              />
+            ) : (
+              <div className="rounded-lg bg-popover/95 px-4 py-3 text-sm text-muted-foreground shadow-lg">
+                Keine Render-Ausgabe verfuegbar
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

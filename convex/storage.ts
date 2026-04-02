@@ -4,6 +4,17 @@ import { requireAuth } from "./helpers";
 import type { Id } from "./_generated/dataModel";
 
 const STORAGE_URL_BATCH_SIZE = 12;
+const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+
+function logSlowQuery(label: string, startedAt: number, details: Record<string, unknown>) {
+  const durationMs = Date.now() - startedAt;
+  if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+    console.warn(`[storage] ${label} slow`, {
+      durationMs,
+      ...details,
+    });
+  }
+}
 
 type StorageUrlMap = Record<string, string | undefined>;
 
@@ -58,9 +69,15 @@ async function resolveStorageUrls(
   storageIds: Array<Id<"_storage">>,
 ): Promise<StorageUrlMap> {
   const resolved: StorageUrlMap = {};
+  const operationStartedAt = Date.now();
+  let failedCount = 0;
+  let totalResolved = 0;
 
   for (let i = 0; i < storageIds.length; i += STORAGE_URL_BATCH_SIZE) {
     const batch = storageIds.slice(i, i + STORAGE_URL_BATCH_SIZE);
+
+    const batchStartedAt = Date.now();
+    let batchFailedCount = 0;
 
     const entries = await Promise.all(
       batch.map(async (id): Promise<StorageUrlResult> => {
@@ -79,6 +96,8 @@ async function resolveStorageUrls(
 
     for (const entry of entries) {
       if (entry.error) {
+        failedCount += 1;
+        batchFailedCount += 1;
         console.warn("[storage.batchGetUrlsForCanvas] getUrl failed", {
           storageId: entry.storageId,
           error: entry.error,
@@ -88,8 +107,24 @@ async function resolveStorageUrls(
 
       const { storageId, url } = entry;
       resolved[storageId] = url ?? undefined;
+      if (url) {
+        totalResolved += 1;
+      }
     }
+
+    logSlowQuery("batchGetUrlsForCanvas::resolveStorageBatch", batchStartedAt, {
+      batchSize: batch.length,
+      successCount: entries.length - batchFailedCount,
+      failedCount: batchFailedCount,
+      cursor: `${i + 1}..${Math.min(i + STORAGE_URL_BATCH_SIZE, storageIds.length)} / ${storageIds.length}`,
+    });
   }
+
+  logSlowQuery("batchGetUrlsForCanvas", operationStartedAt, {
+    requestStorageCount: storageIds.length,
+    resolvedCount: totalResolved,
+    failedCount,
+  });
 
   return resolved;
 }
@@ -109,12 +144,30 @@ export const generateUploadUrl = mutation({
 export const batchGetUrlsForCanvas = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
+    const startedAt = Date.now();
     const user = await requireAuth(ctx);
     await assertCanvasOwner(ctx, canvasId, user.userId);
 
     const nodes = await listNodesForCanvas(ctx, canvasId);
+    const nodeCount = nodes.length;
     const storageIds = collectStorageIds(nodes);
+    const collectTimeMs = Date.now() - startedAt;
+    if (collectTimeMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+      console.warn("[storage.batchGetUrlsForCanvas] slow node scan", {
+        canvasId,
+        nodeCount,
+        storageIdCount: storageIds.length,
+        durationMs: collectTimeMs,
+      });
+    }
 
-    return await resolveStorageUrls(ctx, storageIds);
+    const result = await resolveStorageUrls(ctx, storageIds);
+    logSlowQuery("batchGetUrlsForCanvas::total", startedAt, {
+      canvasId,
+      nodeCount,
+      storageIdCount: storageIds.length,
+      resolvedCount: Object.keys(result).length,
+    });
+    return result;
   },
 });
