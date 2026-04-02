@@ -3,6 +3,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import {
+  adjustmentPresetNodeTypeValidator,
   nodeTypeValidator,
   phase1NodeTypeValidator,
 } from "./node-type-validator";
@@ -19,6 +20,7 @@ const phase1NodeTypes = phase1NodeTypeValidator;
 // jedem Phasenübergang migriert werden muss. Die UI zeigt nur die Typen
 // der jeweiligen Phase an.
 const nodeType = nodeTypeValidator;
+const adjustmentPresetNodeType = adjustmentPresetNodeTypeValidator;
 
 // Node Status — direkt am Node sichtbar (UX-Strategie aus dem PRD)
 const nodeStatus = v.union(
@@ -174,6 +176,16 @@ export default defineSchema({
     "mutation",
     "clientRequestId",
   ]),
+
+  adjustmentPresets: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    nodeType: adjustmentPresetNodeType,
+    params: v.any(),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_nodeType", ["userId", "nodeType"]),
 
   // ==========================================================================
   // Credit-System

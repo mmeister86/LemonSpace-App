@@ -52,12 +52,23 @@ export const ADJUSTMENT_NODE_TYPES = [
   "render",
 ] as const;
 
+export const ADJUSTMENT_PRESET_NODE_TYPES = [
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+] as const;
+
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number];
 export type Phase1CanvasNodeType = (typeof PHASE1_CANVAS_NODE_TYPES)[number];
 export type AdjustmentNodeType = (typeof ADJUSTMENT_NODE_TYPES)[number];
+export type AdjustmentPresetNodeType = (typeof ADJUSTMENT_PRESET_NODE_TYPES)[number];
 
 const CANVAS_NODE_TYPE_SET = new Set<CanvasNodeType>(CANVAS_NODE_TYPES);
 const ADJUSTMENT_NODE_TYPE_SET = new Set<AdjustmentNodeType>(ADJUSTMENT_NODE_TYPES);
+const ADJUSTMENT_PRESET_NODE_TYPE_SET = new Set<AdjustmentPresetNodeType>(
+  ADJUSTMENT_PRESET_NODE_TYPES,
+);
 
 export function isCanvasNodeType(value: string): value is CanvasNodeType {
   return CANVAS_NODE_TYPE_SET.has(value as CanvasNodeType);
@@ -65,4 +76,10 @@ export function isCanvasNodeType(value: string): value is CanvasNodeType {
 
 export function isAdjustmentNodeType(value: string): value is AdjustmentNodeType {
   return ADJUSTMENT_NODE_TYPE_SET.has(value as AdjustmentNodeType);
+}
+
+export function isAdjustmentPresetNodeType(
+  value: string,
+): value is AdjustmentPresetNodeType {
+  return ADJUSTMENT_PRESET_NODE_TYPE_SET.has(value as AdjustmentPresetNodeType);
 }

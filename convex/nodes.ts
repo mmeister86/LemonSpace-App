@@ -43,12 +43,26 @@ type NodeCreateMutationName =
   | "nodes.createWithEdgeToTarget";
 
 const DISALLOWED_ADJUSTMENT_DATA_KEYS = [
-  "storageId",
-  "url",
   "blob",
   "blobUrl",
   "imageData",
 ] as const;
+
+const DISALLOWED_NON_RENDER_ADJUSTMENT_DATA_KEYS = [
+  "storageId",
+  "url",
+] as const;
+
+const RENDER_OUTPUT_RESOLUTIONS = ["original", "2x", "custom"] as const;
+const RENDER_FORMATS = ["png", "jpeg", "webp"] as const;
+const CUSTOM_RENDER_DIMENSION_MIN = 1;
+const CUSTOM_RENDER_DIMENSION_MAX = 16384;
+const DEFAULT_RENDER_OUTPUT_RESOLUTION = "original" as const;
+const DEFAULT_RENDER_FORMAT = "png" as const;
+const DEFAULT_RENDER_JPEG_QUALITY = 90;
+
+type RenderOutputResolution = (typeof RENDER_OUTPUT_RESOLUTIONS)[number];
+type RenderFormat = (typeof RENDER_FORMATS)[number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -69,6 +83,132 @@ function assertNoAdjustmentImagePayload(
       );
     }
   }
+
+  if (nodeType === "render") {
+    return;
+  }
+
+  for (const key of DISALLOWED_NON_RENDER_ADJUSTMENT_DATA_KEYS) {
+    if (key in data) {
+      throw new Error(
+        `Adjustment nodes '${nodeType}' do not allow '${key}' in data.`,
+      );
+    }
+  }
+}
+
+function parseRenderOutputResolution(value: unknown): RenderOutputResolution {
+  if (value === undefined) {
+    return DEFAULT_RENDER_OUTPUT_RESOLUTION;
+  }
+  if (
+    typeof value !== "string" ||
+    !RENDER_OUTPUT_RESOLUTIONS.includes(value as RenderOutputResolution)
+  ) {
+    throw new Error("Render data 'outputResolution' must be one of: original, 2x, custom.");
+  }
+  return value as RenderOutputResolution;
+}
+
+function parseRenderCustomDimension(fieldName: "customWidth" | "customHeight", value: unknown): number {
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < CUSTOM_RENDER_DIMENSION_MIN ||
+    (value as number) > CUSTOM_RENDER_DIMENSION_MAX
+  ) {
+    throw new Error(
+      `Render data '${fieldName}' must be an integer between ${CUSTOM_RENDER_DIMENSION_MIN} and ${CUSTOM_RENDER_DIMENSION_MAX}.`,
+    );
+  }
+  return value as number;
+}
+
+function parseRenderFormat(value: unknown): RenderFormat {
+  if (value === undefined) {
+    return DEFAULT_RENDER_FORMAT;
+  }
+  if (typeof value !== "string" || !RENDER_FORMATS.includes(value as RenderFormat)) {
+    throw new Error("Render data 'format' must be one of: png, jpeg, webp.");
+  }
+  return value as RenderFormat;
+}
+
+function parseRenderJpegQuality(value: unknown): number {
+  if (value === undefined) {
+    return DEFAULT_RENDER_JPEG_QUALITY;
+  }
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 100) {
+    throw new Error("Render data 'jpegQuality' must be an integer between 1 and 100.");
+  }
+  return value as number;
+}
+
+function normalizeRenderData(data: unknown): Record<string, unknown> {
+  if (!isRecord(data)) {
+    throw new Error("Render node data must be an object.");
+  }
+
+  assertNoAdjustmentImagePayload("render", data);
+
+  const outputResolution = parseRenderOutputResolution(data.outputResolution);
+
+  const normalized: Record<string, unknown> = {
+    outputResolution,
+    format: parseRenderFormat(data.format),
+    jpegQuality: parseRenderJpegQuality(data.jpegQuality),
+  };
+
+  if (outputResolution === "custom") {
+    if (data.customWidth !== undefined) {
+      normalized.customWidth = parseRenderCustomDimension("customWidth", data.customWidth);
+    }
+    if (data.customHeight !== undefined) {
+      normalized.customHeight = parseRenderCustomDimension("customHeight", data.customHeight);
+    }
+  }
+
+  if (data.lastRenderedAt !== undefined) {
+    if (typeof data.lastRenderedAt !== "number" || !Number.isFinite(data.lastRenderedAt)) {
+      throw new Error("Render data 'lastRenderedAt' must be a finite number.");
+    }
+    normalized.lastRenderedAt = data.lastRenderedAt;
+  }
+
+  if (data.storageId !== undefined) {
+    if (typeof data.storageId !== "string" || data.storageId.length === 0) {
+      throw new Error("Render data 'storageId' must be a non-empty string when provided.");
+    }
+    normalized.storageId = data.storageId;
+  }
+
+  if (data.url !== undefined) {
+    if (typeof data.url !== "string" || data.url.length === 0) {
+      throw new Error("Render data 'url' must be a non-empty string when provided.");
+    }
+    normalized.url = data.url;
+  }
+
+  return normalized;
+}
+
+function normalizeNodeDataForWrite(
+  nodeType: Doc<"nodes">["type"],
+  data: unknown,
+): unknown {
+  if (!isAdjustmentNodeType(nodeType)) {
+    return data;
+  }
+
+  if (!isRecord(data)) {
+    throw new Error(`Adjustment node '${nodeType}' data must be an object.`);
+  }
+
+  if (nodeType === "render") {
+    return normalizeRenderData(data);
+  }
+
+  assertNoAdjustmentImagePayload(nodeType, data);
+  return data;
 }
 
 async function getIdempotentNodeCreateResult(
@@ -243,7 +383,7 @@ export const create = mutation({
       return existingNodeId;
     }
 
-    assertNoAdjustmentImagePayload(args.type, args.data);
+    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -254,7 +394,7 @@ export const create = mutation({
       height: args.height,
       status: "idle",
       retryCount: 0,
-      data: args.data,
+      data: normalizedData,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -313,7 +453,7 @@ export const createWithEdgeSplit = mutation({
       throw new Error("Edge not found");
     }
 
-    assertNoAdjustmentImagePayload(args.type, args.data);
+    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -324,7 +464,7 @@ export const createWithEdgeSplit = mutation({
       height: args.height,
       status: "idle",
       retryCount: 0,
-      data: args.data,
+      data: normalizedData,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -501,7 +641,7 @@ export const createWithEdgeFromSource = mutation({
       throw new Error("Source node not found");
     }
 
-    assertNoAdjustmentImagePayload(args.type, args.data);
+    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -512,7 +652,7 @@ export const createWithEdgeFromSource = mutation({
       height: args.height,
       status: "idle",
       retryCount: 0,
-      data: args.data,
+      data: normalizedData,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -577,7 +717,7 @@ export const createWithEdgeToTarget = mutation({
       throw new Error("Target node not found");
     }
 
-    assertNoAdjustmentImagePayload(args.type, args.data);
+    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -588,7 +728,7 @@ export const createWithEdgeToTarget = mutation({
       height: args.height,
       status: "idle",
       retryCount: 0,
-      data: args.data,
+      data: normalizedData,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -698,8 +838,8 @@ export const updateData = mutation({
     if (!node) throw new Error("Node not found");
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
-    assertNoAdjustmentImagePayload(node.type, data);
-    await ctx.db.patch(nodeId, { data });
+    const normalizedData = normalizeNodeDataForWrite(node.type, data);
+    await ctx.db.patch(nodeId, { data: normalizedData });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });

@@ -2,6 +2,7 @@ import { v, type Validator } from "convex/values";
 
 import {
   ADJUSTMENT_NODE_TYPES,
+  ADJUSTMENT_PRESET_NODE_TYPES,
   CANVAS_NODE_TYPES,
   PHASE1_CANVAS_NODE_TYPES,
 } from "../lib/canvas-node-types";
@@ -21,3 +22,4 @@ function buildNodeTypeUnion<
 export const phase1NodeTypeValidator = buildNodeTypeUnion(PHASE1_CANVAS_NODE_TYPES);
 export const nodeTypeValidator = buildNodeTypeUnion(CANVAS_NODE_TYPES);
 export const adjustmentNodeTypeValidator = buildNodeTypeUnion(ADJUSTMENT_NODE_TYPES);
+export const adjustmentPresetNodeTypeValidator = buildNodeTypeUnion(ADJUSTMENT_PRESET_NODE_TYPES);
