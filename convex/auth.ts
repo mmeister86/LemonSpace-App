@@ -8,7 +8,7 @@ import { internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { betterAuth } from "better-auth/minimal";
-import { magicLink } from "better-auth/plugins";
+import { magicLink, username } from "better-auth/plugins";
 import { Resend } from "resend";
 import authConfig from "./auth.config";
 
@@ -128,10 +128,14 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
           }
         },
       }),
+      username(),
       convex({ authConfig }),
       polar({
         client: polarClient,
-        createCustomerOnSignUp: true,
+        // Keep signup resilient: Polar customer sync is best-effort and should
+        // never fail account creation. Checkout/portal flows can still create
+        // and use customers via externalCustomerId when needed.
+        createCustomerOnSignUp: false,
         use: [
           checkout({
             successUrl: `${siteUrl}/dashboard?checkout=success`,

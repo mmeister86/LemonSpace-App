@@ -5,28 +5,80 @@ import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+const socialProviders = [
+  {
+    id: "google",
+    name: "Google",
+    subtitle: "Platzhalter",
+    icon: "G",
+  },
+  {
+    id: "apple",
+    name: "Apple",
+    subtitle: "Platzhalter",
+    icon: "",
+  },
+];
+
 export default function SignInPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [magicLinkMessage, setMagicLinkMessage] = useState("");
+  const [socialMessage, setSocialMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [magicLinkLoading, setMagicLinkLoading] = useState(false);
+
+  const toGermanAuthError = (message?: string) => {
+    if (!message) {
+      return "Anmeldung fehlgeschlagen. Bitte versuche es erneut.";
+    }
+
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes("invalid") || normalized.includes("credentials")) {
+      return "E-Mail/Username oder Passwort ist nicht korrekt.";
+    }
+
+    if (normalized.includes("verify") || normalized.includes("verification")) {
+      return "Bitte bestätige zuerst deine E-Mail-Adresse.";
+    }
+
+    if (normalized.includes("username")) {
+      return "Username oder Passwort ist nicht korrekt.";
+    }
+
+    return "Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben.";
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setMagicLinkMessage("");
     setLoading(true);
 
     try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-      });
+      const trimmedIdentifier = identifier.trim();
+      const isEmailInput = trimmedIdentifier.includes("@");
+
+      if (!trimmedIdentifier) {
+        setError("Bitte gib deine E-Mail-Adresse oder deinen Username ein.");
+        return;
+      }
+
+      const result = isEmailInput
+        ? await authClient.signIn.email({
+            email: trimmedIdentifier,
+            password,
+          })
+        : await authClient.signIn.username({
+            username: trimmedIdentifier,
+            password,
+          });
 
       if (result.error) {
-        setError(result.error.message ?? "Anmeldung fehlgeschlagen");
+        setError(toGermanAuthError(result.error.message));
       } else {
         router.push("/dashboard");
       }
@@ -41,21 +93,28 @@ export default function SignInPage() {
     setError("");
     setMagicLinkMessage("");
 
-    if (!email) {
-      setError("Bitte gib deine E-Mail-Adresse ein");
+    const trimmedIdentifier = identifier.trim();
+
+    if (!trimmedIdentifier) {
+      setError("Bitte gib zuerst deine E-Mail-Adresse ein.");
+      return;
+    }
+
+    if (!trimmedIdentifier.includes("@")) {
+      setError("Magic Link funktioniert nur mit einer E-Mail-Adresse.");
       return;
     }
 
     setMagicLinkLoading(true);
     try {
       const result = await authClient.signIn.magicLink({
-        email,
+        email: trimmedIdentifier,
         callbackURL: "/dashboard",
         errorCallbackURL: "/auth/sign-in",
       });
 
       if (result.error) {
-        setError(result.error.message ?? "Magic Link konnte nicht gesendet werden");
+        setError(toGermanAuthError(result.error.message));
       } else {
         setMagicLinkMessage("Magic Link gesendet. Prüfe dein Postfach.");
       }
@@ -64,6 +123,12 @@ export default function SignInPage() {
     } finally {
       setMagicLinkLoading(false);
     }
+  };
+
+  const handleSocialPlaceholder = (provider: string) => {
+    setError("");
+    setMagicLinkMessage("");
+    setSocialMessage(`${provider}-Login ist aktuell als Platzhalter eingebunden.`);
   };
 
   return (
@@ -78,17 +143,19 @@ export default function SignInPage() {
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium mb-1.5">
-              E-Mail
+            <label htmlFor="identifier" className="block text-sm font-medium mb-1.5">
+              E-Mail oder Username
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
               className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="name@beispiel.de"
+              placeholder="name@beispiel.de oder dein Username"
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
 
@@ -109,6 +176,25 @@ export default function SignInPage() {
 
           {error && (
             <p className="text-sm text-red-500">{error}</p>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-xs text-center text-muted-foreground">Oder mit externen Anbietern</p>
+            {socialProviders.map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                onClick={() => handleSocialPlaceholder(provider.name)}
+                className="w-full rounded-lg border bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors"
+              >
+                <span aria-hidden className="inline-block w-6 text-left">{provider.icon}</span>
+                {provider.name} {provider.subtitle}
+              </button>
+            ))}
+          </div>
+
+          {socialMessage && (
+            <p className="text-sm text-amber-600">{socialMessage}</p>
           )}
 
           <button

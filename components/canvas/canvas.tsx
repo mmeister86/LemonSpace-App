@@ -333,6 +333,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const pendingMoveAfterCreateRef = useRef(
     new Map<string, { positionX: number; positionY: number }>(),
   );
+  const pendingResizeAfterCreateRef = useRef(
+    new Map<string, { width: number; height: number }>(),
+  );
   const resolvedRealIdByClientRequestRef = useRef(new Map<string, Id<"nodes">>());
   const pendingEdgeSplitByClientRequestRef = useRef(
     new Map<string, PendingEdgeSplit>(),
@@ -759,6 +762,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     }
 
     pendingMoveAfterCreateRef.current.delete(args.clientRequestId);
+    pendingResizeAfterCreateRef.current.delete(args.clientRequestId);
     pendingEdgeSplitByClientRequestRef.current.delete(args.clientRequestId);
     pendingConnectionCreatesRef.current.delete(args.clientRequestId);
     resolvedRealIdByClientRequestRef.current.delete(args.clientRequestId);
@@ -1092,11 +1096,21 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             });
           }
           if (op.type === "resizeNode" && process.env.NODE_ENV !== "production") {
+            const resizeNodeId =
+              typeof op.payload.nodeId === "string" ? op.payload.nodeId : null;
+            const resizeClientRequestId = resizeNodeId
+              ? clientRequestIdFromOptimisticNodeId(resizeNodeId)
+              : null;
+            const resizeResolvedRealId = resizeClientRequestId
+              ? resolvedRealIdByClientRequestRef.current.get(resizeClientRequestId)
+              : null;
             console.warn("[Canvas sync debug] resizeNode flush failed", {
               opId: op.id,
               attemptCount: op.attemptCount,
               transient,
               error: getErrorMessage(error),
+              clientRequestId: resizeClientRequestId,
+              resolvedRealId: resizeResolvedRealId ?? null,
               ...summarizeResizePayload(op.payload),
             });
           }
@@ -1259,11 +1273,65 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [enqueueSyncMutation],
   );
 
-  const runResizeNodeMutation = useCallback(
-    async (args: { nodeId: Id<"nodes">; width: number; height: number }) => {
-      await enqueueSyncMutation("resizeNode", args);
+  const flushPendingResizeForClientRequest = useCallback(
+    async (clientRequestId: string, realId: Id<"nodes">): Promise<void> => {
+      const pendingResize = pendingResizeAfterCreateRef.current.get(clientRequestId);
+      if (!pendingResize) return;
+      pendingResizeAfterCreateRef.current.delete(clientRequestId);
+      await enqueueSyncMutation("resizeNode", {
+        nodeId: realId,
+        width: pendingResize.width,
+        height: pendingResize.height,
+      });
     },
     [enqueueSyncMutation],
+  );
+
+  const runResizeNodeMutation = useCallback(
+    async (args: { nodeId: Id<"nodes">; width: number; height: number }) => {
+      const rawNodeId = args.nodeId as string;
+      if (!isOptimisticNodeId(rawNodeId)) {
+        await enqueueSyncMutation("resizeNode", args);
+        return;
+      }
+
+      if (!isSyncOnline) {
+        await enqueueSyncMutation("resizeNode", args);
+        return;
+      }
+
+      const clientRequestId = clientRequestIdFromOptimisticNodeId(rawNodeId);
+      const resolvedRealId = clientRequestId
+        ? resolvedRealIdByClientRequestRef.current.get(clientRequestId)
+        : undefined;
+
+      if (resolvedRealId) {
+        await enqueueSyncMutation("resizeNode", {
+          nodeId: resolvedRealId,
+          width: args.width,
+          height: args.height,
+        });
+        return;
+      }
+
+      if (clientRequestId) {
+        pendingResizeAfterCreateRef.current.set(clientRequestId, {
+          width: args.width,
+          height: args.height,
+        });
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[Canvas sync debug] deferred resize for optimistic node", {
+          nodeId: rawNodeId,
+          clientRequestId,
+          resolvedRealId: resolvedRealId ?? null,
+          width: args.width,
+          height: args.height,
+        });
+      }
+    },
+    [enqueueSyncMutation, isSyncOnline],
   );
 
   const runUpdateNodeDataMutation = useCallback(
@@ -1521,6 +1589,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             clientRequestId,
           );
           pendingMoveAfterCreateRef.current.delete(clientRequestId);
+          pendingResizeAfterCreateRef.current.delete(clientRequestId);
           pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
           pendingConnectionCreatesRef.current.delete(clientRequestId);
           resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
@@ -1572,6 +1641,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
               error: String(error),
             });
           }
+          await flushPendingResizeForClientRequest(clientRequestId, realId);
           return;
         }
 
@@ -1592,10 +1662,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             positionX: pendingMove.positionX,
             positionY: pendingMove.positionY,
           });
+          await flushPendingResizeForClientRequest(clientRequestId, realId);
           return;
         }
 
         resolvedRealIdByClientRequestRef.current.set(clientRequestId, realId);
+        await flushPendingResizeForClientRequest(clientRequestId, realId);
         return;
       }
 
@@ -1643,6 +1715,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [
       canvasId,
       runBatchRemoveNodesMutation,
+      flushPendingResizeForClientRequest,
       runMoveNodeMutation,
       runSplitEdgeAtExistingNodeMutation,
     ],
