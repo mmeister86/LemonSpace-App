@@ -10,9 +10,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
-import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
+import {
+  ParameterSlider,
+  type SliderConfig,
+  type SliderValue,
+} from "@/src/components/tool-ui/parameter-slider";
 import {
   cloneAdjustmentData,
   DEFAULT_CURVES_DATA,
@@ -80,6 +84,42 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
   };
 
   const builtinOptions = useMemo(() => Object.entries(CURVE_PRESETS), []);
+  const sliderConfigs = useMemo<SliderConfig[]>(
+    () => [
+      {
+        id: "black-point",
+        label: "Black Point",
+        min: 0,
+        max: 255,
+        value: DEFAULT_CURVES_DATA.levels.blackPoint,
+      },
+      {
+        id: "white-point",
+        label: "White Point",
+        min: 0,
+        max: 255,
+        value: DEFAULT_CURVES_DATA.levels.whitePoint,
+      },
+      {
+        id: "gamma",
+        label: "Gamma",
+        min: 0.1,
+        max: 3,
+        step: 0.01,
+        precision: 2,
+        value: DEFAULT_CURVES_DATA.levels.gamma,
+      },
+    ],
+    [],
+  );
+  const sliderValues = useMemo<SliderValue[]>(
+    () => [
+      { id: "black-point", value: localData.levels.blackPoint },
+      { id: "white-point", value: localData.levels.whitePoint },
+      { id: "gamma", value: localData.levels.gamma },
+    ],
+    [localData.levels.blackPoint, localData.levels.gamma, localData.levels.whitePoint],
+  );
 
   const applyPresetValue = (value: string) => {
     if (value === "custom") {
@@ -127,7 +167,7 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
       selected={selected}
       status={data._status}
       statusMessage={data._statusMessage}
-      className="min-w-[240px] border-emerald-500/30"
+      className="min-w-[300px] border-emerald-500/30"
     >
       <Handle
         type="target"
@@ -178,48 +218,33 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
           currentParams={localData}
         />
 
-        <div className="space-y-2 rounded-md border border-border/80 bg-background/70 p-2">
-          <SliderRow
-            label="Black Point"
-            value={localData.levels.blackPoint}
-            min={0}
-            max={255}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                levels: { ...current.levels, blackPoint: value },
-                preset: null,
-              }))
+        <ParameterSlider
+          id={`${id}-curves-params`}
+          className="min-w-0 max-w-none"
+          sliders={sliderConfigs}
+          values={sliderValues}
+          fillClassName="bg-emerald-500/35 dark:bg-emerald-400/35"
+          handleClassName="bg-emerald-500 dark:bg-emerald-400"
+          trackClassName="bg-emerald-500/10 dark:bg-emerald-500/15"
+          onChange={(values) => {
+            const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
+            updateData((current) => ({
+              ...current,
+              levels: {
+                ...current.levels,
+                blackPoint: valueById.get("black-point") ?? current.levels.blackPoint,
+                whitePoint: valueById.get("white-point") ?? current.levels.whitePoint,
+                gamma: valueById.get("gamma") ?? current.levels.gamma,
+              },
+              preset: null,
+            }));
+          }}
+          onAction={async (actionId) => {
+            if (actionId === "apply") {
+              queueSave();
             }
-          />
-          <SliderRow
-            label="White Point"
-            value={localData.levels.whitePoint}
-            min={0}
-            max={255}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                levels: { ...current.levels, whitePoint: value },
-                preset: null,
-              }))
-            }
-          />
-          <SliderRow
-            label="Gamma"
-            value={localData.levels.gamma}
-            min={0.1}
-            max={3}
-            step={0.01}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                levels: { ...current.levels, gamma: value },
-                preset: null,
-              }))
-            }
-          />
-        </div>
+          }}
+        />
       </div>
 
       <Handle

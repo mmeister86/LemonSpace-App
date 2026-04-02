@@ -10,9 +10,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
-import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
+import {
+  ParameterSlider,
+  type SliderConfig,
+  type SliderValue,
+} from "@/src/components/tool-ui/parameter-slider";
 import {
   cloneAdjustmentData,
   DEFAULT_DETAIL_ADJUST_DATA,
@@ -80,6 +84,82 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
   };
 
   const builtinOptions = useMemo(() => Object.entries(DETAIL_PRESETS), []);
+  const sliderConfigs = useMemo<SliderConfig[]>(
+    () => [
+      {
+        id: "sharpen-amount",
+        label: "Sharpen",
+        min: 0,
+        max: 500,
+        value: DEFAULT_DETAIL_ADJUST_DATA.sharpen.amount,
+      },
+      {
+        id: "sharpen-radius",
+        label: "Radius",
+        min: 0.5,
+        max: 5,
+        step: 0.01,
+        precision: 2,
+        value: DEFAULT_DETAIL_ADJUST_DATA.sharpen.radius,
+      },
+      {
+        id: "sharpen-threshold",
+        label: "Threshold",
+        min: 0,
+        max: 255,
+        value: DEFAULT_DETAIL_ADJUST_DATA.sharpen.threshold,
+      },
+      {
+        id: "clarity",
+        label: "Clarity",
+        min: -100,
+        max: 100,
+        value: DEFAULT_DETAIL_ADJUST_DATA.clarity,
+      },
+      {
+        id: "denoise-luminance",
+        label: "Denoise Luma",
+        min: 0,
+        max: 100,
+        value: DEFAULT_DETAIL_ADJUST_DATA.denoise.luminance,
+      },
+      {
+        id: "denoise-color",
+        label: "Denoise Color",
+        min: 0,
+        max: 100,
+        value: DEFAULT_DETAIL_ADJUST_DATA.denoise.color,
+      },
+      {
+        id: "grain-amount",
+        label: "Grain",
+        min: 0,
+        max: 100,
+        value: DEFAULT_DETAIL_ADJUST_DATA.grain.amount,
+      },
+    ],
+    [],
+  );
+  const sliderValues = useMemo<SliderValue[]>(
+    () => [
+      { id: "sharpen-amount", value: localData.sharpen.amount },
+      { id: "sharpen-radius", value: localData.sharpen.radius },
+      { id: "sharpen-threshold", value: localData.sharpen.threshold },
+      { id: "clarity", value: localData.clarity },
+      { id: "denoise-luminance", value: localData.denoise.luminance },
+      { id: "denoise-color", value: localData.denoise.color },
+      { id: "grain-amount", value: localData.grain.amount },
+    ],
+    [
+      localData.clarity,
+      localData.denoise.color,
+      localData.denoise.luminance,
+      localData.grain.amount,
+      localData.sharpen.amount,
+      localData.sharpen.radius,
+      localData.sharpen.threshold,
+    ],
+  );
 
   const applyPresetValue = (value: string) => {
     if (value === "custom") {
@@ -126,7 +206,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
       selected={selected}
       status={data._status}
       statusMessage={data._statusMessage}
-      className="min-w-[240px] border-indigo-500/30"
+      className="min-w-[300px] border-indigo-500/30"
     >
       <Handle
         type="target"
@@ -177,15 +257,43 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
           currentParams={localData}
         />
 
-        <div className="space-y-2 rounded-md border border-border/80 bg-background/70 p-2">
-          <SliderRow label="Sharpen" value={localData.sharpen.amount} min={0} max={500} onChange={(value) => updateData((current) => ({ ...current, sharpen: { ...current.sharpen, amount: value }, preset: null }))} />
-          <SliderRow label="Radius" value={localData.sharpen.radius} min={0.5} max={5} step={0.01} onChange={(value) => updateData((current) => ({ ...current, sharpen: { ...current.sharpen, radius: value }, preset: null }))} />
-          <SliderRow label="Threshold" value={localData.sharpen.threshold} min={0} max={255} onChange={(value) => updateData((current) => ({ ...current, sharpen: { ...current.sharpen, threshold: value }, preset: null }))} />
-          <SliderRow label="Clarity" value={localData.clarity} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, clarity: value, preset: null }))} />
-          <SliderRow label="Denoise Luma" value={localData.denoise.luminance} min={0} max={100} onChange={(value) => updateData((current) => ({ ...current, denoise: { ...current.denoise, luminance: value }, preset: null }))} />
-          <SliderRow label="Denoise Color" value={localData.denoise.color} min={0} max={100} onChange={(value) => updateData((current) => ({ ...current, denoise: { ...current.denoise, color: value }, preset: null }))} />
-          <SliderRow label="Grain" value={localData.grain.amount} min={0} max={100} onChange={(value) => updateData((current) => ({ ...current, grain: { ...current.grain, amount: value }, preset: null }))} />
-        </div>
+        <ParameterSlider
+          id={`${id}-detail-adjust-params`}
+          className="min-w-0 max-w-none"
+          sliders={sliderConfigs}
+          values={sliderValues}
+          fillClassName="bg-indigo-500/35 dark:bg-indigo-400/35"
+          handleClassName="bg-indigo-500 dark:bg-indigo-400"
+          trackClassName="bg-indigo-500/10 dark:bg-indigo-500/15"
+          onChange={(values) => {
+            const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
+            updateData((current) => ({
+              ...current,
+              sharpen: {
+                ...current.sharpen,
+                amount: valueById.get("sharpen-amount") ?? current.sharpen.amount,
+                radius: valueById.get("sharpen-radius") ?? current.sharpen.radius,
+                threshold: valueById.get("sharpen-threshold") ?? current.sharpen.threshold,
+              },
+              clarity: valueById.get("clarity") ?? current.clarity,
+              denoise: {
+                ...current.denoise,
+                luminance: valueById.get("denoise-luminance") ?? current.denoise.luminance,
+                color: valueById.get("denoise-color") ?? current.denoise.color,
+              },
+              grain: {
+                ...current.grain,
+                amount: valueById.get("grain-amount") ?? current.grain.amount,
+              },
+              preset: null,
+            }));
+          }}
+          onAction={async (actionId) => {
+            if (actionId === "apply") {
+              queueSave();
+            }
+          }}
+        />
       </div>
 
       <Handle

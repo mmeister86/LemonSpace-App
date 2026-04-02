@@ -10,9 +10,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
-import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
+import {
+  ParameterSlider,
+  type SliderConfig,
+  type SliderValue,
+} from "@/src/components/tool-ui/parameter-slider";
 import {
   cloneAdjustmentData,
   DEFAULT_LIGHT_ADJUST_DATA,
@@ -80,6 +84,93 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
   };
 
   const builtinOptions = useMemo(() => Object.entries(LIGHT_PRESETS), []);
+  const sliderConfigs = useMemo<SliderConfig[]>(
+    () => [
+      {
+        id: "brightness",
+        label: "Brightness",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.brightness,
+      },
+      {
+        id: "contrast",
+        label: "Contrast",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.contrast,
+      },
+      {
+        id: "exposure",
+        label: "Exposure",
+        min: -5,
+        max: 5,
+        step: 0.01,
+        precision: 2,
+        value: DEFAULT_LIGHT_ADJUST_DATA.exposure,
+      },
+      {
+        id: "highlights",
+        label: "Highlights",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.highlights,
+      },
+      {
+        id: "shadows",
+        label: "Shadows",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.shadows,
+      },
+      {
+        id: "whites",
+        label: "Whites",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.whites,
+      },
+      {
+        id: "blacks",
+        label: "Blacks",
+        min: -100,
+        max: 100,
+        value: DEFAULT_LIGHT_ADJUST_DATA.blacks,
+      },
+      {
+        id: "vignette-amount",
+        label: "Vignette",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        precision: 2,
+        value: DEFAULT_LIGHT_ADJUST_DATA.vignette.amount,
+      },
+    ],
+    [],
+  );
+  const sliderValues = useMemo<SliderValue[]>(
+    () => [
+      { id: "brightness", value: localData.brightness },
+      { id: "contrast", value: localData.contrast },
+      { id: "exposure", value: localData.exposure },
+      { id: "highlights", value: localData.highlights },
+      { id: "shadows", value: localData.shadows },
+      { id: "whites", value: localData.whites },
+      { id: "blacks", value: localData.blacks },
+      { id: "vignette-amount", value: localData.vignette.amount },
+    ],
+    [
+      localData.blacks,
+      localData.brightness,
+      localData.contrast,
+      localData.exposure,
+      localData.highlights,
+      localData.shadows,
+      localData.vignette.amount,
+      localData.whites,
+    ],
+  );
 
   const applyPresetValue = (value: string) => {
     if (value === "custom") {
@@ -126,7 +217,7 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
       selected={selected}
       status={data._status}
       statusMessage={data._statusMessage}
-      className="min-w-[240px] border-amber-500/30"
+      className="min-w-[300px] border-amber-500/30"
     >
       <Handle
         type="target"
@@ -177,16 +268,38 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
           currentParams={localData}
         />
 
-        <div className="space-y-2 rounded-md border border-border/80 bg-background/70 p-2">
-          <SliderRow label="Brightness" value={localData.brightness} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, brightness: value, preset: null }))} />
-          <SliderRow label="Contrast" value={localData.contrast} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, contrast: value, preset: null }))} />
-          <SliderRow label="Exposure" value={localData.exposure} min={-5} max={5} step={0.01} onChange={(value) => updateData((current) => ({ ...current, exposure: value, preset: null }))} />
-          <SliderRow label="Highlights" value={localData.highlights} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, highlights: value, preset: null }))} />
-          <SliderRow label="Shadows" value={localData.shadows} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, shadows: value, preset: null }))} />
-          <SliderRow label="Whites" value={localData.whites} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, whites: value, preset: null }))} />
-          <SliderRow label="Blacks" value={localData.blacks} min={-100} max={100} onChange={(value) => updateData((current) => ({ ...current, blacks: value, preset: null }))} />
-          <SliderRow label="Vignette" value={localData.vignette.amount} min={0} max={1} step={0.01} onChange={(value) => updateData((current) => ({ ...current, vignette: { ...current.vignette, amount: value }, preset: null }))} />
-        </div>
+        <ParameterSlider
+          id={`${id}-light-adjust-params`}
+          className="min-w-0 max-w-none"
+          sliders={sliderConfigs}
+          values={sliderValues}
+          fillClassName="bg-amber-500/35 dark:bg-amber-400/35"
+          handleClassName="bg-amber-500 dark:bg-amber-400"
+          trackClassName="bg-amber-500/10 dark:bg-amber-500/15"
+          onChange={(values) => {
+            const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
+            updateData((current) => ({
+              ...current,
+              brightness: valueById.get("brightness") ?? current.brightness,
+              contrast: valueById.get("contrast") ?? current.contrast,
+              exposure: valueById.get("exposure") ?? current.exposure,
+              highlights: valueById.get("highlights") ?? current.highlights,
+              shadows: valueById.get("shadows") ?? current.shadows,
+              whites: valueById.get("whites") ?? current.whites,
+              blacks: valueById.get("blacks") ?? current.blacks,
+              vignette: {
+                ...current.vignette,
+                amount: valueById.get("vignette-amount") ?? current.vignette.amount,
+              },
+              preset: null,
+            }));
+          }}
+          onAction={async (actionId) => {
+            if (actionId === "apply") {
+              queueSave();
+            }
+          }}
+        />
       </div>
 
       <Handle

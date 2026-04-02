@@ -10,9 +10,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
-import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
+import {
+  ParameterSlider,
+  type SliderConfig,
+  type SliderValue,
+} from "@/src/components/tool-ui/parameter-slider";
 import {
   cloneAdjustmentData,
   DEFAULT_COLOR_ADJUST_DATA,
@@ -80,6 +84,71 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
   };
 
   const builtinOptions = useMemo(() => Object.entries(COLOR_PRESETS), []);
+  const sliderConfigs = useMemo<SliderConfig[]>(
+    () => [
+      {
+        id: "hue",
+        label: "Hue",
+        min: -180,
+        max: 180,
+        value: DEFAULT_COLOR_ADJUST_DATA.hsl.hue,
+      },
+      {
+        id: "saturation",
+        label: "Saturation",
+        min: -100,
+        max: 100,
+        value: DEFAULT_COLOR_ADJUST_DATA.hsl.saturation,
+      },
+      {
+        id: "luminance",
+        label: "Luminance",
+        min: -100,
+        max: 100,
+        value: DEFAULT_COLOR_ADJUST_DATA.hsl.luminance,
+      },
+      {
+        id: "temperature",
+        label: "Temperature",
+        min: -100,
+        max: 100,
+        value: DEFAULT_COLOR_ADJUST_DATA.temperature,
+      },
+      {
+        id: "tint",
+        label: "Tint",
+        min: -100,
+        max: 100,
+        value: DEFAULT_COLOR_ADJUST_DATA.tint,
+      },
+      {
+        id: "vibrance",
+        label: "Vibrance",
+        min: -100,
+        max: 100,
+        value: DEFAULT_COLOR_ADJUST_DATA.vibrance,
+      },
+    ],
+    [],
+  );
+  const sliderValues = useMemo<SliderValue[]>(
+    () => [
+      { id: "hue", value: localData.hsl.hue },
+      { id: "saturation", value: localData.hsl.saturation },
+      { id: "luminance", value: localData.hsl.luminance },
+      { id: "temperature", value: localData.temperature },
+      { id: "tint", value: localData.tint },
+      { id: "vibrance", value: localData.vibrance },
+    ],
+    [
+      localData.hsl.hue,
+      localData.hsl.luminance,
+      localData.hsl.saturation,
+      localData.temperature,
+      localData.tint,
+      localData.vibrance,
+    ],
+  );
 
   const applyPresetValue = (value: string) => {
     if (value === "custom") {
@@ -126,7 +195,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
       selected={selected}
       status={data._status}
       statusMessage={data._statusMessage}
-      className="min-w-[240px] border-cyan-500/30"
+      className="min-w-[300px] border-cyan-500/30"
     >
       <Handle
         type="target"
@@ -177,74 +246,36 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
           currentParams={localData}
         />
 
-        <div className="space-y-2 rounded-md border border-border/80 bg-background/70 p-2">
-          <SliderRow
-            label="Hue"
-            value={localData.hsl.hue}
-            min={-180}
-            max={180}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                hsl: { ...current.hsl, hue: value },
-                preset: null,
-              }))
+        <ParameterSlider
+          id={`${id}-color-adjust-params`}
+          className="min-w-0 max-w-none"
+          sliders={sliderConfigs}
+          values={sliderValues}
+          fillClassName="bg-cyan-500/35 dark:bg-cyan-400/35"
+          handleClassName="bg-cyan-500 dark:bg-cyan-400"
+          trackClassName="bg-cyan-500/10 dark:bg-cyan-500/15"
+          onChange={(values) => {
+            const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
+            updateData((current) => ({
+              ...current,
+              hsl: {
+                ...current.hsl,
+                hue: valueById.get("hue") ?? current.hsl.hue,
+                saturation: valueById.get("saturation") ?? current.hsl.saturation,
+                luminance: valueById.get("luminance") ?? current.hsl.luminance,
+              },
+              temperature: valueById.get("temperature") ?? current.temperature,
+              tint: valueById.get("tint") ?? current.tint,
+              vibrance: valueById.get("vibrance") ?? current.vibrance,
+              preset: null,
+            }));
+          }}
+          onAction={async (actionId) => {
+            if (actionId === "apply") {
+              queueSave();
             }
-          />
-          <SliderRow
-            label="Saturation"
-            value={localData.hsl.saturation}
-            min={-100}
-            max={100}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                hsl: { ...current.hsl, saturation: value },
-                preset: null,
-              }))
-            }
-          />
-          <SliderRow
-            label="Luminance"
-            value={localData.hsl.luminance}
-            min={-100}
-            max={100}
-            onChange={(value) =>
-              updateData((current) => ({
-                ...current,
-                hsl: { ...current.hsl, luminance: value },
-                preset: null,
-              }))
-            }
-          />
-          <SliderRow
-            label="Temperature"
-            value={localData.temperature}
-            min={-100}
-            max={100}
-            onChange={(value) =>
-              updateData((current) => ({ ...current, temperature: value, preset: null }))
-            }
-          />
-          <SliderRow
-            label="Tint"
-            value={localData.tint}
-            min={-100}
-            max={100}
-            onChange={(value) =>
-              updateData((current) => ({ ...current, tint: value, preset: null }))
-            }
-          />
-          <SliderRow
-            label="Vibrance"
-            value={localData.vibrance}
-            min={-100}
-            max={100}
-            onChange={(value) =>
-              updateData((current) => ({ ...current, vibrance: value, preset: null }))
-            }
-          />
-        </div>
+          }}
+        />
       </div>
 
       <Handle
