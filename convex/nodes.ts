@@ -46,6 +46,14 @@ type NodeCreateMutationName =
   | "nodes.createWithEdgeFromSource"
   | "nodes.createWithEdgeToTarget";
 
+const OPTIMISTIC_NODE_PREFIX = "optimistic_";
+const NODE_CREATE_MUTATIONS: NodeCreateMutationName[] = [
+  "nodes.create",
+  "nodes.createWithEdgeSplit",
+  "nodes.createWithEdgeFromSource",
+  "nodes.createWithEdgeToTarget",
+];
+
 const DISALLOWED_ADJUSTMENT_DATA_KEYS = [
   "blob",
   "blobUrl",
@@ -491,6 +499,42 @@ async function rememberIdempotentNodeCreateResult(
   });
 }
 
+function getClientRequestIdFromOptimisticNodeId(nodeId: string): string | null {
+  if (!nodeId.startsWith(OPTIMISTIC_NODE_PREFIX)) {
+    return null;
+  }
+  const clientRequestId = nodeId.slice(OPTIMISTIC_NODE_PREFIX.length);
+  return clientRequestId.length > 0 ? clientRequestId : null;
+}
+
+async function resolveNodeReferenceForWrite(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    canvasId: Id<"canvases">;
+    nodeId: string;
+  },
+): Promise<Id<"nodes">> {
+  const clientRequestId = getClientRequestIdFromOptimisticNodeId(args.nodeId);
+  if (!clientRequestId) {
+    return args.nodeId as Id<"nodes">;
+  }
+
+  for (const mutation of NODE_CREATE_MUTATIONS) {
+    const resolvedNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: args.userId,
+      mutation,
+      clientRequestId,
+      canvasId: args.canvasId,
+    });
+    if (resolvedNodeId) {
+      return resolvedNodeId;
+    }
+  }
+
+  throw new Error(`Referenced node not found for optimistic id ${args.nodeId}`);
+}
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -923,7 +967,7 @@ export const createWithEdgeFromSource = mutation({
     parentId: v.optional(v.id("nodes")),
     zIndex: v.optional(v.number()),
     clientRequestId: v.optional(v.string()),
-    sourceNodeId: v.id("nodes"),
+    sourceNodeId: v.string(),
     sourceHandle: v.optional(v.string()),
     targetHandle: v.optional(v.string()),
   },
@@ -941,7 +985,12 @@ export const createWithEdgeFromSource = mutation({
       return existingNodeId;
     }
 
-    const source = await ctx.db.get(args.sourceNodeId);
+    const sourceNodeId = await resolveNodeReferenceForWrite(ctx, {
+      userId: user.userId,
+      canvasId: args.canvasId,
+      nodeId: args.sourceNodeId,
+    });
+    const source = await ctx.db.get(sourceNodeId);
     if (!source || source.canvasId !== args.canvasId) {
       throw new Error("Source node not found");
     }
@@ -973,7 +1022,7 @@ export const createWithEdgeFromSource = mutation({
 
     await ctx.db.insert("edges", {
       canvasId: args.canvasId,
-      sourceNodeId: args.sourceNodeId,
+      sourceNodeId,
       targetNodeId: nodeId,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
@@ -1008,7 +1057,7 @@ export const createWithEdgeToTarget = mutation({
     parentId: v.optional(v.id("nodes")),
     zIndex: v.optional(v.number()),
     clientRequestId: v.optional(v.string()),
-    targetNodeId: v.id("nodes"),
+    targetNodeId: v.string(),
     sourceHandle: v.optional(v.string()),
     targetHandle: v.optional(v.string()),
   },
@@ -1026,7 +1075,12 @@ export const createWithEdgeToTarget = mutation({
       return existingNodeId;
     }
 
-    const target = await ctx.db.get(args.targetNodeId);
+    const targetNodeId = await resolveNodeReferenceForWrite(ctx, {
+      userId: user.userId,
+      canvasId: args.canvasId,
+      nodeId: args.targetNodeId,
+    });
+    const target = await ctx.db.get(targetNodeId);
     if (!target || target.canvasId !== args.canvasId) {
       throw new Error("Target node not found");
     }
@@ -1034,7 +1088,7 @@ export const createWithEdgeToTarget = mutation({
     await assertConnectionPolicyForTypes(ctx, {
       sourceType: args.type,
       targetType: target.type,
-      targetNodeId: args.targetNodeId,
+      targetNodeId,
     });
 
     const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
@@ -1056,7 +1110,7 @@ export const createWithEdgeToTarget = mutation({
     await ctx.db.insert("edges", {
       canvasId: args.canvasId,
       sourceNodeId: nodeId,
-      targetNodeId: args.targetNodeId,
+      targetNodeId,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
     });

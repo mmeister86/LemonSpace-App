@@ -1,6 +1,7 @@
 {
   "common": {
     "save": "Speichern",
+    "reset": "Zurücksetzen",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "close": "Schließen",
@@ -55,6 +56,58 @@
     "compareProcessed": "Verarbeitet",
     "custom": "Benutzerdefiniert",
     "customize": "Anpassen",
+    "adjustments": {
+      "common": {
+        "presetPlaceholder": "Voreinstellung",
+        "presetNamePrompt": "Name der Voreinstellung",
+        "builtinPresetLabel": "Standard: {name}",
+        "userPresetLabel": "Benutzer: {name}"
+      },
+      "curves": {
+        "title": "Kurven",
+        "sliders": {
+          "blackPoint": "Schwarzpunkt",
+          "whitePoint": "Weißpunkt",
+          "gamma": "Gamma"
+        }
+      },
+      "colorAdjust": {
+        "title": "Farbe",
+        "sliders": {
+          "hue": "Farbton",
+          "saturation": "Sättigung",
+          "luminance": "Luminanz",
+          "temperature": "Temperatur",
+          "tint": "Tönung",
+          "vibrance": "Dynamik"
+        }
+      },
+      "lightAdjust": {
+        "title": "Licht",
+        "sliders": {
+          "brightness": "Helligkeit",
+          "contrast": "Kontrast",
+          "exposure": "Belichtung",
+          "highlights": "Lichter",
+          "shadows": "Schatten",
+          "whites": "Weißtöne",
+          "blacks": "Schwärzen",
+          "vignette": "Vignette"
+        }
+      },
+      "detailAdjust": {
+        "title": "Details",
+        "sliders": {
+          "sharpen": "Schärfen",
+          "radius": "Radius",
+          "threshold": "Schwellwert",
+          "clarity": "Klarheit",
+          "denoiseLuma": "Entrauschen Luma",
+          "denoiseColor": "Entrauschen Farbe",
+          "grain": "Körnung"
+        }
+      }
+    },
     "prompts": {
       "prompt1": "Prompt 1",
       "prompt2": "Prompt 2",
@@ -121,6 +174,7 @@
   "toasts": {
     "canvas": {
       "imageUploaded": "Bild hochgeladen",
+      "adjustmentPresetSaved": "Voreinstellung gespeichert",
       "uploadFailed": "Upload fehlgeschlagen",
       "uploadFormatError": "Format „{format}“ wird nicht unterstützt. Erlaubt: PNG, JPG, WebP.",
       "uploadSizeError": "Maximale Dateigröße: {maxMb} MB.",

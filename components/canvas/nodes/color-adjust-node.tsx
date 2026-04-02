@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useMutation } from "convex/react";
+import { useTranslations } from "next-intl";
 import { Palette } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
@@ -41,6 +42,9 @@ type PresetDoc = {
 };
 
 export default function ColorAdjustNode({ id, data, selected, width }: NodeProps<ColorAdjustNodeType>) {
+  const tCommon = useTranslations("common");
+  const tNodes = useTranslations("nodes");
+  const tToasts = useTranslations("toasts");
   const { queueNodeDataUpdate } = useCanvasSync();
   const savePreset = useMutation(api.presets.save);
   const userPresets = (useAuthQuery(api.presets.list, { nodeType: "color-adjust" }) ?? []) as PresetDoc[];
@@ -88,48 +92,48 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
     () => [
       {
         id: "hue",
-        label: "Hue",
+        label: tNodes("adjustments.colorAdjust.sliders.hue"),
         min: -180,
         max: 180,
         value: DEFAULT_COLOR_ADJUST_DATA.hsl.hue,
       },
       {
         id: "saturation",
-        label: "Saturation",
+        label: tNodes("adjustments.colorAdjust.sliders.saturation"),
         min: -100,
         max: 100,
         value: DEFAULT_COLOR_ADJUST_DATA.hsl.saturation,
       },
       {
         id: "luminance",
-        label: "Luminance",
+        label: tNodes("adjustments.colorAdjust.sliders.luminance"),
         min: -100,
         max: 100,
         value: DEFAULT_COLOR_ADJUST_DATA.hsl.luminance,
       },
       {
         id: "temperature",
-        label: "Temperature",
+        label: tNodes("adjustments.colorAdjust.sliders.temperature"),
         min: -100,
         max: 100,
         value: DEFAULT_COLOR_ADJUST_DATA.temperature,
       },
       {
         id: "tint",
-        label: "Tint",
+        label: tNodes("adjustments.colorAdjust.sliders.tint"),
         min: -100,
         max: 100,
         value: DEFAULT_COLOR_ADJUST_DATA.tint,
       },
       {
         id: "vibrance",
-        label: "Vibrance",
+        label: tNodes("adjustments.colorAdjust.sliders.vibrance"),
         min: -100,
         max: 100,
         value: DEFAULT_COLOR_ADJUST_DATA.vibrance,
       },
     ],
-    [],
+    [tNodes],
   );
   const sliderValues = useMemo<SliderValue[]>(
     () => [
@@ -179,14 +183,14 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
   };
 
   const handleSavePreset = async () => {
-    const name = window.prompt("Preset-Name");
+    const name = window.prompt(tNodes("adjustments.common.presetNamePrompt"));
     if (!name) return;
     await savePreset({
       name,
       nodeType: "color-adjust",
       params: localData,
     });
-    toast.success("Preset gespeichert");
+    toast.success(tToasts("canvas.adjustmentPresetSaved"));
   };
 
   return (
@@ -206,24 +210,24 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
       <div className="space-y-3 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-cyan-700 dark:text-cyan-400">
           <Palette className="h-3.5 w-3.5" />
-          Farbe
+          {tNodes("adjustments.colorAdjust.title")}
         </div>
 
         <div className="flex items-center gap-2">
           <Select value={presetSelection} onValueChange={applyPresetValue}>
             <SelectTrigger className="nodrag h-8 text-xs" size="sm">
-              <SelectValue placeholder="Preset" />
+              <SelectValue placeholder={tNodes("adjustments.common.presetPlaceholder")} />
             </SelectTrigger>
             <SelectContent className="nodrag">
-              <SelectItem value="custom">Custom</SelectItem>
+              <SelectItem value="custom">{tNodes("custom")}</SelectItem>
               {builtinOptions.map(([name]) => (
                 <SelectItem key={name} value={`builtin:${name}`}>
-                  Built-in: {name}
+                  {tNodes("adjustments.common.builtinPresetLabel", { name })}
                 </SelectItem>
               ))}
               {userPresets.map((preset) => (
                 <SelectItem key={preset._id} value={`user:${preset._id}`}>
-                  User: {preset.name}
+                  {tNodes("adjustments.common.userPresetLabel", { name: preset.name })}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -235,7 +239,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
               void handleSavePreset();
             }}
           >
-            Save
+            {tCommon("save")}
           </button>
         </div>
 
@@ -254,6 +258,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
           fillClassName="bg-cyan-500/35 dark:bg-cyan-400/35"
           handleClassName="bg-cyan-500 dark:bg-cyan-400"
           trackClassName="bg-cyan-500/10 dark:bg-cyan-500/15"
+          actions={[{ id: "reset", label: tCommon("reset") }]}
           onChange={(values) => {
             const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
             updateData((current) => ({
@@ -269,11 +274,6 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
               vibrance: valueById.get("vibrance") ?? current.vibrance,
               preset: null,
             }));
-          }}
-          onAction={async (actionId) => {
-            if (actionId === "apply") {
-              queueSave();
-            }
           }}
         />
       </div>

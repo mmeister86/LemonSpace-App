@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useMutation } from "convex/react";
+import { useTranslations } from "next-intl";
 import { Focus } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
@@ -41,6 +42,9 @@ type PresetDoc = {
 };
 
 export default function DetailAdjustNode({ id, data, selected, width }: NodeProps<DetailAdjustNodeType>) {
+  const tCommon = useTranslations("common");
+  const tNodes = useTranslations("nodes");
+  const tToasts = useTranslations("toasts");
   const { queueNodeDataUpdate } = useCanvasSync();
   const savePreset = useMutation(api.presets.save);
   const userPresets = (useAuthQuery(api.presets.list, { nodeType: "detail-adjust" }) ?? []) as PresetDoc[];
@@ -88,14 +92,14 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
     () => [
       {
         id: "sharpen-amount",
-        label: "Sharpen",
+        label: tNodes("adjustments.detailAdjust.sliders.sharpen"),
         min: 0,
         max: 500,
         value: DEFAULT_DETAIL_ADJUST_DATA.sharpen.amount,
       },
       {
         id: "sharpen-radius",
-        label: "Radius",
+        label: tNodes("adjustments.detailAdjust.sliders.radius"),
         min: 0.5,
         max: 5,
         step: 0.01,
@@ -104,41 +108,41 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
       },
       {
         id: "sharpen-threshold",
-        label: "Threshold",
+        label: tNodes("adjustments.detailAdjust.sliders.threshold"),
         min: 0,
         max: 255,
         value: DEFAULT_DETAIL_ADJUST_DATA.sharpen.threshold,
       },
       {
         id: "clarity",
-        label: "Clarity",
+        label: tNodes("adjustments.detailAdjust.sliders.clarity"),
         min: -100,
         max: 100,
         value: DEFAULT_DETAIL_ADJUST_DATA.clarity,
       },
       {
         id: "denoise-luminance",
-        label: "Denoise Luma",
+        label: tNodes("adjustments.detailAdjust.sliders.denoiseLuma"),
         min: 0,
         max: 100,
         value: DEFAULT_DETAIL_ADJUST_DATA.denoise.luminance,
       },
       {
         id: "denoise-color",
-        label: "Denoise Color",
+        label: tNodes("adjustments.detailAdjust.sliders.denoiseColor"),
         min: 0,
         max: 100,
         value: DEFAULT_DETAIL_ADJUST_DATA.denoise.color,
       },
       {
         id: "grain-amount",
-        label: "Grain",
+        label: tNodes("adjustments.detailAdjust.sliders.grain"),
         min: 0,
         max: 100,
         value: DEFAULT_DETAIL_ADJUST_DATA.grain.amount,
       },
     ],
-    [],
+    [tNodes],
   );
   const sliderValues = useMemo<SliderValue[]>(
     () => [
@@ -190,14 +194,14 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
   };
 
   const handleSavePreset = async () => {
-    const name = window.prompt("Preset-Name");
+    const name = window.prompt(tNodes("adjustments.common.presetNamePrompt"));
     if (!name) return;
     await savePreset({
       name,
       nodeType: "detail-adjust",
       params: localData,
     });
-    toast.success("Preset gespeichert");
+    toast.success(tToasts("canvas.adjustmentPresetSaved"));
   };
 
   return (
@@ -217,24 +221,24 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
       <div className="space-y-3 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">
           <Focus className="h-3.5 w-3.5" />
-          Detail
+          {tNodes("adjustments.detailAdjust.title")}
         </div>
 
         <div className="flex items-center gap-2">
           <Select value={presetSelection} onValueChange={applyPresetValue}>
             <SelectTrigger className="nodrag h-8 text-xs" size="sm">
-              <SelectValue placeholder="Preset" />
+              <SelectValue placeholder={tNodes("adjustments.common.presetPlaceholder")} />
             </SelectTrigger>
             <SelectContent className="nodrag">
-              <SelectItem value="custom">Custom</SelectItem>
+              <SelectItem value="custom">{tNodes("custom")}</SelectItem>
               {builtinOptions.map(([name]) => (
                 <SelectItem key={name} value={`builtin:${name}`}>
-                  Built-in: {name}
+                  {tNodes("adjustments.common.builtinPresetLabel", { name })}
                 </SelectItem>
               ))}
               {userPresets.map((preset) => (
                 <SelectItem key={preset._id} value={`user:${preset._id}`}>
-                  User: {preset.name}
+                  {tNodes("adjustments.common.userPresetLabel", { name: preset.name })}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -246,7 +250,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
               void handleSavePreset();
             }}
           >
-            Save
+            {tCommon("save")}
           </button>
         </div>
 
@@ -265,6 +269,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
           fillClassName="bg-indigo-500/35 dark:bg-indigo-400/35"
           handleClassName="bg-indigo-500 dark:bg-indigo-400"
           trackClassName="bg-indigo-500/10 dark:bg-indigo-500/15"
+          actions={[{ id: "reset", label: tCommon("reset") }]}
           onChange={(values) => {
             const valueById = new Map(values.map((entry) => [entry.id, entry.value]));
             updateData((current) => ({
@@ -287,11 +292,6 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
               },
               preset: null,
             }));
-          }}
-          onAction={async (actionId) => {
-            if (actionId === "apply") {
-              queueSave();
-            }
           }}
         />
       </div>

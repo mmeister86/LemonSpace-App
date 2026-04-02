@@ -1,6 +1,7 @@
 {
   "common": {
     "save": "Save",
+    "reset": "Reset",
     "cancel": "Cancel",
     "delete": "Delete",
     "close": "Close",
@@ -55,6 +56,58 @@
     "compareProcessed": "Processed",
     "custom": "Custom",
     "customize": "Customize",
+    "adjustments": {
+      "common": {
+        "presetPlaceholder": "Preset",
+        "presetNamePrompt": "Preset name",
+        "builtinPresetLabel": "Built-in: {name}",
+        "userPresetLabel": "User: {name}"
+      },
+      "curves": {
+        "title": "Curves",
+        "sliders": {
+          "blackPoint": "Black Point",
+          "whitePoint": "White Point",
+          "gamma": "Gamma"
+        }
+      },
+      "colorAdjust": {
+        "title": "Color",
+        "sliders": {
+          "hue": "Hue",
+          "saturation": "Saturation",
+          "luminance": "Luminance",
+          "temperature": "Temperature",
+          "tint": "Tint",
+          "vibrance": "Vibrance"
+        }
+      },
+      "lightAdjust": {
+        "title": "Light",
+        "sliders": {
+          "brightness": "Brightness",
+          "contrast": "Contrast",
+          "exposure": "Exposure",
+          "highlights": "Highlights",
+          "shadows": "Shadows",
+          "whites": "Whites",
+          "blacks": "Blacks",
+          "vignette": "Vignette"
+        }
+      },
+      "detailAdjust": {
+        "title": "Detail",
+        "sliders": {
+          "sharpen": "Sharpen",
+          "radius": "Radius",
+          "threshold": "Threshold",
+          "clarity": "Clarity",
+          "denoiseLuma": "Denoise Luma",
+          "denoiseColor": "Denoise Color",
+          "grain": "Grain"
+        }
+      }
+    },
     "prompts": {
       "prompt1": "Prompt 1",
       "prompt2": "Prompt 2",
@@ -121,6 +174,7 @@
   "toasts": {
     "canvas": {
       "imageUploaded": "Image uploaded",
+      "adjustmentPresetSaved": "Preset saved",
       "uploadFailed": "Upload failed",
       "uploadFormatError": "Format \"{format}\" is not supported. Allowed: PNG, JPG, WebP.",
       "uploadSizeError": "Maximum file size: {maxMb} MB.",
