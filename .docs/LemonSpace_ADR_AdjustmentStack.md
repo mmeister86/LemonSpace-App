@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — ADR: Non-destruktiver Adjustment-Stack
 
-**Status:** Accepted
+**Status:** In Progress (Phase 0)
 **Datum:** März 2026
 **Kontext:** PRD v1.4, Kategorie 4 (Bildbearbeitung), Phase 2
 
@@ -8,7 +8,14 @@
 
 ## 1. Entscheidung
 
-Adjustment-Nodes arbeiten non-destruktiv über eine **edge-basierte Pipeline**. Die Edge-Kette im Canvas *ist* der Stack — kein separates Datenmodell. Die Bildverarbeitung läuft client-seitig primär über eine **Web-Worker-Pipeline** mit OffscreenCanvas/2D-Rendering; ein WebGL-Pfad existiert ergänzend für kompatible Teilpfade. Keine externen Packages.
+Adjustment-Nodes arbeiten non-destruktiv über eine **edge-basierte Pipeline**. Die Edge-Kette im Canvas *ist* der Stack — kein separates Datenmodell.
+
+Ziel-API der Umsetzung:
+
+- `Worker Preview`: Preview-Rendering als primärer Pfad.
+- `Worker Full Render`: Voll-Render als separater Worker-Pfad.
+- `Fallback/Recovery`: Main-Thread-Fallback bleibt Default-Sicherheitsnetz.
+- `WebGL`: optionaler Off-Path, nicht vorausgesetzt für Phase 0.
 
 ---
 
@@ -104,46 +111,40 @@ Invalidierung erfolgt request-basiert: Neue Requests verdrängen veraltete Ergeb
 
 ---
 
-## Implementierungsstand (Stand: 31.03.2026)
+## Implementierungsstand (Stand: Phase 0)
 
-### Produktiv umgesetzt
+### Aktueller Ist-Zustand
 
-- WebWorker-Migration ist produktiv aktiv über `lib/image-pipeline/pipeline.worker.ts`, `lib/image-pipeline/pipeline-bridge.ts` und `lib/image-pipeline/index.ts`.
-- Preview- und Full-Render laufen über Worker-Requests aus `hooks/use-pipeline-preview.ts` und `components/canvas/nodes/render-node.tsx`.
-- Die Worker-Pipeline rendert aktuell über `OffscreenCanvas` + 2D-Kontext (inkl. Kurven-LUT, Canvas-Filter und nachgelagerte Pixel-Adjustments), Histogramm-Berechnung erfolgt im Worker.
-- Render-Node nutzt `bridge.renderFull(...)` und liefert aktuell einen lokalen Download-Export (kein Convex-Upload in diesem Pfad).
-- Lifecycle-Cleanup ist angebunden: `disposePipelineBridge()` wird in `components/canvas/canvas.tsx` beim Unmount ausgeführt.
+- Es gibt derzeit **keine produktiv integrierte Frontend-Runtime** für die Image-Pipeline im Repository.
+- Phase 0 liefert den Architektur- und Vertragsabgleich (Node-Type Single Source, Pipeline-Contract als pure TS-Funktionen, serverseitige Guard-Rules für Adjustment-Data).
+- Worker-Preview/Worker-Full-Render bleiben Zielarchitektur für die weiteren Phasen.
 
-### Abweichungen zur ursprünglichen ADR-Intention / Zielvision aus dem Guide
+### Was in Phase 0 bewusst noch nicht enthalten ist
 
-- Die ursprünglich beschriebene, primär shader-zentrierte WebGL-Architektur ist nicht 1:1 der produktive Standardpfad.
-- Statt einer reinen „WebGL-im-Worker“-Ausführung nutzt die aktuelle Worker-Pipeline einen OffscreenCanvas/2D-Rendering-Pfad mit ergänzenden ImageData-Operationen.
-- Der Guide skizziert konzeptionell eine zentrale Worker-Instanz; die aktuelle Bridge betreibt getrennte Worker-Kanäle für Preview und Full-Render.
-- Der im ADR beschriebene Render-Node-Flow mit Convex-Storage-Materialisierung ist in der aktuellen UI nicht der Default-Exportpfad.
+- Keine UI-Integration für Adjustment-Preview oder Render-Node-Workflow.
+- Kein Worker-Bridge-Lifecycle im Canvas.
+- Keine produktive WebGL-Pipeline.
 
 ### Fallback- und Recovery-Mechanismen
 
-- `usePipelinePreview` versucht Worker-Rendering zuerst und schaltet bei Fehlern auf Main-Thread-Fallback (`canvas-render.ts`) um.
-- Während des Fallback-Betriebs werden Worker-Recovery-Retries zeit- und zählbasiert angestoßen; bei erfolgreicher Probe wird zurück auf Worker gewechselt.
-- Stale Ergebnisse werden über Request-Sequenzierung verworfen; betroffene `ImageBitmap`s werden aktiv freigegeben.
-- Preview-Metriken erfassen u. a. Fallback-Switches und Recoveries über `lib/image-pipeline/preview-metrics.ts`.
+- Für die Zielimplementierung bleibt Main-Thread-Fallback mit Recovery der Default.
+- Phase 0 definiert dafür den deterministischen Pipeline-Contract (`collectPipeline`, `getSourceImage`, `hashPipeline`) als Grundlage für Preview und Full-Render.
 
 ---
 
-## Einfluss des WebWorker-Migration-Guides
+## Einfluss des WebWorker-Migration-Guides (Zielbild)
 
-### Übernommene Konzepte
+### Übernommene Konzepte (architektonisch)
 
-- Entkopplung von UI und Bildpipeline über Worker + Bridge (`pipeline.worker.ts` / `pipeline-bridge.ts`).
-- Request-basierte Worker-API mit korrelierbarer Request-ID.
-- Rückgabe von Preview-Bitmaps und Histogramm-Daten über Worker-Messages.
-- Singleton-Verwaltung der Bridge (`lib/image-pipeline/index.ts`) und Cleanup im Canvas-Lifecycle.
+- Entkopplung von UI und Bildpipeline über Worker + Bridge.
+- Trennung von Preview und Full-Render API.
+- Deterministische Pipeline-Berechnung und zyklussichere Traversierung.
 
-### Bewusst abgewandelte Punkte
+### Bewusst offen gehaltene Punkte
 
-- Reine WebGL-im-Worker-Zielarchitektur wurde zugunsten eines OffscreenCanvas/2D-Pfads umgesetzt.
-- Getrennte Worker für Preview und Full-Render statt nur eines universellen Workers.
-- Render-Node-Integration ist aktuell auf clientseitigen Export fokussiert, nicht auf serverseitige Persistierung als Standardfluss.
+- Ob der Renderpfad über OffscreenCanvas/2D, WebGL oder hybrid ausgeführt wird.
+- Ob Preview und Full-Render denselben Worker teilen oder separiert laufen.
+- Persistenzstrategie für final gerenderte Artefakte.
 
 ### Offene Punkte / Follow-ups
 
@@ -155,9 +156,9 @@ Invalidierung erfolgt request-basiert: Neue Requests verdrängen veraltete Ergeb
 
 ## 4. WebGL-Wrapper
 
-> **Hinweis zum Ist-Stand:** Dieser Abschnitt dokumentiert weiterhin die WebGL-Ziel-/Referenzarchitektur der Pipeline. Produktiv läuft die Preview-/Render-Ausführung derzeit primär im Worker über OffscreenCanvas/2D.
+> **Hinweis zum Ist-Stand:** Dieser Abschnitt dokumentiert die Ziel-/Referenzarchitektur. Die Runtime ist im aktuellen Repository noch nicht integriert.
 
-### Dateien
+### Geplante Dateien
 
 ```
 lib/
@@ -639,7 +640,7 @@ Die Validierung läuft in `canvas.tsx` bei `onConnect` — ungültige Verbindung
 
 ---
 
-## 11. Dateistruktur (Phase 2 — Bildbearbeitung)
+## 11. Ziel-Dateistruktur (Phase 2 — Bildbearbeitung)
 
 ```
 lib/
@@ -682,7 +683,7 @@ hooks/
 | Adjustment-Node Resize | ✅ | Resizeable (wie alle Nodes via base-node-wrapper), mit `minWidth: 240`. Preview skaliert mit, Slider-Layout bleibt stabil. |
 | Render-Node: Client- vs. Server-seitig | ✅ | Client-seitig über Worker-Bridge; aktueller Pfad ist Download-Export (`renderFull`) statt serverseitiger Persistierung. |
 | Worker-Fallback/Recovery | ✅ | Bei Worker-Fehlern Fallback auf Main Thread; periodische Recovery-Versuche zurück in den Worker-Pfad. |
-| Reine WebGL-im-Worker-Architektur | ⏳ | Guide-Zielbild; aktuell produktiv ist ein OffscreenCanvas/2D-Pfad im Worker. |
+| Reine WebGL-im-Worker-Architektur | ⏳ | Optionaler Off-Path; Entscheidung folgt in späteren Phasen. |
 
 ---
 
@@ -696,7 +697,7 @@ hooks/
 | Preview-Auflösung | Dynamisch: nodeWidth × devicePixelRatio, max 1024px |
 | Mindestbreite Adjustment-Nodes | 240px |
 | Max. Bild-Auflösung Render | Original-Auflösung |
-| Primärer Renderpfad | Web Worker + OffscreenCanvas/2D |
+| Primärer Renderpfad | Ziel: Web Worker (technischer Unterpfad wird später festgelegt) |
 
 ---
 

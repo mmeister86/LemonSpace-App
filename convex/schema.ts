@@ -2,76 +2,23 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import {
+  nodeTypeValidator,
+  phase1NodeTypeValidator,
+} from "./node-type-validator";
+
 // ============================================================================
 // Node Types
 // ============================================================================
 
 // Phase 1 Node Types
-const phase1NodeTypes = v.union(
-  // Quelle
-  v.literal("image"),
-  v.literal("text"),
-  v.literal("prompt"),
-  // KI-Ausgabe
-  v.literal("ai-image"),
-  // Canvas & Layout
-  v.literal("group"),
-  v.literal("frame"),
-  v.literal("note"),
-  v.literal("compare")
-);
+const phase1NodeTypes = phase1NodeTypeValidator;
 
 // Alle Node Types (Phase 1 + spätere Phasen)
 // Phase 2+3 Typen sind hier schon definiert, damit das Schema nicht bei
 // jedem Phasenübergang migriert werden muss. Die UI zeigt nur die Typen
 // der jeweiligen Phase an.
-const nodeType = v.union(
-  // Quelle (Phase 1)
-  v.literal("image"),
-  v.literal("text"),
-  v.literal("prompt"),
-  // Quelle (Phase 2)
-  v.literal("color"),
-  v.literal("video"),
-  v.literal("asset"),
-  // KI-Ausgabe (Phase 1)
-  v.literal("ai-image"),
-  // KI-Ausgabe (Phase 2)
-  v.literal("ai-text"),
-  v.literal("ai-video"),
-  // KI-Ausgabe (Phase 3)
-  v.literal("agent-output"),
-  // Transformation (Phase 2)
-  v.literal("crop"),
-  v.literal("bg-remove"),
-  v.literal("upscale"),
-  // Transformation (Phase 3)
-  v.literal("style-transfer"),
-  v.literal("face-restore"),
-  // Bildbearbeitung (Phase 2)
-  v.literal("curves"),
-  v.literal("color-adjust"),
-  v.literal("light-adjust"),
-  v.literal("detail-adjust"),
-  v.literal("render"),
-  // Steuerung (Phase 2)
-  v.literal("splitter"),
-  v.literal("loop"),
-  v.literal("agent"),
-  // Steuerung (Phase 3)
-  v.literal("mixer"),
-  v.literal("switch"),
-  // Canvas & Layout (Phase 1)
-  v.literal("group"),
-  v.literal("frame"),
-  v.literal("note"),
-  v.literal("compare"),
-  // Canvas & Layout (Phase 2)
-  v.literal("text-overlay"),
-  // Canvas & Layout (Phase 3)
-  v.literal("comment"),
-  v.literal("presentation")
-);
+const nodeType = nodeTypeValidator;
 
 // Node Status — direkt am Node sichtbar (UX-Strategie aus dem PRD)
 const nodeStatus = v.union(

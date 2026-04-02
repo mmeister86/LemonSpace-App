@@ -2,6 +2,8 @@ import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
+import { isAdjustmentNodeType } from "../lib/canvas-node-types";
+import { nodeTypeValidator } from "./node-type-validator";
 
 // ============================================================================
 // Interne Helpers
@@ -39,6 +41,35 @@ type NodeCreateMutationName =
   | "nodes.createWithEdgeSplit"
   | "nodes.createWithEdgeFromSource"
   | "nodes.createWithEdgeToTarget";
+
+const DISALLOWED_ADJUSTMENT_DATA_KEYS = [
+  "storageId",
+  "url",
+  "blob",
+  "blobUrl",
+  "imageData",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertNoAdjustmentImagePayload(
+  nodeType: Doc<"nodes">["type"],
+  data: unknown,
+): void {
+  if (!isAdjustmentNodeType(nodeType) || !isRecord(data)) {
+    return;
+  }
+
+  for (const key of DISALLOWED_ADJUSTMENT_DATA_KEYS) {
+    if (key in data) {
+      throw new Error(
+        `Adjustment nodes accept parameter data only. '${key}' is not allowed in data.`,
+      );
+    }
+  }
+}
 
 async function getIdempotentNodeCreateResult(
   ctx: MutationCtx,
@@ -159,7 +190,7 @@ export const get = query({
 export const listByType = query({
   args: {
     canvasId: v.id("canvases"),
-    type: v.string(),
+    type: nodeTypeValidator,
   },
   handler: async (ctx, { canvasId, type }) => {
     const user = await requireAuth(ctx);
@@ -187,7 +218,7 @@ export const listByType = query({
 export const create = mutation({
   args: {
     canvasId: v.id("canvases"),
-    type: v.string(),
+    type: nodeTypeValidator,
     positionX: v.number(),
     positionY: v.number(),
     width: v.number(),
@@ -211,6 +242,8 @@ export const create = mutation({
     if (existingNodeId) {
       return existingNodeId;
     }
+
+    assertNoAdjustmentImagePayload(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -246,7 +279,7 @@ export const create = mutation({
 export const createWithEdgeSplit = mutation({
   args: {
     canvasId: v.id("canvases"),
-    type: v.string(),
+    type: nodeTypeValidator,
     positionX: v.number(),
     positionY: v.number(),
     width: v.number(),
@@ -279,6 +312,8 @@ export const createWithEdgeSplit = mutation({
     if (!edge || edge.canvasId !== args.canvasId) {
       throw new Error("Edge not found");
     }
+
+    assertNoAdjustmentImagePayload(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -434,7 +469,7 @@ export const splitEdgeAtExistingNode = mutation({
 export const createWithEdgeFromSource = mutation({
   args: {
     canvasId: v.id("canvases"),
-    type: v.string(),
+    type: nodeTypeValidator,
     positionX: v.number(),
     positionY: v.number(),
     width: v.number(),
@@ -465,6 +500,8 @@ export const createWithEdgeFromSource = mutation({
     if (!source || source.canvasId !== args.canvasId) {
       throw new Error("Source node not found");
     }
+
+    assertNoAdjustmentImagePayload(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -508,7 +545,7 @@ export const createWithEdgeFromSource = mutation({
 export const createWithEdgeToTarget = mutation({
   args: {
     canvasId: v.id("canvases"),
-    type: v.string(),
+    type: nodeTypeValidator,
     positionX: v.number(),
     positionY: v.number(),
     width: v.number(),
@@ -539,6 +576,8 @@ export const createWithEdgeToTarget = mutation({
     if (!target || target.canvasId !== args.canvasId) {
       throw new Error("Target node not found");
     }
+
+    assertNoAdjustmentImagePayload(args.type, args.data);
 
     const nodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -659,6 +698,7 @@ export const updateData = mutation({
     if (!node) throw new Error("Node not found");
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    assertNoAdjustmentImagePayload(node.type, data);
     await ctx.db.patch(nodeId, { data });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },

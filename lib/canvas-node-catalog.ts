@@ -1,9 +1,9 @@
-import type { Doc } from "@/convex/_generated/dataModel";
 import { nodeTypes } from "@/components/canvas/node-types";
 import {
   CANVAS_NODE_TEMPLATES,
   type CanvasNodeTemplate,
 } from "@/lib/canvas-node-templates";
+import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
 /** PRD-Kategorien (Reihenfolge für Sidebar / Dropdown). */
 export type NodeCategoryId =
@@ -30,7 +30,7 @@ export const NODE_CATEGORIES_ORDERED: NodeCategoryId[] = (
   Object.keys(NODE_CATEGORY_META) as NodeCategoryId[]
 ).sort((a, b) => NODE_CATEGORY_META[a].order - NODE_CATEGORY_META[b].order);
 
-export type CatalogNodeType = Doc<"nodes">["type"];
+export type CatalogNodeType = CanvasNodeType;
 
 export type NodeCatalogEntry = {
   type: CatalogNodeType;
