@@ -80,6 +80,19 @@ export type PendingEdgeSplit = {
   positionY: number;
 };
 
+function resolveStorageFallbackUrl(storageId: string): string | undefined {
+  const convexBaseUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!convexBaseUrl) {
+    return undefined;
+  }
+
+  try {
+    return new URL(`/api/storage/${storageId}`, convexBaseUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
   const pipelineNodes = nodes.map((node) => ({
@@ -142,7 +155,22 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
       if (!source) continue;
 
       const srcData = source.data as { url?: string; label?: string };
-      const resolvedUrl = resolvePipelineImageUrl(source);
+      const sourceDataRecord = source.data as Record<string, unknown>;
+      const storageIdCandidate =
+        typeof sourceDataRecord.storageId === "string"
+          ? sourceDataRecord.storageId
+          : typeof sourceDataRecord.lastUploadStorageId === "string"
+            ? sourceDataRecord.lastUploadStorageId
+            : undefined;
+      const hasSourceUrl = typeof srcData.url === "string" && srcData.url.length > 0;
+      let resolvedUrl = resolvePipelineImageUrl(source);
+      if (
+        resolvedUrl === undefined &&
+        !hasSourceUrl &&
+        storageIdCandidate !== undefined
+      ) {
+        resolvedUrl = resolveStorageFallbackUrl(storageIdCandidate);
+      }
 
       if (edge.targetHandle === "left") {
         leftUrl = resolvedUrl;

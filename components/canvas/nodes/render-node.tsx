@@ -12,14 +12,10 @@ import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { api } from "@/convex/_generated/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
+import { resolveRenderPreviewInput } from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
-import {
-  collectPipeline,
-  getSourceImage,
-  hashPipeline,
-  type PipelineStep,
-} from "@/lib/image-pipeline/contracts";
+import { getSourceImage, hashPipeline } from "@/lib/image-pipeline/contracts";
 import { bridge } from "@/lib/image-pipeline/bridge";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -112,7 +108,13 @@ const RENDER_MIN_HEIGHT = 300;
 const ASPECT_RATIO_TOLERANCE = 0.015;
 const SIZE_TOLERANCE_PX = 1;
 
-const RENDER_PIPELINE_TYPES = new Set(["curves", "color-adjust", "light-adjust", "detail-adjust"]);
+function logRenderDebug(event: string, payload: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  console.info("[RenderNode debug]", event, payload);
+}
 
 function readPositiveNumber(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -215,21 +217,6 @@ function toRatioConstrainedSize(args: {
     Math.abs(heightCandidate.height - currentHeight);
 
   return widthDistance <= heightDistance ? widthCandidate : heightCandidate;
-}
-
-function resolveNodeImageUrl(node: Node): string | null {
-  const nodeData = (node.data ?? {}) as Record<string, unknown>;
-  const directUrl = typeof nodeData.url === "string" ? nodeData.url : null;
-  if (directUrl && directUrl.length > 0) {
-    return directUrl;
-  }
-
-  const previewUrl = typeof nodeData.previewUrl === "string" ? nodeData.previewUrl : null;
-  if (previewUrl && previewUrl.length > 0) {
-    return previewUrl;
-  }
-
-  return null;
 }
 
 function sanitizeDimension(value: unknown): number | undefined {
@@ -497,21 +484,39 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     [edges],
   );
 
-  const sourceUrl = useMemo(
+  const renderPreviewInput = useMemo(
     () =>
-      getSourceImage({
+      resolveRenderPreviewInput({
         nodeId: id,
         nodes: pipelineNodes,
         edges: pipelineEdges,
-        isSourceNode: (node) =>
-          node.type === "image" || node.type === "ai-image" || node.type === "asset",
-        getSourceImageFromNode: (node) => {
-          const sourceNode = nodes.find((candidate) => candidate.id === node.id);
-          return sourceNode ? resolveNodeImageUrl(sourceNode) : null;
-        },
       }),
-    [id, nodes, pipelineEdges, pipelineNodes],
+    [id, pipelineEdges, pipelineNodes],
   );
+
+  const sourceUrl = renderPreviewInput.sourceUrl;
+
+  useEffect(() => {
+    logRenderDebug("node-data-updated", {
+      nodeId: id,
+      hasSourceUrl: typeof sourceUrl === "string" && sourceUrl.length > 0,
+      storageId: data.storageId ?? null,
+      lastUploadStorageId: data.lastUploadStorageId ?? null,
+      hasResolvedUrl: typeof data.url === "string" && data.url.length > 0,
+      lastUploadedAt: data.lastUploadedAt ?? null,
+      lastUploadedHash: data.lastUploadedHash ?? null,
+      lastRenderedHash: data.lastRenderedHash ?? null,
+    });
+  }, [
+    data.lastRenderedHash,
+    data.lastUploadStorageId,
+    data.lastUploadedAt,
+    data.lastUploadedHash,
+    data.storageId,
+    data.url,
+    id,
+    sourceUrl,
+  ]);
 
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
     () =>
@@ -526,16 +531,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     [id, pipelineEdges, pipelineNodes],
   );
 
-  const steps = useMemo(
-    () =>
-      collectPipeline({
-        nodeId: id,
-        nodes: pipelineNodes,
-        edges: pipelineEdges,
-        isPipelineNode: (node) => RENDER_PIPELINE_TYPES.has(node.type ?? ""),
-      }) as PipelineStep[],
-    [id, pipelineEdges, pipelineNodes],
-  );
+  const steps = renderPreviewInput.steps;
 
   const renderFingerprint = useMemo(
     () => ({
@@ -741,7 +737,16 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   };
 
   const handleRender = async (mode: "download" | "upload") => {
-    if (!sourceUrl || !currentPipelineHash) return;
+    if (!sourceUrl || !currentPipelineHash) {
+      logRenderDebug("render-aborted-prerequisites", {
+        nodeId: id,
+        mode,
+        hasSourceUrl: Boolean(sourceUrl),
+        hasPipelineHash: Boolean(currentPipelineHash),
+        isOffline: status.isOffline,
+      });
+      return;
+    }
 
     if (
       localData.outputResolution === "custom" &&
@@ -762,6 +767,17 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
     try {
       const activeData = localDataRef.current;
+      logRenderDebug("render-start", {
+        nodeId: id,
+        mode,
+        pipelineHash: currentPipelineHash,
+        resolution: activeData.outputResolution,
+        customWidth: activeData.customWidth ?? null,
+        customHeight: activeData.customHeight ?? null,
+        format: activeData.format,
+        jpegQuality: activeData.format === "jpeg" ? activeData.jpegQuality : null,
+      });
+
       const renderResult = await bridge.renderFull({
         sourceUrl,
         steps,
@@ -783,6 +799,20 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       });
 
       if (runId !== renderRunIdRef.current) return;
+
+      logRenderDebug("render-success", {
+        nodeId: id,
+        mode,
+        pipelineHash: currentPipelineHash,
+        width: renderResult.width,
+        height: renderResult.height,
+        sourceWidth: renderResult.sourceWidth,
+        sourceHeight: renderResult.sourceHeight,
+        format: renderResult.format,
+        mimeType: renderResult.mimeType,
+        sizeBytes: renderResult.sizeBytes,
+        wasSizeClamped: renderResult.wasSizeClamped,
+      });
 
       const filename = `lemonspace-render-${Date.now()}.${extensionForFormat(renderResult.format)}`;
 
@@ -816,7 +846,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         lastRenderErrorHash: undefined,
       };
 
-      if (mode === "download") {
+      const shouldUploadAfterRender = mode === "upload" || !status.isOffline;
+
+      if (!shouldUploadAfterRender) {
         await persistImmediately(renderNext);
         return;
       }
@@ -825,6 +857,15 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       setIsUploading(true);
 
       try {
+        logRenderDebug("upload-start", {
+          nodeId: id,
+          pipelineHash: currentPipelineHash,
+          triggerMode: mode,
+          filename,
+          mimeType: renderResult.mimeType,
+          sizeBytes: renderResult.sizeBytes,
+        });
+
         const uploadUrl = await generateUploadUrl();
         if (runId !== renderRunIdRef.current) return;
 
@@ -835,6 +876,14 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         });
 
         if (runId !== renderRunIdRef.current) return;
+
+        logRenderDebug("upload-success", {
+          nodeId: id,
+          pipelineHash: currentPipelineHash,
+          triggerMode: mode,
+          storageId,
+          filename,
+        });
 
         const uploadNext: PersistedRenderData = {
           ...renderNext,
@@ -861,6 +910,12 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         if (runId !== renderRunIdRef.current) return;
 
         const message = uploadError instanceof Error ? uploadError.message : "Upload failed";
+        logRenderDebug("upload-error", {
+          nodeId: id,
+          pipelineHash: currentPipelineHash,
+          triggerMode: mode,
+          error: message,
+        });
         await persistImmediately({
           ...renderNext,
           lastUploadError: message,
@@ -875,6 +930,12 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       if (runId !== renderRunIdRef.current) return;
 
       const message = error instanceof Error ? error.message : "Render failed";
+      logRenderDebug("render-error", {
+        nodeId: id,
+        mode,
+        pipelineHash: currentPipelineHash,
+        error: message,
+      });
       const next: PersistedRenderData = {
         ...localDataRef.current,
         lastRenderError: message,
