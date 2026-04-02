@@ -11,11 +11,12 @@ import { useStore, type Edge as RFEdge } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import type { CanvasNodeType } from "@/lib/canvas-node-types";
 import { isOptimisticEdgeId } from "./canvas-helpers";
 
 type CreateNodeArgs = {
   canvasId: Id<"canvases">;
-  type: string;
+  type: CanvasNodeType;
   positionX: number;
   positionY: number;
   width: number;
@@ -28,7 +29,7 @@ type CreateNodeArgs = {
 
 type CreateNodeWithEdgeSplitArgs = {
   canvasId: Id<"canvases">;
-  type: string;
+  type: CanvasNodeType;
   positionX: number;
   positionY: number;
   width: number;
@@ -70,7 +71,7 @@ type CreateNodeWithEdgeToTargetMutation = (
 type FlowPoint = { x: number; y: number };
 
 type CreateNodeWithIntersectionInput = {
-  type: string;
+  type: CanvasNodeType;
   position: FlowPoint;
   width?: number;
   height?: number;

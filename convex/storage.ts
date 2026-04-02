@@ -87,7 +87,7 @@ async function resolveStorageUrls(
       }
 
       const { storageId, url } = entry;
-      resolved[storageId] = url;
+      resolved[storageId] = url ?? undefined;
     }
   }
 

@@ -17,10 +17,12 @@ import type * as export_ from "../export.js";
 import type * as freepik from "../freepik.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
+import type * as node_type_validator from "../node_type_validator.js";
 import type * as nodes from "../nodes.js";
 import type * as openrouter from "../openrouter.js";
 import type * as pexels from "../pexels.js";
 import type * as polar from "../polar.js";
+import type * as presets from "../presets.js";
 import type * as storage from "../storage.js";
 import type * as users from "../users.js";
 
@@ -40,10 +42,12 @@ declare const fullApi: ApiFromModules<{
   freepik: typeof freepik;
   helpers: typeof helpers;
   http: typeof http;
+  node_type_validator: typeof node_type_validator;
   nodes: typeof nodes;
   openrouter: typeof openrouter;
   pexels: typeof pexels;
   polar: typeof polar;
+  presets: typeof presets;
   storage: typeof storage;
   users: typeof users;
 }>;

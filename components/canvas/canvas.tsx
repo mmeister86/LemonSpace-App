@@ -65,6 +65,11 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
+import {
+  isAdjustmentNodeType,
+  isCanvasNodeType,
+  type CanvasNodeType,
+} from "@/lib/canvas-node-types";
 
 import { nodeTypes } from "./node-types";
 import {
@@ -155,6 +160,54 @@ function isLikelyTransientSyncError(error: unknown): boolean {
 function hasStorageId(node: Doc<"nodes">): boolean {
   const data = node.data as Record<string, unknown> | undefined;
   return typeof data?.storageId === "string" && data.storageId.length > 0;
+}
+
+const ADJUSTMENT_ALLOWED_SOURCE_TYPES = new Set([
+  "image",
+  "asset",
+  "ai-image",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
+
+const ADJUSTMENT_DISALLOWED_TARGET_TYPES = new Set(["prompt", "ai-image"]);
+
+function validateCanvasConnection(
+  connection: Connection,
+  nodes: RFNode[],
+  edges: RFEdge[],
+  edgeToReplaceId?: string,
+): string | null {
+  if (!connection.source || !connection.target) return "Unvollstaendige Verbindung.";
+  if (connection.source === connection.target) return "Node kann nicht mit sich selbst verbunden werden.";
+
+  const sourceNode = nodes.find((node) => node.id === connection.source);
+  const targetNode = nodes.find((node) => node.id === connection.target);
+  if (!sourceNode || !targetNode) return "Verbindung enthaelt unbekannte Nodes.";
+
+  const sourceType = sourceNode.type ?? "";
+  const targetType = targetNode.type ?? "";
+
+  if (isAdjustmentNodeType(targetType)) {
+    if (!ADJUSTMENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
+    }
+
+    const incomingCount = edges.filter(
+      (edge) => edge.target === connection.target && edge.id !== edgeToReplaceId,
+    ).length;
+    if (incomingCount >= 1) {
+      return "Adjustment-Nodes erlauben genau eine eingehende Verbindung.";
+    }
+  }
+
+  if (isAdjustmentNodeType(sourceType) && ADJUSTMENT_DISALLOWED_TARGET_TYPES.has(targetType)) {
+    return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
+  }
+
+  return null;
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
@@ -899,7 +952,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
         try {
           if (op.type === "createNode") {
-            const realId = await createNodeRaw(op.payload);
+            const realId = await createNodeRaw(
+              op.payload as Parameters<typeof createNodeRaw>[0],
+            );
             await remapOptimisticNodeLocally(op.payload.clientRequestId, realId);
             await syncPendingMoveForClientRequestRef.current(
               op.payload.clientRequestId,
@@ -907,7 +962,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             );
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createNodeWithEdgeFromSource") {
-            const realId = await createNodeWithEdgeFromSourceRaw(op.payload);
+            const realId = await createNodeWithEdgeFromSourceRaw(
+              op.payload as Parameters<typeof createNodeWithEdgeFromSourceRaw>[0],
+            );
             await remapOptimisticNodeLocally(op.payload.clientRequestId, realId);
             await syncPendingMoveForClientRequestRef.current(
               op.payload.clientRequestId,
@@ -915,7 +972,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             );
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createNodeWithEdgeToTarget") {
-            const realId = await createNodeWithEdgeToTargetRaw(op.payload);
+            const realId = await createNodeWithEdgeToTargetRaw(
+              op.payload as Parameters<typeof createNodeWithEdgeToTargetRaw>[0],
+            );
             await remapOptimisticNodeLocally(op.payload.clientRequestId, realId);
             await syncPendingMoveForClientRequestRef.current(
               op.payload.clientRequestId,
@@ -923,7 +982,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             );
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createNodeWithEdgeSplit") {
-            const realId = await createNodeWithEdgeSplitRaw(op.payload);
+            const realId = await createNodeWithEdgeSplitRaw(
+              op.payload as Parameters<typeof createNodeWithEdgeSplitRaw>[0],
+            );
             await remapOptimisticNodeLocally(op.payload.clientRequestId, realId);
             await syncPendingMoveForClientRequestRef.current(
               op.payload.clientRequestId,
@@ -1625,6 +1686,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdges,
     runCreateEdgeMutation,
     runRemoveEdgeMutation,
+    validateConnection: (oldEdge, nextConnection) =>
+      validateCanvasConnection(nextConnection, nodes, edges, oldEdge.id),
+    onInvalidConnection: (message) => {
+      toast.warning("Verbindung abgelehnt", message);
+    },
   });
 
   // ─── Convex → Lokaler State Sync ──────────────────────────────
@@ -2262,17 +2328,23 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Neue Verbindung → Convex Edge ────────────────────────────
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (connection.source && connection.target) {
-        void runCreateEdgeMutation({
-          canvasId,
-          sourceNodeId: connection.source as Id<"nodes">,
-          targetNodeId: connection.target as Id<"nodes">,
-          sourceHandle: connection.sourceHandle ?? undefined,
-          targetHandle: connection.targetHandle ?? undefined,
-        });
+      const validationError = validateCanvasConnection(connection, nodes, edges);
+      if (validationError) {
+        toast.warning("Verbindung abgelehnt", validationError);
+        return;
       }
+
+      if (!connection.source || !connection.target) return;
+
+      void runCreateEdgeMutation({
+        canvasId,
+        sourceNodeId: connection.source as Id<"nodes">,
+        targetNodeId: connection.target as Id<"nodes">,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      });
     },
-    [canvasId, runCreateEdgeMutation],
+    [canvasId, edges, nodes, runCreateEdgeMutation],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(
@@ -2477,19 +2549,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       }
 
       // Support both plain type string (sidebar) and JSON payload (browser panels)
-      let nodeType: string;
+      let nodeType: CanvasNodeType | null = null;
       let payloadData: Record<string, unknown> | undefined;
 
       try {
         const parsed = JSON.parse(rawData);
-        if (typeof parsed === "object" && parsed.type) {
-          nodeType = parsed.type;
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          typeof (parsed as { type?: unknown }).type === "string" &&
+          isCanvasNodeType((parsed as { type: string }).type)
+        ) {
+          nodeType = (parsed as { type: CanvasNodeType }).type;
           payloadData = parsed.data;
-        } else {
-          nodeType = rawData;
         }
       } catch {
-        nodeType = rawData;
+        if (isCanvasNodeType(rawData)) {
+          nodeType = rawData;
+        }
+      }
+
+      if (!nodeType) {
+        toast.warning("Node-Typ nicht verfuegbar", "Unbekannter Node konnte nicht erstellt werden.");
+        return;
       }
 
       const position = screenToFlowPosition({
@@ -2526,6 +2608,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
     [
       screenToFlowPosition,
+      t,
       canvasId,
       generateUploadUrl,
       isSyncOnline,

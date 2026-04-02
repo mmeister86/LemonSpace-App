@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 import { Trash2, Copy } from "lucide-react";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { isCanvasNodeType } from "@/lib/canvas-node-types";
 import { NodeErrorBoundary } from "./node-error-boundary";
 
 interface ResizeConfig {
@@ -38,6 +39,11 @@ const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   "ai-image": { minWidth: 200, minHeight: 208, keepAspectRatio: false },
   compare: { minWidth: 300, minHeight: 200 },
   prompt: { minWidth: 260, minHeight: 220 },
+  curves: { minWidth: 240, minHeight: 320 },
+  "color-adjust": { minWidth: 240, minHeight: 360 },
+  "light-adjust": { minWidth: 240, minHeight: 360 },
+  "detail-adjust": { minWidth: 240, minHeight: 360 },
+  render: { minWidth: 260, minHeight: 300, keepAspectRatio: true },
   text: { minWidth: 220, minHeight: 90 },
   note: { minWidth: 200, minHeight: 90 },
 };
@@ -58,6 +64,19 @@ const INTERNAL_FIELDS = new Set([
   "retryCount",
   "url",
   "canvasId",
+  "lastRenderedAt",
+  "lastRenderedHash",
+  "lastRenderWidth",
+  "lastRenderHeight",
+  "lastRenderFormat",
+  "lastRenderMimeType",
+  "lastRenderSizeBytes",
+  "lastRenderQuality",
+  "lastRenderSourceWidth",
+  "lastRenderSourceHeight",
+  "lastRenderWasSizeClamped",
+  "lastRenderError",
+  "lastRenderErrorHash",
 ]);
 
 function NodeToolbarActions({
@@ -128,7 +147,10 @@ function NodeToolbarActions({
 
     // Fire-and-forget: optimistic update makes the duplicate appear instantly
     void createNodeWithIntersection({
-      type: node.type ?? "text",
+      type:
+        typeof node.type === "string" && isCanvasNodeType(node.type)
+          ? node.type
+          : "text",
       position: {
         x: originalPosition.x + 50,
         y: originalPosition.y + 50,
@@ -213,6 +235,7 @@ export default function BaseNodeWrapper({
     analyzing: "border-yellow-400 animate-pulse",
     clarifying: "border-amber-400",
     executing: "border-yellow-400 animate-pulse",
+    rendering: "border-yellow-400 animate-pulse",
     done: "border-green-500",
     error: "border-red-500",
   };

@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 import { requireAuth } from "./helpers";
-import { adjustmentPresetNodeTypeValidator } from "./node-type-validator";
+import { adjustmentPresetNodeTypeValidator } from "./node_type_validator";
 
 export const list = query({
   args: {

@@ -1,7 +1,36 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import { isAdjustmentNodeType } from "../lib/canvas-node-types";
+
+async function assertTargetAllowsIncomingEdge(
+  ctx: MutationCtx,
+  args: {
+    targetNodeId: Id<"nodes">;
+    edgeIdToIgnore?: Id<"edges">;
+  },
+): Promise<void> {
+  const targetNode = await ctx.db.get(args.targetNodeId);
+  if (!targetNode) {
+    throw new Error("Target node not found");
+  }
+  if (!isAdjustmentNodeType(targetNode.type)) {
+    return;
+  }
+
+  const incomingEdges = await ctx.db
+    .query("edges")
+    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId))
+    .collect();
+
+  const existingIncoming = incomingEdges.filter(
+    (edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore,
+  );
+  if (existingIncoming.length >= 1) {
+    throw new Error("Adjustment nodes allow only one incoming edge.");
+  }
+}
 
 // ============================================================================
 // Queries
@@ -88,6 +117,10 @@ export const create = mutation({
     if (args.sourceNodeId === args.targetNodeId) {
       throw new Error("Cannot connect a node to itself");
     }
+
+    await assertTargetAllowsIncomingEdge(ctx, {
+      targetNodeId: args.targetNodeId,
+    });
 
     const edgeId = await ctx.db.insert("edges", {
       canvasId: args.canvasId,

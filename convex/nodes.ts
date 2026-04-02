@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
-import { nodeTypeValidator } from "./node-type-validator";
+import { nodeTypeValidator } from "./node_type_validator";
 
 // ============================================================================
 // Interne Helpers
@@ -60,6 +60,7 @@ const CUSTOM_RENDER_DIMENSION_MAX = 16384;
 const DEFAULT_RENDER_OUTPUT_RESOLUTION = "original" as const;
 const DEFAULT_RENDER_FORMAT = "png" as const;
 const DEFAULT_RENDER_JPEG_QUALITY = 90;
+const ADJUSTMENT_MIN_WIDTH = 240;
 
 type RenderOutputResolution = (typeof RENDER_OUTPUT_RESOLUTIONS)[number];
 type RenderFormat = (typeof RENDER_FORMATS)[number];
@@ -143,6 +144,20 @@ function parseRenderJpegQuality(value: unknown): number {
   return value as number;
 }
 
+function parseOptionalPositiveInteger(fieldName: string, value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1) {
+    throw new Error(`Render data '${fieldName}' must be a positive integer.`);
+  }
+  return value as number;
+}
+
+function parseOptionalNonNegativeInteger(fieldName: string, value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new Error(`Render data '${fieldName}' must be a non-negative integer.`);
+  }
+  return value as number;
+}
+
 function normalizeRenderData(data: unknown): Record<string, unknown> {
   if (!isRecord(data)) {
     throw new Error("Render node data must be an object.");
@@ -172,6 +187,151 @@ function normalizeRenderData(data: unknown): Record<string, unknown> {
       throw new Error("Render data 'lastRenderedAt' must be a finite number.");
     }
     normalized.lastRenderedAt = data.lastRenderedAt;
+  }
+
+  if (data.lastRenderedHash !== undefined) {
+    if (typeof data.lastRenderedHash !== "string" || data.lastRenderedHash.length === 0) {
+      throw new Error("Render data 'lastRenderedHash' must be a non-empty string when provided.");
+    }
+    normalized.lastRenderedHash = data.lastRenderedHash;
+  }
+
+  if (data.lastRenderWidth !== undefined) {
+    normalized.lastRenderWidth = parseOptionalPositiveInteger("lastRenderWidth", data.lastRenderWidth);
+  }
+
+  if (data.lastRenderHeight !== undefined) {
+    normalized.lastRenderHeight = parseOptionalPositiveInteger("lastRenderHeight", data.lastRenderHeight);
+  }
+
+  if (data.lastRenderFormat !== undefined) {
+    normalized.lastRenderFormat = parseRenderFormat(data.lastRenderFormat);
+  }
+
+  if (data.lastRenderMimeType !== undefined) {
+    if (typeof data.lastRenderMimeType !== "string" || data.lastRenderMimeType.length === 0) {
+      throw new Error("Render data 'lastRenderMimeType' must be a non-empty string when provided.");
+    }
+    normalized.lastRenderMimeType = data.lastRenderMimeType;
+  }
+
+  if (data.lastRenderSizeBytes !== undefined) {
+    normalized.lastRenderSizeBytes = parseOptionalNonNegativeInteger(
+      "lastRenderSizeBytes",
+      data.lastRenderSizeBytes,
+    );
+  }
+
+  if (data.lastRenderQuality !== undefined) {
+    if (data.lastRenderQuality !== null) {
+      if (
+        typeof data.lastRenderQuality !== "number" ||
+        !Number.isFinite(data.lastRenderQuality) ||
+        data.lastRenderQuality < 0 ||
+        data.lastRenderQuality > 1
+      ) {
+        throw new Error("Render data 'lastRenderQuality' must be null or a number between 0 and 1.");
+      }
+    }
+    normalized.lastRenderQuality = data.lastRenderQuality;
+  }
+
+  if (data.lastRenderSourceWidth !== undefined) {
+    normalized.lastRenderSourceWidth = parseOptionalPositiveInteger(
+      "lastRenderSourceWidth",
+      data.lastRenderSourceWidth,
+    );
+  }
+
+  if (data.lastRenderSourceHeight !== undefined) {
+    normalized.lastRenderSourceHeight = parseOptionalPositiveInteger(
+      "lastRenderSourceHeight",
+      data.lastRenderSourceHeight,
+    );
+  }
+
+  if (data.lastRenderWasSizeClamped !== undefined) {
+    if (typeof data.lastRenderWasSizeClamped !== "boolean") {
+      throw new Error("Render data 'lastRenderWasSizeClamped' must be a boolean when provided.");
+    }
+    normalized.lastRenderWasSizeClamped = data.lastRenderWasSizeClamped;
+  }
+
+  if (data.lastRenderError !== undefined) {
+    if (typeof data.lastRenderError !== "string" || data.lastRenderError.length === 0) {
+      throw new Error("Render data 'lastRenderError' must be a non-empty string when provided.");
+    }
+    normalized.lastRenderError = data.lastRenderError;
+  }
+
+  if (data.lastRenderErrorHash !== undefined) {
+    if (typeof data.lastRenderErrorHash !== "string" || data.lastRenderErrorHash.length === 0) {
+      throw new Error("Render data 'lastRenderErrorHash' must be a non-empty string when provided.");
+    }
+    normalized.lastRenderErrorHash = data.lastRenderErrorHash;
+  }
+
+  if (data.lastUploadedAt !== undefined) {
+    if (typeof data.lastUploadedAt !== "number" || !Number.isFinite(data.lastUploadedAt)) {
+      throw new Error("Render data 'lastUploadedAt' must be a finite number.");
+    }
+    normalized.lastUploadedAt = data.lastUploadedAt;
+  }
+
+  if (data.lastUploadedHash !== undefined) {
+    if (typeof data.lastUploadedHash !== "string" || data.lastUploadedHash.length === 0) {
+      throw new Error("Render data 'lastUploadedHash' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadedHash = data.lastUploadedHash;
+  }
+
+  if (data.lastUploadStorageId !== undefined) {
+    if (typeof data.lastUploadStorageId !== "string" || data.lastUploadStorageId.length === 0) {
+      throw new Error("Render data 'lastUploadStorageId' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadStorageId = data.lastUploadStorageId;
+  }
+
+  if (data.lastUploadUrl !== undefined) {
+    if (typeof data.lastUploadUrl !== "string" || data.lastUploadUrl.length === 0) {
+      throw new Error("Render data 'lastUploadUrl' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadUrl = data.lastUploadUrl;
+  }
+
+  if (data.lastUploadMimeType !== undefined) {
+    if (typeof data.lastUploadMimeType !== "string" || data.lastUploadMimeType.length === 0) {
+      throw new Error("Render data 'lastUploadMimeType' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadMimeType = data.lastUploadMimeType;
+  }
+
+  if (data.lastUploadSizeBytes !== undefined) {
+    normalized.lastUploadSizeBytes = parseOptionalNonNegativeInteger(
+      "lastUploadSizeBytes",
+      data.lastUploadSizeBytes,
+    );
+  }
+
+  if (data.lastUploadFilename !== undefined) {
+    if (typeof data.lastUploadFilename !== "string" || data.lastUploadFilename.length === 0) {
+      throw new Error("Render data 'lastUploadFilename' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadFilename = data.lastUploadFilename;
+  }
+
+  if (data.lastUploadError !== undefined) {
+    if (typeof data.lastUploadError !== "string" || data.lastUploadError.length === 0) {
+      throw new Error("Render data 'lastUploadError' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadError = data.lastUploadError;
+  }
+
+  if (data.lastUploadErrorHash !== undefined) {
+    if (typeof data.lastUploadErrorHash !== "string" || data.lastUploadErrorHash.length === 0) {
+      throw new Error("Render data 'lastUploadErrorHash' must be a non-empty string when provided.");
+    }
+    normalized.lastUploadErrorHash = data.lastUploadErrorHash;
   }
 
   if (data.storageId !== undefined) {
@@ -209,6 +369,32 @@ function normalizeNodeDataForWrite(
 
   assertNoAdjustmentImagePayload(nodeType, data);
   return data;
+}
+
+async function assertTargetAllowsIncomingEdge(
+  ctx: MutationCtx,
+  args: {
+    targetNodeId: Id<"nodes">;
+    edgeIdToIgnore?: Id<"edges">;
+  },
+): Promise<void> {
+  const targetNode = await ctx.db.get(args.targetNodeId);
+  if (!targetNode) {
+    throw new Error("Target node not found");
+  }
+
+  if (!isAdjustmentNodeType(targetNode.type)) {
+    return;
+  }
+
+  const incomingEdges = await ctx.db
+    .query("edges")
+    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId))
+    .collect();
+  const existingIncoming = incomingEdges.filter((edge) => edge._id !== args.edgeIdToIgnore);
+  if (existingIncoming.length >= 1) {
+    throw new Error("Adjustment nodes allow only one incoming edge.");
+  }
 }
 
 async function getIdempotentNodeCreateResult(
@@ -577,6 +763,11 @@ export const splitEdgeAtExistingNode = mutation({
       targetHandle: args.newNodeTargetHandle,
     });
 
+    await assertTargetAllowsIncomingEdge(ctx, {
+      targetNodeId: edge.targetNodeId,
+      edgeIdToIgnore: args.splitEdgeId,
+    });
+
     await ctx.db.insert("edges", {
       canvasId: args.canvasId,
       sourceNodeId: args.middleNodeId,
@@ -733,6 +924,10 @@ export const createWithEdgeToTarget = mutation({
       zIndex: args.zIndex,
     });
 
+    await assertTargetAllowsIncomingEdge(ctx, {
+      targetNodeId: args.targetNodeId,
+    });
+
     await ctx.db.insert("edges", {
       canvasId: args.canvasId,
       sourceNodeId: nodeId,
@@ -789,7 +984,11 @@ export const resize = mutation({
     if (!node) return;
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
-    await ctx.db.patch(nodeId, { width, height });
+    const clampedWidth =
+      isAdjustmentNodeType(node.type) && width < ADJUSTMENT_MIN_WIDTH
+        ? ADJUSTMENT_MIN_WIDTH
+        : width;
+    await ctx.db.patch(nodeId, { width: clampedWidth, height });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });

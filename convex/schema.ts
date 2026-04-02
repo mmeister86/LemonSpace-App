@@ -6,7 +6,7 @@ import {
   adjustmentPresetNodeTypeValidator,
   nodeTypeValidator,
   phase1NodeTypeValidator,
-} from "./node-type-validator";
+} from "./node_type_validator";
 
 // ============================================================================
 // Node Types

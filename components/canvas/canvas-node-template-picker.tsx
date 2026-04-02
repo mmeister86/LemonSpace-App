@@ -3,11 +3,15 @@
 import {
   FolderOpen,
   Frame,
+  Focus,
   GitCompare,
+  ImageDown,
   Image,
   Package,
+  Palette,
   Sparkles,
   StickyNote,
+  Sun,
   Type,
   Video,
   type LucideIcon,
@@ -29,6 +33,11 @@ const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
   group: FolderOpen,
   asset: Package,
   video: Video,
+  curves: Sparkles,
+  "color-adjust": Palette,
+  "light-adjust": Sun,
+  "detail-adjust": Focus,
+  render: ImageDown,
 };
 
 const NODE_SEARCH_KEYWORDS: Partial<
@@ -43,6 +52,11 @@ const NODE_SEARCH_KEYWORDS: Partial<
   group: ["group", "gruppe", "folder"],
   asset: ["asset", "freepik", "stock"],
   video: ["video", "pexels", "clip"],
+  curves: ["curves", "tone", "contrast"],
+  "color-adjust": ["color", "hue", "saturation"],
+  "light-adjust": ["light", "exposure", "brightness"],
+  "detail-adjust": ["detail", "sharp", "grain"],
+  render: ["render", "export", "download"],
 };
 
 export type CanvasNodeTemplatePickerProps = {

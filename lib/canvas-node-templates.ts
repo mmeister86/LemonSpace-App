@@ -62,6 +62,45 @@ export const CANVAS_NODE_TEMPLATES = [
     height: 180,
     defaultData: {},
   },
+  {
+    type: "curves",
+    label: "Kurven",
+    width: 280,
+    height: 460,
+    defaultData: {},
+  },
+  {
+    type: "color-adjust",
+    label: "Farbe",
+    width: 280,
+    height: 560,
+    defaultData: {},
+  },
+  {
+    type: "light-adjust",
+    label: "Licht",
+    width: 280,
+    height: 620,
+    defaultData: {},
+  },
+  {
+    type: "detail-adjust",
+    label: "Detail",
+    width: 280,
+    height: 620,
+    defaultData: {},
+  },
+  {
+    type: "render",
+    label: "Render",
+    width: 300,
+    height: 420,
+    defaultData: {
+      outputResolution: "original",
+      format: "png",
+      jpegQuality: 90,
+    },
+  },
 ] as const;
 
 export type CanvasNodeTemplate = (typeof CANVAS_NODE_TEMPLATES)[number];

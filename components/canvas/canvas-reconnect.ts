@@ -18,6 +18,11 @@ type UseCanvasReconnectHandlersParams = {
     targetHandle?: string;
   }) => Promise<unknown>;
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
+  validateConnection?: (
+    oldEdge: RFEdge,
+    newConnection: Connection,
+  ) => string | null;
+  onInvalidConnection?: (message: string) => void;
 };
 
 export function useCanvasReconnectHandlers({
@@ -27,6 +32,8 @@ export function useCanvasReconnectHandlers({
   setEdges,
   runCreateEdgeMutation,
   runRemoveEdgeMutation,
+  validateConnection,
+  onInvalidConnection,
 }: UseCanvasReconnectHandlersParams): {
   onReconnectStart: () => void;
   onReconnect: (oldEdge: RFEdge, newConnection: Connection) => void;
@@ -45,11 +52,19 @@ export function useCanvasReconnectHandlers({
 
   const onReconnect = useCallback(
     (oldEdge: RFEdge, newConnection: Connection) => {
+      const validationError = validateConnection?.(oldEdge, newConnection) ?? null;
+      if (validationError) {
+        edgeReconnectSuccessful.current = true;
+        pendingReconnectRef.current = null;
+        onInvalidConnection?.(validationError);
+        return;
+      }
+
       edgeReconnectSuccessful.current = true;
       pendingReconnectRef.current = { oldEdge, newConnection };
       setEdges((currentEdges) => reconnectEdge(oldEdge, newConnection, currentEdges));
     },
-    [edgeReconnectSuccessful, setEdges],
+    [edgeReconnectSuccessful, onInvalidConnection, setEdges, validateConnection],
   );
 
   const onReconnectEnd = useCallback(

@@ -6,6 +6,12 @@ import {
   type Edge as RFEdge,
 } from "@xyflow/react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import {
+  DEFAULT_COLOR_ADJUST_DATA,
+  DEFAULT_CURVES_DATA,
+  DEFAULT_DETAIL_ADJUST_DATA,
+  DEFAULT_LIGHT_ADJUST_DATA,
+} from "@/lib/image-pipeline/adjustment-types";
 
 /**
  * Convex Node → React Flow Node
@@ -105,6 +111,11 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   group: [100, 116, 139],
   frame: [249, 115, 22],
   compare: [100, 116, 139],
+  curves: [16, 185, 129],
+  "color-adjust": [6, 182, 212],
+  "light-adjust": [245, 158, 11],
+  "detail-adjust": [99, 102, 241],
+  render: [14, 165, 233],
 };
 
 /** Compare: Ziel-Handles blau/smaragd, Quelle compare-out grau (wie in compare-node.tsx). */
@@ -204,6 +215,11 @@ export const NODE_HANDLE_MAP: Record<
   compare: { source: "compare-out", target: "left" },
   asset: { source: undefined, target: undefined },
   video: { source: undefined, target: undefined },
+  curves: { source: undefined, target: undefined },
+  "color-adjust": { source: undefined, target: undefined },
+  "light-adjust": { source: undefined, target: undefined },
+  "detail-adjust": { source: undefined, target: undefined },
+  render: { source: undefined, target: undefined },
 };
 
 /**
@@ -228,6 +244,15 @@ export const NODE_DEFAULTS: Record<
   compare: { width: 500, height: 380, data: {} },
   asset: { width: 260, height: 240, data: {} },
   video: { width: 320, height: 180, data: {} },
+  curves: { width: 280, height: 460, data: DEFAULT_CURVES_DATA },
+  "color-adjust": { width: 280, height: 560, data: DEFAULT_COLOR_ADJUST_DATA },
+  "light-adjust": { width: 280, height: 620, data: DEFAULT_LIGHT_ADJUST_DATA },
+  "detail-adjust": { width: 280, height: 620, data: DEFAULT_DETAIL_ADJUST_DATA },
+  render: {
+    width: 300,
+    height: 420,
+    data: { outputResolution: "original", format: "png", jpegQuality: 90 },
+  },
 };
 
 type MediaNodeKind = "asset" | "image";
