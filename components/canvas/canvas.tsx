@@ -157,6 +157,47 @@ function isLikelyTransientSyncError(error: unknown): boolean {
   );
 }
 
+function summarizeUpdateDataPayload(payload: unknown): Record<string, unknown> {
+  if (typeof payload !== "object" || payload === null) {
+    return { payloadShape: "invalid" };
+  }
+
+  const p = payload as { nodeId?: unknown; data?: unknown };
+  const data =
+    typeof p.data === "object" && p.data !== null
+      ? (p.data as Record<string, unknown>)
+      : null;
+
+  return {
+    nodeId: typeof p.nodeId === "string" ? p.nodeId : null,
+    hasData: Boolean(data),
+    hasStorageId: typeof data?.storageId === "string" && data.storageId.length > 0,
+    hasLastUploadStorageId:
+      typeof data?.lastUploadStorageId === "string" &&
+      data.lastUploadStorageId.length > 0,
+    hasUrl: typeof data?.url === "string" && data.url.length > 0,
+    hasLastUploadUrl:
+      typeof data?.lastUploadUrl === "string" && data.lastUploadUrl.length > 0,
+    lastUploadedAt:
+      typeof data?.lastUploadedAt === "number" && Number.isFinite(data.lastUploadedAt)
+        ? data.lastUploadedAt
+        : null,
+  };
+}
+
+function summarizeResizePayload(payload: unknown): Record<string, unknown> {
+  if (typeof payload !== "object" || payload === null) {
+    return { payloadShape: "invalid" };
+  }
+
+  const p = payload as { nodeId?: unknown; width?: unknown; height?: unknown };
+  return {
+    nodeId: typeof p.nodeId === "string" ? p.nodeId : null,
+    width: typeof p.width === "number" && Number.isFinite(p.width) ? p.width : null,
+    height: typeof p.height === "number" && Number.isFinite(p.height) ? p.height : null,
+  };
+}
+
 function hasStorageId(node: Doc<"nodes">): boolean {
   const data = node.data as Record<string, unknown> | undefined;
   return typeof data?.storageId === "string" && data.storageId.length > 0;
@@ -1003,9 +1044,35 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           } else if (op.type === "moveNode") {
             await moveNode(op.payload);
           } else if (op.type === "resizeNode") {
+            if (process.env.NODE_ENV !== "production") {
+              console.info("[Canvas sync debug] resizeNode enqueue->flush", {
+                opId: op.id,
+                attemptCount: op.attemptCount,
+                ...summarizeResizePayload(op.payload),
+              });
+            }
             await resizeNode(op.payload);
+            if (process.env.NODE_ENV !== "production") {
+              console.info("[Canvas sync debug] resizeNode flush success", {
+                opId: op.id,
+                ...summarizeResizePayload(op.payload),
+              });
+            }
           } else if (op.type === "updateData") {
+            if (process.env.NODE_ENV !== "production") {
+              console.info("[Canvas sync debug] updateData enqueue->flush", {
+                opId: op.id,
+                attemptCount: op.attemptCount,
+                ...summarizeUpdateDataPayload(op.payload),
+              });
+            }
             await updateNodeData(op.payload);
+            if (process.env.NODE_ENV !== "production") {
+              console.info("[Canvas sync debug] updateData flush success", {
+                opId: op.id,
+                ...summarizeUpdateDataPayload(op.payload),
+              });
+            }
           }
 
           await ackCanvasSyncOp(op.id);
@@ -1013,6 +1080,24 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         } catch (error: unknown) {
           const transient =
             !isSyncOnline || isLikelyTransientSyncError(error);
+          if (op.type === "updateData" && process.env.NODE_ENV !== "production") {
+            console.warn("[Canvas sync debug] updateData flush failed", {
+              opId: op.id,
+              attemptCount: op.attemptCount,
+              transient,
+              error: getErrorMessage(error),
+              ...summarizeUpdateDataPayload(op.payload),
+            });
+          }
+          if (op.type === "resizeNode" && process.env.NODE_ENV !== "production") {
+            console.warn("[Canvas sync debug] resizeNode flush failed", {
+              opId: op.id,
+              attemptCount: op.attemptCount,
+              transient,
+              error: getErrorMessage(error),
+              ...summarizeResizePayload(op.payload),
+            });
+          }
           if (transient) {
             const backoffMs = Math.min(30_000, 1000 * 2 ** Math.min(op.attemptCount, 5));
             await markCanvasSyncOpFailed(op.id, {

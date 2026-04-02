@@ -79,6 +79,19 @@ export type PendingEdgeSplit = {
   positionY: number;
 };
 
+function resolveStorageFallbackUrl(storageId: string): string | undefined {
+  const convexBaseUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!convexBaseUrl) {
+    return undefined;
+  }
+
+  try {
+    return new URL(`/api/storage/${storageId}`, convexBaseUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
   let hasNodeUpdates = false;
@@ -97,12 +110,25 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
       if (!source) continue;
 
       const srcData = source.data as { url?: string; label?: string };
+      const sourceDataRecord = source.data as Record<string, unknown>;
+      const storageIdCandidate =
+        typeof sourceDataRecord.storageId === "string"
+          ? sourceDataRecord.storageId
+          : typeof sourceDataRecord.lastUploadStorageId === "string"
+            ? sourceDataRecord.lastUploadStorageId
+            : undefined;
+      const hasSourceUrl = typeof srcData.url === "string" && srcData.url.length > 0;
+      const storageFallbackUrl =
+        !hasSourceUrl && storageIdCandidate
+          ? resolveStorageFallbackUrl(storageIdCandidate)
+          : undefined;
+      const resolvedSourceUrl = srcData.url ?? storageFallbackUrl;
 
       if (edge.targetHandle === "left") {
-        leftUrl = srcData.url;
+        leftUrl = resolvedSourceUrl;
         leftLabel = srcData.label ?? source.type ?? "Before";
       } else if (edge.targetHandle === "right") {
-        rightUrl = srcData.url;
+        rightUrl = resolvedSourceUrl;
         rightLabel = srcData.label ?? source.type ?? "After";
       }
     }
