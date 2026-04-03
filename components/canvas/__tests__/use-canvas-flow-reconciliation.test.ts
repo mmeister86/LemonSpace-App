@@ -39,6 +39,7 @@ type HarnessProps = {
   previousConvexNodeIdsSnapshot: Set<string>;
   pendingLocalPositionPins?: Map<string, { x: number; y: number }>;
   preferLocalPositionNodeIds?: Set<string>;
+  isResizingRefOverride?: { current: boolean };
 };
 
 const latestStateRef: {
@@ -81,7 +82,8 @@ function HookHarness(props: HarnessProps) {
     props.preferLocalPositionNodeIds ?? new Set<string>(),
   );
   const isDraggingRef = useRef(props.isDragging);
-  const isResizingRef = useRef(props.isResizing);
+  const internalIsResizingRef = useRef(props.isResizing);
+  const isResizingRef = props.isResizingRefOverride ?? internalIsResizingRef;
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -93,8 +95,8 @@ function HookHarness(props: HarnessProps) {
 
   useEffect(() => {
     isDraggingRef.current = props.isDragging;
-    isResizingRef.current = props.isResizing;
-  }, [props.isDragging, props.isResizing]);
+    internalIsResizingRef.current = props.isResizing;
+  }, [props.isDragging, props.isResizing, internalIsResizingRef]);
 
   useCanvasFlowReconciliation({
     convexNodes: props.convexNodes,
@@ -285,5 +287,106 @@ describe("useCanvasFlowReconciliation", () => {
         dragging: true,
       },
     ]);
+  });
+
+  it("keeps local nodes unchanged while resize-lock is active", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const sharedIsResizingRef = { current: false };
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [
+            {
+              id: "node-1",
+              type: "image",
+              position: { x: 320, y: 180 },
+              width: 640,
+              height: 360,
+              data: { label: "local" },
+            },
+          ],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-1"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "image",
+              positionX: 320,
+              positionY: 180,
+              width: 640,
+              height: 360,
+              data: { label: "local" },
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: false,
+          isResizingRefOverride: sharedIsResizingRef,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-1"]),
+        }),
+      );
+    });
+
+    const nodesBeforeResize = latestStateRef.current?.nodes;
+
+    sharedIsResizingRef.current = true;
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [
+            {
+              id: "node-1",
+              type: "image",
+              position: { x: 320, y: 180 },
+              width: 640,
+              height: 360,
+              data: { label: "local" },
+            },
+          ],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-1"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "image",
+              positionX: 20,
+              positionY: 40,
+              width: 280,
+              height: 200,
+              data: { label: "server" },
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: true,
+          isResizingRefOverride: sharedIsResizingRef,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-1"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes).toBe(nodesBeforeResize);
+    expect(latestStateRef.current?.nodes[0]).toMatchObject({
+      id: "node-1",
+      type: "image",
+      position: { x: 320, y: 180 },
+      width: 640,
+      height: 360,
+      data: { label: "local" },
+    });
   });
 });
