@@ -258,6 +258,22 @@ export default defineSchema({
     .index("by_polar", ["polarSubscriptionId"])
     .index("by_lemon_squeezy", ["lemonSqueezySubscriptionId"]),
 
+  webhookIdempotencyEvents: defineTable({
+    provider: v.union(v.literal("polar")),
+    scope: v.union(
+      v.literal("topup_paid"),
+      v.literal("subscription_activated_cycle"),
+      v.literal("subscription_revoked")
+    ),
+    idempotencyKey: v.string(),
+    userId: v.string(),
+    polarOrderId: v.optional(v.string()),
+    polarSubscriptionId: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_provider_key", ["provider", "idempotencyKey"])
+    .index("by_user", ["userId"]),
+
   // ==========================================================================
   // Abuse Prevention
   // ==========================================================================
