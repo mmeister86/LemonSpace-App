@@ -34,21 +34,40 @@ function SentryAuthUserSync() {
   return null;
 }
 
-export function Providers({
-  children,
-  initialToken,
-  locale,
-  messages,
-  timeZone,
-}: {
+type RootProvidersProps = {
   children: ReactNode;
-  initialToken?: string | null;
   locale?: string;
   messages?: AbstractIntlMessages;
   timeZone?: string;
-}) {
+};
+
+type AppProvidersProps = {
+  children: ReactNode;
+  initialToken?: string | null;
+};
+
+function AuthUiShell({ children }: { children: ReactNode }) {
   const router = useRouter();
 
+  return (
+    <AuthUIProvider
+      authClient={authClient}
+      navigate={router.push}
+      replace={router.replace}
+      onSessionChange={() => router.refresh()}
+      Link={Link}
+    >
+      {children}
+    </AuthUIProvider>
+  );
+}
+
+export function RootProviders({
+  children,
+  locale,
+  messages,
+  timeZone,
+}: RootProvidersProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <NextIntlClientProvider
@@ -56,30 +75,34 @@ export function Providers({
         messages={messages}
         timeZone={timeZone}
       >
-        <ConvexBetterAuthProvider
-          client={convex}
-          authClient={authClient}
-          initialToken={initialToken}
-        >
-          <SentryAuthUserSync />
-          <AuthUIProvider
-            authClient={authClient}
-            navigate={router.push}
-            replace={router.replace}
-            onSessionChange={() => router.refresh()}
-            Link={Link}
-          >
-            {children}
-            <GooeyToaster
-              position="bottom-right"
-              theme="dark"
-              visibleToasts={4}
-              maxQueue={8}
-              queueOverflow="drop-oldest"
-            />
-          </AuthUIProvider>
-        </ConvexBetterAuthProvider>
+        {children}
       </NextIntlClientProvider>
     </ThemeProvider>
   );
+}
+
+export function AppProviders({ children, initialToken }: AppProvidersProps) {
+  return (
+    <ConvexBetterAuthProvider
+      client={convex}
+      authClient={authClient}
+      initialToken={initialToken}
+    >
+      <SentryAuthUserSync />
+      <AuthUiShell>
+        {children}
+        <GooeyToaster
+          position="bottom-right"
+          theme="dark"
+          visibleToasts={4}
+          maxQueue={8}
+          queueOverflow="drop-oldest"
+        />
+      </AuthUiShell>
+    </ConvexBetterAuthProvider>
+  );
+}
+
+export function AuthViewProviders({ children }: { children: ReactNode }) {
+  return <AuthUiShell>{children}</AuthUiShell>;
 }

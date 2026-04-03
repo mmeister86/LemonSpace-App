@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Manrope } from "next/font/google";
-import * as Sentry from "@sentry/nextjs";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import { Providers } from "@/components/providers";
-import { InitUser } from "@/components/init-user";
-import { getAuthUser, getToken } from "@/lib/auth-server";
+import { RootProviders } from "@/components/providers";
 import { getLocale, getMessages, getTimeZone } from "next-intl/server";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -47,20 +44,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const initialToken = await getToken();
   const locale = await getLocale();
   const messages = await getMessages();
   const timeZone = await getTimeZone();
-  const user = await getAuthUser();
-  if (user) {
-    const id = user.userId ?? String(user._id);
-    Sentry.setUser({
-      id,
-      email: user.email ?? undefined,
-    });
-  } else {
-    Sentry.setUser(null);
-  }
 
   return (
     <html
@@ -74,15 +60,9 @@ export default async function RootLayout({
           data-site-id="bb1ac546eda7"
           strategy="afterInteractive"
         />
-        <Providers
-          initialToken={initialToken}
-          locale={locale}
-          messages={messages}
-          timeZone={timeZone}
-        >
-          <InitUser />
+        <RootProviders locale={locale} messages={messages} timeZone={timeZone}>
           {children}
-        </Providers>
+        </RootProviders>
       </body>
     </html>
   );
