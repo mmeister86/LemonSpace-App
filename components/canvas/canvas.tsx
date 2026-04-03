@@ -100,7 +100,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
   const edgesRef = useRef(edges);
-  edgesRef.current = edges;
   const deletingNodeIds = useRef<Set<string>>(new Set());
 
   const {
@@ -148,7 +147,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   // ─── Future hook seam: render composition + shared local flow state ─────
   const nodesRef = useRef<RFNode[]>(nodes);
-  nodesRef.current = nodes;
 
   const [scissorsMode, setScissorsMode] = useState(false);
   const [scissorStrokePreview, setScissorStrokePreview] = useState<
@@ -237,7 +235,18 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   }, [scissorsMode, navTool]);
 
   const scissorsModeRef = useRef(scissorsMode);
-  scissorsModeRef.current = scissorsMode;
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    scissorsModeRef.current = scissorsMode;
+  }, [scissorsMode]);
 
   // Drag-Lock: während des Drags kein Convex-Override
   const isDragging = useRef(false);
@@ -326,7 +335,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   useEffect(() => {
     if (isDragging.current) return;
-    setNodes((nds) => withResolvedCompareData(nds, edges));
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setNodes((nds) => withResolvedCompareData(nds, edges));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [edges]);
 
   const {

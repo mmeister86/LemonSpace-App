@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 import { CANVAS_NODE_DND_MIME } from "@/lib/canvas-connection-policy";
 import { NODE_DEFAULTS } from "@/lib/canvas-utils";
+import { toast } from "@/lib/toast";
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
 
 vi.mock("@/lib/toast", () => ({
@@ -66,8 +67,10 @@ function HookHarness({
 describe("useCanvasDrop", () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: true,
       json: async () => ({ storageId: "storage-1" }),
@@ -80,6 +83,7 @@ describe("useCanvasDrop", () => {
   afterEach(async () => {
     latestHandlersRef.current = null;
     vi.clearAllMocks();
+    consoleErrorSpy.mockRestore();
     vi.unstubAllGlobals();
     if (root) {
       await act(async () => {
@@ -197,5 +201,111 @@ describe("useCanvasDrop", () => {
       "req-1",
       "node-image",
     );
+  });
+
+  it("creates a node from a JSON payload drop", async () => {
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-video");
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 90,
+        clientY: 75,
+        dataTransfer: {
+          getData: vi.fn((type: string) =>
+            type === CANVAS_NODE_DND_MIME
+              ? JSON.stringify({
+                  type: "video",
+                  data: {
+                    assetId: "asset-42",
+                    label: "Clip",
+                  },
+                })
+              : "",
+          ),
+          files: [],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      type: "video",
+      positionX: 90,
+      positionY: 75,
+      width: NODE_DEFAULTS.video.width,
+      height: NODE_DEFAULTS.video.height,
+      data: {
+        ...NODE_DEFAULTS.video.data,
+        assetId: "asset-42",
+        label: "Clip",
+        canvasId: "canvas-1",
+      },
+      clientRequestId: "req-1",
+    });
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-video");
+  });
+
+  it("shows an upload failure toast when the dropped file upload fails", async () => {
+    const generateUploadUrl = vi.fn(async () => "https://upload.test");
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+    const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        json: async () => ({ storageId: "storage-1" }),
+      })),
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          generateUploadUrl={generateUploadUrl}
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 240,
+        clientY: 180,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(runCreateNodeOnlineOnly).not.toHaveBeenCalled();
+    expect(syncPendingMoveForClientRequest).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Failed to upload dropped file:",
+      expect.any(Error),
+    );
+    expect(toast.error).toHaveBeenCalledWith("canvas.uploadFailed", "Upload failed");
   });
 });
