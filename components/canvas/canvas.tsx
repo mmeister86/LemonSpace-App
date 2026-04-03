@@ -255,53 +255,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     canvasId,
   });
 
-  /**
-   * Future modularization seams for this orchestrator:
-   * - `useCanvasSyncEngine`: Convex mutations (`moveNode`, `resizeNode`, `updateNodeData`,
-   *   `generateUploadUrl`, `createNode*`, `createEdge`, `batchRemoveNodesRaw`, `removeEdgeRaw`,
-   *   `splitEdgeAtExistingNodeRaw`), online/offline state (`pendingSyncCount`, `isSyncing`,
-   *   `isBrowserOnline`), optimistic sync refs (`pendingMoveAfterCreateRef`,
-   *   `pendingResizeAfterCreateRef`, `pendingDataAfterCreateRef`,
-   *   `pendingCreatePromiseByClientRequestRef`, `pendingDeleteAfterCreateClientRequestIdsRef`),
-   *   optimistic helpers (`trackPendingNodeCreate`, `addOptimisticNodeLocally`,
-   *   `addOptimisticEdgeLocally`, `applyEdgeSplitLocally`, `removeOptimisticCreateLocally`,
-   *   `remapOptimisticNodeLocally`), queue orchestration (`refreshPendingSyncCount`,
-   *   `flushCanvasSyncQueue`, `enqueueSyncMutation`, `runMoveNodeMutation`,
-   *   `runBatchMoveNodesMutation`, `flushPendingResizeForClientRequest`,
-   *   `flushPendingDataForClientRequest`, `runResizeNodeMutation`,
-   *   `runUpdateNodeDataMutation`, `runBatchRemoveNodesMutation`, `runCreateEdgeMutation`,
-   *   `runRemoveEdgeMutation`, `runSplitEdgeAtExistingNodeMutation`,
-   *   `runCreateNodeOnlineOnly`, `runCreateNodeWithEdgeFromSourceOnlineOnly`,
-   *   `runCreateNodeWithEdgeToTargetOnlineOnly`, `runCreateNodeWithEdgeSplitOnlineOnly`,
-   *   `syncPendingMoveForClientRequest`), and offline/upload guardrails (`notifyOfflineUnsupported`).
-   * - `useCanvasFlowReconciliation`: Convex -> RF `useLayoutEffect` sync for edges/nodes, compare
-   *   data refresh effect, and edge carry triggers (`edgeSyncNonce`).
-   * - `useCanvasNodeInteractions`: local flow state (`nodes`, `edges`, `nodesRef`, `edgesRef`),
-   *   resize/drag/delete locks (`isDragging`, `isResizing`, `deletingNodeIds`), highlighted edge
-   *   refs (`overlappedEdgeRef`, `highlightedEdgeRef`, `highlightedEdgeOriginalStyleRef`), and
-   *   callbacks (`onNodesChange`, `onEdgesChange`, `setHighlightedIntersectionEdge`,
-   *   `onNodeDragStart`, `onNodeDrag`, `onNodeDragStop`, `onFlowError`).
-   * - `useCanvasConnections`: connection creation callbacks (`onConnect`, `onConnectEnd`,
-   *   `handleConnectionDropPick`), connection-drop state (`connectionDropMenu`,
-   *   `connectionDropMenuRef`), and reconnect adapter wiring.
-   * - `useCanvasDrop`: DnD handlers (`onDragOver`, `onDrop`) for node payload parsing, upload flow,
-   *   and drop-based node creation.
-   * - Render composition: `assetBrowserTargetApi`, nav/scissor UI state (`scissorsMode`,
-   *   `scissorStrokePreview`, `navTool`, `handleNavToolChange`, `flowPanOnDrag`,
-   *   `flowSelectionOnDrag`), `canvasSyncContextValue`, loading gate, provider wiring, and final
-   *   `ReactFlow` prop assembly.
-   *
-   * Shared orchestrator refs that must stay above extracted hooks:
-   * - React Flow instance access: `screenToFlowPosition` from `useReactFlow()`.
-   * - Optimistic ID handoff / carry-over: `resolvedRealIdByClientRequestRef`,
-   *   `pendingConnectionCreatesRef`, `pendingEdgeSplitByClientRequestRef`,
-   *   `pendingLocalPositionUntilConvexMatchesRef`, `preferLocalPositionNodeIdsRef`,
-   *   `convexNodeIdsSnapshotForEdgeCarryRef`, and `enqueueSyncMutationRef` /
-   *   `syncPendingMoveForClientRequestRef` for cross-hook handshakes.
-   * - Canvas-wide node targeting that must survive optimistic -> real remaps:
-   *   `assetBrowserTargetNodeId`.
-   */
-
   // ─── Future hook seam: sync engine ────────────────────────────
   // Convex mutations (exakte Signaturen aus nodes.ts / edges.ts)
   const moveNode = useMutation(api.nodes.move);
@@ -309,8 +262,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const updateNodeData = useMutation(api.nodes.updateData);
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const connectionState = useConvexConnectionState();
-  // Cross-cutting optimistic handoff refs stay orchestrator-owned while sync,
-  // reconciliation, connection, and drop logic still meet in this file.
   const pendingMoveAfterCreateRef = useRef(
     new Map<string, { positionX: number; positionY: number }>(),
   );
