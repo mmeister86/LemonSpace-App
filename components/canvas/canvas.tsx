@@ -376,11 +376,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       zIndex: args.zIndex,
     };
 
+    const sourceNode = nodeList.find((node) => node._id === args.sourceNodeId);
+    if (!sourceNode) return;
+
     const syntheticEdge: Doc<"edges"> = {
       _id: tempEdgeId,
       _creationTime: Date.now(),
       canvasId: args.canvasId,
-      sourceNodeId: args.sourceNodeId as Id<"nodes">,
+      sourceNodeId: sourceNode._id,
       targetNodeId: tempNodeId,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
@@ -435,12 +438,15 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       zIndex: args.zIndex,
     };
 
+    const targetNode = nodeList.find((node) => node._id === args.targetNodeId);
+    if (!targetNode) return;
+
     const syntheticEdge: Doc<"edges"> = {
       _id: tempEdgeId,
       _creationTime: Date.now(),
       canvasId: args.canvasId,
       sourceNodeId: tempNodeId,
-      targetNodeId: args.targetNodeId as Id<"nodes">,
+      targetNodeId: targetNode._id,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
     };
@@ -462,7 +468,14 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       const edgeList = localStore.getQuery(api.edges.list, {
         canvasId: args.canvasId,
       });
-      if (edgeList === undefined) return;
+      const nodeList = localStore.getQuery(api.nodes.list, {
+        canvasId: args.canvasId,
+      });
+      if (edgeList === undefined || nodeList === undefined) return;
+
+      const sourceNode = nodeList.find((node) => node._id === args.sourceNodeId);
+      const targetNode = nodeList.find((node) => node._id === args.targetNodeId);
+      if (!sourceNode || !targetNode) return;
 
       const tempId = (
         args.clientRequestId
@@ -473,8 +486,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         _id: tempId,
         _creationTime: Date.now(),
         canvasId: args.canvasId,
-        sourceNodeId: args.sourceNodeId,
-        targetNodeId: args.targetNodeId,
+        sourceNodeId: sourceNode._id,
+        targetNodeId: targetNode._id,
         sourceHandle: args.sourceHandle,
         targetHandle: args.targetHandle,
       };
