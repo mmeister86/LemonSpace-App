@@ -15,6 +15,7 @@ import {
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import {
   clientRequestIdFromOptimisticNodeId,
   EDGE_INTERSECTION_HIGHLIGHT_STYLE,
@@ -25,6 +26,7 @@ import {
   isOptimisticNodeId,
   normalizeHandle,
 } from "./canvas-helpers";
+import { validateCanvasEdgeSplit } from "./canvas-connection-validation";
 import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
 
 type PositionPin = { x: number; y: number };
@@ -87,6 +89,7 @@ type CanvasNodeInteractionRefs = {
 
 export function useCanvasNodeInteractions(args: {
   canvasId: Id<"canvases">;
+  nodes: RFNode[];
   edges: RFEdge[];
   setNodes: Dispatch<SetStateAction<RFNode[]>>;
   setEdges: Dispatch<SetStateAction<RFEdge[]>>;
@@ -95,6 +98,7 @@ export function useCanvasNodeInteractions(args: {
   runMoveNodeMutation: RunMoveNodeMutation;
   runBatchMoveNodesMutation: RunBatchMoveNodesMutation;
   runSplitEdgeAtExistingNodeMutation: RunSplitEdgeAtExistingNodeMutation;
+  onInvalidConnection: (reason: CanvasConnectionValidationReason) => void;
   syncPendingMoveForClientRequest: (
     clientRequestId: string,
     realId?: Id<"nodes">,
@@ -102,6 +106,7 @@ export function useCanvasNodeInteractions(args: {
 }) {
   const {
     canvasId,
+    nodes,
     edges,
     setNodes,
     setEdges,
@@ -109,6 +114,7 @@ export function useCanvasNodeInteractions(args: {
     runMoveNodeMutation,
     runBatchMoveNodesMutation,
     runSplitEdgeAtExistingNodeMutation,
+    onInvalidConnection,
     syncPendingMoveForClientRequest,
   } = args;
   const {
@@ -327,6 +333,22 @@ export function useCanvasNodeInteractions(args: {
             hasHandleKey(splitHandles, "source") &&
             hasHandleKey(splitHandles, "target");
 
+          const splitValidationError =
+            splitEligible && intersectedEdge
+              ? validateCanvasEdgeSplit({
+                  nodes,
+                  edges,
+                  splitEdge: intersectedEdge,
+                  middleNode: primaryNode,
+                })
+              : null;
+
+          if (splitValidationError) {
+            onInvalidConnection(splitValidationError);
+          }
+
+          const canSplit = splitEligible && intersectedEdge && !splitValidationError;
+
           if (draggedNodes.length > 1) {
             for (const draggedNode of draggedNodes) {
               const clientRequestId = clientRequestIdFromOptimisticNodeId(
@@ -354,7 +376,7 @@ export function useCanvasNodeInteractions(args: {
               });
             }
 
-            if (!splitEligible || !intersectedEdge) {
+            if (!canSplit || !intersectedEdge) {
               return;
             }
 
@@ -401,7 +423,7 @@ export function useCanvasNodeInteractions(args: {
             return;
           }
 
-          if (!splitEligible || !intersectedEdge) {
+          if (!canSplit || !intersectedEdge) {
             const singleClientRequestId = clientRequestIdFromOptimisticNodeId(
               primaryNode.id,
             );
@@ -490,8 +512,10 @@ export function useCanvasNodeInteractions(args: {
     [
       canvasId,
       clearHighlightedIntersectionEdge,
+      nodes,
       edges,
       isDragging,
+      onInvalidConnection,
       pendingEdgeSplitByClientRequestRef,
       pendingMoveAfterCreateRef,
       resolvedRealIdByClientRequestRef,

@@ -30,7 +30,6 @@ import { toast } from "@/lib/toast";
 import {
   CANVAS_NODE_DND_MIME,
   type CanvasConnectionValidationReason,
-  validateCanvasConnectionPolicy,
 } from "@/lib/canvas-connection-policy";
 import { showCanvasConnectionRejectedToast } from "@/lib/toast-messages";
 import { useMutation } from "convex/react";
@@ -43,6 +42,10 @@ import {
 } from "@/lib/canvas-node-types";
 
 import { nodeTypes } from "./node-types";
+import {
+  validateCanvasConnection,
+  validateCanvasConnectionByType,
+} from "./canvas-connection-validation";
 import {
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
@@ -90,45 +93,6 @@ import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
-}
-
-function validateCanvasConnection(
-  connection: Connection,
-  nodes: RFNode[],
-  edges: RFEdge[],
-  edgeToReplaceId?: string,
-): CanvasConnectionValidationReason | null {
-  if (!connection.source || !connection.target) return "incomplete";
-  if (connection.source === connection.target) return "self-loop";
-
-  const sourceNode = nodes.find((node) => node.id === connection.source);
-  const targetNode = nodes.find((node) => node.id === connection.target);
-  if (!sourceNode || !targetNode) return "unknown-node";
-
-  return validateCanvasConnectionPolicy({
-    sourceType: sourceNode.type ?? "",
-    targetType: targetNode.type ?? "",
-    targetIncomingCount: edges.filter(
-      (edge) => edge.target === connection.target && edge.id !== edgeToReplaceId,
-    ).length,
-  });
-}
-
-function validateCanvasConnectionByType(args: {
-  sourceType: string;
-  targetType: string;
-  targetNodeId: string;
-  edges: RFEdge[];
-}): CanvasConnectionValidationReason | null {
-  const targetIncomingCount = args.edges.filter(
-    (edge) => edge.target === args.targetNodeId,
-  ).length;
-
-  return validateCanvasConnectionPolicy({
-    sourceType: args.sourceType,
-    targetType: args.targetType,
-    targetIncomingCount,
-  });
 }
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
@@ -378,6 +342,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     onNodeDragStop,
   } = useCanvasNodeInteractions({
     canvasId,
+    nodes,
     edges,
     setNodes,
     setEdges,
@@ -394,6 +359,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runMoveNodeMutation,
     runBatchMoveNodesMutation,
     runSplitEdgeAtExistingNodeMutation,
+    onInvalidConnection: showConnectionRejectedToast,
     syncPendingMoveForClientRequest,
   });
 
