@@ -61,14 +61,11 @@ import {
 } from "@/lib/canvas-op-queue";
 
 import {
-  useConvexAuth,
   useConvexConnectionState,
   useMutation,
-  useQuery,
 } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { authClient } from "@/lib/auth-client";
 import {
   isAdjustmentPresetNodeType,
   isCanvasNodeType,
@@ -138,6 +135,7 @@ import { getImageDimensions } from "./canvas-media-utils";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
+import { useCanvasData } from "./use-canvas-data";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 
 interface CanvasInnerProps {
@@ -253,115 +251,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
-  const { data: session, isPending: isSessionPending } = authClient.useSession();
-  const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
-  const shouldSkipCanvasQueries =
-    isSessionPending || isAuthLoading || !isAuthenticated;
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "production") return;
-    if (!isAuthLoading && !isAuthenticated) {
-      console.warn("[Canvas debug] mounted without Convex auth", { canvasId });
-    }
-  }, [canvasId, isAuthLoading, isAuthenticated]);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "production") return;
-    if (isAuthLoading || isSessionPending) return;
-
-    console.info("[Canvas auth state]", {
-      canvasId,
-      convex: {
-        isAuthenticated,
-        shouldSkipCanvasQueries,
-      },
-      session: {
-        hasUser: Boolean(session?.user),
-        email: session?.user?.email ?? null,
-      },
-    });
-  }, [
+  const { canvas, convexEdges, convexNodes, storageUrlsById } = useCanvasData({
     canvasId,
-    isAuthLoading,
-    isAuthenticated,
-    isSessionPending,
-    session?.user,
-    shouldSkipCanvasQueries,
-  ]);
-
-  // ─── Convex Realtime Queries ───────────────────────────────────
-  const convexNodes = useQuery(
-    api.nodes.list,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
-  );
-  const convexEdges = useQuery(
-    api.edges.list,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
-  );
-  const storageIdsForCanvas = useMemo(() => {
-    if (!convexNodes) {
-      return [] as Id<"_storage">[];
-    }
-
-    return [...new Set(
-      convexNodes.flatMap((node) => {
-        const data = node.data as Record<string, unknown> | undefined;
-        return typeof data?.storageId === "string" && data.storageId.length > 0
-          ? [data.storageId as Id<"_storage">]
-          : [];
-      }),
-    )].sort();
-  }, [convexNodes]);
-  const storageIdsForCanvasKey = storageIdsForCanvas.join(",");
-  const stableStorageIdsForCanvasRef = useRef(storageIdsForCanvas);
-  if (stableStorageIdsForCanvasRef.current.join(",") !== storageIdsForCanvasKey) {
-    stableStorageIdsForCanvasRef.current = storageIdsForCanvas;
-  }
-  const resolveStorageUrlsForCanvas = useMutation(api.storage.batchGetUrlsForCanvas);
-  const [storageUrlsById, setStorageUrlsById] = useState<Record<string, string | undefined>>();
-  const canvas = useQuery(
-    api.canvases.get,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
-  );
-
-  useEffect(() => {
-    const requestedStorageIds = stableStorageIdsForCanvasRef.current;
-
-    if (shouldSkipCanvasQueries || requestedStorageIds.length === 0) {
-      setStorageUrlsById(undefined);
-      return;
-    }
-
-    let cancelled = false;
-
-    void resolveStorageUrlsForCanvas({
-      canvasId,
-      storageIds: requestedStorageIds,
-    })
-      .then((result) => {
-        if (!cancelled) {
-          setStorageUrlsById(result);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          console.warn("[Canvas] failed to resolve storage URLs", {
-            canvasId,
-            storageIdCount: requestedStorageIds.length,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    canvasId,
-    resolveStorageUrlsForCanvas,
-    shouldSkipCanvasQueries,
-    storageIdsForCanvasKey,
-  ]);
+  });
 
   // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
   const moveNode = useMutation(api.nodes.move);
