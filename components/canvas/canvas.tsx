@@ -24,9 +24,7 @@ import {
 } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
-import { toast } from "@/lib/toast";
 import {
-  CANVAS_NODE_DND_MIME,
   type CanvasConnectionValidationReason,
 } from "@/lib/canvas-connection-policy";
 import { showCanvasConnectionRejectedToast } from "@/lib/toast-messages";
@@ -35,12 +33,9 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   isAdjustmentPresetNodeType,
-  isCanvasNodeType,
-  type CanvasNodeType,
 } from "@/lib/canvas-node-types";
 
 import { nodeTypes } from "./node-types";
-import { NODE_DEFAULTS } from "@/lib/canvas-utils";
 import CanvasToolbar, {
   type CanvasNavTool,
 } from "@/components/canvas/canvas-toolbar";
@@ -68,9 +63,9 @@ import {
 } from "./canvas-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
 import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
-import { getImageDimensions } from "./canvas-media-utils";
 import { useCanvasNodeInteractions } from "./use-canvas-node-interactions";
 import { useCanvasConnections } from "./use-canvas-connections";
+import { useCanvasDrop } from "./use-canvas-drop";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
 import { useCanvasData } from "./use-canvas-data";
@@ -371,158 +366,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     console.error("[ReactFlow error]", { canvasId, id, error });
   }, [canvasId]);
 
-  // ─── Future hook seam: drop flows ─────────────────────────────
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    const hasFiles = event.dataTransfer.types.includes("Files");
-    event.dataTransfer.dropEffect = hasFiles ? "copy" : "move";
-  }, []);
-
-  const onDrop = useCallback(
-    async (event: React.DragEvent) => {
-      event.preventDefault();
-
-      const rawData = event.dataTransfer.getData(
-        CANVAS_NODE_DND_MIME,
-      );
-      if (!rawData) {
-        const hasFiles = event.dataTransfer.files && event.dataTransfer.files.length > 0;
-        if (hasFiles) {
-          if (!isSyncOnline) {
-            notifyOfflineUnsupported("Upload per Drag-and-drop");
-            return;
-          }
-          const file = event.dataTransfer.files[0];
-          if (file.type.startsWith("image/")) {
-            try {
-              let dimensions: { width: number; height: number } | undefined;
-              try {
-                dimensions = await getImageDimensions(file);
-              } catch {
-                dimensions = undefined;
-              }
-
-              const uploadUrl = await generateUploadUrl();
-              const result = await fetch(uploadUrl, {
-                method: "POST",
-                headers: { "Content-Type": file.type },
-                body: file,
-              });
-
-              if (!result.ok) {
-                throw new Error("Upload failed");
-              }
-
-              const { storageId } = (await result.json()) as { storageId: string };
-
-              const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-              const clientRequestId = crypto.randomUUID();
-
-              void runCreateNodeOnlineOnly({
-                canvasId,
-                type: "image",
-                positionX: position.x,
-                positionY: position.y,
-                width: NODE_DEFAULTS.image.width,
-                height: NODE_DEFAULTS.image.height,
-                data: {
-                  storageId,
-                  filename: file.name,
-                  mimeType: file.type,
-                  ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
-                  canvasId,
-                },
-                clientRequestId,
-              }).then((realId) => {
-                void syncPendingMoveForClientRequest(
-                  clientRequestId,
-                  realId,
-                ).catch((error: unknown) => {
-                  console.error(
-                    "[Canvas] drop createNode syncPendingMove failed",
-                    error,
-                  );
-                });
-              });
-            } catch (err) {
-              console.error("Failed to upload dropped file:", err);
-              toast.error(t('canvas.uploadFailed'), err instanceof Error ? err.message : undefined);
-            }
-            return;
-          }
-        }
-        return;
-      }
-
-      // Support both plain type string (sidebar) and JSON payload (browser panels)
-      let nodeType: CanvasNodeType | null = null;
-      let payloadData: Record<string, unknown> | undefined;
-
-      try {
-        const parsed = JSON.parse(rawData);
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          typeof (parsed as { type?: unknown }).type === "string" &&
-          isCanvasNodeType((parsed as { type: string }).type)
-        ) {
-          nodeType = (parsed as { type: CanvasNodeType }).type;
-          payloadData = parsed.data;
-        }
-      } catch {
-        if (isCanvasNodeType(rawData)) {
-          nodeType = rawData;
-        }
-      }
-
-      if (!nodeType) {
-        toast.warning("Node-Typ nicht verfuegbar", "Unbekannter Node konnte nicht erstellt werden.");
-        return;
-      }
-
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      const defaults = NODE_DEFAULTS[nodeType] ?? {
-        width: 200,
-        height: 100,
-        data: {},
-      };
-
-      const clientRequestId = crypto.randomUUID();
-      void runCreateNodeOnlineOnly({
-        canvasId,
-        type: nodeType,
-        positionX: position.x,
-        positionY: position.y,
-        width: defaults.width,
-        height: defaults.height,
-        data: { ...defaults.data, ...payloadData, canvasId },
-        clientRequestId,
-      }).then((realId) => {
-        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-          (error: unknown) => {
-            console.error(
-              "[Canvas] createNode syncPendingMove failed",
-              error,
-            );
-          },
-        );
-      });
-    },
-    [
-      screenToFlowPosition,
-      t,
-      canvasId,
-      generateUploadUrl,
-      isSyncOnline,
-      runCreateNodeOnlineOnly,
-      notifyOfflineUnsupported,
-      syncPendingMoveForClientRequest,
-    ],
-  );
+  const { onDragOver, onDrop } = useCanvasDrop({
+    canvasId,
+    isSyncOnline,
+    t,
+    screenToFlowPosition,
+    generateUploadUrl,
+    runCreateNodeOnlineOnly,
+    notifyOfflineUnsupported,
+    syncPendingMoveForClientRequest,
+  });
 
   const canvasSyncContextValue = useMemo(
     () => ({
