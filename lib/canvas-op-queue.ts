@@ -30,7 +30,7 @@ export type CanvasSyncOpPayloadByType = {
     parentId?: Id<"nodes">;
     zIndex?: number;
     clientRequestId: string;
-    sourceNodeId: Id<"nodes">;
+    sourceNodeId: string;
     sourceHandle?: string;
     targetHandle?: string;
   };
@@ -45,7 +45,7 @@ export type CanvasSyncOpPayloadByType = {
     parentId?: Id<"nodes">;
     zIndex?: number;
     clientRequestId: string;
-    targetNodeId: Id<"nodes">;
+    targetNodeId: string;
     sourceHandle?: string;
     targetHandle?: string;
   };
@@ -334,7 +334,7 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
             : undefined,
         zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
         clientRequestId: payload.clientRequestId,
-        sourceNodeId: payload.sourceNodeId as Id<"nodes">,
+        sourceNodeId: payload.sourceNodeId,
         sourceHandle:
           typeof payload.sourceHandle === "string"
             ? payload.sourceHandle
@@ -381,7 +381,7 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
             : undefined,
         zIndex: typeof payload.zIndex === "number" ? payload.zIndex : undefined,
         clientRequestId: payload.clientRequestId,
-        targetNodeId: payload.targetNodeId as Id<"nodes">,
+        targetNodeId: payload.targetNodeId,
         sourceHandle:
           typeof payload.sourceHandle === "string"
             ? payload.sourceHandle
@@ -834,7 +834,7 @@ function remapNodeIdInPayload(
       changed = true;
     }
     if (next.sourceNodeId === fromNodeId) {
-      next.sourceNodeId = toNodeId as Id<"nodes">;
+      next.sourceNodeId = toNodeId;
       changed = true;
     }
     if (changed) {
@@ -849,7 +849,7 @@ function remapNodeIdInPayload(
       changed = true;
     }
     if (next.targetNodeId === fromNodeId) {
-      next.targetNodeId = toNodeId as Id<"nodes">;
+      next.targetNodeId = toNodeId;
       changed = true;
     }
     if (changed) {

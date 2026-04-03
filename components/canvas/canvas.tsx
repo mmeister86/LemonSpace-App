@@ -489,7 +489,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       _id: tempEdgeId,
       _creationTime: Date.now(),
       canvasId: args.canvasId,
-      sourceNodeId: args.sourceNodeId,
+      sourceNodeId: args.sourceNodeId as Id<"nodes">,
       targetNodeId: tempNodeId,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
@@ -549,7 +549,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       _creationTime: Date.now(),
       canvasId: args.canvasId,
       sourceNodeId: tempNodeId,
-      targetNodeId: args.targetNodeId,
+      targetNodeId: args.targetNodeId as Id<"nodes">,
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
     };
@@ -701,8 +701,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const addOptimisticEdgeLocally = useCallback((args: {
     clientRequestId: string;
-    sourceNodeId: Id<"nodes">;
-    targetNodeId: Id<"nodes">;
+    sourceNodeId: string;
+    targetNodeId: string;
     sourceHandle?: string;
     targetHandle?: string;
   }): Id<"edges"> => {
