@@ -65,6 +65,7 @@ export default function CanvasToolbar({
   };
 
   const byCategory = catalogEntriesByCategory();
+  const resolvedCanvasName = canvasName?.trim() || "Unbenannter Canvas";
 
   const toolBtn = (tool: CanvasNavTool, icon: React.ReactNode, label: string) => (
     <Button
@@ -82,7 +83,7 @@ export default function CanvasToolbar({
   );
 
   return (
-    <div className="absolute top-4 left-1/2 z-10 flex max-w-[min(calc(100vw-12rem),52rem)] -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border/80 bg-card/95 p-1.5 shadow-lg backdrop-blur-sm">
+    <div className="absolute top-4 left-1/2 z-10 flex w-[min(calc(100vw-9rem),64rem)] items-center gap-0.5 rounded-xl border border-border/80 bg-card/95 p-1.5 shadow-lg backdrop-blur-sm -translate-x-1/2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -181,7 +182,14 @@ export default function CanvasToolbar({
 
       <div className="mx-1 h-6 w-px shrink-0 bg-border/80" />
 
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1 sm:flex-initial">
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+        <div
+          className="min-w-0 max-w-28 rounded-lg border border-border/70 bg-background/80 px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm sm:max-w-40 md:max-w-52"
+          title={resolvedCanvasName}
+          aria-label={`Canvas-Name: ${resolvedCanvasName}`}
+        >
+          <span className="block truncate">{resolvedCanvasName}</span>
+        </div>
         <CreditDisplay />
         <ExportButton canvasName={canvasName ?? "canvas"} />
       </div>

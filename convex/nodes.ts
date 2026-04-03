@@ -76,6 +76,14 @@ const ADJUSTMENT_MIN_WIDTH = 240;
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
 
+function estimateSerializedBytes(value: unknown): number | null {
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return null;
+  }
+}
+
 type RenderOutputResolution = (typeof RENDER_OUTPUT_RESOLUTIONS)[number];
 type RenderFormat = (typeof RENDER_FORMATS)[number];
 
@@ -545,13 +553,27 @@ async function resolveNodeReferenceForWrite(
 export const list = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
+    const startedAt = Date.now();
     const user = await requireAuth(ctx);
     await getCanvasOrThrow(ctx, canvasId, user.userId);
 
-    return await ctx.db
+    const nodes = await ctx.db
       .query("nodes")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+      console.warn("[nodes.list] slow list query", {
+        canvasId,
+        userId: user.userId,
+        nodeCount: nodes.length,
+        approxPayloadBytes: estimateSerializedBytes(nodes),
+        durationMs,
+      });
+    }
+
+    return nodes;
   },
 });
 
@@ -678,46 +700,87 @@ export const create = mutation({
     clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    const startedAt = Date.now();
+    const approxDataBytes = estimateSerializedBytes(args.data);
 
-    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
-      userId: user.userId,
-      mutation: "nodes.create",
-      clientRequestId: args.clientRequestId,
+    console.info("[nodes.create] start", {
       canvasId: args.canvasId,
+      type: args.type,
+      clientRequestId: args.clientRequestId ?? null,
+      approxDataBytes,
     });
-    if (existingNodeId) {
-      return existingNodeId;
+
+    try {
+      const user = await requireAuth(ctx);
+      const authDurationMs = Date.now() - startedAt;
+      await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+
+      const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+        userId: user.userId,
+        mutation: "nodes.create",
+        clientRequestId: args.clientRequestId,
+        canvasId: args.canvasId,
+      });
+      if (existingNodeId) {
+        console.info("[nodes.create] idempotent hit", {
+          canvasId: args.canvasId,
+          type: args.type,
+          userId: user.userId,
+          authDurationMs,
+          totalDurationMs: Date.now() - startedAt,
+          existingNodeId,
+        });
+        return existingNodeId;
+      }
+
+      const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
+
+      const nodeId = await ctx.db.insert("nodes", {
+        canvasId: args.canvasId,
+        type: args.type as Doc<"nodes">["type"],
+        positionX: args.positionX,
+        positionY: args.positionY,
+        width: args.width,
+        height: args.height,
+        status: "idle",
+        retryCount: 0,
+        data: normalizedData,
+        parentId: args.parentId,
+        zIndex: args.zIndex,
+      });
+
+      // Canvas updatedAt aktualisieren
+      await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+      await rememberIdempotentNodeCreateResult(ctx, {
+        userId: user.userId,
+        mutation: "nodes.create",
+        clientRequestId: args.clientRequestId,
+        canvasId: args.canvasId,
+        nodeId,
+      });
+
+      console.info("[nodes.create] success", {
+        canvasId: args.canvasId,
+        type: args.type,
+        userId: user.userId,
+        nodeId,
+        approxDataBytes,
+        authDurationMs,
+        totalDurationMs: Date.now() - startedAt,
+      });
+
+      return nodeId;
+    } catch (error) {
+      console.error("[nodes.create] failed", {
+        canvasId: args.canvasId,
+        type: args.type,
+        clientRequestId: args.clientRequestId ?? null,
+        approxDataBytes,
+        totalDurationMs: Date.now() - startedAt,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
-
-    const nodeId = await ctx.db.insert("nodes", {
-      canvasId: args.canvasId,
-      type: args.type as Doc<"nodes">["type"],
-      positionX: args.positionX,
-      positionY: args.positionY,
-      width: args.width,
-      height: args.height,
-      status: "idle",
-      retryCount: 0,
-      data: normalizedData,
-      parentId: args.parentId,
-      zIndex: args.zIndex,
-    });
-
-    // Canvas updatedAt aktualisieren
-    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
-    await rememberIdempotentNodeCreateResult(ctx, {
-      userId: user.userId,
-      mutation: "nodes.create",
-      clientRequestId: args.clientRequestId,
-      canvasId: args.canvasId,
-      nodeId,
-    });
-
-    return nodeId;
   },
 });
 

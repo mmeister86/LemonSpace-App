@@ -1,6 +1,8 @@
 import { QueryCtx, MutationCtx } from "./_generated/server";
 import { authComponent } from "./auth";
 
+const AUTH_PERFORMANCE_LOG_THRESHOLD_MS = 100;
+
 type SafeAuthUser = NonNullable<
   Awaited<ReturnType<typeof authComponent.safeGetAuthUser>>
 >;
@@ -15,10 +17,18 @@ export type AuthUser = Omit<SafeAuthUser, "userId"> & { userId: string };
 export async function requireAuth(
   ctx: QueryCtx | MutationCtx
 ): Promise<AuthUser> {
+  const startedAt = Date.now();
   const user = await authComponent.safeGetAuthUser(ctx);
+  const durationMs = Date.now() - startedAt;
+  if (durationMs >= AUTH_PERFORMANCE_LOG_THRESHOLD_MS) {
+    console.warn("[requireAuth] slow auth lookup", {
+      durationMs,
+    });
+  }
   if (!user) {
     const identity = await ctx.auth.getUserIdentity();
     console.error("[requireAuth] safeGetAuthUser returned null", {
+      durationMs,
       hasIdentity: Boolean(identity),
       identityIssuer: identity?.issuer ?? null,
       identitySubject: identity?.subject ?? null,
@@ -28,6 +38,7 @@ export async function requireAuth(
   const userId = user.userId ?? String(user._id);
   if (!userId) {
     console.error("[requireAuth] safeGetAuthUser returned user without userId", {
+      durationMs,
       userRecordId: String(user._id),
     });
     throw new Error("Unauthenticated");
@@ -41,7 +52,14 @@ export async function requireAuth(
 export async function optionalAuth(
   ctx: QueryCtx | MutationCtx
 ): Promise<AuthUser | null> {
+  const startedAt = Date.now();
   const user = await authComponent.safeGetAuthUser(ctx);
+  const durationMs = Date.now() - startedAt;
+  if (durationMs >= AUTH_PERFORMANCE_LOG_THRESHOLD_MS) {
+    console.warn("[optionalAuth] slow auth lookup", {
+      durationMs,
+    });
+  }
   if (!user) {
     return null;
   }

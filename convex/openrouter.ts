@@ -92,6 +92,14 @@ export async function generateImageViaOpenRouter(
   params: GenerateImageParams
 ): Promise<OpenRouterImageResponse> {
   const modelId = params.model ?? DEFAULT_IMAGE_MODEL;
+  const requestStartedAt = Date.now();
+
+  console.info("[openrouter] request start", {
+    modelId,
+    hasReferenceImageUrl: Boolean(params.referenceImageUrl),
+    aspectRatio: params.aspectRatio?.trim() || null,
+    promptLength: params.prompt.length,
+  });
 
   // Ohne Referenzbild: einfacher String als content — bei Gemini/OpenRouter sonst oft nur Text (refusal/reasoning) statt Bild.
   const userMessage =
@@ -126,15 +134,33 @@ export async function generateImageViaOpenRouter(
     };
   }
 
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://app.lemonspace.io",
-      "X-Title": "LemonSpace",
-    },
-    body: JSON.stringify(body),
+  let response: Response;
+
+  try {
+    response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://app.lemonspace.io",
+        "X-Title": "LemonSpace",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.error("[openrouter] request failed", {
+      modelId,
+      durationMs: Date.now() - requestStartedAt,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
+  console.info("[openrouter] response received", {
+    modelId,
+    status: response.status,
+    ok: response.ok,
+    durationMs: Date.now() - requestStartedAt,
   });
 
   if (!response.ok) {
@@ -221,6 +247,7 @@ export async function generateImageViaOpenRouter(
 
   let dataUri = rawImage;
   if (rawImage.startsWith("http://") || rawImage.startsWith("https://")) {
+    const imageDownloadStartedAt = Date.now();
     const imgRes = await fetch(rawImage);
     if (!imgRes.ok) {
       throw new ConvexError({
@@ -231,6 +258,12 @@ export async function generateImageViaOpenRouter(
     const mimeTypeFromRes =
       imgRes.headers.get("content-type") ?? "image/png";
     const buf = await imgRes.arrayBuffer();
+    console.info("[openrouter] image downloaded", {
+      modelId,
+      durationMs: Date.now() - imageDownloadStartedAt,
+      bytes: buf.byteLength,
+      mimeType: mimeTypeFromRes,
+    });
     let b64: string;
     if (typeof Buffer !== "undefined") {
       b64 = Buffer.from(buf).toString("base64");
@@ -256,6 +289,14 @@ export async function generateImageViaOpenRouter(
   const meta = dataUri.slice(0, comma);
   const base64Data = dataUri.slice(comma + 1);
   const mimeType = meta.replace("data:", "").replace(";base64", "");
+
+  console.info("[openrouter] image parsed", {
+    modelId,
+    durationMs: Date.now() - requestStartedAt,
+    mimeType: mimeType || "image/png",
+    base64Length: base64Data.length,
+    source: rawImage.startsWith("data:") ? "inline" : "remote-url",
+  });
 
   return {
     imageBase64: base64Data,

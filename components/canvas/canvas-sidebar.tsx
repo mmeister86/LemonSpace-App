@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import NextImage from "next/image";
 import {
   Bot,
   ClipboardList,
@@ -160,77 +161,98 @@ export default function CanvasSidebar({
           </div>
         </div>
       ) : (
-        <div className="border-b border-border/80 px-4 py-4">
-          {canvas === undefined ? (
-            <div className="h-12 animate-pulse rounded-md bg-muted/50" />
-          ) : (
-            <>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Canvas
-              </p>
-              <h1 className="mt-1 line-clamp-2 text-base font-semibold leading-snug text-foreground">
-                {canvas?.name ?? "…"}
-              </h1>
-            </>
-          )}
+        <div className="border-b border-border/80 px-4 py-5">
+          <div className="flex min-h-8 items-center">
+            <div className="relative">
+              <NextImage
+                src="/logos/lemonspace-logo-v2-black-rgb.svg"
+                alt="LemonSpace"
+                width={140}
+                height={27}
+                className="h-auto w-[8.75rem] dark:hidden"
+                priority
+              />
+              <NextImage
+                src="/logos/lemonspace-logo-v2-white-rgb.svg"
+                alt="LemonSpace"
+                width={140}
+                height={27}
+                className="hidden h-auto w-[8.75rem] dark:block"
+                priority
+              />
+            </div>
+          </div>
         </div>
       )}
 
-      <div
-        className={cn(
-          "flex-1 overflow-y-auto overscroll-contain",
-          railMode ? "p-2" : "p-3",
-        )}
-      >
-        {railMode ? (
-          <div className="flex flex-col gap-1.5">
-            {railEntries.map((entry) => (
-              <SidebarRow key={entry.type} entry={entry} compact />
-            ))}
-          </div>
-        ) : (
-          <>
-            {NODE_CATEGORIES_ORDERED.map((categoryId) => {
-              const entries = byCategory.get(categoryId) ?? [];
-              if (entries.length === 0) return null;
-              const { label } = NODE_CATEGORY_META[categoryId];
-              const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
-              return (
-                <div key={categoryId} className="mb-4 last:mb-0">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsedByCategory((prev) => ({
-                        ...prev,
-                        [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
-                      }))
-                    }
-                    className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                    aria-expanded={!isCollapsed}
-                    aria-controls={`sidebar-category-${categoryId}`}
-                  >
-                    <span>{label}</span>
-                    {isCollapsed ? (
-                      <ChevronRight className="size-3.5 shrink-0" />
-                    ) : (
-                      <ChevronDown className="size-3.5 shrink-0" />
-                    )}
-                  </button>
-                  {!isCollapsed ? (
-                    <div id={`sidebar-category-${categoryId}`} className="flex flex-col gap-1.5">
-                      {entries.map((entry) => (
-                        <SidebarRow key={entry.type} entry={entry} />
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </>
-        )}
+      <div className="relative min-h-0 flex-1">
+        <div
+          className={cn(
+            "h-full overflow-y-auto overscroll-contain",
+            railMode ? "p-2 pb-20" : "p-3 pb-28",
+          )}
+        >
+          {railMode ? (
+            <div className="flex flex-col gap-1.5">
+              {railEntries.map((entry) => (
+                <SidebarRow key={entry.type} entry={entry} compact />
+              ))}
+            </div>
+          ) : (
+            <>
+              {NODE_CATEGORIES_ORDERED.map((categoryId) => {
+                const entries = byCategory.get(categoryId) ?? [];
+                if (entries.length === 0) return null;
+                const { label } = NODE_CATEGORY_META[categoryId];
+                const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
+                return (
+                  <div key={categoryId} className="mb-4 last:mb-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollapsedByCategory((prev) => ({
+                          ...prev,
+                          [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
+                        }))
+                      }
+                      className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                      aria-expanded={!isCollapsed}
+                      aria-controls={`sidebar-category-${categoryId}`}
+                    >
+                      <span>{label}</span>
+                      {isCollapsed ? (
+                        <ChevronRight className="size-3.5 shrink-0" />
+                      ) : (
+                        <ChevronDown className="size-3.5 shrink-0" />
+                      )}
+                    </button>
+                    {!isCollapsed ? (
+                      <div id={`sidebar-category-${categoryId}`} className="flex flex-col gap-1.5">
+                        {entries.map((entry) => (
+                          <SidebarRow key={entry.type} entry={entry} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 z-10",
+            railMode
+              ? "h-16 bg-gradient-to-t from-black via-black/80 to-transparent"
+              : "h-24 bg-gradient-to-t from-black via-black/80 to-transparent",
+          )}
+        />
       </div>
 
-      <CanvasUserMenu compact={railMode} />
+      <div className="relative z-20 bg-background">
+        <CanvasUserMenu compact={railMode} />
+      </div>
     </aside>
   );
 }

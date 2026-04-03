@@ -89,16 +89,29 @@ async function assertConnectionPolicy(
 export const list = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
+    const startedAt = Date.now();
     const user = await requireAuth(ctx);
     const canvas = await ctx.db.get(canvasId);
     if (!canvas || canvas.ownerId !== user.userId) {
       return [];
     }
 
-    return await ctx.db
+    const edges = await ctx.db
       .query("edges")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+      console.warn("[edges.list] slow list query", {
+        canvasId,
+        userId: user.userId,
+        edgeCount: edges.length,
+        durationMs,
+      });
+    }
+
+    return edges;
   },
 });
 
