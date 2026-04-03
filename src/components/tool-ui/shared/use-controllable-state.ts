@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 export type UseControllableStateOptions<T> = {
   value?: T;
@@ -20,17 +20,14 @@ export function useControllableState<T>({
     () => (isControlled ? (value as T) : uncontrolled),
     [isControlled, value, uncontrolled],
   );
-  const currentValueRef = useRef(currentValue);
-  currentValueRef.current = currentValue;
 
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
       const resolved =
         typeof next === "function"
-          ? (next as (prev: T) => T)(currentValueRef.current)
+          ? (next as (prev: T) => T)(currentValue)
           : next;
 
-      currentValueRef.current = resolved;
       if (!isControlled) {
         setUncontrolled(resolved);
       }
@@ -38,7 +35,7 @@ export function useControllableState<T>({
       onChange?.(resolved);
       return resolved;
     },
-    [isControlled, onChange],
+    [currentValue, isControlled, onChange],
   );
 
   const setUncontrolledValue = useCallback((next: T) => {
