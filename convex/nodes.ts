@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
+import { validateBatchNodesForUserOrThrow } from "./batch-validation-utils";
 import {
   getCanvasConnectionValidationMessage,
   validateCanvasConnectionPolicy,
@@ -45,29 +46,12 @@ async function getValidatedBatchNodesOrThrow(
   userId: string,
   nodeIds: Id<"nodes">[],
 ): Promise<{ canvasId: Id<"canvases">; nodes: Doc<"nodes">[] }> {
-  if (nodeIds.length === 0) {
-    throw new Error("Batch must contain at least one node id");
-  }
-
-  const nodes: Doc<"nodes">[] = [];
-  for (const nodeId of nodeIds) {
-    const node = await ctx.db.get(nodeId);
-    if (!node) {
-      throw new Error("Node not found");
-    }
-    nodes.push(node);
-  }
-
-  const canvasId = nodes[0].canvasId;
-  for (const node of nodes) {
-    if (node.canvasId !== canvasId) {
-      throw new Error("All nodes must belong to the same canvas");
-    }
-  }
-
-  await getCanvasOrThrow(ctx, canvasId, userId);
-
-  return { canvasId, nodes };
+  return await validateBatchNodesForUserOrThrow({
+    userId,
+    nodeIds,
+    getNodeById: (nodeId) => ctx.db.get(nodeId),
+    getCanvasById: (canvasId) => ctx.db.get(canvasId),
+  });
 }
 
 type NodeCreateMutationName =

@@ -1,6 +1,12 @@
 import { v } from "convex/values";
 
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import {
+  buildSubscriptionCycleIdempotencyKey,
+  buildSubscriptionRevokedIdempotencyKey,
+  buildTopUpPaidIdempotencyKey,
+  registerWebhookEventOnce,
+} from "./polar-utils";
 
 type DbCtx = Pick<MutationCtx, "db">;
 
@@ -65,7 +71,11 @@ export async function applySubscriptionActivated(ctx: DbCtx, args: ActivatedArgs
     });
   }
 
-  const cycleKey = `polar:subscription_cycle:${args.polarSubscriptionId}:${args.currentPeriodStart}:${args.currentPeriodEnd}`;
+  const cycleKey = buildSubscriptionCycleIdempotencyKey({
+    polarSubscriptionId: args.polarSubscriptionId,
+    currentPeriodStart: args.currentPeriodStart,
+    currentPeriodEnd: args.currentPeriodEnd,
+  });
   const isFirstCycleEvent = await registerWebhookEvent(ctx, {
     provider: "polar",
     scope: "subscription_activated_cycle",
@@ -145,9 +155,10 @@ export async function applySubscriptionRevoked(ctx: DbCtx, args: RevokedArgs) {
     });
   }
 
-  const revokedKey = args.polarSubscriptionId
-    ? `polar:subscription_revoked:${args.polarSubscriptionId}`
-    : `polar:subscription_revoked:user:${args.userId}`;
+  const revokedKey = buildSubscriptionRevokedIdempotencyKey({
+    userId: args.userId,
+    polarSubscriptionId: args.polarSubscriptionId,
+  });
   const isFirstRevokedEvent = await registerWebhookEvent(ctx, {
     provider: "polar",
     scope: "subscription_revoked",
@@ -175,7 +186,7 @@ export async function applyTopUpPaid(ctx: DbCtx, args: TopUpArgs) {
   const isFirstTopUpEvent = await registerWebhookEvent(ctx, {
     provider: "polar",
     scope: "topup_paid",
-    idempotencyKey: `polar:order_paid:${args.polarOrderId}`,
+    idempotencyKey: buildTopUpPaidIdempotencyKey(args.polarOrderId),
     userId: args.userId,
     polarOrderId: args.polarOrderId,
   });
@@ -218,28 +229,42 @@ async function registerWebhookEvent(
     polarSubscriptionId?: string;
   }
 ) {
-  const existing = await ctx.db
-    .query("webhookIdempotencyEvents")
-    .withIndex("by_provider_key", (q) =>
-      q.eq("provider", args.provider).eq("idempotencyKey", args.idempotencyKey)
-    )
-    .first();
-
-  if (existing) {
-    return false;
-  }
-
-  await ctx.db.insert("webhookIdempotencyEvents", {
-    provider: args.provider,
-    scope: args.scope,
-    idempotencyKey: args.idempotencyKey,
-    userId: args.userId,
-    polarOrderId: args.polarOrderId,
-    polarSubscriptionId: args.polarSubscriptionId,
-    createdAt: Date.now(),
-  });
-
-  return true;
+  return await registerWebhookEventOnce(
+    {
+      findByProviderAndKey: async ({ provider, idempotencyKey }) => {
+        const existing = await ctx.db
+          .query("webhookIdempotencyEvents")
+          .withIndex("by_provider_key", (q) =>
+            q.eq("provider", provider).eq("idempotencyKey", idempotencyKey)
+          )
+          .first();
+        if (!existing) {
+          return null;
+        }
+        return { _id: existing._id };
+      },
+      insert: async ({
+        provider,
+        scope,
+        idempotencyKey,
+        userId,
+        polarOrderId,
+        polarSubscriptionId,
+        createdAt,
+      }) => {
+        await ctx.db.insert("webhookIdempotencyEvents", {
+          provider,
+          scope,
+          idempotencyKey,
+          userId,
+          polarOrderId,
+          polarSubscriptionId,
+          createdAt,
+        });
+      },
+    },
+    args,
+  );
 }
 
 export const handleSubscriptionActivated = internalMutation({

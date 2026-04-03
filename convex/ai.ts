@@ -12,6 +12,7 @@ import {
   IMAGE_MODELS,
 } from "./openrouter";
 import type { Id } from "./_generated/dataModel";
+import { assertNodeBelongsToCanvasOrThrow } from "./ai-utils";
 
 const MAX_IMAGE_RETRIES = 2;
 
@@ -526,9 +527,7 @@ export const generateImage = action({
     if (!node) {
       throw new Error("Node not found");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
 
     const userId = canvas.ownerId;
     const verifiedCanvasId = canvas._id;
