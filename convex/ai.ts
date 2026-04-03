@@ -12,7 +12,7 @@ import {
   IMAGE_MODELS,
 } from "./openrouter";
 import type { Id } from "./_generated/dataModel";
-import { assertNodeBelongsToCanvasOrThrow } from "./ai-utils";
+import { assertNodeBelongsToCanvasOrThrow } from "./ai_utils";
 
 const MAX_IMAGE_RETRIES = 2;
 

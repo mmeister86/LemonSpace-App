@@ -9,7 +9,9 @@
  */
 
 import type * as ai from "../ai.js";
+import type * as ai_utils from "../ai_utils.js";
 import type * as auth from "../auth.js";
+import type * as batch_validation_utils from "../batch_validation_utils.js";
 import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
 import type * as edges from "../edges.js";
@@ -22,6 +24,7 @@ import type * as nodes from "../nodes.js";
 import type * as openrouter from "../openrouter.js";
 import type * as pexels from "../pexels.js";
 import type * as polar from "../polar.js";
+import type * as polar_utils from "../polar_utils.js";
 import type * as presets from "../presets.js";
 import type * as storage from "../storage.js";
 import type * as users from "../users.js";
@@ -34,7 +37,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   ai: typeof ai;
+  ai_utils: typeof ai_utils;
   auth: typeof auth;
+  batch_validation_utils: typeof batch_validation_utils;
   canvases: typeof canvases;
   credits: typeof credits;
   edges: typeof edges;
@@ -47,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   openrouter: typeof openrouter;
   pexels: typeof pexels;
   polar: typeof polar;
+  polar_utils: typeof polar_utils;
   presets: typeof presets;
   storage: typeof storage;
   users: typeof users;

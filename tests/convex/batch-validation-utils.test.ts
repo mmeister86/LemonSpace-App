@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
-import { validateBatchNodesForUserOrThrow } from "@/convex/batch-validation-utils";
+import { validateBatchNodesForUserOrThrow } from "@/convex/batch_validation_utils";
 
 describe("validateBatchNodesForUserOrThrow", () => {
   it("rejects mixed canvas ids in one batch", async () => {

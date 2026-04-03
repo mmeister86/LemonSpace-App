@@ -6,7 +6,7 @@ import {
   buildSubscriptionRevokedIdempotencyKey,
   buildTopUpPaidIdempotencyKey,
   registerWebhookEventOnce,
-} from "./polar-utils";
+} from "./polar_utils";
 
 type DbCtx = Pick<MutationCtx, "db">;
 

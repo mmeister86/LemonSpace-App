@@ -5,7 +5,7 @@ import {
   buildTopUpPaidIdempotencyKey,
   registerWebhookEventOnce,
   type WebhookEventRepo,
-} from "@/convex/polar-utils";
+} from "@/convex/polar_utils";
 
 describe("polar idempotency helpers", () => {
   it("builds stable idempotency keys", () => {

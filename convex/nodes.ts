@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
-import { validateBatchNodesForUserOrThrow } from "./batch-validation-utils";
+import { validateBatchNodesForUserOrThrow } from "./batch_validation_utils";
 import {
   getCanvasConnectionValidationMessage,
   validateCanvasConnectionPolicy,

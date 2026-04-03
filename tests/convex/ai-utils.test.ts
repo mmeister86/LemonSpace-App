@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertNodeBelongsToCanvasOrThrow } from "@/convex/ai-utils";
+import { assertNodeBelongsToCanvasOrThrow } from "@/convex/ai_utils";
 
 describe("assertNodeBelongsToCanvasOrThrow", () => {
   it("accepts matching node/canvas relation", () => {
