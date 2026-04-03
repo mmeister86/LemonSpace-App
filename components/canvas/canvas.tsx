@@ -76,8 +76,6 @@ import { nodeTypes } from "./node-types";
 import {
   convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
-  convexEdgeToRF,
-  convexEdgeToRFWithSourceGlow,
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
 } from "@/lib/canvas-utils";
@@ -99,8 +97,6 @@ import {
 import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import {
-  applyPinnedNodePositions,
-  applyPinnedNodePositionsReadOnly,
   CANVAS_MIN_ZOOM,
   clientRequestIdFromOptimisticEdgeId,
   clientRequestIdFromOptimisticNodeId,
@@ -115,19 +111,19 @@ import {
   getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
   hasHandleKey,
-  inferPendingConnectionNodeHandoff,
   isEditableKeyboardTarget,
   isOptimisticEdgeId,
   isOptimisticNodeId,
-  mergeNodesPreservingLocalState,
   normalizeHandle,
   OPTIMISTIC_EDGE_PREFIX,
   OPTIMISTIC_NODE_PREFIX,
-  positionsMatchPin,
   type PendingEdgeSplit,
-  rfEdgeConnectionSignature,
   withResolvedCompareData,
 } from "./canvas-helpers";
+import {
+  reconcileCanvasFlowEdges,
+  reconcileCanvasFlowNodes,
+} from "./canvas-flow-reconciliation-helpers";
 import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
 import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
@@ -1942,189 +1938,38 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   useLayoutEffect(() => {
     if (!convexEdges) return;
     setEdges((prev) => {
-      const prevConvexSnap = convexNodeIdsSnapshotForEdgeCarryRef.current;
-      const currentConvexIdList: string[] =
-        convexNodes !== undefined
-          ? convexNodes.map((n: Doc<"nodes">) => n._id as string)
-          : [];
-      const currentConvexIdSet = new Set(currentConvexIdList);
-      const newlyAppearedIds: string[] = [];
-      for (const id of currentConvexIdList) {
-        if (!prevConvexSnap.has(id)) newlyAppearedIds.push(id);
+      const reconciliation = reconcileCanvasFlowEdges({
+        previousEdges: prev,
+        convexEdges,
+        convexNodes,
+        previousConvexNodeIdsSnapshot: convexNodeIdsSnapshotForEdgeCarryRef.current,
+        pendingRemovedEdgeIds: getPendingRemovedEdgeIdsFromLocalOps(canvasId as string),
+        pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
+        resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
+        localNodeIds: new Set(nodesRef.current.map((node) => node.id)),
+        isAnyNodeDragging:
+          isDragging.current ||
+          nodesRef.current.some((node) =>
+            Boolean((node as { dragging?: boolean }).dragging),
+          ),
+        colorMode: resolvedTheme === "dark" ? "dark" : "light",
+      });
+
+      resolvedRealIdByClientRequestRef.current =
+        reconciliation.inferredRealIdByClientRequest;
+      convexNodeIdsSnapshotForEdgeCarryRef.current =
+        reconciliation.nextConvexNodeIdsSnapshot;
+      for (const clientRequestId of reconciliation.settledPendingConnectionCreateIds) {
+        pendingConnectionCreatesRef.current.delete(clientRequestId);
       }
 
-      const tempEdges = prev.filter((e) => e.className === "temp");
-      const pendingRemovedEdgeIds = getPendingRemovedEdgeIdsFromLocalOps(
-        canvasId as string,
-      );
-      const sourceTypeByNodeId =
-        convexNodes !== undefined
-          ? new Map<string, string>(
-              convexNodes.map((n: Doc<"nodes">) => [n._id as string, n.type as string]),
-            )
-          : undefined;
-      const glowMode = resolvedTheme === "dark" ? "dark" : "light";
-      const mapped = convexEdges
-        .filter((edge: Doc<"edges">) => !pendingRemovedEdgeIds.has(edge._id as string))
-        .map((edge: Doc<"edges">) =>
-          sourceTypeByNodeId
-            ? convexEdgeToRFWithSourceGlow(
-                edge,
-                sourceTypeByNodeId.get(edge.sourceNodeId),
-                glowMode,
-              )
-            : convexEdgeToRF(edge),
-        );
-
-      const mappedSignatures = new Set(mapped.map(rfEdgeConnectionSignature));
-      const convexNodeIds =
-        convexNodes !== undefined
-          ? new Set(convexNodes.map((n: Doc<"nodes">) => n._id as string))
-          : null;
-      const realIdByClientRequest = resolvedRealIdByClientRequestRef.current;
-      const isAnyNodeDragging =
-        isDragging.current ||
-        nodesRef.current.some((n) =>
-          Boolean((n as { dragging?: boolean }).dragging),
-        );
-
-      const localHasOptimisticNode = (nodeId: string): boolean => {
-        if (!isOptimisticNodeId(nodeId)) return false;
-        return nodesRef.current.some((n) => n.id === nodeId);
-      };
-
-      const resolveEndpoint = (nodeId: string): string => {
-        if (!isOptimisticNodeId(nodeId)) return nodeId;
-        const cr = clientRequestIdFromOptimisticNodeId(nodeId);
-        if (!cr) return nodeId;
-        if (isAnyNodeDragging && localHasOptimisticNode(nodeId)) {
-          return nodeId;
-        }
-        const real = realIdByClientRequest.get(cr);
-        return real !== undefined ? (real as string) : nodeId;
-      };
-
-      /** Wenn Mutation-.then noch nicht lief: echte ID aus Delta (eine neue Node) + gleiche clientRequestId wie Kante. */
-      const resolveEndpointWithInference = (
-        nodeId: string,
-        edge: RFEdge,
-      ): string => {
-        const base = resolveEndpoint(nodeId);
-        if (!isOptimisticNodeId(base)) return base;
-        if (isAnyNodeDragging) return base;
-        const nodeCr = clientRequestIdFromOptimisticNodeId(base);
-        if (nodeCr === null) return base;
-        const edgeCr = clientRequestIdFromOptimisticEdgeId(edge.id);
-        if (edgeCr === null || edgeCr !== nodeCr) return base;
-        if (!pendingConnectionCreatesRef.current.has(nodeCr)) return base;
-        if (newlyAppearedIds.length !== 1) return base;
-        const inferred = newlyAppearedIds[0];
-        resolvedRealIdByClientRequestRef.current.set(
-          nodeCr,
-          inferred as Id<"nodes">,
-        );
-        return inferred;
-      };
-
-      const endpointUsable = (nodeId: string): boolean => {
-        if (isAnyNodeDragging && localHasOptimisticNode(nodeId)) return true;
-        const resolved = resolveEndpoint(nodeId);
-        if (convexNodeIds?.has(resolved)) return true;
-        if (convexNodeIds?.has(nodeId)) return true;
-        return false;
-      };
-
-      const optimisticEndpointHasPendingCreate = (nodeId: string): boolean => {
-        if (!isOptimisticNodeId(nodeId)) return false;
-        const cr = clientRequestIdFromOptimisticNodeId(nodeId);
-        return (
-          cr !== null && pendingConnectionCreatesRef.current.has(cr)
-        );
-      };
-
-      const shouldCarryOptimisticEdge = (
-        original: RFEdge,
-        remapped: RFEdge,
-      ): boolean => {
-        if (mappedSignatures.has(rfEdgeConnectionSignature(remapped))) {
-          return false;
-        }
-
-        const sourceOk = endpointUsable(remapped.source);
-        const targetOk = endpointUsable(remapped.target);
-        if (sourceOk && targetOk) return true;
-
-        if (!pendingConnectionCreatesRef.current.size) {
-          return false;
-        }
-
-        if (
-          sourceOk &&
-          optimisticEndpointHasPendingCreate(original.target)
-        ) {
-          return true;
-        }
-
-        if (
-          targetOk &&
-          optimisticEndpointHasPendingCreate(original.source)
-        ) {
-          return true;
-        }
-
-        return false;
-      };
-
-      const carriedOptimistic: RFEdge[] = [];
-      for (const e of prev) {
-        if (e.className === "temp") continue;
-        if (!isOptimisticEdgeId(e.id)) continue;
-
-        const remapped: RFEdge = {
-          ...e,
-          source: resolveEndpointWithInference(e.source, e),
-          target: resolveEndpointWithInference(e.target, e),
-        };
-
-        if (!shouldCarryOptimisticEdge(e, remapped)) continue;
-
-        carriedOptimistic.push(remapped);
-      }
-
-      if (convexNodes !== undefined) {
-        convexNodeIdsSnapshotForEdgeCarryRef.current = currentConvexIdSet;
-      }
-
-      /** Erst löschen, wenn Convex die neue Kante geliefert hat — sonst kurzes Fenster: pending=0, Kanten-Query noch alt, Carry schlägt fehl. */
-      for (const cr of [...pendingConnectionCreatesRef.current]) {
-        const realId = resolvedRealIdByClientRequestRef.current.get(cr);
-        if (realId === undefined) continue;
-        const nodePresent =
-          convexNodes !== undefined &&
-          convexNodes.some((n: Doc<"nodes">) => n._id === realId);
-        const edgeTouchesNewNode = convexEdges.some(
-          (e: Doc<"edges">) =>
-            e.sourceNodeId === realId || e.targetNodeId === realId,
-        );
-        if (nodePresent && edgeTouchesNewNode) {
-          pendingConnectionCreatesRef.current.delete(cr);
-        }
-      }
-
-      return [...mapped, ...carriedOptimistic, ...tempEdges];
+      return reconciliation.edges;
     });
   }, [canvasId, convexEdges, convexNodes, resolvedTheme, edgeSyncNonce]);
 
   useLayoutEffect(() => {
     if (!convexNodes || isResizing.current) return;
     setNodes((previousNodes) => {
-      inferPendingConnectionNodeHandoff(
-        previousNodes,
-        convexNodes,
-        pendingConnectionCreatesRef.current,
-        resolvedRealIdByClientRequestRef.current,
-      );
-
       /** RF setzt `node.dragging` + Position oft bevor `onNodeDragStart` `isDraggingRef` setzt — ohne diese Zeile zieht useLayoutEffect Convex-Stand darüber („Kleben“). */
       const anyRfNodeDragging = previousNodes.some((n) =>
         Boolean((n as { dragging?: boolean }).dragging),
@@ -2150,41 +1995,27 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         enriched.map(convexNodeToRF),
         edges,
       );
-      // Nodes, die gerade optimistisch gelöscht werden, nicht wiederherstellen
-      const filteredIncoming = deletingNodeIds.current.size > 0
-        ? incomingNodes.filter((node) => !deletingNodeIds.current.has(node.id))
-        : incomingNodes;
-      const merged = applyPinnedNodePositions(
-        mergeNodesPreservingLocalState(
-          previousNodes,
-          filteredIncoming,
-          resolvedRealIdByClientRequestRef.current,
-          preferLocalPositionNodeIdsRef.current,
-        ),
-        pendingLocalPositionUntilConvexMatchesRef.current,
-      );
-      const mergedWithOpPins = applyPinnedNodePositionsReadOnly(
-        merged,
-        getPendingMovePinsFromLocalOps(canvasId as string),
-      );
-      /** Nicht am Drag-Ende leeren (moveNode läuft oft async): solange Convex alt ist, Eintrag behalten und erst bei übereinstimmendem Snapshot entfernen. */
-      const incomingById = new Map(
-        filteredIncoming.map((n) => [n.id, n]),
-      );
-      for (const n of mergedWithOpPins) {
-        if (!preferLocalPositionNodeIdsRef.current.has(n.id)) continue;
-        const inc = incomingById.get(n.id);
-        if (!inc) continue;
-        if (
-          positionsMatchPin(n.position, {
-            x: inc.position.x,
-            y: inc.position.y,
-          })
-        ) {
-          preferLocalPositionNodeIdsRef.current.delete(n.id);
-        }
+      const reconciliation = reconcileCanvasFlowNodes({
+        previousNodes,
+        incomingNodes,
+        convexNodes,
+        deletingNodeIds: deletingNodeIds.current,
+        resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
+        pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
+        preferLocalPositionNodeIds: preferLocalPositionNodeIdsRef.current,
+        pendingLocalPositionPins: pendingLocalPositionUntilConvexMatchesRef.current,
+        pendingMovePins: getPendingMovePinsFromLocalOps(canvasId as string),
+      });
+
+      resolvedRealIdByClientRequestRef.current =
+        reconciliation.inferredRealIdByClientRequest;
+      pendingLocalPositionUntilConvexMatchesRef.current =
+        reconciliation.nextPendingLocalPositionPins;
+      for (const nodeId of reconciliation.clearedPreferLocalPositionNodeIds) {
+        preferLocalPositionNodeIdsRef.current.delete(nodeId);
       }
-      return mergedWithOpPins;
+
+      return reconciliation.nodes;
     });
   }, [canvasId, convexNodes, edges, storageUrlsById]);
 

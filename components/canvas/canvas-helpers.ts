@@ -1,7 +1,7 @@
 import type { DefaultEdgeOptions, Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { readCanvasOps } from "@/lib/canvas-local-persistence";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNodeDeleteBlockReason } from "@/lib/toast";
 import { getSourceImage } from "@/lib/image-pipeline/contracts";
 
@@ -383,38 +383,6 @@ export function applyPinnedNodePositionsReadOnly(
     if (positionsMatchPin(node.position, pin)) return node;
     return { ...node, position: { x: pin.x, y: pin.y } };
   });
-}
-
-export function inferPendingConnectionNodeHandoff(
-  previousNodes: RFNode[],
-  incomingConvexNodes: Doc<"nodes">[],
-  pendingConnectionCreates: ReadonlySet<string>,
-  resolvedRealIdByClientRequest: Map<string, Id<"nodes">>,
-): void {
-  const unresolvedClientRequestIds: string[] = [];
-  for (const clientRequestId of pendingConnectionCreates) {
-    if (resolvedRealIdByClientRequest.has(clientRequestId)) continue;
-    const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
-    const optimisticNodePresent = previousNodes.some(
-      (node) => node.id === optimisticNodeId,
-    );
-    if (optimisticNodePresent) {
-      unresolvedClientRequestIds.push(clientRequestId);
-    }
-  }
-  if (unresolvedClientRequestIds.length !== 1) return;
-
-  const previousIds = new Set(previousNodes.map((node) => node.id));
-  const newlyAppearedIncomingRealNodeIds = incomingConvexNodes
-    .map((node) => node._id as string)
-    .filter((id) => !isOptimisticNodeId(id))
-    .filter((id) => !previousIds.has(id));
-
-  if (newlyAppearedIncomingRealNodeIds.length !== 1) return;
-
-  const inferredClientRequestId = unresolvedClientRequestIds[0]!;
-  const inferredRealId = newlyAppearedIncomingRealNodeIds[0] as Id<"nodes">;
-  resolvedRealIdByClientRequest.set(inferredClientRequestId, inferredRealId);
 }
 
 function isMoveNodeOpPayload(
