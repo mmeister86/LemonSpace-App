@@ -12,6 +12,7 @@ export default defineConfig({
     include: [
       "tests/**/*.test.ts",
       "components/canvas/__tests__/canvas-flow-reconciliation-helpers.test.ts",
+      "components/canvas/__tests__/use-canvas-flow-reconciliation.test.ts",
       "components/canvas/__tests__/use-canvas-sync-engine.test.ts",
       "components/canvas/__tests__/use-canvas-sync-engine-hook.test.tsx",
     ],
