@@ -846,7 +846,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         lastRenderErrorHash: undefined,
       };
 
-      const shouldUploadAfterRender = mode === "upload" || !status.isOffline;
+      const shouldUploadAfterRender = mode === "upload";
 
       if (!shouldUploadAfterRender) {
         await persistImmediately(renderNext);
