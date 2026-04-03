@@ -1,6 +1,11 @@
 import { v, ConvexError } from "convex/values";
-import { action, internalAction, internalMutation } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+} from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import type { FunctionReference } from "convex/server";
 import {
   generateImageViaOpenRouter,
   DEFAULT_IMAGE_MODEL,
@@ -499,7 +504,10 @@ export const generateImage = action({
     model: v.optional(v.string()),
     aspectRatio: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ queued: true; nodeId: Id<"nodes"> }> => {
     const startedAt = Date.now();
     const canvas = await ctx.runQuery(api.canvases.get, {
       canvasId: args.canvasId,
@@ -508,7 +516,23 @@ export const generateImage = action({
       throw new Error("Canvas not found");
     }
 
+    const node = await ctx.runQuery(
+      api.nodes.get as FunctionReference<"query", "public">,
+      {
+        nodeId: args.nodeId,
+        includeStorageUrl: false,
+      }
+    );
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    if (node.canvasId !== args.canvasId) {
+      throw new Error("Node does not belong to canvas");
+    }
+
     const userId = canvas.ownerId;
+    const verifiedCanvasId = canvas._id;
+    const verifiedNodeId = node._id;
 
     const internalCreditsEnabled =
       process.env.INTERNAL_CREDITS_ENABLED === "true";
@@ -527,8 +551,8 @@ export const generateImage = action({
           estimatedCost: modelConfig.creditCost,
           description: `Bildgenerierung — ${modelConfig.name}`,
           model: modelId,
-          nodeId: args.nodeId,
-          canvasId: args.canvasId,
+          nodeId: verifiedNodeId,
+          canvasId: verifiedCanvasId,
         })
       : null;
 
@@ -542,11 +566,11 @@ export const generateImage = action({
 
     try {
       await ctx.runMutation(internal.ai.markNodeExecuting, {
-        nodeId: args.nodeId,
+        nodeId: verifiedNodeId,
       });
 
       await ctx.scheduler.runAfter(0, internal.ai.processImageGeneration, {
-        nodeId: args.nodeId,
+        nodeId: verifiedNodeId,
         prompt: args.prompt,
         modelId,
         referenceStorageId: args.referenceStorageId,
@@ -558,18 +582,18 @@ export const generateImage = action({
       });
       backgroundJobScheduled = true;
       console.info("[generateImage] background job scheduled", {
-        nodeId: args.nodeId,
-        canvasId: args.canvasId,
+        nodeId: verifiedNodeId,
+        canvasId: verifiedCanvasId,
         modelId,
         reservationId: reservationId ?? null,
         usageIncremented,
         durationMs: Date.now() - startedAt,
       });
-      return { queued: true as const, nodeId: args.nodeId };
+      return { queued: true as const, nodeId: verifiedNodeId };
     } catch (error) {
       console.error("[generateImage] scheduling failed", {
-        nodeId: args.nodeId,
-        canvasId: args.canvasId,
+        nodeId: verifiedNodeId,
+        canvasId: verifiedCanvasId,
         modelId,
         reservationId: reservationId ?? null,
         usageIncremented,
@@ -589,7 +613,7 @@ export const generateImage = action({
       }
 
       await ctx.runMutation(internal.ai.finalizeImageFailure, {
-        nodeId: args.nodeId,
+        nodeId: verifiedNodeId,
         retryCount,
         statusMessage: formatTerminalStatusMessage(error),
       });
