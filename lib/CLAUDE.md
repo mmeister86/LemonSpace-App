@@ -37,11 +37,13 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 
 **Kritische Exports:**
 - `convexNodeToRF`, `convexEdgeToRF`, `convexEdgeToRFWithSourceGlow`
-- `convexNodeDocWithMergedStorageUrl` — URL-Injection für Storage-Bilder
+- `convexNodeDocWithMergedStorageUrl` — URL-Injection für Storage-Bilder aus serverseitig aufgelöster URL-Map oder gecachtem Vorgängerzustand
 - `NODE_DEFAULTS` — Default-Größen und Daten per Node-Typ
 - `NODE_HANDLE_MAP` — Handle-IDs pro Node-Typ
 - `computeBridgeCreatesForDeletedNodes` — Kanten-Reconnect nach Node-Löschung
 - `computeMediaNodeSize` — Dynamische Node-Größe basierend auf Bild-Dimensionen
+
+**Wichtig:** `canvas-utils.ts` erzeugt keine Storage-Fallback-URLs mehr selbst. Die URL-Auflösung kommt aus dem Canvas-Layer (`storage.batchGetUrlsForCanvas`) und wird hier nur noch gemerged/cached.
 
 ---
 

@@ -20,7 +20,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
 | `pexels.ts` | Pexels Stock-Bilder API |
 | `freepik.ts` | Freepik Asset-Browser API |
-| `storage.ts` | Convex File Storage Helpers |
+| `storage.ts` | Convex File Storage Helpers + gebündelte Canvas-URL-Auflösung |
 | `export.ts` | Canvas-Export-Logik |
 | `http.ts` | HTTP-Endpunkte (Webhooks) |
 
@@ -145,6 +145,16 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `edges.create` ist über `clientRequestId` idempotent.
 - `nodes.splitEdgeAtExistingNode` ist über `clientRequestId` idempotent (Replay wird als No-op behandelt).
 - `nodes.batchRemove` ist idempotent tolerant: wenn alle angefragten Nodes bereits entfernt sind, wird die Mutation als No-op beendet.
+
+---
+
+## Storage (`storage.ts`)
+
+- `generateUploadUrl` bleibt eine normale Mutation für Upload-Start im Client.
+- `batchGetUrlsForCanvas` ist absichtlich **keine reaktive Query** mehr, sondern eine Mutation. Der Canvas ruft sie gezielt an, wenn sich das aktuelle Set von `storageId`s geändert hat.
+- Eingabe: `canvasId` + client-seitig ermittelte `storageIds`.
+- Server-seitig werden die angefragten IDs gegen die aktuellen Nodes des Canvas verifiziert, bevor `ctx.storage.getUrl(...)` aufgerufen wird.
+- Ziel der Änderung: weniger Query-Fanout und weniger Canvas-weite Requery-Last bei jedem Node-/Edge-Update.
 
 ---
 

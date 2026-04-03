@@ -8,7 +8,7 @@ import { Palette } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useCanvasAdjustmentPresets } from "@/components/canvas/canvas-presets-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
@@ -47,7 +47,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
   const tToasts = useTranslations("toasts");
   const { queueNodeDataUpdate } = useCanvasSync();
   const savePreset = useMutation(api.presets.save);
-  const userPresets = (useAuthQuery(api.presets.list, { nodeType: "color-adjust" }) ?? []) as PresetDoc[];
+  const userPresets = useCanvasAdjustmentPresets("color-adjust") as PresetDoc[];
 
   const [localData, setLocalData] = useState<ColorAdjustData>(() =>
     normalizeColorAdjustData({ ...cloneAdjustmentData(DEFAULT_COLOR_ADJUST_DATA), ...data }),

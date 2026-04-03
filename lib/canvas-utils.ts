@@ -21,7 +21,7 @@ import {
  */
 /**
  * Reichert Node-Dokumente mit `data.url` an (aus gebündelter Storage-URL-Map).
- * Behält eine zuvor gemappte URL bei, solange die Batch-Query noch lädt.
+ * Behält eine zuvor gemappte URL bei, solange die URL-Auflösung noch lädt.
  */
 export function convexNodeDocWithMergedStorageUrl(
   node: Doc<"nodes">,

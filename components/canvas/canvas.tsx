@@ -72,6 +72,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import {
+  isAdjustmentPresetNodeType,
   isCanvasNodeType,
   type CanvasNodeType,
 } from "@/lib/canvas-node-types";
@@ -95,6 +96,7 @@ import {
   type ConnectionDropMenuState,
 } from "@/components/canvas/canvas-connection-drop-menu";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
+import { CanvasPresetsProvider } from "@/components/canvas/canvas-presets-context";
 import {
   AssetBrowserTargetContext,
   type AssetBrowserTargetApi,
@@ -203,11 +205,6 @@ function summarizeResizePayload(payload: unknown): Record<string, unknown> {
   };
 }
 
-function hasStorageId(node: Doc<"nodes">): boolean {
-  const data = node.data as Record<string, unknown> | undefined;
-  return typeof data?.storageId === "string" && data.storageId.length > 0;
-}
-
 function validateCanvasConnection(
   connection: Connection,
   nodes: RFNode[],
@@ -261,10 +258,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
   const shouldSkipCanvasQueries =
     isSessionPending || isAuthLoading || !isAuthenticated;
-  const convexAuthUserProbe = useQuery(
-    api.auth.safeGetAuthUser,
-    shouldSkipCanvasQueries ? "skip" : {},
-  );
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -282,8 +275,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       convex: {
         isAuthenticated,
         shouldSkipCanvasQueries,
-        probeUserId: convexAuthUserProbe?.userId ?? null,
-        probeRecordId: convexAuthUserProbe?._id ?? null,
       },
       session: {
         hasUser: Boolean(session?.user),
@@ -292,8 +283,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     });
   }, [
     canvasId,
-    convexAuthUserProbe?._id,
-    convexAuthUserProbe?.userId,
     isAuthLoading,
     isAuthenticated,
     isSessionPending,
@@ -310,19 +299,70 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     api.edges.list,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
-  const shouldSkipStorageUrlQuery = useMemo(() => {
-    if (shouldSkipCanvasQueries) return true;
-    if (convexNodes === undefined) return true;
-    return !convexNodes.some(hasStorageId);
-  }, [convexNodes, shouldSkipCanvasQueries]);
-  const storageUrlsById = useQuery(
-    api.storage.batchGetUrlsForCanvas,
-    shouldSkipStorageUrlQuery ? "skip" : { canvasId },
-  );
+  const storageIdsForCanvas = useMemo(() => {
+    if (!convexNodes) {
+      return [] as Id<"_storage">[];
+    }
+
+    return [...new Set(
+      convexNodes.flatMap((node) => {
+        const data = node.data as Record<string, unknown> | undefined;
+        return typeof data?.storageId === "string" && data.storageId.length > 0
+          ? [data.storageId as Id<"_storage">]
+          : [];
+      }),
+    )].sort();
+  }, [convexNodes]);
+  const storageIdsForCanvasKey = storageIdsForCanvas.join(",");
+  const stableStorageIdsForCanvasRef = useRef(storageIdsForCanvas);
+  if (stableStorageIdsForCanvasRef.current.join(",") !== storageIdsForCanvasKey) {
+    stableStorageIdsForCanvasRef.current = storageIdsForCanvas;
+  }
+  const resolveStorageUrlsForCanvas = useMutation(api.storage.batchGetUrlsForCanvas);
+  const [storageUrlsById, setStorageUrlsById] = useState<Record<string, string | undefined>>();
   const canvas = useQuery(
     api.canvases.get,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
+
+  useEffect(() => {
+    const requestedStorageIds = stableStorageIdsForCanvasRef.current;
+
+    if (shouldSkipCanvasQueries || requestedStorageIds.length === 0) {
+      setStorageUrlsById(undefined);
+      return;
+    }
+
+    let cancelled = false;
+
+    void resolveStorageUrlsForCanvas({
+      canvasId,
+      storageIds: requestedStorageIds,
+    })
+      .then((result) => {
+        if (!cancelled) {
+          setStorageUrlsById(result);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          console.warn("[Canvas] failed to resolve storage URLs", {
+            canvasId,
+            storageIdCount: requestedStorageIds.length,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canvasId,
+    resolveStorageUrlsForCanvas,
+    shouldSkipCanvasQueries,
+    storageIdsForCanvasKey,
+  ]);
 
   // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
   const moveNode = useMutation(api.nodes.move);
@@ -571,6 +611,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const [nodes, setNodes] = useState<RFNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
+  const hasPresetAwareNodes = useMemo(
+    () =>
+      nodes.some((node) => isAdjustmentPresetNodeType(node.type ?? "")) ||
+      (convexNodes ?? []).some((node) => isAdjustmentPresetNodeType(node.type)),
+    [convexNodes, nodes],
+  );
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -2970,24 +3016,25 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   return (
     <CanvasSyncProvider value={canvasSyncContextValue}>
-      <CanvasPlacementProvider
-        canvasId={canvasId}
-        createNode={runCreateNodeOnlineOnly}
-        createNodeWithEdgeSplit={runCreateNodeWithEdgeSplitOnlineOnly}
-        createNodeWithEdgeFromSource={runCreateNodeWithEdgeFromSourceOnlineOnly}
-        createNodeWithEdgeToTarget={runCreateNodeWithEdgeToTargetOnlineOnly}
-        onCreateNodeSettled={({ clientRequestId, realId }) => {
-          void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-            (error: unknown) => {
-              console.error(
-                "[Canvas] onCreateNodeSettled syncPendingMove failed",
-                error,
-              );
-            },
-          );
-        }}
-      >
-        <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
+      <CanvasPresetsProvider enabled={hasPresetAwareNodes}>
+        <CanvasPlacementProvider
+          canvasId={canvasId}
+          createNode={runCreateNodeOnlineOnly}
+          createNodeWithEdgeSplit={runCreateNodeWithEdgeSplitOnlineOnly}
+          createNodeWithEdgeFromSource={runCreateNodeWithEdgeFromSourceOnlineOnly}
+          createNodeWithEdgeToTarget={runCreateNodeWithEdgeToTargetOnlineOnly}
+          onCreateNodeSettled={({ clientRequestId, realId }) => {
+            void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+              (error: unknown) => {
+                console.error(
+                  "[Canvas] onCreateNodeSettled syncPendingMove failed",
+                  error,
+                );
+              },
+            );
+          }}
+        >
+          <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
       <div className="relative h-full w-full">
         <CanvasToolbar
           canvasName={canvas?.name ?? "canvas"}
@@ -3079,8 +3126,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         </ReactFlow>
         </div>
       </div>
-        </AssetBrowserTargetContext.Provider>
-      </CanvasPlacementProvider>
+          </AssetBrowserTargetContext.Provider>
+        </CanvasPlacementProvider>
+      </CanvasPresetsProvider>
     </CanvasSyncProvider>
   );
 }

@@ -1,4 +1,4 @@
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Id } from "./_generated/dataModel";
@@ -31,7 +31,7 @@ type StorageUrlResult =
     };
 
 async function assertCanvasOwner(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   canvasId: Id<"canvases">,
   userId: string,
 ): Promise<void> {
@@ -39,29 +39,6 @@ async function assertCanvasOwner(
   if (!canvas || canvas.ownerId !== userId) {
     throw new Error("Canvas not found");
   }
-}
-
-async function listNodesForCanvas(ctx: QueryCtx, canvasId: Id<"canvases">) {
-  return await ctx.db
-    .query("nodes")
-    .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
-    .collect();
-}
-
-function collectStorageIds(
-  nodes: Array<{ data: unknown }>,
-): Array<Id<"_storage">> {
-  const ids = new Set<Id<"_storage">>();
-
-  for (const node of nodes) {
-    const data = node.data as Record<string, unknown> | undefined;
-    const storageId = data?.storageId;
-    if (typeof storageId === "string" && storageId.length > 0) {
-      ids.add(storageId as Id<"_storage">);
-    }
-  }
-
-  return [...ids];
 }
 
 async function resolveStorageUrls(
@@ -141,33 +118,67 @@ export const generateUploadUrl = mutation({
  * Signierte URLs für alle Storage-Assets eines Canvas (gebündelt).
  * `nodes.list` liefert keine URLs mehr, damit Node-Liste schnell bleibt.
  */
-export const batchGetUrlsForCanvas = query({
-  args: { canvasId: v.id("canvases") },
-  handler: async (ctx, { canvasId }) => {
+export const batchGetUrlsForCanvas = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    storageIds: v.array(v.id("_storage")),
+  },
+  handler: async (ctx, { canvasId, storageIds }) => {
     const startedAt = Date.now();
     const user = await requireAuth(ctx);
     await assertCanvasOwner(ctx, canvasId, user.userId);
 
+    const uniqueSortedStorageIds = [...new Set(storageIds)].sort();
+    if (uniqueSortedStorageIds.length === 0) {
+      return {};
+    }
+
     const nodes = await listNodesForCanvas(ctx, canvasId);
-    const nodeCount = nodes.length;
-    const storageIds = collectStorageIds(nodes);
-    const collectTimeMs = Date.now() - startedAt;
-    if (collectTimeMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
-      console.warn("[storage.batchGetUrlsForCanvas] slow node scan", {
+    const allowedStorageIds = new Set(collectStorageIds(nodes));
+    const verifiedStorageIds = uniqueSortedStorageIds.filter((storageId) =>
+      allowedStorageIds.has(storageId),
+    );
+    const rejectedStorageIds = uniqueSortedStorageIds.length - verifiedStorageIds.length;
+    if (rejectedStorageIds > 0) {
+      console.warn("[storage.batchGetUrlsForCanvas] rejected unowned storage ids", {
         canvasId,
-        nodeCount,
-        storageIdCount: storageIds.length,
-        durationMs: collectTimeMs,
+        requestedCount: uniqueSortedStorageIds.length,
+        rejectedStorageIds,
       });
     }
 
-    const result = await resolveStorageUrls(ctx, storageIds);
+    const result = await resolveStorageUrls(ctx, verifiedStorageIds);
     logSlowQuery("batchGetUrlsForCanvas::total", startedAt, {
       canvasId,
-      nodeCount,
-      storageIdCount: storageIds.length,
+      storageIdCount: verifiedStorageIds.length,
+      rejectedStorageIds,
       resolvedCount: Object.keys(result).length,
     });
     return result;
   },
 });
+async function listNodesForCanvas(
+  ctx: QueryCtx | MutationCtx,
+  canvasId: Id<"canvases">,
+) {
+  return await ctx.db
+    .query("nodes")
+    .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
+    .collect();
+}
+
+function collectStorageIds(
+  nodes: Array<{ data: unknown }>,
+): Array<Id<"_storage">> {
+  const ids = new Set<Id<"_storage">>();
+
+  for (const node of nodes) {
+    const data = node.data as Record<string, unknown> | undefined;
+    const storageId = data?.storageId;
+    if (typeof storageId === "string" && storageId.length > 0) {
+      ids.add(storageId as Id<"_storage">);
+    }
+  }
+
+  return [...ids];
+}

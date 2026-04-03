@@ -29,6 +29,7 @@ app/(app)/canvas/[canvasId]/page.tsx
 | Datei | Zweck |
 |------|-------|
 | `canvas-helpers.ts` | Shared Utility-Layer (Optimistic IDs, Node-Merge, Compare-Resolution, Edge/Hit-Helpers, Konstante Defaults) |
+| `canvas-presets-context.tsx` | Shared Preset-Provider für Adjustment-Nodes; bündelt `presets.list` zu einer einzigen Query |
 | `canvas-node-change-helpers.ts` | Dimensions-/Resize-Transformationen für `asset` und `ai-image` Nodes |
 | `canvas-generation-failures.ts` | Hook für AI-Generation-Error-Tracking mit Schwellenwert-Toast |
 | `canvas-scissors.ts` | Hook für Scherenmodus (K/Esc Toggle, Click-Cut, Stroke-Cut) |
@@ -53,7 +54,9 @@ Convex und React Flow verwenden unterschiedliche Datenmodelle. Das Mapping liegt
 
 **Status-Injection:** `convexNodeToRF` schreibt `_status`, `_statusMessage` und `retryCount` in `data`, damit Node-Komponenten darauf zugreifen können ohne das Node-Dokument direkt zu kennen.
 
-**URL-Caching:** Images mit `storageId` werden über einen batch-Storage-URL-Query aufgelöst (`urlByStorage`-Map). Die vorherige URL wird in `previousDataByNodeId` gecacht, um Flackern beim Reload zu vermeiden.
+**URL-Caching:** Images mit `storageId` werden im Canvas nicht mehr über eine reaktive Query aufgelöst. `canvas.tsx` sammelt die aktuellen `storageId`s aus `nodes.list` und ruft `storage.batchGetUrlsForCanvas` gezielt per Mutation auf, nur wenn sich das Set ändert. Die vorherige URL wird in `previousDataByNodeId` gecacht, um Flackern beim Reload zu vermeiden.
+
+**Load-Shedding-Hot-Path:** Der Canvas-Hot-Path soll so wenig Convex-Abhängigkeiten wie möglich haben. Direkt reaktiv bleiben nur die Kernmodelle (`nodes.list`, `edges.list`, `canvases.get`). Nebenpfade wie Storage-URL-Auflösung, Adjustment-Presets und Toolbar-Credits sind bewusst entkoppelt oder zusammengefasst.
 
 ---
 
@@ -146,7 +149,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `asset-browser-panel.tsx` | Freepik/Stock-Asset-Browser |
 | `video-browser-panel.tsx` | Video-Asset-Browser |
 | `canvas-user-menu.tsx` | User-Avatar und Menü |
-| `credit-display.tsx` | Credit-Balance Anzeige in der Toolbar |
+| `credit-display.tsx` | Credit-Balance Anzeige in der Toolbar (nur `credits.getBalance`, kein Tier-Badge) |
 | `export-button.tsx` | Export-Button mit Format-Auswahl |
 | `connection-banner.tsx` | Offline-Banner bei Convex-Verbindungsverlust |
 | `custom-connection-line.tsx` | Angepasste temporäre Verbindungslinie |
@@ -168,6 +171,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 ## Wichtige Gotchas
 
 - **`data.url` vs `storageId`:** Node-Komponenten erhalten `data.url` (aufgelöste HTTP-URL), nicht `storageId` direkt. Die URL wird von `convexNodeDocWithMergedStorageUrl` injiziert. Bei neuen Node-Typen mit Bild immer diesen Flow prüfen.
+- **Adjustment-Presets:** `curves`, `color-adjust`, `light-adjust` und `detail-adjust` dürfen keine eigene `presets.list`-Query feuern. Immer `CanvasPresetsProvider` + `useCanvasAdjustmentPresets(...)` verwenden.
 - **Min-Zoom:** `CANVAS_MIN_ZOOM = 0.5 / 3` — dreimal weiter raus als React-Flow-Default.
 - **Parent-Nodes:** `parentId` zeigt auf einen Group- oder Frame-Node. React Flow erwartet, dass Parent-Nodes vor Child-Nodes in der `nodes`-Array stehen.
 - **Bridge-Edges:** Beim Löschen eines mittleren Nodes werden Kanten automatisch neu verbunden (`computeBridgeCreatesForDeletedNodes` aus `lib/canvas-utils.ts`).

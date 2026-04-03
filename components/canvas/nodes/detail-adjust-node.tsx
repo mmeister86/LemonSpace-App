@@ -8,7 +8,7 @@ import { Focus } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useAuthQuery } from "@/hooks/use-auth-query";
+import { useCanvasAdjustmentPresets } from "@/components/canvas/canvas-presets-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
@@ -47,7 +47,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
   const tToasts = useTranslations("toasts");
   const { queueNodeDataUpdate } = useCanvasSync();
   const savePreset = useMutation(api.presets.save);
-  const userPresets = (useAuthQuery(api.presets.list, { nodeType: "detail-adjust" }) ?? []) as PresetDoc[];
+  const userPresets = useCanvasAdjustmentPresets("detail-adjust") as PresetDoc[];
 
   const [localData, setLocalData] = useState<DetailAdjustData>(() =>
     normalizeDetailAdjustData({ ...cloneAdjustmentData(DEFAULT_DETAIL_ADJUST_DATA), ...data }),

@@ -7,22 +7,6 @@ import { api } from "@/convex/_generated/api";
 import { Coins } from "lucide-react";
 import { toast } from "@/lib/toast";
 
-const TIER_LABELS: Record<string, string> = {
-  free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  max: "Max",
-  business: "Business",
-};
-
-const TIER_COLORS: Record<string, string> = {
-  free: "text-muted-foreground",
-  starter: "text-blue-500",
-  pro: "text-purple-500",
-  max: "text-amber-500",
-  business: "text-amber-500",
-};
-
 const showTestCreditGrant =
   typeof process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "string" &&
   process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "true";
@@ -30,10 +14,9 @@ const showTestCreditGrant =
 export function CreditDisplay() {
   const t = useTranslations('toasts');
   const balance = useAuthQuery(api.credits.getBalance);
-  const subscription = useAuthQuery(api.credits.getSubscription);
   const grantTestCredits = useMutation(api.credits.grantTestCredits);
 
-  if (balance === undefined || subscription === undefined) {
+  if (balance === undefined) {
     return (
       <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-1.5 animate-pulse">
         <Coins className="h-4 w-4 text-muted-foreground" />
@@ -43,9 +26,6 @@ export function CreditDisplay() {
   }
 
   const available = balance.balance - balance.reserved;
-  const tier = subscription.tier;
-  const tierLabel = TIER_LABELS[tier] ?? tier;
-  const tierColor = TIER_COLORS[tier] ?? "text-muted-foreground";
 
   const isLow = available < 10;
   const isEmpty = available <= 0;
@@ -82,8 +62,6 @@ export function CreditDisplay() {
             ({balance.reserved} reserved)
           </span>
         )}
-        <span className="text-xs text-muted-foreground/70">·</span>
-        <span className={`text-xs font-medium ${tierColor}`}>{tierLabel}</span>
       </div>
       {showTestCreditGrant && (
         <button
