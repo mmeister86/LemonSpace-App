@@ -20,8 +20,6 @@ import {
   type Node as RFNode,
   type Edge as RFEdge,
   type EdgeChange,
-  type Connection,
-  type OnConnectEnd,
   BackgroundVariant,
 } from "@xyflow/react";
 import { cn } from "@/lib/utils";
@@ -42,14 +40,7 @@ import {
 } from "@/lib/canvas-node-types";
 
 import { nodeTypes } from "./node-types";
-import {
-  validateCanvasConnection,
-  validateCanvasConnectionByType,
-} from "./canvas-connection-validation";
-import {
-  NODE_DEFAULTS,
-  NODE_HANDLE_MAP,
-} from "@/lib/canvas-utils";
+import { NODE_DEFAULTS } from "@/lib/canvas-utils";
 import CanvasToolbar, {
   type CanvasNavTool,
 } from "@/components/canvas/canvas-toolbar";
@@ -57,7 +48,6 @@ import { CanvasAppMenu } from "@/components/canvas/canvas-app-menu";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import {
   CanvasConnectionDropMenu,
-  type ConnectionDropMenuState,
 } from "@/components/canvas/canvas-connection-drop-menu";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
 import { CanvasPresetsProvider } from "@/components/canvas/canvas-presets-context";
@@ -66,24 +56,21 @@ import {
   type AssetBrowserTargetApi,
 } from "@/components/canvas/asset-browser-panel";
 import CustomConnectionLine from "@/components/canvas/custom-connection-line";
-import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import {
   CANVAS_MIN_ZOOM,
   DEFAULT_EDGE_OPTIONS,
-  getConnectEndClientPoint,
   getMiniMapNodeColor,
   getMiniMapNodeStrokeColor,
   getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
   isEditableKeyboardTarget,
-  isOptimisticNodeId,
   withResolvedCompareData,
 } from "./canvas-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
 import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
 import { getImageDimensions } from "./canvas-media-utils";
 import { useCanvasNodeInteractions } from "./use-canvas-node-interactions";
-import { useCanvasReconnectHandlers } from "./canvas-reconnect";
+import { useCanvasConnections } from "./use-canvas-connections";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
 import { useCanvasData } from "./use-canvas-data";
@@ -167,10 +154,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Future hook seam: render composition + shared local flow state ─────
   const nodesRef = useRef<RFNode[]>(nodes);
   nodesRef.current = nodes;
-  const [connectionDropMenu, setConnectionDropMenu] =
-    useState<ConnectionDropMenuState | null>(null);
-  const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
-  connectionDropMenuRef.current = connectionDropMenu;
 
   const [scissorsMode, setScissorsMode] = useState(false);
   const [scissorStrokePreview, setScissorStrokePreview] = useState<
@@ -293,18 +276,34 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runRemoveEdgeMutation,
   });
 
-  const { onReconnectStart, onReconnect, onReconnectEnd } = useCanvasReconnectHandlers({
+  const {
+    connectionDropMenu,
+    closeConnectionDropMenu,
+    handleConnectionDropPick,
+    onConnect,
+    onConnectEnd,
+    onReconnectStart,
+    onReconnect,
+    onReconnectEnd,
+  } = useCanvasConnections({
     canvasId,
+    nodes,
+    edges,
+    nodesRef,
+    edgesRef,
     edgeReconnectSuccessful,
     isReconnectDragActiveRef,
+    pendingConnectionCreatesRef,
+    resolvedRealIdByClientRequestRef,
     setEdges,
+    setEdgeSyncNonce,
+    screenToFlowPosition,
+    syncPendingMoveForClientRequest,
     runCreateEdgeMutation,
     runRemoveEdgeMutation,
-    validateConnection: (oldEdge, nextConnection) =>
-      validateCanvasConnection(nextConnection, nodes, edges, oldEdge.id),
-    onInvalidConnection: (reason) => {
-      showConnectionRejectedToast(reason as CanvasConnectionValidationReason);
-    },
+    runCreateNodeWithEdgeFromSourceOnlineOnly,
+    runCreateNodeWithEdgeToTargetOnlineOnly,
+    showConnectionRejectedToast,
   });
 
   useCanvasFlowReconciliation({
@@ -371,178 +370,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (process.env.NODE_ENV === "production") return;
     console.error("[ReactFlow error]", { canvasId, id, error });
   }, [canvasId]);
-
-  // ─── Future hook seam: connections ────────────────────────────
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      const validationError = validateCanvasConnection(connection, nodes, edges);
-      if (validationError) {
-        showConnectionRejectedToast(validationError);
-        return;
-      }
-
-      if (!connection.source || !connection.target) return;
-
-      void runCreateEdgeMutation({
-        canvasId,
-        sourceNodeId: connection.source as Id<"nodes">,
-        targetNodeId: connection.target as Id<"nodes">,
-        sourceHandle: connection.sourceHandle ?? undefined,
-        targetHandle: connection.targetHandle ?? undefined,
-      });
-    },
-    [canvasId, edges, nodes, runCreateEdgeMutation, showConnectionRejectedToast],
-  );
-
-  const onConnectEnd = useCallback<OnConnectEnd>(
-    (event, connectionState) => {
-      if (isReconnectDragActiveRef.current) return;
-      if (connectionState.isValid === true) return;
-      const fromNode = connectionState.fromNode;
-      const fromHandle = connectionState.fromHandle;
-      if (!fromNode || !fromHandle) return;
-
-      const pt = getConnectEndClientPoint(event);
-      if (!pt) return;
-
-      const flow = screenToFlowPosition({ x: pt.x, y: pt.y });
-      setConnectionDropMenu({
-        screenX: pt.x,
-        screenY: pt.y,
-        flowX: flow.x,
-        flowY: flow.y,
-        fromNodeId: fromNode.id as Id<"nodes">,
-        fromHandleId: fromHandle.id ?? undefined,
-        fromHandleType: fromHandle.type,
-      });
-    },
-    [screenToFlowPosition],
-  );
-
-  const handleConnectionDropPick = useCallback(
-    (template: CanvasNodeTemplate) => {
-      const ctx = connectionDropMenuRef.current;
-      if (!ctx) return;
-
-      const fromNode = nodesRef.current.find((node) => node.id === ctx.fromNodeId);
-      if (!fromNode) {
-        showConnectionRejectedToast("unknown-node");
-        return;
-      }
-
-      const defaults = NODE_DEFAULTS[template.type] ?? {
-        width: 200,
-        height: 100,
-        data: {},
-      };
-      const clientRequestId = crypto.randomUUID();
-      pendingConnectionCreatesRef.current.add(clientRequestId);
-      const handles = NODE_HANDLE_MAP[template.type];
-      const width = template.width ?? defaults.width;
-      const height = template.height ?? defaults.height;
-      const data = {
-        ...defaults.data,
-        ...(template.defaultData as Record<string, unknown>),
-        canvasId,
-      };
-
-      const base = {
-        canvasId,
-        type: template.type,
-        positionX: ctx.flowX,
-        positionY: ctx.flowY,
-        width,
-        height,
-        data,
-        clientRequestId,
-      };
-
-      const settle = (realId: Id<"nodes">) => {
-        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-          (error: unknown) => {
-            console.error("[Canvas] settle syncPendingMove failed", error);
-          },
-        );
-      };
-
-      if (ctx.fromHandleType === "source") {
-        const validationError = validateCanvasConnectionByType({
-          sourceType: fromNode.type ?? "",
-          targetType: template.type,
-          targetNodeId: `__pending_${template.type}_${Date.now()}`,
-          edges: edgesRef.current,
-        });
-        if (validationError) {
-          showConnectionRejectedToast(validationError);
-          return;
-        }
-
-        void runCreateNodeWithEdgeFromSourceOnlineOnly({
-          ...base,
-          sourceNodeId: ctx.fromNodeId,
-          sourceHandle: ctx.fromHandleId,
-          targetHandle: handles?.target ?? undefined,
-        })
-          .then((realId) => {
-            if (isOptimisticNodeId(realId as string)) {
-              return;
-            }
-            resolvedRealIdByClientRequestRef.current.set(
-              clientRequestId,
-              realId,
-            );
-            settle(realId);
-            setEdgeSyncNonce((n) => n + 1);
-          })
-          .catch((error) => {
-            pendingConnectionCreatesRef.current.delete(clientRequestId);
-            console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
-          });
-      } else {
-        const validationError = validateCanvasConnectionByType({
-          sourceType: template.type,
-          targetType: fromNode.type ?? "",
-          targetNodeId: fromNode.id,
-          edges: edgesRef.current,
-        });
-        if (validationError) {
-          showConnectionRejectedToast(validationError);
-          return;
-        }
-
-        void runCreateNodeWithEdgeToTargetOnlineOnly({
-          ...base,
-          targetNodeId: ctx.fromNodeId,
-          sourceHandle: handles?.source ?? undefined,
-          targetHandle: ctx.fromHandleId,
-        })
-          .then((realId) => {
-            if (isOptimisticNodeId(realId as string)) {
-              return;
-            }
-            resolvedRealIdByClientRequestRef.current.set(
-              clientRequestId,
-              realId,
-            );
-            settle(realId);
-            setEdgeSyncNonce((n) => n + 1);
-          })
-          .catch((error) => {
-            pendingConnectionCreatesRef.current.delete(clientRequestId);
-            console.error("[Canvas] createNodeWithEdgeToTarget failed", error);
-          });
-      }
-    },
-    [
-      canvasId,
-      pendingConnectionCreatesRef,
-      resolvedRealIdByClientRequestRef,
-      runCreateNodeWithEdgeFromSourceOnlineOnly,
-      runCreateNodeWithEdgeToTargetOnlineOnly,
-      showConnectionRejectedToast,
-      syncPendingMoveForClientRequest,
-    ],
-  );
 
   // ─── Future hook seam: drop flows ─────────────────────────────
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -753,7 +580,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         <CanvasCommandPalette />
         <CanvasConnectionDropMenu
           state={connectionDropMenu}
-          onClose={() => setConnectionDropMenu(null)}
+          onClose={closeConnectionDropMenu}
           onPick={handleConnectionDropPick}
         />
         {scissorsMode ? (
