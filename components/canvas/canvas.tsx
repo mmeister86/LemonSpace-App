@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useTheme } from "next-themes";
 import { useTranslations } from "next-intl";
@@ -16,12 +15,10 @@ import {
   Background,
   Controls,
   MiniMap,
-  applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
   type Node as RFNode,
   type Edge as RFEdge,
-  type NodeChange,
   type EdgeChange,
   type Connection,
   type OnConnectEnd,
@@ -69,27 +66,20 @@ import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import {
   CANVAS_MIN_ZOOM,
-  clientRequestIdFromOptimisticNodeId,
   DEFAULT_EDGE_OPTIONS,
-  EDGE_INTERSECTION_HIGHLIGHT_STYLE,
   getConnectEndClientPoint,
   getMiniMapNodeColor,
   getMiniMapNodeStrokeColor,
-  getNodeCenterClientPosition,
-  getIntersectedEdgeId,
   getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
-  hasHandleKey,
   isEditableKeyboardTarget,
-  isOptimisticEdgeId,
   isOptimisticNodeId,
-  normalizeHandle,
   withResolvedCompareData,
 } from "./canvas-helpers";
-import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
 import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
 import { getImageDimensions } from "./canvas-media-utils";
+import { useCanvasNodeInteractions } from "./use-canvas-node-interactions";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
@@ -315,11 +305,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // Delete Edge on Drop
   const edgeReconnectSuccessful = useRef(true);
   const isReconnectDragActiveRef = useRef(false);
-  const overlappedEdgeRef = useRef<string | null>(null);
-  const highlightedEdgeRef = useRef<string | null>(null);
-  const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
-    undefined,
-  );
   useGenerationFailureWarnings(t, convexNodes);
 
   const { onEdgeClickScissors, onScissorsFlowPointerDownCapture } = useCanvasScissors({
@@ -386,64 +371,31 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setNodes((nds) => withResolvedCompareData(nds, edges));
   }, [edges]);
 
-  // ─── Future hook seam: node interactions ──────────────────────
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      for (const c of changes) {
-        if (c.type === "dimensions") {
-          if (c.resizing === true) {
-            isResizing.current = true;
-          } else if (c.resizing === false) {
-            isResizing.current = false;
-          }
-        }
-      }
-
-      const removedIds = new Set<string>();
-      for (const c of changes) {
-        if (c.type === "remove") {
-          removedIds.add(c.id);
-        }
-      }
-
-      setNodes((nds) => {
-        for (const c of changes) {
-          if (c.type === "position" && "id" in c) {
-            pendingLocalPositionUntilConvexMatchesRef.current.delete(c.id);
-            preferLocalPositionNodeIdsRef.current.add(c.id);
-          }
-        }
-
-        const adjustedChanges = adjustNodeDimensionChanges(changes, nds);
-
-        const nextNodes = applyNodeChanges(adjustedChanges, nds);
-
-        for (const change of adjustedChanges) {
-          if (change.type !== "dimensions") continue;
-          if (!change.dimensions) continue;
-          if (removedIds.has(change.id)) continue;
-          const prevNode = nds.find((node) => node.id === change.id);
-          const nextNode = nextNodes.find((node) => node.id === change.id);
-          void prevNode;
-          void nextNode;
-          if (change.resizing !== false) continue;
-
-          void runResizeNodeMutation({
-            nodeId: change.id as Id<"nodes">,
-            width: change.dimensions.width,
-            height: change.dimensions.height,
-          }).catch((error: unknown) => {
-            if (process.env.NODE_ENV !== "production") {
-              console.warn("[Canvas] resizeNode failed", error);
-            }
-          });
-        }
-
-        return nextNodes;
-      });
+  const {
+    onNodesChange,
+    onNodeDragStart,
+    onNodeDrag,
+    onNodeDragStop,
+  } = useCanvasNodeInteractions({
+    canvasId,
+    edges,
+    setNodes,
+    setEdges,
+    refs: {
+      isDragging,
+      isResizing,
+      pendingLocalPositionUntilConvexMatchesRef,
+      preferLocalPositionNodeIdsRef,
+      pendingMoveAfterCreateRef,
+      resolvedRealIdByClientRequestRef,
+      pendingEdgeSplitByClientRequestRef,
     },
-    [pendingLocalPositionUntilConvexMatchesRef, preferLocalPositionNodeIdsRef, runResizeNodeMutation],
-  );
+    runResizeNodeMutation,
+    runMoveNodeMutation,
+    runBatchMoveNodesMutation,
+    runSplitEdgeAtExistingNodeMutation,
+    syncPendingMoveForClientRequest,
+  });
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((eds) => applyEdgeChanges(changes, eds));
@@ -453,312 +405,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     if (process.env.NODE_ENV === "production") return;
     console.error("[ReactFlow error]", { canvasId, id, error });
   }, [canvasId]);
-
-  const setHighlightedIntersectionEdge = useCallback((edgeId: string | null) => {
-    const previousHighlightedEdgeId = highlightedEdgeRef.current;
-    if (previousHighlightedEdgeId === edgeId) {
-      return;
-    }
-
-    setEdges((currentEdges) => {
-      let nextEdges = currentEdges;
-
-      if (previousHighlightedEdgeId) {
-        nextEdges = nextEdges.map((edge) =>
-          edge.id === previousHighlightedEdgeId
-            ? {
-                ...edge,
-                style: highlightedEdgeOriginalStyleRef.current,
-              }
-            : edge,
-        );
-      }
-
-      if (!edgeId) {
-        highlightedEdgeOriginalStyleRef.current = undefined;
-        return nextEdges;
-      }
-
-      const edgeToHighlight = nextEdges.find((edge) => edge.id === edgeId);
-      if (!edgeToHighlight || edgeToHighlight.className === "temp") {
-        highlightedEdgeOriginalStyleRef.current = undefined;
-        return nextEdges;
-      }
-
-      highlightedEdgeOriginalStyleRef.current = edgeToHighlight.style;
-
-      return nextEdges.map((edge) =>
-        edge.id === edgeId
-          ? {
-              ...edge,
-              style: {
-                ...(edge.style ?? {}),
-                ...EDGE_INTERSECTION_HIGHLIGHT_STYLE,
-              },
-            }
-          : edge,
-      );
-    });
-
-    highlightedEdgeRef.current = edgeId;
-  }, []);
-
-  const onNodeDrag = useCallback(
-    (_event: React.MouseEvent, node: RFNode) => {
-      const nodeCenter = getNodeCenterClientPosition(node.id);
-      if (!nodeCenter) {
-        overlappedEdgeRef.current = null;
-        setHighlightedIntersectionEdge(null);
-        return;
-      }
-
-      const intersectedEdgeId = getIntersectedEdgeId(nodeCenter);
-      if (!intersectedEdgeId) {
-        overlappedEdgeRef.current = null;
-        setHighlightedIntersectionEdge(null);
-        return;
-      }
-
-      const intersectedEdge = edges.find(
-        (edge) =>
-          edge.id === intersectedEdgeId &&
-          edge.className !== "temp" &&
-          !isOptimisticEdgeId(edge.id),
-      );
-      if (!intersectedEdge) {
-        overlappedEdgeRef.current = null;
-        setHighlightedIntersectionEdge(null);
-        return;
-      }
-
-      if (
-        intersectedEdge.source === node.id ||
-        intersectedEdge.target === node.id
-      ) {
-        overlappedEdgeRef.current = null;
-        setHighlightedIntersectionEdge(null);
-        return;
-      }
-
-      const handles = NODE_HANDLE_MAP[node.type ?? ""];
-      if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
-        overlappedEdgeRef.current = null;
-        setHighlightedIntersectionEdge(null);
-        return;
-      }
-
-      overlappedEdgeRef.current = intersectedEdge.id;
-      setHighlightedIntersectionEdge(intersectedEdge.id);
-    },
-    [edges, setHighlightedIntersectionEdge],
-  );
-
-  // Drag start / drag / drag stop stay together for the future node interaction hook.
-  const onNodeDragStart = useCallback(
-    (_event: ReactMouseEvent, _node: RFNode, draggedNodes: RFNode[]) => {
-      isDragging.current = true;
-      overlappedEdgeRef.current = null;
-      setHighlightedIntersectionEdge(null);
-      for (const n of draggedNodes) {
-        pendingLocalPositionUntilConvexMatchesRef.current.delete(n.id);
-      }
-    },
-    [pendingLocalPositionUntilConvexMatchesRef, setHighlightedIntersectionEdge],
-  );
-
-  const onNodeDragStop = useCallback(
-    (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
-      const primaryNode = (node as RFNode | undefined) ?? draggedNodes[0];
-      const intersectedEdgeId = overlappedEdgeRef.current;
-
-      void (async () => {
-        if (!primaryNode) {
-          overlappedEdgeRef.current = null;
-          setHighlightedIntersectionEdge(null);
-          isDragging.current = false;
-          return;
-        }
-        try {
-          const intersectedEdge = intersectedEdgeId
-            ? edges.find(
-                (edge) =>
-                  edge.id === intersectedEdgeId &&
-                  edge.className !== "temp" &&
-                  !isOptimisticEdgeId(edge.id),
-              )
-            : undefined;
-
-          const splitHandles = NODE_HANDLE_MAP[primaryNode.type ?? ""];
-          const splitEligible =
-            intersectedEdge !== undefined &&
-            splitHandles !== undefined &&
-            intersectedEdge.source !== primaryNode.id &&
-            intersectedEdge.target !== primaryNode.id &&
-            hasHandleKey(splitHandles, "source") &&
-            hasHandleKey(splitHandles, "target");
-
-          if (draggedNodes.length > 1) {
-            for (const n of draggedNodes) {
-              const cid = clientRequestIdFromOptimisticNodeId(n.id);
-              if (cid) {
-                pendingMoveAfterCreateRef.current.set(cid, {
-                  positionX: n.position.x,
-                  positionY: n.position.y,
-                });
-                await syncPendingMoveForClientRequest(cid);
-              }
-            }
-            const realMoves = draggedNodes.filter((n) => !isOptimisticNodeId(n.id));
-            if (realMoves.length > 0) {
-              await runBatchMoveNodesMutation({
-                moves: realMoves.map((n) => ({
-                  nodeId: n.id as Id<"nodes">,
-                  positionX: n.position.x,
-                  positionY: n.position.y,
-                })),
-              });
-            }
-
-            if (!splitEligible || !intersectedEdge) {
-              return;
-            }
-
-            const multiCid = clientRequestIdFromOptimisticNodeId(primaryNode.id);
-            let middleId = primaryNode.id as Id<"nodes">;
-            if (multiCid) {
-              const r = resolvedRealIdByClientRequestRef.current.get(multiCid);
-              if (!r) {
-                pendingEdgeSplitByClientRequestRef.current.set(multiCid, {
-                  intersectedEdgeId: intersectedEdge.id as Id<"edges">,
-                  sourceNodeId: intersectedEdge.source as Id<"nodes">,
-                  targetNodeId: intersectedEdge.target as Id<"nodes">,
-                  intersectedSourceHandle: normalizeHandle(
-                    intersectedEdge.sourceHandle,
-                  ),
-                  intersectedTargetHandle: normalizeHandle(
-                    intersectedEdge.targetHandle,
-                  ),
-                  middleSourceHandle: normalizeHandle(splitHandles.source),
-                  middleTargetHandle: normalizeHandle(splitHandles.target),
-                  positionX: primaryNode.position.x,
-                  positionY: primaryNode.position.y,
-                });
-                return;
-              }
-              middleId = r;
-            }
-
-            await runSplitEdgeAtExistingNodeMutation({
-              canvasId,
-              splitEdgeId: intersectedEdge.id as Id<"edges">,
-              middleNodeId: middleId,
-              splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-              splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-              newNodeSourceHandle: normalizeHandle(splitHandles.source),
-              newNodeTargetHandle: normalizeHandle(splitHandles.target),
-            });
-            return;
-          }
-
-          if (!splitEligible || !intersectedEdge) {
-            const cidSingle = clientRequestIdFromOptimisticNodeId(primaryNode.id);
-            if (cidSingle) {
-              pendingMoveAfterCreateRef.current.set(cidSingle, {
-                positionX: primaryNode.position.x,
-                positionY: primaryNode.position.y,
-              });
-              await syncPendingMoveForClientRequest(cidSingle);
-            } else {
-              await runMoveNodeMutation({
-                nodeId: primaryNode.id as Id<"nodes">,
-                positionX: primaryNode.position.x,
-                positionY: primaryNode.position.y,
-              });
-            }
-            return;
-          }
-
-          const singleCid = clientRequestIdFromOptimisticNodeId(primaryNode.id);
-          if (singleCid) {
-            const resolvedSingle =
-              resolvedRealIdByClientRequestRef.current.get(singleCid);
-            if (!resolvedSingle) {
-              pendingMoveAfterCreateRef.current.set(singleCid, {
-                positionX: primaryNode.position.x,
-                positionY: primaryNode.position.y,
-              });
-              pendingEdgeSplitByClientRequestRef.current.set(singleCid, {
-                intersectedEdgeId: intersectedEdge.id as Id<"edges">,
-                sourceNodeId: intersectedEdge.source as Id<"nodes">,
-                targetNodeId: intersectedEdge.target as Id<"nodes">,
-                intersectedSourceHandle: normalizeHandle(
-                  intersectedEdge.sourceHandle,
-                ),
-                intersectedTargetHandle: normalizeHandle(
-                  intersectedEdge.targetHandle,
-                ),
-                middleSourceHandle: normalizeHandle(splitHandles.source),
-                middleTargetHandle: normalizeHandle(splitHandles.target),
-                positionX: primaryNode.position.x,
-                positionY: primaryNode.position.y,
-              });
-              await syncPendingMoveForClientRequest(singleCid);
-              return;
-            }
-            await runSplitEdgeAtExistingNodeMutation({
-              canvasId,
-              splitEdgeId: intersectedEdge.id as Id<"edges">,
-              middleNodeId: resolvedSingle,
-              splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-              splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-              newNodeSourceHandle: normalizeHandle(splitHandles.source),
-              newNodeTargetHandle: normalizeHandle(splitHandles.target),
-              positionX: primaryNode.position.x,
-              positionY: primaryNode.position.y,
-            });
-            pendingMoveAfterCreateRef.current.delete(singleCid);
-            return;
-          }
-
-          await runSplitEdgeAtExistingNodeMutation({
-            canvasId,
-            splitEdgeId: intersectedEdge.id as Id<"edges">,
-            middleNodeId: primaryNode.id as Id<"nodes">,
-            splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-            splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-            newNodeSourceHandle: normalizeHandle(splitHandles.source),
-            newNodeTargetHandle: normalizeHandle(splitHandles.target),
-            positionX: primaryNode.position.x,
-            positionY: primaryNode.position.y,
-          });
-        } catch (error) {
-          console.error("[Canvas edge intersection split failed]", {
-            canvasId,
-            nodeId: primaryNode?.id ?? null,
-            nodeType: primaryNode?.type ?? null,
-            intersectedEdgeId,
-            error: String(error),
-          });
-        } finally {
-          overlappedEdgeRef.current = null;
-          setHighlightedIntersectionEdge(null);
-          isDragging.current = false;
-        }
-      })();
-    },
-    [
-      canvasId,
-      edges,
-      runBatchMoveNodesMutation,
-      runMoveNodeMutation,
-      pendingEdgeSplitByClientRequestRef,
-      pendingMoveAfterCreateRef,
-      resolvedRealIdByClientRequestRef,
-      setHighlightedIntersectionEdge,
-      runSplitEdgeAtExistingNodeMutation,
-      syncPendingMoveForClientRequest,
-    ],
-  );
 
   // ─── Future hook seam: connections ────────────────────────────
   const onConnect = useCallback(
