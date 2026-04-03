@@ -99,7 +99,7 @@ export function useCanvasDeleteHandlers({
 
       return true;
     },
-    [],
+    [t],
   );
 
   const onNodesDelete = useCallback(

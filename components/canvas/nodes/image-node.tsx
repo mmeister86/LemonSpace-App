@@ -84,7 +84,7 @@ export default function ImageNode({
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "syncing">("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [pendingUploadStorageId, setPendingUploadStorageId] = useState<string | null>(
     null,
@@ -93,19 +93,13 @@ export default function ImageNode({
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const hasAutoSizedRef = useRef(false);
 
-  useEffect(() => {
-    if (!isUploading || !pendingUploadStorageId) return;
-
-    if (
-      data.storageId === pendingUploadStorageId &&
-      typeof data.url === "string" &&
-      data.url.length > 0
-    ) {
-      setIsUploading(false);
-      setPendingUploadStorageId(null);
-      setUploadProgress(0);
-    }
-  }, [data.storageId, data.url, isUploading, pendingUploadStorageId]);
+  const isPendingUploadSynced =
+    pendingUploadStorageId !== null &&
+    data.storageId === pendingUploadStorageId &&
+    typeof data.url === "string" &&
+    data.url.length > 0;
+  const isWaitingForCanvasSync = pendingUploadStorageId !== null && !isPendingUploadSynced;
+  const isUploading = uploadPhase !== "idle" || isWaitingForCanvasSync;
 
   useEffect(() => {
     if (typeof id === "string" && id.startsWith(OPTIMISTIC_NODE_PREFIX)) {
@@ -170,7 +164,7 @@ export default function ImageNode({
         return;
       }
 
-      setIsUploading(true);
+      setUploadPhase("uploading");
       setUploadProgress(0);
       setPendingUploadStorageId(null);
 
@@ -216,6 +210,7 @@ export default function ImageNode({
 
         setUploadProgress(100);
         setPendingUploadStorageId(storageId);
+        setUploadPhase("syncing");
 
         await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
@@ -241,6 +236,7 @@ export default function ImageNode({
         }
 
         toast.success(t('canvas.imageUploaded'));
+        setUploadPhase("idle");
       } catch (err) {
         console.error("Upload failed:", err);
         setPendingUploadStorageId(null);
@@ -249,7 +245,7 @@ export default function ImageNode({
           err instanceof Error ? err.message : undefined,
         );
         setUploadProgress(0);
-        setIsUploading(false);
+        setUploadPhase("idle");
       }
     },
     [
@@ -259,6 +255,7 @@ export default function ImageNode({
       queueNodeDataUpdate,
       queueNodeResize,
       status.isOffline,
+      t,
     ],
   );
 
@@ -312,8 +309,9 @@ export default function ImageNode({
   }, [isUploading]);
 
   const showFilename = Boolean(data.filename && data.url);
+  const effectiveUploadProgress = isWaitingForCanvasSync ? 100 : uploadProgress;
   const uploadingLabel =
-    uploadProgress === 100 && pendingUploadStorageId
+    isWaitingForCanvasSync
       ? "100% — wird synchronisiert…"
       : "Wird hochgeladen…";
 
@@ -365,10 +363,10 @@ export default function ImageNode({
               <div className="flex flex-col items-center gap-2">
                 <span className="text-xs text-muted-foreground">{uploadingLabel}</span>
                 <div className="w-40">
-                  <Progress value={uploadProgress} className="h-1.5" />
+                  <Progress value={effectiveUploadProgress} className="h-1.5" />
                 </div>
                 <span className="text-[11px] text-muted-foreground">
-                  {uploadProgress}%
+                  {effectiveUploadProgress}%
                 </span>
               </div>
             </div>
