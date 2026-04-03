@@ -3,6 +3,7 @@
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useTranslations } from "next-intl";
 import { ExternalLink } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,11 +21,15 @@ const TIER_LABELS: Record<keyof typeof TIER_MONTHLY_CREDITS, string> = {
 
 export function ManageSubscription() {
   const t = useTranslations('toasts');
+  const [liveMessage, setLiveMessage] = useState("");
   const subscription = useAuthQuery(api.credits.getSubscription);
   const tier = normalizeTier(subscription?.tier);
 
   return (
     <div className="flex items-center justify-between rounded-xl border bg-card p-6">
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {liveMessage}
+      </p>
       <div>
         <p className="text-sm text-muted-foreground">Current plan</p>
         <div className="mt-1 flex items-center gap-2">
@@ -45,6 +50,7 @@ export function ManageSubscription() {
         <Button
           variant="outline"
           onClick={() => {
+            setLiveMessage(t('billing.openingPortalTitle'));
             toast.info(
               t('billing.openingPortalTitle'),
               t('billing.openingPortalDesc'),

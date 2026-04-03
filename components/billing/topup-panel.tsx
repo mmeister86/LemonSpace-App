@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
 import { TOPUP_PRODUCTS } from "@/lib/polar-products";
@@ -8,8 +9,10 @@ import { toast } from "@/lib/toast";
 
 export function TopupPanel() {
   const t = useTranslations('toasts');
+  const [liveMessage, setLiveMessage] = useState("");
 
   async function handleTopup(polarProductId: string) {
+    setLiveMessage(t('billing.redirectingToCheckoutTitle'));
     toast.info(
       t('billing.redirectingToCheckoutTitle'),
       t('billing.redirectingToCheckoutDesc'),
@@ -40,6 +43,9 @@ export function TopupPanel() {
 
       <p className="text-xs text-muted-foreground">
         Angezeigt werden nur kaufbare Top-up Pakete aus der serverseitigen Polar-Produktkonfiguration.
+      </p>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {liveMessage}
       </p>
     </div>
   );

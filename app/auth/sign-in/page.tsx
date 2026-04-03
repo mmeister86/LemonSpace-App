@@ -175,7 +175,14 @@ export default function SignInPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-500">{error}</p>
+            <p
+              className="text-sm text-red-500"
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
+            >
+              {error}
+            </p>
           )}
 
           <div className="space-y-2">
@@ -194,7 +201,14 @@ export default function SignInPage() {
           </div>
 
           {socialMessage && (
-            <p className="text-sm text-amber-600">{socialMessage}</p>
+            <p
+              className="text-sm text-amber-600"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {socialMessage}
+            </p>
           )}
 
           <button
@@ -214,7 +228,14 @@ export default function SignInPage() {
             {magicLinkLoading ? "Wird gesendet…" : "Magic Link senden"}
           </button>
           {magicLinkMessage && (
-            <p className="text-sm text-emerald-600">{magicLinkMessage}</p>
+            <p
+              className="text-sm text-emerald-600"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {magicLinkMessage}
+            </p>
           )}
         </form>
 

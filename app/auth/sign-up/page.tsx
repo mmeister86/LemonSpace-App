@@ -189,7 +189,7 @@ export default function SignUpPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="w-full max-w-sm space-y-4 rounded-xl border bg-card p-8 shadow-sm">
-          <div className="text-center">
+          <div className="text-center" role="status" aria-live="polite" aria-atomic="true">
             <div className="text-4xl mb-3">📧</div>
             <h1 className="text-xl font-semibold">E-Mail bestätigen</h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -291,7 +291,14 @@ export default function SignUpPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-500">{error}</p>
+            <p
+              className="text-sm text-red-500"
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
+            >
+              {error}
+            </p>
           )}
 
           <div className="space-y-2">
@@ -310,7 +317,14 @@ export default function SignUpPage() {
           </div>
 
           {socialMessage && (
-            <p className="text-sm text-amber-600">{socialMessage}</p>
+            <p
+              className="text-sm text-amber-600"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {socialMessage}
+            </p>
           )}
 
           <button

@@ -3,6 +3,7 @@
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useTranslations } from "next-intl";
 import { Check } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,10 +20,12 @@ const TIER_ORDER = ["free", "starter", "pro", "max"] as const;
 
 export function PricingCards() {
   const t = useTranslations('toasts');
+  const [liveMessage, setLiveMessage] = useState("");
   const subscription = useAuthQuery(api.credits.getSubscription);
   const currentTier = normalizeTier(subscription?.tier);
 
   async function handleCheckout(polarProductId: string) {
+    setLiveMessage(t('billing.redirectingToCheckoutTitle'));
     toast.info(
       t('billing.redirectingToCheckoutTitle'),
       t('billing.redirectingToCheckoutDesc'),
@@ -32,6 +35,9 @@ export function PricingCards() {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {liveMessage}
+      </p>
       <div className="flex flex-col gap-4 rounded-xl border bg-card p-6">
         <div>
           <div className="mb-1 flex items-center justify-between">
