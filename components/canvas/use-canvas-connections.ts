@@ -8,6 +8,7 @@ import {
 } from "@/lib/canvas-utils";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
+import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
 import { getConnectEndClientPoint, isOptimisticNodeId } from "./canvas-helpers";
 import {
@@ -44,7 +45,7 @@ type UseCanvasConnectionsParams = {
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
   runCreateNodeWithEdgeFromSourceOnlineOnly: (args: {
     canvasId: Id<"canvases">;
-    type: string;
+    type: CanvasNodeType;
     positionX: number;
     positionY: number;
     width: number;
@@ -52,14 +53,14 @@ type UseCanvasConnectionsParams = {
     data: Record<string, unknown>;
     clientRequestId?: string;
     sourceNodeId: string;
-    parentId?: string;
+    parentId?: Id<"nodes">;
     zIndex?: number;
     sourceHandle?: string;
     targetHandle?: string;
   }) => Promise<Id<"nodes"> | string>;
   runCreateNodeWithEdgeToTargetOnlineOnly: (args: {
     canvasId: Id<"canvases">;
-    type: string;
+    type: CanvasNodeType;
     positionX: number;
     positionY: number;
     width: number;
@@ -67,7 +68,7 @@ type UseCanvasConnectionsParams = {
     data: Record<string, unknown>;
     clientRequestId?: string;
     targetNodeId: string;
-    parentId?: string;
+    parentId?: Id<"nodes">;
     zIndex?: number;
     sourceHandle?: string;
     targetHandle?: string;
