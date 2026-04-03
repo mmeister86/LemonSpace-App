@@ -14,9 +14,9 @@ describe("useCanvasSyncEngine", () => {
     const controller = createCanvasSyncEngineController({
       canvasId: asCanvasId("canvas-1"),
       isSyncOnline: true,
-      enqueueSyncMutation,
-      runBatchRemoveNodes,
-      runSplitEdgeAtExistingNode,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => runBatchRemoveNodes,
+      getRunSplitEdgeAtExistingNode: () => runSplitEdgeAtExistingNode,
     });
 
     controller.pendingMoveAfterCreateRef.current.set("req-1", {
@@ -48,9 +48,9 @@ describe("useCanvasSyncEngine", () => {
     const controller = createCanvasSyncEngineController({
       canvasId: asCanvasId("canvas-1"),
       isSyncOnline: true,
-      enqueueSyncMutation,
-      runBatchRemoveNodes: vi.fn(async () => undefined),
-      runSplitEdgeAtExistingNode: vi.fn(async () => undefined),
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
     });
 
     await controller.queueNodeResize({

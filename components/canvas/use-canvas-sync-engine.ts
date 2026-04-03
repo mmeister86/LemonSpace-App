@@ -51,6 +51,12 @@ type QueueSyncMutation = <TType extends keyof CanvasSyncOpPayloadByType>(
   payload: CanvasSyncOpPayloadByType[TType],
 ) => Promise<void>;
 
+type DynamicValue<T> = T | (() => T);
+
+function resolveDynamicValue<T>(value: DynamicValue<T>): T {
+  return typeof value === "function" ? (value as () => T)() : value;
+}
+
 type RunMoveNodeMutation = (args: {
   nodeId: Id<"nodes">;
   positionX: number;
@@ -75,16 +81,18 @@ type RunSplitEdgeAtExistingNodeMutation = (args: {
 }) => Promise<void>;
 
 type CanvasSyncEngineControllerParams = {
-  canvasId: Id<"canvases">;
-  isSyncOnline: boolean | (() => boolean);
-  enqueueSyncMutation: QueueSyncMutation;
-  runMoveNodeMutation?: RunMoveNodeMutation;
-  runBatchRemoveNodes?: RunBatchRemoveNodesMutation;
-  runSplitEdgeAtExistingNode?: RunSplitEdgeAtExistingNodeMutation;
-  setAssetBrowserTargetNodeId?: Dispatch<SetStateAction<string | null>>;
-  setNodes?: Dispatch<SetStateAction<RFNode[]>>;
-  setEdges?: Dispatch<SetStateAction<RFEdge[]>>;
-  deletingNodeIds?: MutableRefObject<Set<string>>;
+  canvasId: DynamicValue<Id<"canvases">>;
+  isSyncOnline: DynamicValue<boolean>;
+  getEnqueueSyncMutation: () => QueueSyncMutation;
+  getRunMoveNodeMutation?: () => RunMoveNodeMutation | undefined;
+  getRunBatchRemoveNodes?: () => RunBatchRemoveNodesMutation | undefined;
+  getRunSplitEdgeAtExistingNode?: () => RunSplitEdgeAtExistingNodeMutation | undefined;
+  getSetAssetBrowserTargetNodeId?: () =>
+    | Dispatch<SetStateAction<string | null>>
+    | undefined;
+  getSetNodes?: () => Dispatch<SetStateAction<RFNode[]>> | undefined;
+  getSetEdges?: () => Dispatch<SetStateAction<RFEdge[]>> | undefined;
+  getDeletingNodeIds?: () => MutableRefObject<Set<string>> | undefined;
 };
 
 type UseCanvasSyncEngineParams = {
@@ -165,17 +173,17 @@ function summarizeResizePayload(payload: unknown): Record<string, unknown> {
 export function createCanvasSyncEngineController({
   canvasId,
   isSyncOnline,
-  enqueueSyncMutation,
-  runMoveNodeMutation,
-  runBatchRemoveNodes,
-  runSplitEdgeAtExistingNode,
-  setAssetBrowserTargetNodeId,
-  setNodes,
-  setEdges,
-  deletingNodeIds,
+  getEnqueueSyncMutation,
+  getRunMoveNodeMutation,
+  getRunBatchRemoveNodes,
+  getRunSplitEdgeAtExistingNode,
+  getSetAssetBrowserTargetNodeId,
+  getSetNodes,
+  getSetEdges,
+  getDeletingNodeIds,
 }: CanvasSyncEngineControllerParams) {
-  const getIsSyncOnline = () =>
-    typeof isSyncOnline === "function" ? isSyncOnline() : isSyncOnline;
+  const getCanvasId = () => resolveDynamicValue(canvasId);
+  const getIsSyncOnline = () => resolveDynamicValue(isSyncOnline);
 
   const pendingMoveAfterCreateRef = {
     current: new Map<string, { positionX: number; positionY: number }>(),
@@ -206,7 +214,7 @@ export function createCanvasSyncEngineController({
     const pendingResize = pendingResizeAfterCreateRef.current.get(clientRequestId);
     if (!pendingResize) return;
     pendingResizeAfterCreateRef.current.delete(clientRequestId);
-    await enqueueSyncMutation("resizeNode", {
+    await getEnqueueSyncMutation()("resizeNode", {
       nodeId: realId,
       width: pendingResize.width,
       height: pendingResize.height,
@@ -220,7 +228,7 @@ export function createCanvasSyncEngineController({
     if (!pendingDataAfterCreateRef.current.has(clientRequestId)) return;
     const pendingData = pendingDataAfterCreateRef.current.get(clientRequestId);
     pendingDataAfterCreateRef.current.delete(clientRequestId);
-    await enqueueSyncMutation("updateData", {
+    await getEnqueueSyncMutation()("updateData", {
       nodeId: realId,
       data: pendingData,
     });
@@ -233,7 +241,7 @@ export function createCanvasSyncEngineController({
   }): Promise<void> => {
     const rawNodeId = args.nodeId as string;
     if (!isOptimisticNodeId(rawNodeId) || !getIsSyncOnline()) {
-      await enqueueSyncMutation("resizeNode", args);
+      await getEnqueueSyncMutation()("resizeNode", args);
       return;
     }
 
@@ -243,7 +251,7 @@ export function createCanvasSyncEngineController({
       : undefined;
 
     if (resolvedRealId) {
-      await enqueueSyncMutation("resizeNode", {
+      await getEnqueueSyncMutation()("resizeNode", {
         nodeId: resolvedRealId,
         width: args.width,
         height: args.height,
@@ -265,7 +273,7 @@ export function createCanvasSyncEngineController({
   }): Promise<void> => {
     const rawNodeId = args.nodeId as string;
     if (!isOptimisticNodeId(rawNodeId) || !getIsSyncOnline()) {
-      await enqueueSyncMutation("updateData", args);
+      await getEnqueueSyncMutation()("updateData", args);
       return;
     }
 
@@ -275,7 +283,7 @@ export function createCanvasSyncEngineController({
       : undefined;
 
     if (resolvedRealId) {
-      await enqueueSyncMutation("updateData", {
+      await getEnqueueSyncMutation()("updateData", {
         nodeId: resolvedRealId,
         data: args.data,
       });
@@ -308,6 +316,9 @@ export function createCanvasSyncEngineController({
         resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
 
         const realNodeId = realId as string;
+        const deletingNodeIds = getDeletingNodeIds?.();
+        const setNodes = getSetNodes?.();
+        const setEdges = getSetEdges?.();
         deletingNodeIds?.current.add(realNodeId);
         setNodes?.((current) => current.filter((node) => node.id !== realNodeId));
         setEdges?.((current) =>
@@ -315,13 +326,15 @@ export function createCanvasSyncEngineController({
             (edge) => edge.source !== realNodeId && edge.target !== realNodeId,
           ),
         );
-        if (runBatchRemoveNodes) {
-          await runBatchRemoveNodes({ nodeIds: [realId] });
+        const batchRemoveNodes = getRunBatchRemoveNodes?.();
+        if (batchRemoveNodes) {
+          await batchRemoveNodes({ nodeIds: [realId] });
         }
         return;
       }
 
       const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`;
+      const setAssetBrowserTargetNodeId = getSetAssetBrowserTargetNodeId?.();
       setAssetBrowserTargetNodeId?.((current) =>
         current === optimisticNodeId ? (realId as string) : current,
       );
@@ -336,9 +349,10 @@ export function createCanvasSyncEngineController({
           pendingMoveAfterCreateRef.current.delete(clientRequestId);
         }
         resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
-        if (runSplitEdgeAtExistingNode) {
-          await runSplitEdgeAtExistingNode({
-            canvasId,
+        const splitEdgeAtExistingNode = getRunSplitEdgeAtExistingNode?.();
+        if (splitEdgeAtExistingNode) {
+          await splitEdgeAtExistingNode({
+            canvasId: getCanvasId(),
             splitEdgeId: splitPayload.intersectedEdgeId,
             middleNodeId: realId,
             splitSourceHandle: splitPayload.intersectedSourceHandle,
@@ -361,14 +375,15 @@ export function createCanvasSyncEngineController({
           x: pendingMove.positionX,
           y: pendingMove.positionY,
         });
-        if (runMoveNodeMutation) {
-          await runMoveNodeMutation({
+        const moveNodeMutation = getRunMoveNodeMutation?.();
+        if (moveNodeMutation) {
+          await moveNodeMutation({
             nodeId: realId,
             positionX: pendingMove.positionX,
             positionY: pendingMove.positionY,
           });
         } else {
-          await enqueueSyncMutation("moveNode", {
+          await getEnqueueSyncMutation()("moveNode", {
             nodeId: realId,
             positionX: pendingMove.positionX,
             positionY: pendingMove.positionY,
@@ -396,9 +411,10 @@ export function createCanvasSyncEngineController({
     const splitPayload = pendingEdgeSplitByClientRequestRef.current.get(clientRequestId);
     if (splitPayload) {
       pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
-      if (runSplitEdgeAtExistingNode) {
-        await runSplitEdgeAtExistingNode({
-          canvasId,
+      const splitEdgeAtExistingNode = getRunSplitEdgeAtExistingNode?.();
+      if (splitEdgeAtExistingNode) {
+        await splitEdgeAtExistingNode({
+          canvasId: getCanvasId(),
           splitEdgeId: splitPayload.intersectedEdgeId,
           middleNodeId: resolvedRealId,
           splitSourceHandle: splitPayload.intersectedSourceHandle,
@@ -417,14 +433,15 @@ export function createCanvasSyncEngineController({
       x: pendingMove.positionX,
       y: pendingMove.positionY,
     });
-    if (runMoveNodeMutation) {
-      await runMoveNodeMutation({
+    const moveNodeMutation = getRunMoveNodeMutation?.();
+    if (moveNodeMutation) {
+      await moveNodeMutation({
         nodeId: resolvedRealId,
         positionX: pendingMove.positionX,
         positionY: pendingMove.positionY,
       });
     } else {
-      await enqueueSyncMutation("moveNode", {
+      await getEnqueueSyncMutation()("moveNode", {
         nodeId: resolvedRealId,
         positionX: pendingMove.positionX,
         positionY: pendingMove.positionY,
@@ -477,9 +494,21 @@ export function useCanvasSyncEngine({
 
   const isSyncOnline =
     isBrowserOnline === true && connectionState.isWebSocketConnected === true;
+  const canvasIdRef = useRef(canvasId);
+  canvasIdRef.current = canvasId;
   const isSyncOnlineRef = useRef(isSyncOnline);
   isSyncOnlineRef.current = isSyncOnline;
+  const setNodesRef = useRef(setNodes);
+  setNodesRef.current = setNodes;
+  const setEdgesRef = useRef(setEdges);
+  setEdgesRef.current = setEdges;
+  const setAssetBrowserTargetNodeIdRef = useRef(setAssetBrowserTargetNodeId);
+  setAssetBrowserTargetNodeIdRef.current = setAssetBrowserTargetNodeId;
+  const deletingNodeIdsRef = useRef(deletingNodeIds);
+  deletingNodeIdsRef.current = deletingNodeIds;
 
+  const enqueueSyncMutationRef = useRef<QueueSyncMutation>(async () => undefined);
+  const runMoveNodeMutationRef = useRef<RunMoveNodeMutation>(async () => undefined);
   const runBatchRemoveNodesMutationRef = useRef<RunBatchRemoveNodesMutation>(
     async () => {},
   );
@@ -514,6 +543,7 @@ export function useCanvasSyncEngine({
     },
     [canvasId, refreshPendingSyncCount],
   );
+  enqueueSyncMutationRef.current = enqueueSyncMutation;
 
   const runMoveNodeMutation = useCallback<RunMoveNodeMutation>(
     async (args) => {
@@ -521,6 +551,7 @@ export function useCanvasSyncEngine({
     },
     [enqueueSyncMutation],
   );
+  runMoveNodeMutationRef.current = runMoveNodeMutation;
 
   const runBatchMoveNodesMutation = useCallback(
     async (args: {
@@ -748,20 +779,22 @@ export function useCanvasSyncEngine({
   const controllerRef = useRef<CanvasSyncEngineController | null>(null);
   if (controllerRef.current === null) {
     controllerRef.current = createCanvasSyncEngineController({
-      canvasId,
+      canvasId: () => canvasIdRef.current,
       isSyncOnline: () => isSyncOnlineRef.current,
-      enqueueSyncMutation,
-      runMoveNodeMutation,
-      runBatchRemoveNodes: async (args) => {
+      getEnqueueSyncMutation: () => enqueueSyncMutationRef.current,
+      getRunMoveNodeMutation: () => runMoveNodeMutationRef.current,
+      getRunBatchRemoveNodes: () => async (args: { nodeIds: Id<"nodes">[] }) => {
         await runBatchRemoveNodesMutationRef.current(args);
       },
-      runSplitEdgeAtExistingNode: async (args) => {
+      getRunSplitEdgeAtExistingNode: () => async (
+        args: Parameters<RunSplitEdgeAtExistingNodeMutation>[0],
+      ) => {
         await runSplitEdgeAtExistingNodeMutationRef.current(args);
       },
-      setAssetBrowserTargetNodeId,
-      setNodes,
-      setEdges,
-      deletingNodeIds,
+      getSetAssetBrowserTargetNodeId: () => setAssetBrowserTargetNodeIdRef.current,
+      getSetNodes: () => setNodesRef.current,
+      getSetEdges: () => setEdgesRef.current,
+      getDeletingNodeIds: () => deletingNodeIdsRef.current,
     });
   }
   const controller = controllerRef.current;
