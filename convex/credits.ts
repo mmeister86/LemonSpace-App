@@ -776,65 +776,32 @@ export const activateSubscription = internalMutation({
 });
 
 /**
- * Credits nachkaufen (Top-Up).
+ * Legacy Top-Up Endpoint.
+ *
+ * Security hardening (P0.1): direkte Credit-Gutschriften ueber einen oeffentlichen
+ * Mutationspfad sind deaktiviert. Credits duerfen nur ueber verifizierte
+ * Payment-Webhooks (convex/polar.ts) verbucht werden.
  */
 export const topUp = mutation({
   args: {
     amount: v.number(), // Betrag in Cent
   },
   handler: async (ctx, { amount }) => {
-    const user = await requireAuth(ctx);
-    if (amount <= 0) throw new Error("Amount must be positive");
+    await requireAuth(ctx);
 
-    // Tier-Limit prüfen
-    const subscription = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .order("desc")
-      .first();
-    const tier = (subscription?.tier ?? "free") as Tier;
-    const config = TIER_CONFIG[tier];
-
-    // Monatliches Top-Up-Limit prüfen
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    const monthlyTopUps = await ctx.db
-      .query("creditTransactions")
-      .withIndex("by_user_type", (q) =>
-        q.eq("userId", user.userId).eq("type", "topup")
-      )
-      .collect();
-
-    const thisMonthTopUps = monthlyTopUps
-      .filter((t) => t._creationTime >= monthStart.getTime())
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    if (thisMonthTopUps + amount > config.topUpLimit) {
-      throw new Error(
-        `Monthly top-up limit reached. Limit: ${config.topUpLimit}, used: ${thisMonthTopUps}`
-      );
+    if (amount <= 0) {
+      throw new ConvexError({
+        code: "TOPUP_INVALID_AMOUNT",
+        data: { message: "Amount must be positive" },
+      });
     }
 
-    // Credits gutschreiben
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .unique();
-    if (!balance) throw new Error("No credit balance found");
-
-    await ctx.db.patch(balance._id, {
-      balance: balance.balance + amount,
-      updatedAt: Date.now(),
-    });
-
-    await ctx.db.insert("creditTransactions", {
-      userId: user.userId,
-      amount,
-      type: "topup",
-      status: "committed",
-      description: `Credit-Nachkauf — ${(amount / 100).toFixed(2)}€`,
+    throw new ConvexError({
+      code: "TOPUP_DISABLED",
+      data: {
+        message:
+          "Direct top-up credits are disabled. Start checkout via Polar and wait for webhook confirmation.",
+      },
     });
   },
 });
