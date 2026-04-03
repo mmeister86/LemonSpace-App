@@ -1,3 +1,8 @@
+import {
+  PUBLIC_TIER_MONTHLY_CREDITS,
+  normalizePublicTier,
+} from "./tier-credits";
+
 export const SUBSCRIPTION_PRODUCTS = {
   starter: {
     polarProductId: "81b6de07-cd41-430f-bd54-f0e7072deec6",
@@ -47,15 +52,9 @@ export const TOPUP_PRODUCTS = [
 ] as const;
 
 export const TIER_MONTHLY_CREDITS = {
-  free: 50,
-  starter: 400,
-  pro: 3300,
-  max: 6700,
+  ...PUBLIC_TIER_MONTHLY_CREDITS,
 } as const;
 
 export function normalizeTier(tier: string | undefined | null): keyof typeof TIER_MONTHLY_CREDITS {
-  if (!tier || tier === "free") return "free";
-  if (tier === "starter" || tier === "pro" || tier === "max") return tier;
-  if (tier === "business") return "max";
-  return "free";
+  return normalizePublicTier(tier);
 }

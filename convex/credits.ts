@@ -2,6 +2,7 @@ import { query, mutation, internalMutation } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
 import { internal } from "./_generated/api";
+import { MONTHLY_TIER_CREDITS, normalizeBillingTier } from "../lib/tier-credits";
 
 // ============================================================================
 // Tier-Konfiguration
@@ -9,35 +10,35 @@ import { internal } from "./_generated/api";
 
 export const TIER_CONFIG = {
   free: {
-    monthlyCredits: 50,
+    monthlyCredits: MONTHLY_TIER_CREDITS.free,
     dailyGenerationCap: 10,
     concurrencyLimit: 1,
     premiumModels: false,
     topUpLimit: 50000,
   },
   starter: {
-    monthlyCredits: 400,
+    monthlyCredits: MONTHLY_TIER_CREDITS.starter,
     dailyGenerationCap: 50,
     concurrencyLimit: 2,
     premiumModels: true,
     topUpLimit: 2000,             // €20 pro Monat
   },
   pro: {
-    monthlyCredits: 3300,
+    monthlyCredits: MONTHLY_TIER_CREDITS.pro,
     dailyGenerationCap: 200,
     concurrencyLimit: 2,
     premiumModels: true,
     topUpLimit: 10000,            // €100 pro Monat
   },
   max: {
-    monthlyCredits: 6700,
+    monthlyCredits: MONTHLY_TIER_CREDITS.max,
     dailyGenerationCap: 500,
     concurrencyLimit: 2,
     premiumModels: true,
     topUpLimit: 50000,
   },
   business: {
-    monthlyCredits: 6700,
+    monthlyCredits: MONTHLY_TIER_CREDITS.business,
     dailyGenerationCap: 500,
     concurrencyLimit: 2,
     premiumModels: true,
@@ -443,7 +444,7 @@ export const reserve = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .order("desc")
       .first();
-    const tier = (subscription?.tier ?? "free") as Tier;
+    const tier = normalizeBillingTier(subscription?.tier);
     const config = TIER_CONFIG[tier];
 
     // Daily Cap prüfen
@@ -825,7 +826,7 @@ export const checkAbuseLimits = internalMutation({
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .order("desc")
       .first();
-    const tier = (subscription?.tier ?? "free") as Tier;
+    const tier = normalizeBillingTier(subscription?.tier);
     const config = TIER_CONFIG[tier];
 
     const today = new Date().toISOString().split("T")[0];
