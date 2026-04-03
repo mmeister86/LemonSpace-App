@@ -190,6 +190,27 @@ export function useCanvasNodeInteractions(args: {
     setHighlightedIntersectionEdge(null);
   }, [setHighlightedIntersectionEdge]);
 
+  const getEffectiveSplitMiddleNode = useCallback(
+    (node: RFNode): RFNode => {
+      const clientRequestId = clientRequestIdFromOptimisticNodeId(node.id);
+      if (!clientRequestId) {
+        return node;
+      }
+
+      const resolvedRealId =
+        resolvedRealIdByClientRequestRef.current.get(clientRequestId);
+      if (!resolvedRealId) {
+        return node;
+      }
+
+      return {
+        ...node,
+        id: resolvedRealId,
+      };
+    },
+    [resolvedRealIdByClientRequestRef],
+  );
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
@@ -285,7 +306,12 @@ export function useCanvasNodeInteractions(args: {
         return;
       }
 
-      if (intersectedEdge.source === node.id || intersectedEdge.target === node.id) {
+      const effectiveMiddleNode = getEffectiveSplitMiddleNode(node);
+
+      if (
+        intersectedEdge.source === effectiveMiddleNode.id ||
+        intersectedEdge.target === effectiveMiddleNode.id
+      ) {
         clearHighlightedIntersectionEdge();
         return;
       }
@@ -299,7 +325,12 @@ export function useCanvasNodeInteractions(args: {
       overlappedEdgeRef.current = intersectedEdge.id;
       setHighlightedIntersectionEdge(intersectedEdge.id);
     },
-    [clearHighlightedIntersectionEdge, edges, setHighlightedIntersectionEdge],
+    [
+      clearHighlightedIntersectionEdge,
+      edges,
+      getEffectiveSplitMiddleNode,
+      setHighlightedIntersectionEdge,
+    ],
   );
 
   const onNodeDragStop = useCallback(
@@ -315,6 +346,7 @@ export function useCanvasNodeInteractions(args: {
         }
 
         try {
+          const effectivePrimaryNode = getEffectiveSplitMiddleNode(primaryNode);
           const intersectedEdge = intersectedEdgeId
             ? edges.find(
                 (edge) =>
@@ -328,20 +360,20 @@ export function useCanvasNodeInteractions(args: {
           const splitEligible =
             intersectedEdge !== undefined &&
             splitHandles !== undefined &&
-            intersectedEdge.source !== primaryNode.id &&
-            intersectedEdge.target !== primaryNode.id &&
+            intersectedEdge.source !== effectivePrimaryNode.id &&
+            intersectedEdge.target !== effectivePrimaryNode.id &&
             hasHandleKey(splitHandles, "source") &&
             hasHandleKey(splitHandles, "target");
 
           const splitValidationError =
             splitEligible && intersectedEdge
-              ? validateCanvasEdgeSplit({
-                  nodes,
-                  edges,
-                  splitEdge: intersectedEdge,
-                  middleNode: primaryNode,
-                })
-              : null;
+                ? validateCanvasEdgeSplit({
+                    nodes,
+                    edges,
+                    splitEdge: intersectedEdge,
+                    middleNode: effectivePrimaryNode,
+                  })
+                : null;
 
           if (splitValidationError) {
             onInvalidConnection(splitValidationError);
@@ -383,7 +415,7 @@ export function useCanvasNodeInteractions(args: {
             const multiClientRequestId = clientRequestIdFromOptimisticNodeId(
               primaryNode.id,
             );
-            let middleId = primaryNode.id as Id<"nodes">;
+            let middleId = effectivePrimaryNode.id as Id<"nodes">;
             if (multiClientRequestId) {
               const resolvedId =
                 resolvedRealIdByClientRequestRef.current.get(multiClientRequestId);
@@ -518,6 +550,7 @@ export function useCanvasNodeInteractions(args: {
       onInvalidConnection,
       pendingEdgeSplitByClientRequestRef,
       pendingMoveAfterCreateRef,
+      getEffectiveSplitMiddleNode,
       resolvedRealIdByClientRequestRef,
       runBatchMoveNodesMutation,
       runMoveNodeMutation,

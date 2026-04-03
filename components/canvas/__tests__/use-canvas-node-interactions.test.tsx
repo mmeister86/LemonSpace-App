@@ -32,6 +32,7 @@ type HarnessProps = {
   runSplitEdgeAtExistingNodeMutation: ReturnType<typeof vi.fn>;
   onInvalidConnection: ReturnType<typeof vi.fn<(reason: CanvasConnectionValidationReason) => void>>;
   syncPendingMoveForClientRequest: ReturnType<typeof vi.fn>;
+  resolvedRealIdEntries?: Array<[string, Id<"nodes">]>;
 };
 
 const latestHandlersRef: {
@@ -48,7 +49,9 @@ function HookHarness(props: HarnessProps) {
   const pendingLocalPositionUntilConvexMatchesRef = useRef(new Map());
   const preferLocalPositionNodeIdsRef = useRef(new Set<string>());
   const pendingMoveAfterCreateRef = useRef(new Map());
-  const resolvedRealIdByClientRequestRef = useRef(new Map());
+  const resolvedRealIdByClientRequestRef = useRef(
+    new Map(props.resolvedRealIdEntries ?? []),
+  );
   const pendingEdgeSplitByClientRequestRef = useRef(new Map());
 
   const handlers = useCanvasNodeInteractions({
@@ -158,5 +161,134 @@ describe("useCanvasNodeInteractions", () => {
       positionX: 320,
       positionY: 180,
     });
+  });
+
+  it("does not split an edge that already touches a resolved optimistic node", async () => {
+    const runMoveNodeMutation = vi.fn(async () => undefined);
+    const runBatchMoveNodesMutation = vi.fn(async () => undefined);
+    const runResizeNodeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const onInvalidConnection = vi.fn<(reason: CanvasConnectionValidationReason) => void>();
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const draggedNode: RFNode = {
+      id: "optimistic_req-1",
+      type: "image",
+      position: { x: 320, y: 180 },
+      data: {},
+    };
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            draggedNode,
+            { id: "node-real", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-text", type: "text", position: { x: 400, y: 120 }, data: {} },
+          ]}
+          edges={[
+            {
+              id: "edge-image-curves",
+              source: "node-real",
+              target: "node-text",
+            },
+          ]}
+          runMoveNodeMutation={runMoveNodeMutation}
+          runBatchMoveNodesMutation={runBatchMoveNodesMutation}
+          runResizeNodeMutation={runResizeNodeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          onInvalidConnection={onInvalidConnection}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+          resolvedRealIdEntries={[["req-1", "node-real" as Id<"nodes">]]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onNodeDrag({} as React.MouseEvent, draggedNode);
+      latestHandlersRef.current?.onNodeDragStop(
+        {} as React.MouseEvent,
+        draggedNode,
+        [draggedNode],
+      );
+    });
+
+    expect(runSplitEdgeAtExistingNodeMutation).not.toHaveBeenCalled();
+    expect(onInvalidConnection).not.toHaveBeenCalled();
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1");
+    expect(runMoveNodeMutation).not.toHaveBeenCalled();
+  });
+
+  it("still splits a valid edge with the resolved optimistic node id", async () => {
+    const runMoveNodeMutation = vi.fn(async () => undefined);
+    const runBatchMoveNodesMutation = vi.fn(async () => undefined);
+    const runResizeNodeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const onInvalidConnection = vi.fn<(reason: CanvasConnectionValidationReason) => void>();
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const draggedNode: RFNode = {
+      id: "optimistic_req-2",
+      type: "video",
+      position: { x: 320, y: 180 },
+      data: {},
+    };
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            draggedNode,
+            { id: "node-image", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-text", type: "text", position: { x: 400, y: 120 }, data: {} },
+            { id: "node-real-middle", type: "video", position: { x: 320, y: 180 }, data: {} },
+          ]}
+          edges={[
+            {
+              id: "edge-image-curves",
+              source: "node-image",
+              target: "node-text",
+            },
+          ]}
+          runMoveNodeMutation={runMoveNodeMutation}
+          runBatchMoveNodesMutation={runBatchMoveNodesMutation}
+          runResizeNodeMutation={runResizeNodeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          onInvalidConnection={onInvalidConnection}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+          resolvedRealIdEntries={[["req-2", "node-real-middle" as Id<"nodes">]]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onNodeDrag({} as React.MouseEvent, draggedNode);
+      latestHandlersRef.current?.onNodeDragStop(
+        {} as React.MouseEvent,
+        draggedNode,
+        [draggedNode],
+      );
+    });
+
+    expect(runSplitEdgeAtExistingNodeMutation).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      splitEdgeId: "edge-image-curves",
+      middleNodeId: "node-real-middle",
+      splitSourceHandle: undefined,
+      splitTargetHandle: undefined,
+      newNodeSourceHandle: undefined,
+      newNodeTargetHandle: undefined,
+      positionX: 320,
+      positionY: 180,
+    });
+    expect(onInvalidConnection).not.toHaveBeenCalled();
   });
 });
