@@ -153,17 +153,41 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
     manualDisplayMode ?? (shouldDefaultToPreview ? "preview" : "render");
   const previewNodeWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));
 
+  const setSliderPercent = useCallback((value: number) => {
+    setSliderX(Math.max(0, Math.min(100, value)));
+  }, []);
+
+  const handleSliderKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    let nextValue: number | null = null;
+    const step = event.shiftKey ? 10 : 2;
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      nextValue = sliderX - step;
+    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      nextValue = sliderX + step;
+    } else if (event.key === "Home") {
+      nextValue = 0;
+    } else if (event.key === "End") {
+      nextValue = 100;
+    }
+
+    if (nextValue === null) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setSliderPercent(nextValue);
+  }, [setSliderPercent, sliderX]);
+
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
 
     const move = (moveEvent: MouseEvent) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(
-        0,
-        Math.min(1, (moveEvent.clientX - rect.left) / rect.width),
-      );
-      setSliderX(x * 100);
+      const x = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
+      setSliderPercent(x * 100);
     };
 
     const up = () => {
@@ -173,7 +197,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
 
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
-  }, []);
+  }, [setSliderPercent]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent) => {
     event.stopPropagation();
@@ -183,7 +207,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
       const rect = containerRef.current.getBoundingClientRect();
       const touch = moveEvent.touches[0];
       const x = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
-      setSliderX(x * 100);
+      setSliderPercent(x * 100);
     };
 
     const end = () => {
@@ -193,7 +217,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
 
     window.addEventListener("touchmove", move);
     window.addEventListener("touchend", end);
-  }, []);
+  }, [setSliderPercent]);
 
   return (
     <BaseNodeWrapper nodeType="compare" selected={selected} className="p-0">
@@ -289,9 +313,18 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
                 className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 bg-white shadow-md"
                 style={{ left: `${sliderX}%` }}
               />
-              <div
-                className="pointer-events-none absolute top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
+              <button
+                type="button"
+                className="nodrag absolute top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2"
                 style={{ left: `${sliderX}%` }}
+                onKeyDown={handleSliderKeyDown}
+                aria-label="Compare slider"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(sliderX)}
+                aria-valuetext={`${Math.round(sliderX)} percent`}
+                aria-orientation="horizontal"
+                role="slider"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-white shadow-lg">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -304,7 +337,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
                     />
                   </svg>
                 </div>
-              </div>
+              </button>
             </>
           )}
 

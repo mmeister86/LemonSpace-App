@@ -14,7 +14,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -128,36 +127,48 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
     <>
       <div
         className={cn(
-          "group relative flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
+          "group relative flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm shadow-foreground/3 transition-all",
           "hover:bg-muted/60 hover:shadow-md hover:shadow-foreground/4",
+          "focus-within:ring-2 focus-within:ring-primary/50",
           isEditing && "ring-2 ring-primary/50"
         )}
-        onClick={handleCardClick}
       >
-        {/* Avatar */}
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
-          {canvas.name.slice(0, 1).toUpperCase()}
-        </div>
+        {isEditing ? (
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
+              {canvas.name.slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <Input
+                ref={inputRef}
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={handleBlur}
+                disabled={isSaving}
+                autoFocus
+                className="h-auto border bg-transparent px-1.5 py-0.5 text-sm font-medium focus-visible:ring-1"
+              />
+              <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleCardClick}
+            className="flex min-w-0 flex-1 items-center gap-4 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            aria-label={`Canvas ${canvas.name} oeffnen`}
+          >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-sm font-semibold text-primary">
+              {canvas.name.slice(0, 1).toUpperCase()}
+            </div>
 
-        {/* Content */}
-        <div className="min-w-0 flex-1">
-          {isEditing ? (
-            <Input
-              ref={inputRef}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={handleBlur}
-              disabled={isSaving}
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-              className="h-auto border bg-transparent px-1.5 py-0.5 text-sm font-medium focus-visible:ring-1"
-            />
-          ) : (
-            <p className="truncate text-sm font-medium">{canvas.name}</p>
-          )}
-          <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
-        </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{canvas.name}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Canvas</p>
+            </div>
+          </button>
+        )}
 
         {/* Actions - positioned to not overlap with content */}
         {!isEditing && (
@@ -169,21 +180,14 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={(e) => e.stopPropagation()}
+                  className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                 >
                   <MoreHorizontal className="size-4" />
                   <span className="sr-only">Optionen</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DropdownMenuItem
-                  onSelect={handleStartEdit}
-                  onClick={(e) => e.stopPropagation()}
-                >
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={handleStartEdit}>
                   <Pencil className="size-4" />
                   Umbenennen
                 </DropdownMenuItem>
@@ -193,7 +197,6 @@ export default function CanvasCard({ canvas, onNavigate }: CanvasCardProps) {
                   onSelect={() => {
                     setDeleteOpen(true);
                   }}
-                  onClick={(e) => e.stopPropagation()}
                 >
                   <Trash2 className="size-4" />
                   Löschen
