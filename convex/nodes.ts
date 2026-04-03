@@ -40,6 +40,36 @@ async function getCanvasIfAuthorized(
   return canvas;
 }
 
+async function getValidatedBatchNodesOrThrow(
+  ctx: MutationCtx,
+  userId: string,
+  nodeIds: Id<"nodes">[],
+): Promise<{ canvasId: Id<"canvases">; nodes: Doc<"nodes">[] }> {
+  if (nodeIds.length === 0) {
+    throw new Error("Batch must contain at least one node id");
+  }
+
+  const nodes: Doc<"nodes">[] = [];
+  for (const nodeId of nodeIds) {
+    const node = await ctx.db.get(nodeId);
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    nodes.push(node);
+  }
+
+  const canvasId = nodes[0].canvasId;
+  for (const node of nodes) {
+    if (node.canvasId !== canvasId) {
+      throw new Error("All nodes must belong to the same canvas");
+    }
+  }
+
+  await getCanvasOrThrow(ctx, canvasId, userId);
+
+  return { canvasId, nodes };
+}
+
 type NodeCreateMutationName =
   | "nodes.create"
   | "nodes.createWithEdgeSplit"
@@ -1252,16 +1282,18 @@ export const batchMove = mutation({
     const user = await requireAuth(ctx);
     if (moves.length === 0) return;
 
-    // Canvas-Zugriff über den ersten Node prüfen
-    const firstNode = await ctx.db.get(moves[0].nodeId);
-    if (!firstNode) throw new Error("Node not found");
-    await getCanvasOrThrow(ctx, firstNode.canvasId, user.userId);
+    const nodeIds = moves.map((move) => move.nodeId);
+    const { canvasId } = await getValidatedBatchNodesOrThrow(
+      ctx,
+      user.userId,
+      nodeIds,
+    );
 
     for (const { nodeId, positionX, positionY } of moves) {
       await ctx.db.patch(nodeId, { positionX, positionY });
     }
 
-    await ctx.db.patch(firstNode.canvasId, { updatedAt: Date.now() });
+    await ctx.db.patch(canvasId, { updatedAt: Date.now() });
   },
 });
 
@@ -1427,23 +1459,19 @@ export const batchRemove = mutation({
     const user = await requireAuth(ctx);
     if (nodeIds.length === 0) return;
 
-    // Idempotent: wenn alle Nodes bereits weg sind, no-op.
-    const firstExistingNode = await (async () => {
-      for (const nodeId of nodeIds) {
-        const node = await ctx.db.get(nodeId);
-        if (node) return node;
-      }
-      return null;
-    })();
-    if (!firstExistingNode) return;
+    const { canvasId, nodes } = await getValidatedBatchNodesOrThrow(
+      ctx,
+      user.userId,
+      nodeIds,
+    );
 
-    // Canvas-Zugriff über den ersten vorhandenen Node prüfen
-    const firstNode = firstExistingNode;
-    await getCanvasOrThrow(ctx, firstNode.canvasId, user.userId);
+    const uniqueNodes = new Map<Id<"nodes">, Doc<"nodes">>();
+    for (const node of nodes) {
+      uniqueNodes.set(node._id, node);
+    }
 
-    for (const nodeId of nodeIds) {
-      const node = await ctx.db.get(nodeId);
-      if (!node) continue;
+    for (const node of uniqueNodes.values()) {
+      const nodeId = node._id;
 
       // Alle Edges entfernen, die diesen Node als Source oder Target haben
       const sourceEdges = await ctx.db
@@ -1475,6 +1503,6 @@ export const batchRemove = mutation({
       await ctx.db.delete(nodeId);
     }
 
-    await ctx.db.patch(firstNode.canvasId, { updatedAt: Date.now() });
+    await ctx.db.patch(canvasId, { updatedAt: Date.now() });
   },
 });
