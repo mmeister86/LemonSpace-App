@@ -153,15 +153,34 @@ async function generateImageWithAutoRetry(
   ) => Promise<void>
 ) {
   let lastError: unknown = null;
+  const startedAt = Date.now();
 
   for (let attempt = 0; attempt <= MAX_IMAGE_RETRIES; attempt++) {
+    const attemptStartedAt = Date.now();
     try {
-      return await operation();
+      const result = await operation();
+      console.info("[generateImageWithAutoRetry] success", {
+        attempts: attempt + 1,
+        totalDurationMs: Date.now() - startedAt,
+        lastAttemptDurationMs: Date.now() - attemptStartedAt,
+      });
+      return result;
     } catch (error) {
       lastError = error;
       const { retryable, category } = categorizeError(error);
       const retryCount = attempt + 1;
       const hasRemainingRetry = retryCount <= MAX_IMAGE_RETRIES;
+
+      console.warn("[generateImageWithAutoRetry] attempt failed", {
+        attempt: retryCount,
+        maxAttempts: MAX_IMAGE_RETRIES + 1,
+        retryable,
+        hasRemainingRetry,
+        category,
+        attemptDurationMs: Date.now() - attemptStartedAt,
+        totalDurationMs: Date.now() - startedAt,
+        message: errorMessage(error),
+      });
 
       if (!retryable || !hasRemainingRetry) {
         throw error;
@@ -289,10 +308,20 @@ export const generateAndStoreImage = internalAction({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is not set");
     }
+
+    console.info("[generateAndStoreImage] start", {
+      nodeId: args.nodeId,
+      model: args.model,
+      hasReferenceStorageId: Boolean(args.referenceStorageId),
+      hasReferenceImageUrl: Boolean(args.referenceImageUrl?.trim()),
+      aspectRatio: args.aspectRatio?.trim() || null,
+      promptLength: args.prompt.length,
+    });
 
     let retryCount = 0;
     let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
@@ -301,38 +330,64 @@ export const generateAndStoreImage = internalAction({
         (await ctx.storage.getUrl(args.referenceStorageId)) ?? undefined;
     }
 
-    const result = await generateImageWithAutoRetry(
-      () =>
-        generateImageViaOpenRouter(apiKey, {
-          prompt: args.prompt,
-          referenceImageUrl,
-          model: args.model,
-          aspectRatio: args.aspectRatio,
-        }),
-      async (nextRetryCount, maxRetries, failure) => {
-        retryCount = nextRetryCount;
-        await ctx.runMutation(internal.ai.markNodeRetry, {
-          nodeId: args.nodeId,
-          retryCount: nextRetryCount,
-          maxRetries,
-          failureMessage: failure.message,
-        });
+    try {
+      const result = await generateImageWithAutoRetry(
+        () =>
+          generateImageViaOpenRouter(apiKey, {
+            prompt: args.prompt,
+            referenceImageUrl,
+            model: args.model,
+            aspectRatio: args.aspectRatio,
+          }),
+        async (nextRetryCount, maxRetries, failure) => {
+          retryCount = nextRetryCount;
+          await ctx.runMutation(internal.ai.markNodeRetry, {
+            nodeId: args.nodeId,
+            retryCount: nextRetryCount,
+            maxRetries,
+            failureMessage: failure.message,
+          });
+        }
+      );
+
+      const decodeStartedAt = Date.now();
+      const binaryString = atob(result.imageBase64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
-    );
+      console.info("[generateAndStoreImage] image decoded", {
+        nodeId: args.nodeId,
+        retryCount,
+        decodeDurationMs: Date.now() - decodeStartedAt,
+        bytes: bytes.length,
+        totalDurationMs: Date.now() - startedAt,
+      });
 
-    const binaryString = atob(result.imageBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+      const storageStartedAt = Date.now();
+      const blob = new Blob([bytes], { type: result.mimeType });
+      const storageId = await ctx.storage.store(blob);
+      console.info("[generateAndStoreImage] image stored", {
+        nodeId: args.nodeId,
+        retryCount,
+        storageDurationMs: Date.now() - storageStartedAt,
+        totalDurationMs: Date.now() - startedAt,
+      });
+
+      return {
+        storageId: storageId as Id<"_storage">,
+        retryCount,
+      };
+    } catch (error) {
+      console.error("[generateAndStoreImage] failed", {
+        nodeId: args.nodeId,
+        retryCount,
+        totalDurationMs: Date.now() - startedAt,
+        message: errorMessage(error),
+        category: categorizeError(error).category,
+      });
+      throw error;
     }
-
-    const blob = new Blob([bytes], { type: result.mimeType });
-    const storageId = await ctx.storage.store(blob);
-
-    return {
-      storageId: storageId as Id<"_storage">,
-      retryCount,
-    };
   },
 });
 
@@ -349,6 +404,7 @@ export const processImageGeneration = internalAction({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     console.info("[processImageGeneration] start", {
       nodeId: args.nodeId,
       reservationId: args.reservationId ?? null,
@@ -384,7 +440,23 @@ export const processImageGeneration = internalAction({
           actualCost: creditCost,
         });
       }
+
+      console.info("[processImageGeneration] success", {
+        nodeId: args.nodeId,
+        retryCount,
+        totalDurationMs: Date.now() - startedAt,
+        reservationId: args.reservationId ?? null,
+      });
     } catch (error) {
+      console.error("[processImageGeneration] failed", {
+        nodeId: args.nodeId,
+        retryCount,
+        totalDurationMs: Date.now() - startedAt,
+        reservationId: args.reservationId ?? null,
+        category: categorizeError(error).category,
+        message: errorMessage(error),
+      });
+
       if (args.reservationId) {
         try {
           await ctx.runMutation(internal.credits.releaseInternal, {
@@ -406,6 +478,13 @@ export const processImageGeneration = internalAction({
           userId: args.userId,
         });
       }
+
+      console.info("[processImageGeneration] finished", {
+        nodeId: args.nodeId,
+        retryCount,
+        totalDurationMs: Date.now() - startedAt,
+        shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+      });
     }
   },
 });
@@ -421,6 +500,7 @@ export const generateImage = action({
     aspectRatio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     const canvas = await ctx.runQuery(api.canvases.get, {
       canvasId: args.canvasId,
     });
@@ -477,8 +557,27 @@ export const generateImage = action({
         userId,
       });
       backgroundJobScheduled = true;
+      console.info("[generateImage] background job scheduled", {
+        nodeId: args.nodeId,
+        canvasId: args.canvasId,
+        modelId,
+        reservationId: reservationId ?? null,
+        usageIncremented,
+        durationMs: Date.now() - startedAt,
+      });
       return { queued: true as const, nodeId: args.nodeId };
     } catch (error) {
+      console.error("[generateImage] scheduling failed", {
+        nodeId: args.nodeId,
+        canvasId: args.canvasId,
+        modelId,
+        reservationId: reservationId ?? null,
+        usageIncremented,
+        durationMs: Date.now() - startedAt,
+        category: categorizeError(error).category,
+        message: errorMessage(error),
+      });
+
       if (reservationId) {
         try {
           await ctx.runMutation(api.credits.release, {

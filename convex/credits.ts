@@ -103,31 +103,75 @@ export const listTransactions = query({
 export const getSubscription = query({
   args: {},
   handler: async (ctx) => {
-    const user = await optionalAuth(ctx);
-    if (!user) {
-      return {
-        tier: "free" as const,
-        status: "active" as const,
-      };
-    }
-    const row = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .order("desc")
-      .first();
+    const startedAt = Date.now();
 
-    if (!row) {
-      return {
-        tier: "free" as const,
-        status: "active" as const,
-      };
-    }
+    try {
+      console.info("[credits.getSubscription] start", {
+        durationMs: Date.now() - startedAt,
+      });
 
-    return {
-      tier: row.tier,
-      status: row.status,
-      currentPeriodEnd: row.currentPeriodEnd,
-    };
+      const user = await optionalAuth(ctx);
+      console.info("[credits.getSubscription] auth resolved", {
+        durationMs: Date.now() - startedAt,
+        userId: user?.userId ?? null,
+      });
+
+      if (!user) {
+        return {
+          tier: "free" as const,
+          status: "active" as const,
+        };
+      }
+
+      const row = await ctx.db
+        .query("subscriptions")
+        .withIndex("by_user", (q) => q.eq("userId", user.userId))
+        .order("desc")
+        .first();
+
+      console.info("[credits.getSubscription] subscription query resolved", {
+        userId: user.userId,
+        durationMs: Date.now() - startedAt,
+        foundRow: Boolean(row),
+      });
+
+      if (!row) {
+        console.info("[credits.getSubscription] no subscription row", {
+          userId: user.userId,
+          durationMs: Date.now() - startedAt,
+        });
+
+        return {
+          tier: "free" as const,
+          status: "active" as const,
+        };
+      }
+
+      console.info("[credits.getSubscription] resolved subscription", {
+        userId: user.userId,
+        subscriptionId: row._id,
+        tier: row.tier,
+        status: row.status,
+        currentPeriodEnd: row.currentPeriodEnd,
+        durationMs: Date.now() - startedAt,
+      });
+
+      return {
+        tier: row.tier,
+        status: row.status,
+        currentPeriodEnd: row.currentPeriodEnd,
+      };
+    } catch (error) {
+      const identity = await ctx.auth.getUserIdentity();
+      console.error("[credits.getSubscription] failed", {
+        durationMs: Date.now() - startedAt,
+        hasIdentity: Boolean(identity),
+        identityIssuer: identity?.issuer ?? null,
+        identitySubject: identity?.subject ?? null,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   },
 });
 
