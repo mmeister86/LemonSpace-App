@@ -1,7 +1,12 @@
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { convexEdgeToRF, convexEdgeToRFWithSourceGlow } from "@/lib/canvas-utils";
+import {
+  convexEdgeToRF,
+  convexEdgeToRFWithSourceGlow,
+  convexNodeDocWithMergedStorageUrl,
+  convexNodeToRF,
+} from "@/lib/canvas-utils";
 
 import {
   applyPinnedNodePositionsReadOnly,
@@ -13,6 +18,7 @@ import {
   OPTIMISTIC_NODE_PREFIX,
   positionsMatchPin,
   rfEdgeConnectionSignature,
+  withResolvedCompareData,
 } from "./canvas-helpers";
 
 type FlowConvexNodeRecord = Pick<Doc<"nodes">, "_id" | "type">;
@@ -20,6 +26,22 @@ type FlowConvexEdgeRecord = Pick<
   Doc<"edges">,
   "_id" | "sourceNodeId" | "targetNodeId" | "sourceHandle" | "targetHandle"
 >;
+
+export function buildIncomingCanvasFlowNodes(args: {
+  convexNodes: Doc<"nodes">[];
+  storageUrlsById: Record<string, string | undefined> | undefined;
+  previousNodes: RFNode[];
+  edges: RFEdge[];
+}): RFNode[] {
+  const previousDataById = new Map(
+    args.previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
+  );
+  const enrichedNodes = args.convexNodes.map((node) =>
+    convexNodeDocWithMergedStorageUrl(node, args.storageUrlsById, previousDataById),
+  );
+
+  return withResolvedCompareData(enrichedNodes.map(convexNodeToRF), args.edges);
+}
 
 export function inferPendingConnectionNodeHandoff(args: {
   previousNodes: RFNode[];

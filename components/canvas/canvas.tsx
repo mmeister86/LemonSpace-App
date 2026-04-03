@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -39,7 +38,7 @@ import {
 import { showCanvasConnectionRejectedToast } from "@/lib/toast-messages";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   isAdjustmentPresetNodeType,
   isCanvasNodeType,
@@ -48,8 +47,6 @@ import {
 
 import { nodeTypes } from "./node-types";
 import {
-  convexNodeDocWithMergedStorageUrl,
-  convexNodeToRF,
   NODE_DEFAULTS,
   NODE_HANDLE_MAP,
 } from "@/lib/canvas-utils";
@@ -80,8 +77,6 @@ import {
   getMiniMapNodeStrokeColor,
   getNodeCenterClientPosition,
   getIntersectedEdgeId,
-  getPendingRemovedEdgeIdsFromLocalOps,
-  getPendingMovePinsFromLocalOps,
   hasHandleKey,
   isEditableKeyboardTarget,
   isOptimisticEdgeId,
@@ -89,10 +84,6 @@ import {
   normalizeHandle,
   withResolvedCompareData,
 } from "./canvas-helpers";
-import {
-  reconcileCanvasFlowEdges,
-  reconcileCanvasFlowNodes,
-} from "./canvas-flow-reconciliation-helpers";
 import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
 import { useCanvasDeleteHandlers } from "./canvas-delete-handlers";
@@ -101,6 +92,7 @@ import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
 import { useCanvasData } from "./use-canvas-data";
+import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
 
@@ -346,95 +338,28 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
   });
 
-  // ─── Future hook seam: flow reconciliation ────────────────────
-  /**
-   * 1) Kanten: Carry/Inferenz setzt ggf. `resolvedRealIdByClientRequestRef` (auch bevor Mutation-.then läuft).
-   * 2) Nodes: gleicher Commit, vor Paint — echte Node-IDs passen zu Kanten-Endpunkten (verhindert „reißende“ Kanten).
-   * Während Drag (`isDraggingRef` oder `node.dragging`): nur optimistic→real-Handoff.
-   */
-  useLayoutEffect(() => {
-    if (!convexEdges) return;
-    setEdges((prev) => {
-      const reconciliation = reconcileCanvasFlowEdges({
-        previousEdges: prev,
-        convexEdges,
-        convexNodes,
-        previousConvexNodeIdsSnapshot: convexNodeIdsSnapshotForEdgeCarryRef.current,
-        pendingRemovedEdgeIds: getPendingRemovedEdgeIdsFromLocalOps(canvasId as string),
-        pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
-        resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
-        localNodeIds: new Set(nodesRef.current.map((node) => node.id)),
-        isAnyNodeDragging:
-          isDragging.current ||
-          nodesRef.current.some((node) =>
-            Boolean((node as { dragging?: boolean }).dragging),
-          ),
-        colorMode: resolvedTheme === "dark" ? "dark" : "light",
-      });
-
-      resolvedRealIdByClientRequestRef.current =
-        reconciliation.inferredRealIdByClientRequest;
-      convexNodeIdsSnapshotForEdgeCarryRef.current =
-        reconciliation.nextConvexNodeIdsSnapshot;
-      for (const clientRequestId of reconciliation.settledPendingConnectionCreateIds) {
-        pendingConnectionCreatesRef.current.delete(clientRequestId);
-      }
-
-      return reconciliation.edges;
-    });
-  }, [canvasId, convexEdges, convexNodes, resolvedTheme, edgeSyncNonce]);
-
-  useLayoutEffect(() => {
-    if (!convexNodes || isResizing.current) return;
-    setNodes((previousNodes) => {
-      /** RF setzt `node.dragging` + Position oft bevor `onNodeDragStart` `isDraggingRef` setzt — ohne diese Zeile zieht useLayoutEffect Convex-Stand darüber („Kleben“). */
-      const anyRfNodeDragging = previousNodes.some((n) =>
-        Boolean((n as { dragging?: boolean }).dragging),
-      );
-      if (isDragging.current || anyRfNodeDragging) {
-        // Kritisch für UX: Kein optimistic->real-ID-Handoff während aktivem Drag.
-        // Sonst kann React Flow den Drag verlieren ("Node klebt"), sobald der
-        // Server-Create zurückkommt und die ID im laufenden Pointer-Stream wechselt.
-        return previousNodes;
-      }
-
-      const prevDataById = new Map(
-        previousNodes.map((node) => [node.id, node.data as Record<string, unknown>]),
-      );
-      const enriched = convexNodes.map((node: Doc<"nodes">) =>
-        convexNodeDocWithMergedStorageUrl(
-          node,
-          storageUrlsById,
-          prevDataById,
-        ),
-      );
-      const incomingNodes = withResolvedCompareData(
-        enriched.map(convexNodeToRF),
-        edges,
-      );
-      const reconciliation = reconcileCanvasFlowNodes({
-        previousNodes,
-        incomingNodes,
-        convexNodes,
-        deletingNodeIds: deletingNodeIds.current,
-        resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
-        pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
-        preferLocalPositionNodeIds: preferLocalPositionNodeIdsRef.current,
-        pendingLocalPositionPins: pendingLocalPositionUntilConvexMatchesRef.current,
-        pendingMovePins: getPendingMovePinsFromLocalOps(canvasId as string),
-      });
-
-      resolvedRealIdByClientRequestRef.current =
-        reconciliation.inferredRealIdByClientRequest;
-      pendingLocalPositionUntilConvexMatchesRef.current =
-        reconciliation.nextPendingLocalPositionPins;
-      for (const nodeId of reconciliation.clearedPreferLocalPositionNodeIds) {
-        preferLocalPositionNodeIdsRef.current.delete(nodeId);
-      }
-
-      return reconciliation.nodes;
-    });
-  }, [canvasId, convexNodes, edges, storageUrlsById]);
+  useCanvasFlowReconciliation({
+    canvasId,
+    convexNodes,
+    convexEdges,
+    storageUrlsById,
+    themeMode: resolvedTheme === "dark" ? "dark" : "light",
+    edges,
+    edgeSyncNonce,
+    setNodes,
+    setEdges,
+    refs: {
+      nodesRef,
+      deletingNodeIds,
+      convexNodeIdsSnapshotForEdgeCarryRef,
+      resolvedRealIdByClientRequestRef,
+      pendingConnectionCreatesRef,
+      pendingLocalPositionUntilConvexMatchesRef,
+      preferLocalPositionNodeIdsRef,
+      isDragging,
+      isResizing,
+    },
+  });
 
   useEffect(() => {
     if (isDragging.current) return;
@@ -497,7 +422,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         return nextNodes;
       });
     },
-    [runResizeNodeMutation],
+    [pendingLocalPositionUntilConvexMatchesRef, preferLocalPositionNodeIdsRef, runResizeNodeMutation],
   );
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -618,7 +543,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         pendingLocalPositionUntilConvexMatchesRef.current.delete(n.id);
       }
     },
-    [setHighlightedIntersectionEdge],
+    [pendingLocalPositionUntilConvexMatchesRef, setHighlightedIntersectionEdge],
   );
 
   const onNodeDragStop = useCallback(
@@ -806,6 +731,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       edges,
       runBatchMoveNodesMutation,
       runMoveNodeMutation,
+      pendingEdgeSplitByClientRequestRef,
+      pendingMoveAfterCreateRef,
+      resolvedRealIdByClientRequestRef,
       setHighlightedIntersectionEdge,
       runSplitEdgeAtExistingNodeMutation,
       syncPendingMoveForClientRequest,
@@ -975,6 +903,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
     [
       canvasId,
+      pendingConnectionCreatesRef,
+      resolvedRealIdByClientRequestRef,
       runCreateNodeWithEdgeFromSourceOnlineOnly,
       runCreateNodeWithEdgeToTargetOnlineOnly,
       showConnectionRejectedToast,
