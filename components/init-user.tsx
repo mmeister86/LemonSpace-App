@@ -2,7 +2,6 @@
 
 import { authClient } from "@/lib/auth-client";
 import { useMutation } from "convex/react";
-import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import { useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
@@ -15,32 +14,28 @@ import { toast } from "@/lib/toast";
  */
 export function InitUser() {
   const t = useTranslations('toasts');
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
 
-  const balance = useAuthQuery(api.credits.getBalance);
   const initBalance = useMutation(api.credits.initBalance);
   const initStartedRef = useRef(false);
 
   useEffect(() => {
-    if (
-      !session?.user ||
-      !balance ||
-      balance.balance !== 0 ||
-      balance.monthlyAllocation !== 0
-    ) {
+    if (isSessionPending || !session?.user) {
       return;
     }
     if (initStartedRef.current) return;
     initStartedRef.current = true;
 
     void initBalance()
-      .then(() => {
-        toast.success(t('auth.initialSetupTitle'), t('auth.initialSetupDesc'));
+      .then((result) => {
+        if (result.created) {
+          toast.success(t('auth.initialSetupTitle'), t('auth.initialSetupDesc'));
+        }
       })
       .catch(() => {
         initStartedRef.current = false;
       });
-  }, [t, session?.user, balance, initBalance]);
+  }, [t, initBalance, isSessionPending, session?.user]);
 
   return null;
 }

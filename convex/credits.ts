@@ -60,25 +60,54 @@ const PERFORMANCE_LOG_THRESHOLD_MS = 250;
 export const getBalance = query({
   args: {},
   handler: async (ctx) => {
-    const user = await optionalAuth(ctx);
-    if (!user) {
-      return { balance: 0, reserved: 0, available: 0, monthlyAllocation: 0 };
-    }
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .unique();
+    const startedAt = Date.now();
 
-    if (!balance) {
-      return { balance: 0, reserved: 0, available: 0, monthlyAllocation: 0 };
-    }
+    try {
+      console.info("[credits.getBalance] start", {
+        durationMs: Date.now() - startedAt,
+      });
 
-    return {
-      balance: balance.balance,
-      reserved: balance.reserved,
-      available: balance.balance - balance.reserved,
-      monthlyAllocation: balance.monthlyAllocation,
-    };
+      const user = await optionalAuth(ctx);
+      console.info("[credits.getBalance] auth resolved", {
+        durationMs: Date.now() - startedAt,
+        userId: user?.userId ?? null,
+      });
+
+      if (!user) {
+        return { balance: 0, reserved: 0, available: 0, monthlyAllocation: 0 };
+      }
+      const balance = await ctx.db
+        .query("creditBalances")
+        .withIndex("by_user", (q) => q.eq("userId", user.userId))
+        .unique();
+
+      console.info("[credits.getBalance] balance query resolved", {
+        durationMs: Date.now() - startedAt,
+        userId: user.userId,
+        foundBalance: Boolean(balance),
+      });
+
+      if (!balance) {
+        return { balance: 0, reserved: 0, available: 0, monthlyAllocation: 0 };
+      }
+
+      return {
+        balance: balance.balance,
+        reserved: balance.reserved,
+        available: balance.balance - balance.reserved,
+        monthlyAllocation: balance.monthlyAllocation,
+      };
+    } catch (error) {
+      const identity = await ctx.auth.getUserIdentity();
+      console.error("[credits.getBalance] failed", {
+        durationMs: Date.now() - startedAt,
+        hasIdentity: Boolean(identity),
+        identityIssuer: identity?.issuer ?? null,
+        identitySubject: identity?.subject ?? null,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   },
 });
 
@@ -295,7 +324,9 @@ export const initBalance = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .unique();
 
-    if (existing) return existing._id;
+    if (existing) {
+      return { balanceId: existing._id, created: false };
+    }
 
     // Free-Tier Credits als Startguthaben
     const balanceId = await ctx.db.insert("creditBalances", {
@@ -324,7 +355,7 @@ export const initBalance = mutation({
       description: "Startguthaben — Free Tier",
     });
 
-    return balanceId;
+    return { balanceId, created: true };
   },
 });
 
