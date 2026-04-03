@@ -5,9 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import { emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import {
-  renderPreview,
+  isPipelineAbortError,
+  renderPreviewWithWorkerFallback,
   type PreviewRenderResult,
-} from "@/lib/image-pipeline/preview-renderer";
+} from "@/lib/image-pipeline/worker-client";
 
 type UsePipelinePreviewOptions = {
   sourceUrl: string | null;
@@ -78,14 +79,16 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
 
     const currentRun = runIdRef.current + 1;
     runIdRef.current = currentRun;
+    const abortController = new AbortController();
 
     const timer = window.setTimeout(() => {
       setIsRendering(true);
       setError(null);
-      void renderPreview({
+      void renderPreviewWithWorkerFallback({
         sourceUrl,
         steps: options.steps,
         previewWidth,
+        signal: abortController.signal,
       })
         .then((result: PreviewRenderResult) => {
           if (runIdRef.current !== currentRun) return;
@@ -105,6 +108,8 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
         })
         .catch((renderError: unknown) => {
           if (runIdRef.current !== currentRun) return;
+          if (isPipelineAbortError(renderError)) return;
+
           const message =
             renderError instanceof Error
               ? renderError.message
@@ -119,6 +124,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
 
     return () => {
       window.clearTimeout(timer);
+      abortController.abort();
     };
   }, [options.sourceUrl, options.steps, pipelineHash, previewWidth]);
 

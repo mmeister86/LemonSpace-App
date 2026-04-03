@@ -16,7 +16,10 @@ import { resolveRenderPreviewInput } from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
 import { getSourceImage, hashPipeline } from "@/lib/image-pipeline/contracts";
-import { bridge } from "@/lib/image-pipeline/bridge";
+import {
+  isPipelineAbortError,
+  renderFullWithWorkerFallback,
+} from "@/lib/image-pipeline/worker-client";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
@@ -441,9 +444,17 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
   const localDataRef = useRef(localData);
   const renderRunIdRef = useRef(0);
+  const renderAbortControllerRef = useRef<AbortController | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuPanelRef = useRef<HTMLDivElement | null>(null);
   const lastAppliedAspectRatioRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      renderAbortControllerRef.current?.abort();
+      renderAbortControllerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     localDataRef.current = localData;
@@ -763,6 +774,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
     renderRunIdRef.current += 1;
     const runId = renderRunIdRef.current;
+    renderAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    renderAbortControllerRef.current = abortController;
     setIsRendering(true);
 
     try {
@@ -778,7 +792,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         jpegQuality: activeData.format === "jpeg" ? activeData.jpegQuality : null,
       });
 
-      const renderResult = await bridge.renderFull({
+      const renderResult = await renderFullWithWorkerFallback({
         sourceUrl,
         steps,
         render: {
@@ -796,6 +810,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
           jpegQuality:
             activeData.format === "jpeg" ? activeData.jpegQuality / 100 : undefined,
         },
+        signal: abortController.signal,
       });
 
       if (runId !== renderRunIdRef.current) return;
@@ -928,6 +943,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       }
     } catch (error: unknown) {
       if (runId !== renderRunIdRef.current) return;
+      if (isPipelineAbortError(error)) {
+        return;
+      }
 
       const message = error instanceof Error ? error.message : "Render failed";
       logRenderDebug("render-error", {
@@ -944,6 +962,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       await persistImmediately(next);
     } finally {
       if (runId === renderRunIdRef.current) {
+        if (renderAbortControllerRef.current === abortController) {
+          renderAbortControllerRef.current = null;
+        }
         setIsRendering(false);
       }
     }

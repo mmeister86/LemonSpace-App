@@ -36,6 +36,7 @@ export type RenderFullOptions = {
   steps: readonly PipelineStep[];
   render: RenderOptions;
   limits?: RenderSizeLimits;
+  signal?: AbortSignal;
 };
 
 export type RenderFullResult = {

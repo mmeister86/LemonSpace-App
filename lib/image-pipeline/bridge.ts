@@ -93,7 +93,9 @@ function resolveMimeType(format: RenderFormat): string {
 }
 
 export async function renderFull(options: RenderFullOptions): Promise<RenderFullResult> {
-  const bitmap = await loadSourceBitmap(options.sourceUrl);
+  const { signal } = options;
+
+  const bitmap = await loadSourceBitmap(options.sourceUrl, { signal });
   const resolvedSize = resolveRenderSize({
     sourceWidth: bitmap.width,
     sourceHeight: bitmap.height,
@@ -111,7 +113,15 @@ export async function renderFull(options: RenderFullOptions): Promise<RenderFull
     options.steps,
     resolvedSize.width,
     resolvedSize.height,
+    {
+      shouldAbort: () => Boolean(signal?.aborted),
+    },
   );
+
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+
   context.putImageData(imageData, 0, 0);
 
   const mimeType = resolveMimeType(options.render.format);

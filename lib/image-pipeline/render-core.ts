@@ -7,6 +7,20 @@ import {
   type CurvePoint,
 } from "@/lib/image-pipeline/adjustment-types";
 
+type PipelineExecutionOptions = {
+  shouldAbort?: () => boolean;
+};
+
+function throwIfAborted(options: PipelineExecutionOptions | undefined): void {
+  if (options?.shouldAbort?.()) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+}
+
+function shouldCheckAbort(index: number): boolean {
+  return index % 4096 === 0;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -100,7 +114,11 @@ function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: n
   };
 }
 
-function applyCurves(pixels: Uint8ClampedArray, params: unknown): void {
+function applyCurves(
+  pixels: Uint8ClampedArray,
+  params: unknown,
+  options?: PipelineExecutionOptions,
+): void {
   const curves = normalizeCurvesData(params);
   const rgbLut = buildLut(curves.points.rgb);
   const redLut = buildLut(curves.points.red);
@@ -112,6 +130,10 @@ function applyCurves(pixels: Uint8ClampedArray, params: unknown): void {
   const invGamma = 1 / curves.levels.gamma;
 
   for (let index = 0; index < pixels.length; index += 4) {
+    if (shouldCheckAbort(index)) {
+      throwIfAborted(options);
+    }
+
     const applyLevels = (value: number) => {
       const normalized = clamp((value - curves.levels.blackPoint) / levelRange, 0, 1);
       return toByte(Math.pow(normalized, invGamma) * 255);
@@ -143,13 +165,21 @@ function applyCurves(pixels: Uint8ClampedArray, params: unknown): void {
   }
 }
 
-function applyColorAdjust(pixels: Uint8ClampedArray, params: unknown): void {
+function applyColorAdjust(
+  pixels: Uint8ClampedArray,
+  params: unknown,
+  options?: PipelineExecutionOptions,
+): void {
   const color = normalizeColorAdjustData(params);
   const saturationFactor = 1 + color.hsl.saturation / 100;
   const luminanceShift = color.hsl.luminance / 100;
   const hueShift = color.hsl.hue;
 
   for (let index = 0; index < pixels.length; index += 4) {
+    if (shouldCheckAbort(index)) {
+      throwIfAborted(options);
+    }
+
     const currentRed = pixels[index] ?? 0;
     const currentGreen = pixels[index + 1] ?? 0;
     const currentBlue = pixels[index + 2] ?? 0;
@@ -180,6 +210,7 @@ function applyLightAdjust(
   params: unknown,
   width: number,
   height: number,
+  options?: PipelineExecutionOptions,
 ): void {
   const light = normalizeLightAdjustData(params);
   const exposureFactor = Math.pow(2, light.exposure / 2);
@@ -190,6 +221,10 @@ function applyLightAdjust(
   const centerY = height / 2;
 
   for (let y = 0; y < height; y += 1) {
+    if (y % 64 === 0) {
+      throwIfAborted(options);
+    }
+
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
       let red = pixels[index] ?? 0;
@@ -238,7 +273,11 @@ function pseudoNoise(seed: number): number {
   return x - Math.floor(x);
 }
 
-function applyDetailAdjust(pixels: Uint8ClampedArray, params: unknown): void {
+function applyDetailAdjust(
+  pixels: Uint8ClampedArray,
+  params: unknown,
+  options?: PipelineExecutionOptions,
+): void {
   const detail = normalizeDetailAdjustData(params);
   const sharpenBoost = detail.sharpen.amount / 500;
   const clarityBoost = detail.clarity / 100;
@@ -248,6 +287,10 @@ function applyDetailAdjust(pixels: Uint8ClampedArray, params: unknown): void {
   const grainScale = Math.max(0.5, detail.grain.size);
 
   for (let index = 0; index < pixels.length; index += 4) {
+    if (shouldCheckAbort(index)) {
+      throwIfAborted(options);
+    }
+
     let red = pixels[index] ?? 0;
     let green = pixels[index + 1] ?? 0;
     let blue = pixels[index + 2] ?? 0;
@@ -293,21 +336,24 @@ export function applyPipelineStep(
   step: PipelineStep<string, unknown>,
   width: number,
   height: number,
+  options?: PipelineExecutionOptions,
 ): void {
+  throwIfAborted(options);
+
   if (step.type === "curves") {
-    applyCurves(pixels, step.params);
+    applyCurves(pixels, step.params, options);
     return;
   }
   if (step.type === "color-adjust") {
-    applyColorAdjust(pixels, step.params);
+    applyColorAdjust(pixels, step.params, options);
     return;
   }
   if (step.type === "light-adjust") {
-    applyLightAdjust(pixels, step.params, width, height);
+    applyLightAdjust(pixels, step.params, width, height, options);
     return;
   }
   if (step.type === "detail-adjust") {
-    applyDetailAdjust(pixels, step.params);
+    applyDetailAdjust(pixels, step.params, options);
   }
 }
 
@@ -316,8 +362,9 @@ export function applyPipelineSteps(
   steps: readonly PipelineStep[],
   width: number,
   height: number,
+  options?: PipelineExecutionOptions,
 ): void {
   for (let index = 0; index < steps.length; index += 1) {
-    applyPipelineStep(pixels, steps[index]!, width, height);
+    applyPipelineStep(pixels, steps[index]!, width, height, options);
   }
 }
