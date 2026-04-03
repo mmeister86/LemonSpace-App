@@ -255,12 +255,62 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     canvasId,
   });
 
-  // ─── Convex Mutations (exakte Signaturen aus nodes.ts / edges.ts) ──
+  /**
+   * Future modularization seams for this orchestrator:
+   * - `useCanvasSyncEngine`: Convex mutations (`moveNode`, `resizeNode`, `updateNodeData`,
+   *   `generateUploadUrl`, `createNode*`, `createEdge`, `batchRemoveNodesRaw`, `removeEdgeRaw`,
+   *   `splitEdgeAtExistingNodeRaw`), online/offline state (`pendingSyncCount`, `isSyncing`,
+   *   `isBrowserOnline`), optimistic sync refs (`pendingMoveAfterCreateRef`,
+   *   `pendingResizeAfterCreateRef`, `pendingDataAfterCreateRef`,
+   *   `pendingCreatePromiseByClientRequestRef`, `pendingDeleteAfterCreateClientRequestIdsRef`),
+   *   optimistic helpers (`trackPendingNodeCreate`, `addOptimisticNodeLocally`,
+   *   `addOptimisticEdgeLocally`, `applyEdgeSplitLocally`, `removeOptimisticCreateLocally`,
+   *   `remapOptimisticNodeLocally`), queue orchestration (`refreshPendingSyncCount`,
+   *   `flushCanvasSyncQueue`, `enqueueSyncMutation`, `runMoveNodeMutation`,
+   *   `runBatchMoveNodesMutation`, `flushPendingResizeForClientRequest`,
+   *   `flushPendingDataForClientRequest`, `runResizeNodeMutation`,
+   *   `runUpdateNodeDataMutation`, `runBatchRemoveNodesMutation`, `runCreateEdgeMutation`,
+   *   `runRemoveEdgeMutation`, `runSplitEdgeAtExistingNodeMutation`,
+   *   `runCreateNodeOnlineOnly`, `runCreateNodeWithEdgeFromSourceOnlineOnly`,
+   *   `runCreateNodeWithEdgeToTargetOnlineOnly`, `runCreateNodeWithEdgeSplitOnlineOnly`,
+   *   `syncPendingMoveForClientRequest`), and offline/upload guardrails (`notifyOfflineUnsupported`).
+   * - `useCanvasFlowReconciliation`: Convex -> RF `useLayoutEffect` sync for edges/nodes, compare
+   *   data refresh effect, and edge carry triggers (`edgeSyncNonce`).
+   * - `useCanvasNodeInteractions`: local flow state (`nodes`, `edges`, `nodesRef`, `edgesRef`),
+   *   resize/drag/delete locks (`isDragging`, `isResizing`, `deletingNodeIds`), highlighted edge
+   *   refs (`overlappedEdgeRef`, `highlightedEdgeRef`, `highlightedEdgeOriginalStyleRef`), and
+   *   callbacks (`onNodesChange`, `onEdgesChange`, `setHighlightedIntersectionEdge`,
+   *   `onNodeDragStart`, `onNodeDrag`, `onNodeDragStop`, `onFlowError`).
+   * - `useCanvasConnections`: connection creation callbacks (`onConnect`, `onConnectEnd`,
+   *   `handleConnectionDropPick`), connection-drop state (`connectionDropMenu`,
+   *   `connectionDropMenuRef`), and reconnect adapter wiring.
+   * - `useCanvasDrop`: DnD handlers (`onDragOver`, `onDrop`) for node payload parsing, upload flow,
+   *   and drop-based node creation.
+   * - Render composition: `assetBrowserTargetApi`, nav/scissor UI state (`scissorsMode`,
+   *   `scissorStrokePreview`, `navTool`, `handleNavToolChange`, `flowPanOnDrag`,
+   *   `flowSelectionOnDrag`), `canvasSyncContextValue`, loading gate, provider wiring, and final
+   *   `ReactFlow` prop assembly.
+   *
+   * Shared orchestrator refs that must stay above extracted hooks:
+   * - React Flow instance access: `screenToFlowPosition` from `useReactFlow()`.
+   * - Optimistic ID handoff / carry-over: `resolvedRealIdByClientRequestRef`,
+   *   `pendingConnectionCreatesRef`, `pendingEdgeSplitByClientRequestRef`,
+   *   `pendingLocalPositionUntilConvexMatchesRef`, `preferLocalPositionNodeIdsRef`,
+   *   `convexNodeIdsSnapshotForEdgeCarryRef`, and `enqueueSyncMutationRef` /
+   *   `syncPendingMoveForClientRequestRef` for cross-hook handshakes.
+   * - Canvas-wide node targeting that must survive optimistic -> real remaps:
+   *   `assetBrowserTargetNodeId`.
+   */
+
+  // ─── Future hook seam: sync engine ────────────────────────────
+  // Convex mutations (exakte Signaturen aus nodes.ts / edges.ts)
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
   const updateNodeData = useMutation(api.nodes.updateData);
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const connectionState = useConvexConnectionState();
+  // Cross-cutting optimistic handoff refs stay orchestrator-owned while sync,
+  // reconciliation, connection, and drop logic still meet in this file.
   const pendingMoveAfterCreateRef = useRef(
     new Map<string, { positionX: number; positionY: number }>(),
   );
@@ -1808,7 +1858,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
   syncPendingMoveForClientRequestRef.current = syncPendingMoveForClientRequest;
 
-  // ─── Lokaler State (für flüssiges Dragging) ───────────────────
+  // ─── Future hook seam: render composition + shared local flow state ─────
   const nodesRef = useRef<RFNode[]>(nodes);
   nodesRef.current = nodes;
   const [connectionDropMenu, setConnectionDropMenu] =
@@ -1932,7 +1982,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
   });
 
-  // ─── Convex → Lokaler State Sync ──────────────────────────────
+  // ─── Future hook seam: flow reconciliation ────────────────────
   /**
    * 1) Kanten: Carry/Inferenz setzt ggf. `resolvedRealIdByClientRequestRef` (auch bevor Mutation-.then läuft).
    * 2) Nodes: gleicher Commit, vor Paint — echte Node-IDs passen zu Kanten-Endpunkten (verhindert „reißende“ Kanten).
@@ -2192,7 +2242,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setNodes((nds) => withResolvedCompareData(nds, edges));
   }, [edges]);
 
-  // ─── Node Changes (Drag, Select, Remove) ─────────────────────
+  // ─── Future hook seam: node interactions ──────────────────────
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const c of changes) {
@@ -2359,7 +2409,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [edges, setHighlightedIntersectionEdge],
   );
 
-  // ─── Drag Start → Lock ────────────────────────────────────────
+  // Drag start / drag / drag stop stay together for the future node interaction hook.
   const onNodeDragStart = useCallback(
     (_event: ReactMouseEvent, _node: RFNode, draggedNodes: RFNode[]) => {
       isDragging.current = true;
@@ -2372,7 +2422,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [setHighlightedIntersectionEdge],
   );
 
-  // ─── Drag Stop → Commit zu Convex ─────────────────────────────
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode, draggedNodes: RFNode[]) => {
       const primaryNode = (node as RFNode | undefined) ?? draggedNodes[0];
@@ -2564,7 +2613,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ],
   );
 
-  // ─── Neue Verbindung → Convex Edge ────────────────────────────
+  // ─── Future hook seam: connections ────────────────────────────
   const onConnect = useCallback(
     (connection: Connection) => {
       const validationError = validateCanvasConnection(connection, nodes, edges);
@@ -2734,6 +2783,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     ],
   );
 
+  // ─── Future hook seam: drop flows ─────────────────────────────
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     const hasFiles = event.dataTransfer.types.includes("Files");
@@ -2899,7 +2949,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [isSyncOnline, isSyncing, pendingSyncCount, runResizeNodeMutation, runUpdateNodeDataMutation],
   );
 
-  // ─── Loading State ────────────────────────────────────────────
+  // ─── Future hook seam: render assembly ────────────────────────
   if (convexNodes === undefined || convexEdges === undefined) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background">
