@@ -304,8 +304,6 @@ export function classifyError(rawError: unknown): AiError {
           ? rawObj.message
           : "";
 
-  const rawDetail = typeof rawObj?.detail === "string" ? rawObj.detail.trim() : undefined;
-
   const prefixed = cleanPrefixMessage(rawMessage);
   const explicitType =
     normalizeType(typeof rawObj?.category === "string" ? rawObj.category : undefined) ??

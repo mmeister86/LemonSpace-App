@@ -76,7 +76,7 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
     } finally {
       setIsExporting(false);
     }
-  }, [exportFrame, id, isExporting, label, status.isOffline]);
+  }, [exportFrame, id, isExporting, label, status.isOffline, t]);
 
   const frameW = Math.round(width ?? 400);
   const frameH = Math.round(height ?? 300);

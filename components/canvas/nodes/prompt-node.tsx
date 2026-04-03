@@ -297,6 +297,7 @@ export default function PromptNode({
     hasEnoughCredits,
     router,
     status.isOffline,
+    t,
   ]);
 
   return (

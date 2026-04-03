@@ -158,7 +158,7 @@ export default function AiImageNode({
     } finally {
       setIsGenerating(false);
     }
-  }, [isLoading, syncStatus.isOffline, nodeData, id, getEdges, getNode, generateImage]);
+  }, [isLoading, syncStatus.isOffline, nodeData, id, getEdges, getNode, generateImage, t]);
 
   const modelName =
     getModel(nodeData.model ?? DEFAULT_MODEL_ID)?.name ?? "AI";
