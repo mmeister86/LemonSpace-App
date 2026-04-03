@@ -77,6 +77,8 @@ import {
   getMiniMapNodeStrokeColor,
   getNodeCenterClientPosition,
   getIntersectedEdgeId,
+  getPendingRemovedEdgeIdsFromLocalOps,
+  getPendingMovePinsFromLocalOps,
   hasHandleKey,
   isEditableKeyboardTarget,
   isOptimisticEdgeId,
@@ -239,6 +241,24 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [assetBrowserTargetNodeId],
   );
 
+  const pendingRemovedEdgeIds = useMemo(
+    () => {
+      void convexEdges;
+      void edgeSyncNonce;
+      return getPendingRemovedEdgeIdsFromLocalOps(canvasId as string);
+    },
+    [canvasId, convexEdges, edgeSyncNonce],
+  );
+
+  const pendingMovePins = useMemo(
+    () => {
+      void convexNodes;
+      void edgeSyncNonce;
+      return getPendingMovePinsFromLocalOps(canvasId as string);
+    },
+    [canvasId, convexNodes, edgeSyncNonce],
+  );
+
   const handleNavToolChange = useCallback((tool: CanvasNavTool) => {
     if (tool === "scissor") {
       setScissorsMode(true);
@@ -339,17 +359,17 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   });
 
   useCanvasFlowReconciliation({
-    canvasId,
     convexNodes,
     convexEdges,
     storageUrlsById,
     themeMode: resolvedTheme === "dark" ? "dark" : "light",
-    edges,
-    edgeSyncNonce,
+    pendingRemovedEdgeIds,
+    pendingMovePins,
     setNodes,
     setEdges,
     refs: {
       nodesRef,
+      edgesRef,
       deletingNodeIds,
       convexNodeIdsSnapshotForEdgeCarryRef,
       resolvedRealIdByClientRequestRef,

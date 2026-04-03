@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useEffect, useRef, useState } from "react";
+import React, { act, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,15 +22,16 @@ vi.mock("@/components/canvas/canvas-helpers", async () => {
 
 const asCanvasId = (id: string): Id<"canvases"> => id as Id<"canvases">;
 const asNodeId = (id: string): Id<"nodes"> => id as Id<"nodes">;
+
 type HarnessProps = {
-  canvasId: Id<"canvases">;
   initialNodes: RFNode[];
   initialEdges: RFEdge[];
   convexNodes?: Doc<"nodes">[];
   convexEdges?: Doc<"edges">[];
-  storageUrlsById: Record<string, string>;
+  storageUrlsById?: Record<string, string | undefined>;
   themeMode: "light" | "dark";
-  edgeSyncNonce: number;
+  pendingRemovedEdgeIds?: Set<string>;
+  pendingMovePins?: Map<string, { x: number; y: number }>;
   isDragging: boolean;
   isResizing: boolean;
   resolvedRealIdByClientRequest: Map<string, Id<"nodes">>;
@@ -56,6 +57,7 @@ function HookHarness(props: HarnessProps) {
   const [nodes, setNodes] = useState<RFNode[]>(props.initialNodes);
   const [edges, setEdges] = useState<RFEdge[]>(props.initialEdges);
   const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
   const deletingNodeIds = useRef(new Set<string>());
   const convexNodeIdsSnapshotForEdgeCarryRef = useRef(
     props.previousConvexNodeIdsSnapshot,
@@ -64,6 +66,14 @@ function HookHarness(props: HarnessProps) {
     props.resolvedRealIdByClientRequest,
   );
   const pendingConnectionCreatesRef = useRef(props.pendingConnectionCreateIds);
+  const pendingRemovedEdgeIds = useMemo(
+    () => props.pendingRemovedEdgeIds ?? new Set<string>(),
+    [props.pendingRemovedEdgeIds],
+  );
+  const pendingMovePins = useMemo(
+    () => props.pendingMovePins ?? new Map<string, { x: number; y: number }>(),
+    [props.pendingMovePins],
+  );
   const pendingLocalPositionUntilConvexMatchesRef = useRef(
     props.pendingLocalPositionPins ?? new Map<string, { x: number; y: number }>(),
   );
@@ -78,22 +88,26 @@ function HookHarness(props: HarnessProps) {
   }, [nodes]);
 
   useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  useEffect(() => {
     isDraggingRef.current = props.isDragging;
     isResizingRef.current = props.isResizing;
   }, [props.isDragging, props.isResizing]);
 
   useCanvasFlowReconciliation({
-    canvasId: props.canvasId,
     convexNodes: props.convexNodes,
     convexEdges: props.convexEdges,
     storageUrlsById: props.storageUrlsById,
     themeMode: props.themeMode,
-    edges,
-    edgeSyncNonce: props.edgeSyncNonce,
+    pendingRemovedEdgeIds,
+    pendingMovePins,
     setNodes,
     setEdges,
     refs: {
       nodesRef,
+      edgesRef,
       deletingNodeIds,
       convexNodeIdsSnapshotForEdgeCarryRef,
       resolvedRealIdByClientRequestRef,
@@ -141,9 +155,8 @@ describe("useCanvasFlowReconciliation", () => {
 
     await act(async () => {
       root?.render(
-        <HookHarness
-          canvasId={asCanvasId("canvas-1")}
-          initialNodes={[
+        React.createElement(HookHarness, {
+          initialNodes: [
             {
               id: "node-source",
               type: "image",
@@ -156,15 +169,15 @@ describe("useCanvasFlowReconciliation", () => {
               position: { x: 120, y: 80 },
               data: {},
             },
-          ]}
-          initialEdges={[
+          ],
+          initialEdges: [
             {
               id: "optimistic_edge_req-1",
               source: "node-source",
               target: "optimistic_req-1",
             },
-          ]}
-          convexNodes={[
+          ],
+          convexNodes: [
             {
               _id: asNodeId("node-source"),
               _creationTime: 0,
@@ -187,17 +200,16 @@ describe("useCanvasFlowReconciliation", () => {
               height: 220,
               data: {},
             } as Doc<"nodes">,
-          ]}
-          convexEdges={[]}
-          storageUrlsById={{}}
-          themeMode="light"
-          edgeSyncNonce={0}
-          isDragging={false}
-          isResizing={false}
-          resolvedRealIdByClientRequest={new Map()}
-          pendingConnectionCreateIds={new Set(["req-1"])}
-          previousConvexNodeIdsSnapshot={new Set(["node-source"])}
-        />,
+          ],
+          convexEdges: [],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set(["req-1"]),
+          previousConvexNodeIdsSnapshot: new Set(["node-source"]),
+        }),
       );
     });
 
@@ -226,9 +238,8 @@ describe("useCanvasFlowReconciliation", () => {
 
     await act(async () => {
       root?.render(
-        <HookHarness
-          canvasId={asCanvasId("canvas-1")}
-          initialNodes={[
+        React.createElement(HookHarness, {
+          initialNodes: [
             {
               id: "optimistic_req-drag",
               type: "image",
@@ -236,9 +247,9 @@ describe("useCanvasFlowReconciliation", () => {
               data: { label: "local" },
               dragging: true,
             },
-          ]}
-          initialEdges={[]}
-          convexNodes={[
+          ],
+          initialEdges: [],
+          convexNodes: [
             {
               _id: asNodeId("node-real"),
               _creationTime: 1,
@@ -250,19 +261,18 @@ describe("useCanvasFlowReconciliation", () => {
               height: 200,
               data: { label: "server" },
             } as Doc<"nodes">,
-          ]}
-          convexEdges={[] as Doc<"edges">[]}
-          storageUrlsById={{}}
-          themeMode="light"
-          edgeSyncNonce={0}
-          isDragging={false}
-          isResizing={false}
-          resolvedRealIdByClientRequest={new Map([
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map([
             ["req-drag", asNodeId("node-real")],
-          ])}
-          pendingConnectionCreateIds={new Set()}
-          previousConvexNodeIdsSnapshot={new Set(["node-real"])}
-        />,
+          ]),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-real"]),
+        }),
       );
     });
 

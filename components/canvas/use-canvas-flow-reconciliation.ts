@@ -2,11 +2,6 @@ import { useLayoutEffect, type Dispatch, type MutableRefObject, type SetStateAct
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-
-import {
-  getPendingMovePinsFromLocalOps,
-  getPendingRemovedEdgeIdsFromLocalOps,
-} from "./canvas-helpers";
 import {
   buildIncomingCanvasFlowNodes,
   reconcileCanvasFlowEdges,
@@ -17,6 +12,7 @@ type PositionPin = { x: number; y: number };
 
 type CanvasFlowReconciliationRefs = {
   nodesRef: MutableRefObject<RFNode[]>;
+  edgesRef: MutableRefObject<RFEdge[]>;
   deletingNodeIds: MutableRefObject<Set<string>>;
   convexNodeIdsSnapshotForEdgeCarryRef: MutableRefObject<Set<string>>;
   resolvedRealIdByClientRequestRef: MutableRefObject<Map<string, Id<"nodes">>>;
@@ -30,30 +26,29 @@ type CanvasFlowReconciliationRefs = {
 };
 
 export function useCanvasFlowReconciliation(args: {
-  canvasId: Id<"canvases">;
   convexNodes: Doc<"nodes">[] | undefined;
   convexEdges: Doc<"edges">[] | undefined;
   storageUrlsById: Record<string, string | undefined> | undefined;
   themeMode: "light" | "dark";
-  edges: RFEdge[];
-  edgeSyncNonce: number;
+  pendingRemovedEdgeIds: ReadonlySet<string>;
+  pendingMovePins: ReadonlyMap<string, PositionPin>;
   setNodes: Dispatch<SetStateAction<RFNode[]>>;
   setEdges: Dispatch<SetStateAction<RFEdge[]>>;
   refs: CanvasFlowReconciliationRefs;
 }) {
   const {
-    canvasId,
     convexEdges,
     convexNodes,
     storageUrlsById,
     themeMode,
-    edges,
-    edgeSyncNonce,
+    pendingRemovedEdgeIds,
+    pendingMovePins,
     setNodes,
     setEdges,
   } = args;
   const {
     nodesRef,
+    edgesRef,
     deletingNodeIds,
     convexNodeIdsSnapshotForEdgeCarryRef,
     resolvedRealIdByClientRequestRef,
@@ -73,7 +68,7 @@ export function useCanvasFlowReconciliation(args: {
         convexEdges,
         convexNodes,
         previousConvexNodeIdsSnapshot: convexNodeIdsSnapshotForEdgeCarryRef.current,
-        pendingRemovedEdgeIds: getPendingRemovedEdgeIdsFromLocalOps(canvasId as string),
+        pendingRemovedEdgeIds,
         pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
         resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
         localNodeIds: new Set(nodesRef.current.map((node) => node.id)),
@@ -96,13 +91,13 @@ export function useCanvasFlowReconciliation(args: {
       return reconciliation.edges;
     });
   }, [
-    canvasId,
     convexEdges,
     convexNodes,
-    edgeSyncNonce,
+    pendingRemovedEdgeIds,
     setEdges,
     themeMode,
     convexNodeIdsSnapshotForEdgeCarryRef,
+    edgesRef,
     isDragging,
     nodesRef,
     pendingConnectionCreatesRef,
@@ -124,7 +119,7 @@ export function useCanvasFlowReconciliation(args: {
         convexNodes,
         storageUrlsById,
         previousNodes,
-        edges,
+        edges: edgesRef.current,
       });
 
       const reconciliation = reconcileCanvasFlowNodes({
@@ -136,7 +131,7 @@ export function useCanvasFlowReconciliation(args: {
         pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
         preferLocalPositionNodeIds: preferLocalPositionNodeIdsRef.current,
         pendingLocalPositionPins: pendingLocalPositionUntilConvexMatchesRef.current,
-        pendingMovePins: getPendingMovePinsFromLocalOps(canvasId as string),
+        pendingMovePins,
       });
 
       resolvedRealIdByClientRequestRef.current =
@@ -150,9 +145,9 @@ export function useCanvasFlowReconciliation(args: {
       return reconciliation.nodes;
     });
   }, [
-    canvasId,
     convexNodes,
-    edges,
+    edgesRef,
+    pendingMovePins,
     setNodes,
     storageUrlsById,
     deletingNodeIds,
