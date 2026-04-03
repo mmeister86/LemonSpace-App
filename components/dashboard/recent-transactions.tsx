@@ -3,6 +3,7 @@
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useFormatter } from "next-intl";
 import { Activity, Coins } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/convex/_generated/api";
@@ -46,16 +47,32 @@ function truncatedDescription(text: string, maxLen = 40) {
 
 export function RecentTransactions() {
   const format = useFormatter();
+  const [now, setNow] = useState<number | null>(null);
   const transactions = useAuthQuery(api.credits.getRecentTransactions, {
     limit: 10,
   });
+
+  useEffect(() => {
+    const updateNow = () => {
+      setNow(Date.now());
+    };
+
+    const initialTimeout = window.setTimeout(updateNow, 0);
+
+    const interval = window.setInterval(updateNow, 60_000);
+
+    return () => {
+      window.clearTimeout(initialTimeout);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const formatEurFromCents = (cents: number) =>
     format.number(cents / 100, { style: "currency", currency: "EUR" });
 
   const formatRelativeTime = (timestamp: number) => {
-    const now = Date.now();
-    const diff = now - timestamp;
+    const referenceNow = now ?? timestamp;
+    const diff = referenceNow - timestamp;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
