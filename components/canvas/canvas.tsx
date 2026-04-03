@@ -42,11 +42,9 @@ import {
   dropCanvasOpsByEdgeIds,
   dropCanvasOpsByNodeIds,
   enqueueCanvasOp,
-  readCanvasSnapshot,
   remapCanvasOpNodeId,
   resolveCanvasOp,
   resolveCanvasOps,
-  writeCanvasSnapshot,
 } from "@/lib/canvas-local-persistence";
 import {
   ackCanvasSyncOp,
@@ -140,6 +138,7 @@ import { getImageDimensions } from "./canvas-media-utils";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import { useCanvasScissors } from "./canvas-scissors";
 import { CanvasSyncProvider } from "./canvas-sync-context";
+import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -1907,7 +1906,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   // ─── Lokaler State (für flüssiges Dragging) ───────────────────
   const nodesRef = useRef<RFNode[]>(nodes);
   nodesRef.current = nodes;
-  const [hasHydratedLocalSnapshot, setHasHydratedLocalSnapshot] = useState(false);
   const [connectionDropMenu, setConnectionDropMenu] =
     useState<ConnectionDropMenuState | null>(null);
   const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
@@ -1919,19 +1917,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   >(null);
   const [navTool, setNavTool] = useState<CanvasNavTool>("select");
 
-  useEffect(() => {
-    const snapshot = readCanvasSnapshot<RFNode, RFEdge>(canvasId as string);
-    if (snapshot) {
-      setNodes(snapshot.nodes);
-      setEdges(snapshot.edges);
-    }
-    setHasHydratedLocalSnapshot(true);
-  }, [canvasId]);
-
-  useEffect(() => {
-    if (!hasHydratedLocalSnapshot) return;
-    writeCanvasSnapshot(canvasId as string, { nodes, edges });
-  }, [canvasId, edges, hasHydratedLocalSnapshot, nodes]);
+  useCanvasLocalSnapshotPersistence<RFNode, RFEdge>({
+    canvasId: canvasId as string,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+  });
 
   const handleNavToolChange = useCallback((tool: CanvasNavTool) => {
     if (tool === "scissor") {
