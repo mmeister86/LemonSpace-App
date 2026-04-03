@@ -11,27 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
+import { normalizeTier, TIER_MONTHLY_CREDITS } from "@/lib/polar-products";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-
-// ---------------------------------------------------------------------------
-// Tier-Config — monatliches Credit-Kontingent pro Tier (in Cent)
-// ---------------------------------------------------------------------------
-
-const TIER_MONTHLY_CREDITS: Record<string, number> = {
-  free: 50,
-  starter: 400,
-  pro: 3300,
-  max: 6700,
-  business: 6700,
-};
 
 const TIER_BADGE_STYLES: Record<string, string> = {
   free: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
   starter: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
   pro: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
   max: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
-  business: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
 };
 
 // ---------------------------------------------------------------------------
@@ -90,8 +78,8 @@ export function CreditOverview() {
   }
 
   // ── Computed Values ────────────────────────────────────────────────────
-  const tier = subscription.tier;
-  const monthlyCredits = TIER_MONTHLY_CREDITS[tier] ?? 0;
+  const tier = normalizeTier(subscription.tier);
+  const monthlyCredits = TIER_MONTHLY_CREDITS[tier];
   const usagePercent = monthlyCredits > 0
     ? Math.min(100, Math.round((usageStats.monthlyUsage / monthlyCredits) * 100))
     : 0;
