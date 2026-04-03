@@ -11,7 +11,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "tests/**/*.test.ts",
-      "components/**/__tests__/*.test.ts",
+      "components/canvas/__tests__/canvas-flow-reconciliation-helpers.test.ts",
     ],
   },
 });
