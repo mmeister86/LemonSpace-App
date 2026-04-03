@@ -747,6 +747,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     });
   };
 
+  const applyLocalDataImmediately = (next: PersistedRenderData) => {
+    localDataRef.current = next;
+    setLocalData(next);
+  };
+
   const handleRender = async (mode: "download" | "upload") => {
     if (!sourceUrl || !currentPipelineHash) {
       logRenderDebug("render-aborted-prerequisites", {
@@ -768,7 +773,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         lastRenderError: "Custom width and height are required.",
         lastRenderErrorHash: currentPipelineHash,
       };
-      await persistImmediately(next);
+      if (mode === "upload") {
+        await persistImmediately(next);
+      } else {
+        applyLocalDataImmediately(next);
+      }
       return;
     }
 
@@ -864,7 +873,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       const shouldUploadAfterRender = mode === "upload";
 
       if (!shouldUploadAfterRender) {
-        await persistImmediately(renderNext);
+        applyLocalDataImmediately(renderNext);
         return;
       }
 
@@ -959,7 +968,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         lastRenderError: message,
         lastRenderErrorHash: currentPipelineHash,
       };
-      await persistImmediately(next);
+      if (mode === "upload") {
+        await persistImmediately(next);
+      } else {
+        applyLocalDataImmediately(next);
+      }
     } finally {
       if (runId === renderRunIdRef.current) {
         if (renderAbortControllerRef.current === abortController) {
