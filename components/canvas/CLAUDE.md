@@ -136,9 +136,9 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | Datei | Zweck |
 |-------|-------|
 | `canvas-shell.tsx` | Client-Layout-Wrapper für Sidebar/Main inkl. Resizing, Auto-Collapse und Rail-Mode-Umschaltung |
-| `canvas-toolbar.tsx` | Werkzeug-Leiste (Select, Pan, Zoom-Controls) |
-| `canvas-app-menu.tsx` | App-Menü (Einstellungen, Logout, Canvas-Name) |
-| `canvas-sidebar.tsx` | Node-Palette links; unterstützt Full-Mode und Rail-Mode (icon-only) |
+| `canvas-toolbar.tsx` | Werkzeug-Leiste (Select, Pan, Zoom-Controls) inkl. Canvas-Name im rechten Cluster neben Credits/Export |
+| `canvas-app-menu.tsx` | App-Menü oben rechts (Umbenennen, Löschen, Theme) |
+| `canvas-sidebar.tsx` | Node-Palette links; zeigt im Full-Mode das LemonSpace-Wordmark, im Rail-Mode einen kompakten Header und vor dem User-Menü einen visuellen Bottom-Fade |
 | `canvas-command-palette.tsx` | Cmd+K Command Palette |
 | `canvas-connection-drop-menu.tsx` | Kontext-Menü beim Loslassen einer Verbindung |
 | `canvas-node-template-picker.tsx` | Node aus Template einfügen |
@@ -160,8 +160,13 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 - Sidebar ist `collapsible`; bei Unterschreiten von `minSize` wird auf `collapsedSize` reduziert.
 - Eingeklappt bedeutet nicht „unsichtbar“: `collapsedSize` ist absichtlich > 0 (`64px`), damit ein sichtbarer Rail bleibt.
 - `canvas-shell.tsx` schaltet per `onResize` abhängig von der tatsächlichen Pixelbreite zwischen Full-Mode und Rail-Mode um (`railMode` Prop an `CanvasSidebar`).
+- Im Full-Mode zeigt die Sidebar **nicht** mehr den Canvas-Namen, sondern das LemonSpace-Wordmark aus `public/logos/`:
+  - Light Mode → `lemonspace-logo-v2-black-rgb.svg`
+  - Dark Mode → `lemonspace-logo-v2-white-rgb.svg`
+- Der Canvas-Name liegt stattdessen in der Toolbar (`canvas-toolbar.tsx`) als kompakter, truncating Label/Chip im rechten Bereich.
 - `CanvasUserMenu` unterstützt ebenfalls einen kompakten Rail-Mode über `compact`.
 - Scroll-Chaining ist begrenzt (`overscroll-contain` in der Sidebar-Scrollfläche + `overscroll-none` am Shell-Root), um visuelle Artefakte beim Scrollen am Ende zu verhindern.
+- Vor dem `CanvasUserMenu` liegt im Sidebar-Body ein `pointer-events-none` Bottom-Fade (schwarz → transparent), der die unteren Palette-Einträge nur visuell ausblendet; Scrollen, Drag-and-Drop und Klicks bleiben unverändert funktionsfähig.
 
 ---
 
