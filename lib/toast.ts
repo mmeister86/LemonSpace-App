@@ -353,7 +353,7 @@ export function showDeleteFailedToast(t: ToastTranslations) {
   toast.error(t('dashboard.deleteFailed'));
 }
 
-export function getToastTranslations() {
+export function useToastTranslations() {
   const t = useTranslations('toasts');
   return t as ToastTranslations;
 }
