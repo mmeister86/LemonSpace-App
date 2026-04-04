@@ -9,6 +9,10 @@ import {
   type ImagePipelineBackend,
   type PreviewBackendRequest,
 } from "@/lib/image-pipeline/backend/backend-types";
+import {
+  getBackendFeatureFlags,
+  type BackendFeatureFlags,
+} from "@/lib/image-pipeline/backend/feature-flags";
 
 type BackendFallbackReason = "unsupported_api" | "flag_disabled" | "runtime_error";
 
@@ -59,15 +63,50 @@ export function createBackendRouter(options?: {
   backends?: readonly ImagePipelineBackend[];
   defaultBackendId?: string;
   backendAvailability?: Readonly<Record<string, BackendAvailability>>;
+  featureFlags?: BackendFeatureFlags;
   onFallback?: (event: BackendFallbackEvent) => void;
 }): BackendRouter {
   const configuredBackends = options?.backends?.length ? [...options.backends] : [cpuBackend];
   const byId = new Map(configuredBackends.map((backend) => [backend.id.toLowerCase(), backend]));
-  const defaultBackend =
+  const configuredDefaultBackend =
     byId.get(options?.defaultBackendId?.toLowerCase() ?? "") ??
     byId.get(CPU_BACKEND_ID) ??
     configuredBackends[0] ??
     cpuBackend;
+  const cpuFallbackBackend = byId.get(CPU_BACKEND_ID) ?? configuredDefaultBackend;
+  const featureFlags = options?.featureFlags;
+
+  function isBackendEnabledByFlags(backendId: string): boolean {
+    if (!featureFlags) {
+      return true;
+    }
+
+    const normalizedBackendId = backendId.toLowerCase();
+
+    if (featureFlags.forceCpu) {
+      return normalizedBackendId === CPU_BACKEND_ID;
+    }
+
+    if (normalizedBackendId === "webgl") {
+      return featureFlags.webglEnabled;
+    }
+
+    if (normalizedBackendId === "wasm") {
+      return featureFlags.wasmEnabled;
+    }
+
+    return true;
+  }
+
+  function resolveDefaultBackend(): ImagePipelineBackend {
+    if (!isBackendEnabledByFlags(configuredDefaultBackend.id)) {
+      return cpuFallbackBackend;
+    }
+
+    return configuredDefaultBackend;
+  }
+
+  const defaultBackend = resolveDefaultBackend();
   const normalizedDefaultId = defaultBackend.id.toLowerCase();
 
   function readAvailability(backendId: string): BackendAvailability | undefined {
@@ -102,6 +141,14 @@ export function createBackendRouter(options?: {
     }
 
     const availability = readAvailability(normalizedHint);
+    if (!isBackendEnabledByFlags(normalizedHint)) {
+      return {
+        backend: defaultBackend,
+        fallbackReason: "flag_disabled",
+        requestedBackend: normalizedHint,
+      };
+    }
+
     if (availability?.enabled === false) {
       return {
         backend: defaultBackend,
@@ -190,12 +237,14 @@ export function createBackendRouter(options?: {
   };
 }
 
-const defaultRouter = createBackendRouter();
+const rolloutRouter = createBackendRouter({
+  featureFlags: getBackendFeatureFlags(),
+});
 
 export function runPreviewStepWithBackendRouter(request: PreviewBackendRequest): void {
-  defaultRouter.runPreviewStep(request);
+  rolloutRouter.runPreviewStep(request);
 }
 
 export function runFullPipelineWithBackendRouter(request: FullBackendRequest): void {
-  defaultRouter.runFullPipeline(request);
+  rolloutRouter.runFullPipeline(request);
 }
