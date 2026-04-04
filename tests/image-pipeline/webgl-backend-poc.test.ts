@@ -65,6 +65,19 @@ function createUnsupportedStep(): PipelineStep {
   };
 }
 
+function createDetailAdjustStep(): PipelineStep {
+  return {
+    nodeId: "detail-1",
+    type: "detail-adjust",
+    params: {
+      sharpen: { amount: 20, radius: 1.4, detail: 10, masking: 0 },
+      clarity: 15,
+      denoise: { luminance: 12, color: 18, detail: 50 },
+      grain: { amount: 35, size: 2.5, roughness: 50 },
+    },
+  };
+}
+
 describe("webgl backend poc", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -423,6 +436,29 @@ describe("webgl backend poc", () => {
     expect(Array.from(pixels)).toEqual([11, 22, 33, 255]);
     expect(fakeGl.drawArrays).toHaveBeenCalledTimes(1);
     expect(getContextSpy).toHaveBeenCalledWith("webgl2", expect.any(Object));
+  });
+
+  it("passes image width uniform for detail-adjust grain parity", async () => {
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([11, 22, 33, 255]),
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+    const backend = createWebglPreviewBackend();
+    backend.runPreviewStep({
+      pixels: new Uint8ClampedArray(7 * 3 * 4),
+      step: createDetailAdjustStep(),
+      width: 7,
+      height: 3,
+    });
+
+    expect(fakeGl.uniform1f).toHaveBeenCalledWith(expect.anything(), 7);
   });
 
   it("downgrades compile/link failures to cpu with runtime_error reason", async () => {

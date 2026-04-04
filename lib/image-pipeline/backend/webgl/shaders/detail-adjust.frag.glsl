@@ -8,6 +8,7 @@ uniform float uDenoiseLuma;
 uniform float uDenoiseColor;
 uniform float uGrainAmount;
 uniform float uGrainScale;
+uniform float uImageWidth;
 
 float pseudoNoise(float seed) {
   float x = sin(seed * 12.9898) * 43758.5453;
@@ -36,7 +37,10 @@ void main() {
   }
 
   if (uGrainAmount > 0.0) {
-    float grainSeed = (gl_FragCoord.y * 4096.0 + gl_FragCoord.x) / max(0.5, uGrainScale);
+    float pixelX = floor(gl_FragCoord.x);
+    float pixelY = floor(gl_FragCoord.y);
+    float pixelIndex = ((pixelY * max(1.0, uImageWidth)) + pixelX) * 4.0;
+    float grainSeed = (pixelIndex + 1.0) / max(0.5, uGrainScale);
     float grain = (pseudoNoise(grainSeed) - 0.5) * uGrainAmount * 40.0;
     rgb += vec3(grain);
   }

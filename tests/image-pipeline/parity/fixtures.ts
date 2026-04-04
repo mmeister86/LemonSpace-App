@@ -539,6 +539,7 @@ function runLightAdjustShader(
 
 function runDetailAdjustShader(
   input: Uint8Array,
+  width: number,
   uniforms: Map<string, number | [number, number, number]>,
 ): Uint8Array {
   const output = new Uint8Array(input.length);
@@ -549,6 +550,7 @@ function runDetailAdjustShader(
   const denoiseColor = Number(uniforms.get("uDenoiseColor") ?? 0);
   const grainAmount = Number(uniforms.get("uGrainAmount") ?? 0);
   const grainScale = Math.max(0.5, Number(uniforms.get("uGrainScale") ?? 1));
+  const imageWidth = Math.max(1, Number(uniforms.get("uImageWidth") ?? width));
 
   for (let index = 0; index < input.length; index += 4) {
     let red = input[index] ?? 0;
@@ -580,7 +582,11 @@ function runDetailAdjustShader(
     }
 
     if (grainAmount > 0) {
-      const grain = (pseudoNoise((index + 1) / grainScale) - 0.5) * grainAmount * 40;
+      const pixel = index / 4;
+      const x = pixel % imageWidth;
+      const y = Math.floor(pixel / imageWidth);
+      const pixelIndex = (y * imageWidth + x) * 4;
+      const grain = (pseudoNoise((pixelIndex + 1) / grainScale) - 0.5) * grainAmount * 40;
       red += grain;
       green += grain;
       blue += grain;
@@ -798,7 +804,11 @@ function createParityWebglContext(): WebGLRenderingContext {
       }
 
       if (currentProgram.kind === "detail-adjust") {
-        currentFramebuffer.attachment.data = runDetailAdjustShader(sourceTexture.data, currentProgram.uniforms);
+        currentFramebuffer.attachment.data = runDetailAdjustShader(
+          sourceTexture.data,
+          drawWidth,
+          currentProgram.uniforms,
+        );
         return;
       }
 

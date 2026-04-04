@@ -274,6 +274,11 @@ function applyStepUniforms(
     if (grainScaleLocation) {
       gl.uniform1f(grainScaleLocation, Math.max(0.5, detail.grain.size));
     }
+
+    const imageWidthLocation = gl.getUniformLocation(shaderProgram, "uImageWidth");
+    if (imageWidthLocation) {
+      gl.uniform1f(imageWidthLocation, request.width);
+    }
   }
 }
 
