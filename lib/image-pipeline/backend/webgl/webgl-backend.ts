@@ -42,12 +42,14 @@ function assertSupportedStep(step: PipelineStep): void {
 function createGlContext(): WebGLRenderingContext {
   if (typeof document !== "undefined") {
     const canvas = document.createElement("canvas");
-    const context = canvas.getContext("webgl", {
+    const contextOptions: WebGLContextAttributes = {
       alpha: true,
       antialias: false,
       premultipliedAlpha: false,
       preserveDrawingBuffer: true,
-    });
+    };
+    const context =
+      canvas.getContext("webgl2", contextOptions) ?? canvas.getContext("webgl", contextOptions);
     if (context) {
       return context;
     }
@@ -55,7 +57,7 @@ function createGlContext(): WebGLRenderingContext {
 
   if (typeof OffscreenCanvas !== "undefined") {
     const canvas = new OffscreenCanvas(1, 1);
-    const context = canvas.getContext("webgl");
+    const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
     if (context) {
       return context;
     }
@@ -228,6 +230,9 @@ function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest)
     gl.deleteTexture(outputTexture);
     throw new Error("WebGL framebuffer is incomplete.");
   }
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
 
   const sourceLocation = gl.getUniformLocation(shaderProgram, "uSource");
   if (sourceLocation) {

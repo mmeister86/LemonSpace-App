@@ -339,6 +339,84 @@ describe("webgl backend poc", () => {
     expect(fakeGl.readPixels).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps source texture bound on sampler unit when drawing", async () => {
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([1, 2, 3, 255]),
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+    const backend = createWebglPreviewBackend();
+    backend.runPreviewStep({
+      pixels: new Uint8ClampedArray([9, 9, 9, 255]),
+      step: createCurvesStep(),
+      width: 1,
+      height: 1,
+    });
+
+    const sourceTexture = (fakeGl.createTexture as any).mock.results[0]?.value;
+    const outputTexture = (fakeGl.createTexture as any).mock.results[1]?.value;
+    expect(sourceTexture).toBeTruthy();
+    expect(outputTexture).toBeTruthy();
+
+    expect(fakeGl.framebufferTexture2D).toHaveBeenCalledWith(
+      fakeGl.FRAMEBUFFER,
+      fakeGl.COLOR_ATTACHMENT0,
+      fakeGl.TEXTURE_2D,
+      outputTexture,
+      0,
+    );
+
+    const bindTextureCalls = (fakeGl.bindTexture as any).mock.calls as Array<[number, unknown]>;
+    const bindTextureOrder = (fakeGl.bindTexture as any).mock.invocationCallOrder as number[];
+    const drawOrder = (fakeGl.drawArrays as any).mock.invocationCallOrder[0] as number;
+    const lastBindBeforeDrawIndex = bindTextureOrder
+      .map((callOrder, index) => ({ callOrder, index }))
+      .filter(({ callOrder, index }) => callOrder < drawOrder && bindTextureCalls[index]?.[0] === fakeGl.TEXTURE_2D)
+      .at(-1)?.index;
+
+    expect(lastBindBeforeDrawIndex).toBeTypeOf("number");
+    expect(bindTextureCalls[lastBindBeforeDrawIndex as number]?.[1]).toBe(sourceTexture);
+    expect(bindTextureCalls[lastBindBeforeDrawIndex as number]?.[1]).not.toBe(outputTexture);
+  });
+
+  it("initializes backend with webgl2-only context availability", async () => {
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([11, 22, 33, 255]),
+    });
+    const getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation((contextId) => {
+        if (contextId === "webgl2") {
+          return fakeGl;
+        }
+        if (contextId === "webgl") {
+          return null;
+        }
+        return null;
+      });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+    const backend = createWebglPreviewBackend();
+    const pixels = new Uint8ClampedArray([200, 100, 50, 255]);
+
+    backend.runPreviewStep({
+      pixels,
+      step: createCurvesStep(),
+      width: 1,
+      height: 1,
+    });
+
+    expect(Array.from(pixels)).toEqual([11, 22, 33, 255]);
+    expect(fakeGl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(getContextSpy).toHaveBeenCalledWith("webgl2", expect.any(Object));
+  });
+
   it("downgrades compile/link failures to cpu with runtime_error reason", async () => {
     const { createBackendRouter } = await import("@/lib/image-pipeline/backend/backend-router");
     const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
