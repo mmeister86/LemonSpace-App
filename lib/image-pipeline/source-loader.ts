@@ -90,6 +90,8 @@ export async function loadSourceBitmap(
     throw new Error("ImageBitmap is not available in this environment.");
   }
 
+  throwIfAborted(options.signal);
+
   const promise = getOrCreateSourceBitmapPromise(sourceUrl);
   return await awaitWithLocalAbort(promise, options.signal);
 }

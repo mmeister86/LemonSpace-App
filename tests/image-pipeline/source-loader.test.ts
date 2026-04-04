@@ -64,6 +64,36 @@ describe("loadSourceBitmap", () => {
     expect(createImageBitmap).toHaveBeenCalledTimes(1);
   });
 
+  it("does not start fetch/decode work or cache when the signal is already aborted", async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(blob),
+    };
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const { loadSourceBitmap } = await importSubject();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      loadSourceBitmap("https://cdn.example.com/source.png", {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(response.blob).not.toHaveBeenCalled();
+    expect(createImageBitmap).not.toHaveBeenCalled();
+
+    await expect(loadSourceBitmap("https://cdn.example.com/source.png")).resolves.toBe(bitmap);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(response.blob).toHaveBeenCalledTimes(1);
+    expect(createImageBitmap).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a later consumer succeed after an earlier caller aborts", async () => {
     const responseDeferred = createDeferred<{
       ok: boolean;
