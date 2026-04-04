@@ -20,6 +20,7 @@ import {
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
 import { hashPipeline } from "@/lib/image-pipeline/contracts";
+import { buildHistogramPlot } from "@/lib/image-pipeline/histogram-plot";
 import {
   isPipelineAbortError,
   renderFullWithWorkerFallback,
@@ -361,45 +362,6 @@ function extensionForFormat(format: RenderFormatOption): string {
   return format === "jpeg" ? "jpg" : format;
 }
 
-function compactHistogram(values: readonly number[], points = 64): number[] {
-  if (points <= 0) {
-    return [];
-  }
-
-  if (values.length === 0) {
-    return Array.from({ length: points }, () => 0);
-  }
-
-  const bucket = values.length / points;
-  const compacted: number[] = [];
-  for (let pointIndex = 0; pointIndex < points; pointIndex += 1) {
-    let sum = 0;
-    const start = Math.floor(pointIndex * bucket);
-    const end = Math.min(values.length, Math.floor((pointIndex + 1) * bucket) || start + 1);
-    for (let index = start; index < end; index += 1) {
-      sum += values[index] ?? 0;
-    }
-    compacted.push(sum);
-  }
-  return compacted;
-}
-
-function histogramPolyline(values: readonly number[], maxValue: number, width: number, height: number): string {
-  if (values.length === 0) {
-    return "";
-  }
-
-  const divisor = Math.max(1, values.length - 1);
-  return values
-    .map((value, index) => {
-      const x = (index / divisor) * width;
-      const normalized = maxValue > 0 ? value / maxValue : 0;
-      const y = height - normalized * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
 async function uploadBlobToConvex(args: {
   uploadUrl: string;
   blob: Blob;
@@ -682,25 +644,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     });
   }, [hasSource, height, id, queueNodeResize, targetAspectRatio, width]);
 
-  const histogramSeries = useMemo(() => {
-    const red = compactHistogram(histogram.red, 64);
-    const green = compactHistogram(histogram.green, 64);
-    const blue = compactHistogram(histogram.blue, 64);
-    const rgb = compactHistogram(histogram.rgb, 64);
-    const max = Math.max(1, ...red, ...green, ...blue, ...rgb);
-    return { red, green, blue, rgb, max };
+  const histogramPlot = useMemo(() => {
+    return buildHistogramPlot(histogram, {
+      points: 64,
+      width: 96,
+      height: 44,
+    });
   }, [histogram.blue, histogram.green, histogram.red, histogram.rgb]);
-
-  const histogramPolylines = useMemo(() => {
-    const width = 96;
-    const height = 44;
-    return {
-      red: histogramPolyline(histogramSeries.red, histogramSeries.max, width, height),
-      green: histogramPolyline(histogramSeries.green, histogramSeries.max, width, height),
-      blue: histogramPolyline(histogramSeries.blue, histogramSeries.max, width, height),
-      rgb: histogramPolyline(histogramSeries.rgb, histogramSeries.max, width, height),
-    };
-  }, [histogramSeries.blue, histogramSeries.green, histogramSeries.max, histogramSeries.red, histogramSeries.rgb]);
 
   const canRender =
     hasSource &&
@@ -1267,7 +1217,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
             aria-label="Histogramm als RGB-Linienkurven"
           >
             <polyline
-              points={histogramPolylines.rgb}
+              points={histogramPlot.polylines.rgb}
               fill="none"
               stroke="rgba(248, 250, 252, 0.9)"
               strokeWidth={1.6}
@@ -1275,7 +1225,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
               strokeLinejoin="round"
             />
             <polyline
-              points={histogramPolylines.red}
+              points={histogramPlot.polylines.red}
               fill="none"
               stroke="rgba(248, 113, 113, 0.9)"
               strokeWidth={1.2}
@@ -1283,7 +1233,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
               strokeLinejoin="round"
             />
             <polyline
-              points={histogramPolylines.green}
+              points={histogramPlot.polylines.green}
               fill="none"
               stroke="rgba(74, 222, 128, 0.85)"
               strokeWidth={1.2}
@@ -1291,7 +1241,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
               strokeLinejoin="round"
             />
             <polyline
-              points={histogramPolylines.blue}
+              points={histogramPlot.polylines.blue}
               fill="none"
               stroke="rgba(96, 165, 250, 0.88)"
               strokeWidth={1.2}

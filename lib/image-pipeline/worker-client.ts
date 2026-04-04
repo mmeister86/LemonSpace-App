@@ -99,7 +99,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 function handleWorkerFailure(error: Error): void {
-  workerInitError = error;
+  const normalized =
+    error instanceof WorkerUnavailableError ? error : new WorkerUnavailableError(error.message);
+  workerInitError = normalized;
 
   if (workerInstance) {
     workerInstance.terminate();
@@ -107,9 +109,13 @@ function handleWorkerFailure(error: Error): void {
   }
 
   for (const [requestId, pending] of pendingRequests.entries()) {
-    pending.reject(error);
+    pending.reject(normalized);
     pendingRequests.delete(requestId);
   }
+}
+
+function shouldFallbackToMainThread(error: unknown): error is WorkerUnavailableError {
+  return error instanceof WorkerUnavailableError;
 }
 
 function getWorker(): Worker {
@@ -281,6 +287,10 @@ export async function renderPreviewWithWorkerFallback(options: {
       throw error;
     }
 
+    if (!shouldFallbackToMainThread(error)) {
+      throw error;
+    }
+
     return await renderPreview(options);
   }
 }
@@ -296,6 +306,10 @@ export async function renderFullWithWorkerFallback(
     });
   } catch (error: unknown) {
     if (isAbortError(error)) {
+      throw error;
+    }
+
+    if (!shouldFallbackToMainThread(error)) {
       throw error;
     }
 

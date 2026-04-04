@@ -13,6 +13,12 @@ export type PreviewRenderResult = {
 type PreviewCanvas = HTMLCanvasElement | OffscreenCanvas;
 type PreviewContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+}
+
 function createPreviewContext(width: number, height: number): PreviewContext {
   if (typeof document !== "undefined") {
     const canvas = document.createElement("canvas");
@@ -63,9 +69,7 @@ export async function renderPreview(options: {
   const width = Math.max(1, Math.round(options.previewWidth));
   const height = Math.max(1, Math.round((bitmap.height / bitmap.width) * width));
 
-  if (options.signal?.aborted) {
-    throw new DOMException("The operation was aborted.", "AbortError");
-  }
+  throwIfAborted(options.signal);
 
   const context = createPreviewContext(width, height);
 
@@ -78,10 +82,10 @@ export async function renderPreview(options: {
     });
     await yieldToMainOrWorkerLoop();
 
-    if (options.signal?.aborted) {
-      throw new DOMException("The operation was aborted.", "AbortError");
-    }
+    throwIfAborted(options.signal);
   }
+
+  throwIfAborted(options.signal);
 
   const histogram = options.includeHistogram === false
     ? emptyHistogram()
