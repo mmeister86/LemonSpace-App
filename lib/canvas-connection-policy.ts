@@ -30,6 +30,7 @@ export type CanvasConnectionValidationReason =
   | "unknown-node"
   | "adjustment-source-invalid"
   | "adjustment-incoming-limit"
+  | "compare-incoming-limit"
   | "adjustment-target-forbidden"
   | "render-source-invalid";
 
@@ -47,6 +48,10 @@ export function validateCanvasConnectionPolicy(args: {
     if (targetIncomingCount >= 1) {
       return "adjustment-incoming-limit";
     }
+  }
+
+  if (targetType === "compare" && targetIncomingCount >= 2) {
+    return "compare-incoming-limit";
   }
 
   if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
@@ -77,6 +82,8 @@ export function getCanvasConnectionValidationMessage(
       return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
     case "adjustment-incoming-limit":
       return "Adjustment-Nodes erlauben genau eine eingehende Verbindung.";
+    case "compare-incoming-limit":
+      return "Compare-Nodes erlauben genau zwei eingehende Verbindungen.";
     case "adjustment-target-forbidden":
       return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
     case "render-source-invalid":

@@ -90,23 +90,34 @@ export const list = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
     const startedAt = Date.now();
+    const authStartedAt = Date.now();
     const user = await requireAuth(ctx);
+    const authMs = Date.now() - authStartedAt;
+
+    const canvasLookupStartedAt = Date.now();
     const canvas = await ctx.db.get(canvasId);
+    const canvasLookupMs = Date.now() - canvasLookupStartedAt;
     if (!canvas || canvas.ownerId !== user.userId) {
       return [];
     }
 
+    const collectStartedAt = Date.now();
     const edges = await ctx.db
       .query("edges")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
+    const collectMs = Date.now() - collectStartedAt;
 
     const durationMs = Date.now() - startedAt;
     if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
       console.warn("[edges.list] slow list query", {
         canvasId,
         userId: user.userId,
+        authMs,
+        canvasLookupMs,
+        collectMs,
         edgeCount: edges.length,
+        canvasUpdatedAt: canvas.updatedAt,
         durationMs,
       });
     }
@@ -191,6 +202,13 @@ export const create = mutation({
       targetHandle: args.targetHandle,
     });
 
+    console.info("[canvas.updatedAt] touch", {
+      canvasId: args.canvasId,
+      source: "edges.create",
+      edgeId,
+      sourceNodeId: args.sourceNodeId,
+      targetNodeId: args.targetNodeId,
+    });
     await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
     if (args.clientRequestId) {
       await ctx.db.insert("mutationRequests", {
@@ -239,6 +257,11 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(edgeId);
+    console.info("[canvas.updatedAt] touch", {
+      canvasId: edge.canvasId,
+      source: "edges.remove",
+      edgeId,
+    });
     await ctx.db.patch(edge.canvasId, { updatedAt: Date.now() });
 
     console.info("[edges.remove] success", {

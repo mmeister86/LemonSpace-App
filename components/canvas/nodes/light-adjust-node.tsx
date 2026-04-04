@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
@@ -9,10 +9,10 @@ import { Sun } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasAdjustmentPresets } from "@/components/canvas/canvas-presets-context";
-import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
+import { useNodeLocalData } from "@/components/canvas/nodes/use-node-local-data";
 import {
   ParameterSlider,
   type SliderConfig,
@@ -49,42 +49,30 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
   const savePreset = useMutation(api.presets.save);
   const userPresets = useCanvasAdjustmentPresets("light-adjust") as PresetDoc[];
 
-  const [localData, setLocalData] = useState<LightAdjustData>(() =>
-    normalizeLightAdjustData({ ...cloneAdjustmentData(DEFAULT_LIGHT_ADJUST_DATA), ...data }),
-  );
   const [presetSelection, setPresetSelection] = useState("custom");
-  const localDataRef = useRef(localData);
-
-  useEffect(() => {
-    localDataRef.current = localData;
-  }, [localData]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setLocalData(
-        normalizeLightAdjustData({ ...cloneAdjustmentData(DEFAULT_LIGHT_ADJUST_DATA), ...data }),
-      );
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [data]);
-
-  const queueSave = useDebouncedCallback(() => {
-    void queueNodeDataUpdate({
-      nodeId: id as Id<"nodes">,
-      data: localDataRef.current,
-    });
-  }, 16);
+  const normalizeData = useCallback(
+    (value: unknown) =>
+      normalizeLightAdjustData({
+        ...cloneAdjustmentData(DEFAULT_LIGHT_ADJUST_DATA),
+        ...(value as Record<string, unknown>),
+      }),
+    [],
+  );
+  const { localData, applyLocalData, updateLocalData } = useNodeLocalData<LightAdjustData>({
+    data,
+    normalize: normalizeData,
+    saveDelayMs: 16,
+    onSave: (next) =>
+      queueNodeDataUpdate({
+        nodeId: id as Id<"nodes">,
+        data: next,
+      }),
+    debugLabel: "light-adjust",
+  });
 
   const updateData = (updater: (draft: LightAdjustData) => LightAdjustData) => {
     setPresetSelection("custom");
-    setLocalData((current) => {
-      const next = updater(current);
-      localDataRef.current = next;
-      queueSave();
-      return next;
-    });
+    updateLocalData(updater);
   };
 
   const builtinOptions = useMemo(() => Object.entries(LIGHT_PRESETS), []);
@@ -187,9 +175,7 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
       if (!preset) return;
       const next = cloneAdjustmentData(preset);
       setPresetSelection(value);
-      setLocalData(next);
-      localDataRef.current = next;
-      queueSave();
+      applyLocalData(next);
       return;
     }
     if (value.startsWith("user:")) {
@@ -198,9 +184,7 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
       if (!preset) return;
       const next = normalizeLightAdjustData(preset.params);
       setPresetSelection(value);
-      setLocalData(next);
-      localDataRef.current = next;
-      queueSave();
+      applyLocalData(next);
     }
   };
 

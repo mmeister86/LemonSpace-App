@@ -4,6 +4,7 @@ import { readCanvasOps } from "@/lib/canvas-local-persistence";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNodeDeleteBlockReason } from "@/lib/toast";
 import { getSourceImage } from "@/lib/image-pipeline/contracts";
+import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 export const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
@@ -65,6 +66,110 @@ export function getConnectEndClientPoint(
   const t = (event as TouchEvent).changedTouches?.[0];
   if (t) return { x: t.clientX, y: t.clientY };
   return null;
+}
+
+export type DroppedConnectionTarget = {
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+function getNodeElementAtClientPoint(point: { x: number; y: number }): HTMLElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const hit = document.elementsFromPoint(point.x, point.y).find((element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    return (
+      element.classList.contains("react-flow__node") &&
+      typeof element.dataset.id === "string" &&
+      element.dataset.id.length > 0
+    );
+  });
+
+  return hit instanceof HTMLElement ? hit : null;
+}
+
+function getCompareBodyDropTargetHandle(args: {
+  point: { x: number; y: number };
+  nodeElement: HTMLElement;
+  targetNodeId: string;
+  edges: RFEdge[];
+}): string | undefined {
+  const { point, nodeElement, targetNodeId, edges } = args;
+  const rect = nodeElement.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  const incomingEdges = edges.filter(
+    (edge) => edge.target === targetNodeId && edge.className !== "temp",
+  );
+  const leftTaken = incomingEdges.some((edge) => edge.targetHandle === "left");
+  const rightTaken = incomingEdges.some((edge) => edge.targetHandle === "right");
+
+  if (!leftTaken && !rightTaken) {
+    return point.y < midY ? "left" : "right";
+  }
+
+  if (!leftTaken) {
+    return "left";
+  }
+
+  if (!rightTaken) {
+    return "right";
+  }
+
+  return point.y < midY ? "left" : "right";
+}
+
+export function resolveDroppedConnectionTarget(args: {
+  point: { x: number; y: number };
+  fromNodeId: string;
+  fromHandleId?: string;
+  fromHandleType: "source" | "target";
+  nodes: RFNode[];
+  edges: RFEdge[];
+}): DroppedConnectionTarget | null {
+  const nodeElement = getNodeElementAtClientPoint(args.point);
+  if (!nodeElement) {
+    return null;
+  }
+
+  const targetNodeId = nodeElement.dataset.id;
+  if (!targetNodeId) {
+    return null;
+  }
+
+  const targetNode = args.nodes.find((node) => node.id === targetNodeId);
+  if (!targetNode) {
+    return null;
+  }
+
+  const handles = NODE_HANDLE_MAP[targetNode.type ?? ""];
+
+  if (args.fromHandleType === "source") {
+    return {
+      sourceNodeId: args.fromNodeId,
+      targetNodeId,
+      sourceHandle: args.fromHandleId,
+      targetHandle:
+        targetNode.type === "compare"
+          ? getCompareBodyDropTargetHandle({
+              point: args.point,
+              nodeElement,
+              targetNodeId,
+              edges: args.edges,
+            })
+          : handles?.target,
+    };
+  }
+
+  return {
+    sourceNodeId: targetNodeId,
+    targetNodeId: args.fromNodeId,
+    sourceHandle: handles?.source,
+    targetHandle: args.fromHandleId,
+  };
 }
 
 /** Kanten-Split nach Drag: wartet auf echte Node-ID, wenn der Knoten noch optimistisch ist. */

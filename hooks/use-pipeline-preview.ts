@@ -37,6 +37,11 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
   const [previewAspectRatio, setPreviewAspectRatio] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const runIdRef = useRef(0);
+  const stableRenderInputRef = useRef<{
+    pipelineHash: string;
+    sourceUrl: string | null;
+    steps: readonly PipelineStep[];
+  } | null>(null);
 
   const previewScale = useMemo(() => {
     if (typeof options.previewScale !== "number" || !Number.isFinite(options.previewScale)) {
@@ -65,7 +70,19 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
   }, [options.sourceUrl, options.steps]);
 
   useEffect(() => {
-    const sourceUrl = options.sourceUrl;
+    if (stableRenderInputRef.current?.pipelineHash === pipelineHash) {
+      return;
+    }
+
+    stableRenderInputRef.current = {
+      pipelineHash,
+      sourceUrl: options.sourceUrl,
+      steps: options.steps,
+    };
+  }, [pipelineHash, options.sourceUrl, options.steps]);
+
+  useEffect(() => {
+    const sourceUrl = stableRenderInputRef.current?.sourceUrl ?? null;
     if (!sourceUrl) {
       const frameId = window.requestAnimationFrame(() => {
         setHistogram(emptyHistogram());
@@ -86,7 +103,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
       setError(null);
       void renderPreviewWithWorkerFallback({
         sourceUrl,
-        steps: options.steps,
+        steps: stableRenderInputRef.current?.steps ?? [],
         previewWidth,
         signal: abortController.signal,
       })
@@ -126,7 +143,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
       window.clearTimeout(timer);
       abortController.abort();
     };
-  }, [options.sourceUrl, options.steps, pipelineHash, previewWidth]);
+  }, [pipelineHash, previewWidth]);
 
   return {
     canvasRef,

@@ -568,21 +568,32 @@ export const list = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
     const startedAt = Date.now();
+    const authStartedAt = Date.now();
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, canvasId, user.userId);
+    const authMs = Date.now() - authStartedAt;
 
+    const canvasLookupStartedAt = Date.now();
+    const canvas = await getCanvasOrThrow(ctx, canvasId, user.userId);
+    const canvasLookupMs = Date.now() - canvasLookupStartedAt;
+
+    const collectStartedAt = Date.now();
     const nodes = await ctx.db
       .query("nodes")
       .withIndex("by_canvas", (q) => q.eq("canvasId", canvasId))
       .collect();
+    const collectMs = Date.now() - collectStartedAt;
 
     const durationMs = Date.now() - startedAt;
     if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
       console.warn("[nodes.list] slow list query", {
         canvasId,
         userId: user.userId,
+        authMs,
+        canvasLookupMs,
+        collectMs,
         nodeCount: nodes.length,
         approxPayloadBytes: estimateSerializedBytes(nodes),
+        canvasUpdatedAt: canvas.updatedAt,
         durationMs,
       });
     }
@@ -1221,6 +1232,11 @@ export const move = mutation({
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
     await ctx.db.patch(nodeId, { positionX, positionY });
+    console.info("[canvas.updatedAt] touch", {
+      canvasId: node.canvasId,
+      source: "nodes.move",
+      nodeId,
+    });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });
@@ -1245,6 +1261,12 @@ export const resize = mutation({
         ? ADJUSTMENT_MIN_WIDTH
         : width;
     await ctx.db.patch(nodeId, { width: clampedWidth, height });
+    console.info("[canvas.updatedAt] touch", {
+      canvasId: node.canvasId,
+      source: "nodes.resize",
+      nodeId,
+      nodeType: node.type,
+    });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });
@@ -1277,6 +1299,11 @@ export const batchMove = mutation({
       await ctx.db.patch(nodeId, { positionX, positionY });
     }
 
+    console.info("[canvas.updatedAt] touch", {
+      canvasId,
+      source: "nodes.batchMove",
+      moveCount: moves.length,
+    });
     await ctx.db.patch(canvasId, { updatedAt: Date.now() });
   },
 });
@@ -1297,6 +1324,13 @@ export const updateData = mutation({
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
     const normalizedData = normalizeNodeDataForWrite(node.type, data);
     await ctx.db.patch(nodeId, { data: normalizedData });
+    console.info("[canvas.updatedAt] touch", {
+      canvasId: node.canvasId,
+      source: "nodes.updateData",
+      nodeId,
+      nodeType: node.type,
+      approxDataBytes: estimateSerializedBytes(normalizedData),
+    });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });

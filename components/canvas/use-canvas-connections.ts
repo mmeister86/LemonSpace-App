@@ -11,6 +11,7 @@ import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
 import { getConnectEndClientPoint, isOptimisticNodeId } from "./canvas-helpers";
+import { resolveDroppedConnectionTarget } from "./canvas-helpers";
 import {
   validateCanvasConnection,
   validateCanvasConnectionByType,
@@ -138,6 +139,41 @@ export function useCanvasConnections({
       if (!pt) return;
 
       const flow = screenToFlowPosition({ x: pt.x, y: pt.y });
+      const droppedConnection = resolveDroppedConnectionTarget({
+        point: pt,
+        fromNodeId: fromNode.id,
+        fromHandleId: fromHandle.id ?? undefined,
+        fromHandleType: fromHandle.type,
+        nodes: nodesRef.current,
+        edges: edgesRef.current,
+      });
+
+      if (droppedConnection) {
+        const validationError = validateCanvasConnection(
+          {
+            source: droppedConnection.sourceNodeId,
+            target: droppedConnection.targetNodeId,
+            sourceHandle: droppedConnection.sourceHandle,
+            targetHandle: droppedConnection.targetHandle,
+          },
+          nodesRef.current,
+          edgesRef.current,
+        );
+        if (validationError) {
+          showConnectionRejectedToast(validationError);
+          return;
+        }
+
+        void runCreateEdgeMutation({
+          canvasId,
+          sourceNodeId: droppedConnection.sourceNodeId as Id<"nodes">,
+          targetNodeId: droppedConnection.targetNodeId as Id<"nodes">,
+          sourceHandle: droppedConnection.sourceHandle,
+          targetHandle: droppedConnection.targetHandle,
+        });
+        return;
+      }
+
       setConnectionDropMenu({
         screenX: pt.x,
         screenY: pt.y,
@@ -148,7 +184,15 @@ export function useCanvasConnections({
         fromHandleType: fromHandle.type,
       });
     },
-    [isReconnectDragActiveRef, screenToFlowPosition],
+    [
+      canvasId,
+      edgesRef,
+      isReconnectDragActiveRef,
+      nodesRef,
+      runCreateEdgeMutation,
+      screenToFlowPosition,
+      showConnectionRejectedToast,
+    ],
   );
 
   const handleConnectionDropPick = useCallback(

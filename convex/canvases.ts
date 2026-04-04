@@ -2,6 +2,8 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
 
+const PERFORMANCE_LOG_THRESHOLD_MS = 100;
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -30,14 +32,33 @@ export const list = query({
 export const get = query({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
+    const startedAt = Date.now();
+    const authStartedAt = Date.now();
     const user = await optionalAuth(ctx);
+    const authMs = Date.now() - authStartedAt;
     if (!user) {
       return null;
     }
+
+    const canvasLookupStartedAt = Date.now();
     const canvas = await ctx.db.get(canvasId);
+    const canvasLookupMs = Date.now() - canvasLookupStartedAt;
     if (!canvas || canvas.ownerId !== user.userId) {
       return null;
     }
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
+      console.warn("[canvases.get] slow canvas query", {
+        canvasId,
+        userId: user.userId,
+        authMs,
+        canvasLookupMs,
+        canvasUpdatedAt: canvas.updatedAt,
+        durationMs,
+      });
+    }
+
     return canvas;
   },
 });
