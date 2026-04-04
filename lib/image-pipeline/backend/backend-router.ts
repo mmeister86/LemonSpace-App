@@ -196,29 +196,58 @@ export function createBackendRouter(options?: {
       });
     }
 
-    try {
-      args.runBackend(selection.backend);
-      return;
-    } catch (error: unknown) {
-      const shouldAbort = args.executionOptions?.shouldAbort;
-      if (shouldAbort?.()) {
-        throw error;
-      }
+    const shouldAbort = args.executionOptions?.shouldAbort;
+    let backend = selection.backend;
 
-      if (selection.backend.id.toLowerCase() === cpuFallbackBackend.id.toLowerCase()) {
-        throw error;
-      }
+    while (true) {
+      try {
+        args.runBackend(backend);
+        return;
+      } catch (error: unknown) {
+        if (shouldAbort?.()) {
+          throw error;
+        }
 
-      const normalizedError =
-        error instanceof Error ? error : new Error("Image pipeline backend execution failed.");
-      emitFallback({
-        reason: "runtime_error",
-        requestedBackend: selection.backend.id.toLowerCase(),
-        fallbackBackend: cpuFallbackBackend.id,
-        error: normalizedError,
-      });
-      args.runBackend(cpuFallbackBackend);
+        if (backend.id.toLowerCase() === cpuFallbackBackend.id.toLowerCase()) {
+          throw error;
+        }
+
+        const fallbackBackend = resolveRuntimeFallbackBackend(backend.id);
+        if (!fallbackBackend || fallbackBackend.id.toLowerCase() === backend.id.toLowerCase()) {
+          throw error;
+        }
+
+        const normalizedError =
+          error instanceof Error ? error : new Error("Image pipeline backend execution failed.");
+        emitFallback({
+          reason: "runtime_error",
+          requestedBackend: backend.id.toLowerCase(),
+          fallbackBackend: fallbackBackend.id,
+          error: normalizedError,
+        });
+
+        backend = fallbackBackend;
+      }
     }
+  }
+
+  function resolveRuntimeFallbackBackend(failedBackendId: string): ImagePipelineBackend | null {
+    const normalizedFailedBackendId = failedBackendId.toLowerCase();
+
+    if (normalizedFailedBackendId === "webgl") {
+      const wasmBackend = byId.get("wasm");
+      const wasmAvailability = readAvailability("wasm");
+      if (
+        wasmBackend &&
+        isBackendEnabledByFlags("wasm") &&
+        wasmAvailability?.enabled !== false &&
+        wasmAvailability?.supported !== false
+      ) {
+        return wasmBackend;
+      }
+    }
+
+    return cpuFallbackBackend;
   }
 
   return {
@@ -307,7 +336,15 @@ export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequ
   const rolloutState = getRolloutRouterState();
 
   if (rolloutState.webglEnabled && rolloutState.webglAvailable) {
-    return isWebglPreviewPipelineSupported(steps) ? "webgl" : CPU_BACKEND_ID;
+    if (isWebglPreviewPipelineSupported(steps)) {
+      return "webgl";
+    }
+
+    if (rolloutState.wasmEnabled && rolloutState.wasmAvailable) {
+      return "wasm";
+    }
+
+    return CPU_BACKEND_ID;
   }
 
   if (rolloutState.wasmEnabled && rolloutState.wasmAvailable) {
