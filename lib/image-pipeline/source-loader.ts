@@ -1,4 +1,11 @@
-const imageBitmapCache = new Map<string, Promise<ImageBitmap>>();
+export const SOURCE_BITMAP_CACHE_MAX_ENTRIES = 32;
+
+type CacheEntry = {
+  promise: Promise<ImageBitmap>;
+  bitmap?: ImageBitmap;
+};
+
+const imageBitmapCache = new Map<string, CacheEntry>();
 
 type LoadSourceBitmapOptions = {
   signal?: AbortSignal;
@@ -10,11 +17,57 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
+function closeBitmap(bitmap: ImageBitmap | undefined): void {
+  if (typeof bitmap?.close === "function") {
+    bitmap.close();
+  }
+}
+
+function deleteCacheEntry(sourceUrl: string): void {
+  const entry = imageBitmapCache.get(sourceUrl);
+  if (!entry) {
+    return;
+  }
+
+  imageBitmapCache.delete(sourceUrl);
+  closeBitmap(entry.bitmap);
+}
+
+function touchCacheEntry(sourceUrl: string, entry: CacheEntry): void {
+  imageBitmapCache.delete(sourceUrl);
+  imageBitmapCache.set(sourceUrl, entry);
+}
+
+function evictIfNeeded(excludeSourceUrl?: string): void {
+  while (imageBitmapCache.size > SOURCE_BITMAP_CACHE_MAX_ENTRIES) {
+    const oldestSourceUrl = [...imageBitmapCache.entries()].find(
+      ([key, entry]) => key !== excludeSourceUrl && entry.bitmap,
+    )?.[0];
+
+    if (!oldestSourceUrl) {
+      return;
+    }
+
+    deleteCacheEntry(oldestSourceUrl);
+  }
+}
+
+export function clearSourceBitmapCache(): void {
+  for (const sourceUrl of [...imageBitmapCache.keys()]) {
+    deleteCacheEntry(sourceUrl);
+  }
+}
+
 function getOrCreateSourceBitmapPromise(sourceUrl: string): Promise<ImageBitmap> {
   const cached = imageBitmapCache.get(sourceUrl);
   if (cached) {
-    return cached;
+    touchCacheEntry(sourceUrl, cached);
+    return cached.promise;
   }
+
+  const entry: CacheEntry = {
+    promise: Promise.resolve(undefined as never),
+  };
 
   const promise = (async () => {
     const response = await fetch(sourceUrl);
@@ -23,13 +76,17 @@ function getOrCreateSourceBitmapPromise(sourceUrl: string): Promise<ImageBitmap>
     }
 
     const blob = await response.blob();
-    return await createImageBitmap(blob);
+    const bitmap = await createImageBitmap(blob);
+    entry.bitmap = bitmap;
+    evictIfNeeded(sourceUrl);
+    return bitmap;
   })();
 
-  imageBitmapCache.set(sourceUrl, promise);
+  entry.promise = promise;
+  imageBitmapCache.set(sourceUrl, entry);
 
   void promise.catch(() => {
-    if (imageBitmapCache.get(sourceUrl) === promise) {
+    if (imageBitmapCache.get(sourceUrl) === entry) {
       imageBitmapCache.delete(sourceUrl);
     }
   });

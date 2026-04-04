@@ -167,4 +167,90 @@ describe("loadSourceBitmap", () => {
     expect(succeedingResponse.blob).toHaveBeenCalledTimes(1);
     expect(createImageBitmap).toHaveBeenCalledTimes(1);
   });
+
+  it("evicts the least-recently-used bitmap once the cache limit is exceeded", async () => {
+    const subject = (await importSubject()) as typeof import("@/lib/image-pipeline/source-loader") & {
+      SOURCE_BITMAP_CACHE_MAX_ENTRIES?: number;
+    };
+    const { SOURCE_BITMAP_CACHE_MAX_ENTRIES, loadSourceBitmap } = subject;
+
+    expect(SOURCE_BITMAP_CACHE_MAX_ENTRIES).toBeTypeOf("number");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: string | URL | Request) => ({
+        ok: true,
+        status: 200,
+        blob: vi.fn().mockResolvedValue(new Blob([String(input)])),
+      })),
+    );
+
+    const urls = Array.from(
+      { length: SOURCE_BITMAP_CACHE_MAX_ENTRIES! + 1 },
+      (_, index) => `https://cdn.example.com/source-${index}.png`,
+    );
+
+    for (const url of urls) {
+      await expect(loadSourceBitmap(url)).resolves.toBe(bitmap);
+    }
+
+    expect(fetch).toHaveBeenCalledTimes(urls.length);
+
+    await expect(loadSourceBitmap(urls[urls.length - 1])).resolves.toBe(bitmap);
+    expect(fetch).toHaveBeenCalledTimes(urls.length);
+
+    await expect(loadSourceBitmap(urls[0])).resolves.toBe(bitmap);
+    expect(fetch).toHaveBeenCalledTimes(urls.length + 1);
+  });
+
+  it("closes evicted bitmaps and disposes the remaining cache explicitly", async () => {
+    const subject = (await importSubject()) as typeof import("@/lib/image-pipeline/source-loader") & {
+      SOURCE_BITMAP_CACHE_MAX_ENTRIES?: number;
+      clearSourceBitmapCache?: () => void;
+    };
+    const { SOURCE_BITMAP_CACHE_MAX_ENTRIES, clearSourceBitmapCache, loadSourceBitmap } = subject;
+
+    expect(SOURCE_BITMAP_CACHE_MAX_ENTRIES).toBeGreaterThanOrEqual(2);
+    expect(clearSourceBitmapCache).toBeTypeOf("function");
+
+    const bitmaps = Array.from(
+      { length: SOURCE_BITMAP_CACHE_MAX_ENTRIES! + 1 },
+      () => ({ close: vi.fn() }) as unknown as ImageBitmap,
+    );
+    let bitmapIndex = 0;
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockImplementation(async () => bitmaps[bitmapIndex++]),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: string | URL | Request) => ({
+        ok: true,
+        status: 200,
+        blob: vi.fn().mockResolvedValue(new Blob([String(input)])),
+      })),
+    );
+
+    const urls = Array.from(
+      { length: SOURCE_BITMAP_CACHE_MAX_ENTRIES! + 1 },
+      (_, index) => `https://cdn.example.com/source-${index}.png`,
+    );
+
+    for (const [index, url] of urls.entries()) {
+      await expect(loadSourceBitmap(url)).resolves.toBe(bitmaps[index]);
+    }
+
+    expect(bitmaps[0].close).toHaveBeenCalledTimes(1);
+    for (const bitmap of bitmaps.slice(1)) {
+      expect(bitmap.close).not.toHaveBeenCalled();
+    }
+
+    clearSourceBitmapCache!();
+
+    expect(bitmaps[0].close).toHaveBeenCalledTimes(1);
+    for (const bitmap of bitmaps.slice(1)) {
+      expect(bitmap.close).toHaveBeenCalledTimes(1);
+    }
+  });
 });
