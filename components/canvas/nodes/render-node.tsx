@@ -650,7 +650,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       width: 96,
       height: 44,
     });
-  }, [histogram.blue, histogram.green, histogram.red, histogram.rgb]);
+  }, [histogram]);
 
   const canRender =
     hasSource &&

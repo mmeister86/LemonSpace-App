@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -77,9 +77,11 @@ function PreviewHarness({
     includeHistogram,
   });
 
-  previewHarnessState.latestHistogram = histogram;
-  previewHarnessState.latestError = error;
-  previewHarnessState.latestIsRendering = isRendering;
+  useEffect(() => {
+    previewHarnessState.latestHistogram = histogram;
+    previewHarnessState.latestError = error;
+    previewHarnessState.latestIsRendering = isRendering;
+  }, [error, histogram, isRendering]);
 
   return createElement("canvas", { ref: canvasRef });
 }
@@ -490,8 +492,8 @@ describe("preview histogram call sites", () => {
       getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
     }));
 
-    const module = await import("@/components/canvas/nodes/adjustment-preview");
-    const AdjustmentPreview = module.default;
+    const adjustmentPreviewModule = await import("@/components/canvas/nodes/adjustment-preview");
+    const AdjustmentPreview = adjustmentPreviewModule.default;
 
     await act(async () => {
       root?.render(

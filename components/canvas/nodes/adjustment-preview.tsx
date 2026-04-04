@@ -87,7 +87,7 @@ export default function AdjustmentPreview({
       width: 96,
       height: 44,
     });
-  }, [histogram.blue, histogram.green, histogram.red, histogram.rgb]);
+  }, [histogram]);
 
   return (
     <div className="space-y-2">
