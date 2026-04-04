@@ -87,7 +87,11 @@ describe("backend router fallback reasons", () => {
   }
 
   it("emits unsupported_api when backend is unavailable at runtime", () => {
-    const reasons: string[] = [];
+    const events: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const cpuPreview = vi.fn();
     const router = createBackendRouter({
       backends: createTestBackends({
@@ -101,7 +105,11 @@ describe("backend router fallback reasons", () => {
         },
       },
       onFallback: (event) => {
-        reasons.push(event.reason);
+        events.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -114,11 +122,21 @@ describe("backend router fallback reasons", () => {
     });
 
     expect(cpuPreview).toHaveBeenCalledTimes(1);
-    expect(reasons).toEqual(["unsupported_api"]);
+    expect(events).toEqual([
+      {
+        reason: "unsupported_api",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 
   it("emits flag_disabled when backend is disabled by flags", () => {
-    const reasons: string[] = [];
+    const events: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const cpuPreview = vi.fn();
     const router = createBackendRouter({
       backends: createTestBackends({
@@ -132,7 +150,11 @@ describe("backend router fallback reasons", () => {
         },
       },
       onFallback: (event) => {
-        reasons.push(event.reason);
+        events.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -145,11 +167,21 @@ describe("backend router fallback reasons", () => {
     });
 
     expect(cpuPreview).toHaveBeenCalledTimes(1);
-    expect(reasons).toEqual(["flag_disabled"]);
+    expect(events).toEqual([
+      {
+        reason: "flag_disabled",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 
   it("emits runtime_error when backend execution throws", () => {
-    const reasons: string[] = [];
+    const events: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const cpuPreview = vi.fn();
     const router = createBackendRouter({
       backends: createTestBackends({
@@ -165,7 +197,11 @@ describe("backend router fallback reasons", () => {
         },
       },
       onFallback: (event) => {
-        reasons.push(event.reason);
+        events.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -178,7 +214,13 @@ describe("backend router fallback reasons", () => {
     });
 
     expect(cpuPreview).toHaveBeenCalledTimes(1);
-    expect(reasons).toEqual(["runtime_error"]);
+    expect(events).toEqual([
+      {
+        reason: "runtime_error",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ImagePipelineBackend } from "@/lib/image-pipeline/backend/backend-types";
 import { createBackendRouter } from "@/lib/image-pipeline/backend/backend-router";
@@ -70,9 +70,177 @@ function createRouterFlags(overrides: Partial<BackendFeatureFlags>): BackendFeat
   };
 }
 
+function createLocalStorageStub(): Storage {
+  const values = new Map<string, string>();
+
+  return {
+    getItem(key: string): string | null {
+      return values.has(key) ? values.get(key)! : null;
+    },
+    setItem(key: string, value: string): void {
+      values.set(key, String(value));
+    },
+    removeItem(key: string): void {
+      values.delete(key);
+    },
+    clear(): void {
+      values.clear();
+    },
+    key(index: number): string | null {
+      return Array.from(values.keys())[index] ?? null;
+    },
+    get length(): number {
+      return values.size;
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.unstubAllGlobals();
+  vi.stubGlobal("localStorage", createLocalStorageStub());
+  globalThis.__LEMONSPACE_FEATURE_FLAGS__ = undefined;
+  window.__LEMONSPACE_FEATURE_FLAGS__ = undefined;
+  localStorage.clear();
+});
+
+afterEach(() => {
+  globalThis.__LEMONSPACE_FEATURE_FLAGS__ = undefined;
+  window.__LEMONSPACE_FEATURE_FLAGS__ = undefined;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
 describe("backend feature flags", () => {
+  it("parses accepted truthy and falsy string and numeric variants", () => {
+    const cases: Array<{ value: unknown; expected: boolean }> = [
+      { value: true, expected: true },
+      { value: false, expected: false },
+      { value: 1, expected: true },
+      { value: 0, expected: false },
+      { value: "true", expected: true },
+      { value: "false", expected: false },
+      { value: "1", expected: true },
+      { value: "0", expected: false },
+      { value: "on", expected: true },
+      { value: "off", expected: false },
+      { value: "  TrUe  ", expected: true },
+      { value: " Off ", expected: false },
+    ];
+
+    for (const testCase of cases) {
+      expect(
+        getBackendFeatureFlags((key) => {
+          if (key === "imagePipeline.backend.forceCpu") {
+            return testCase.value;
+          }
+          return false;
+        }).forceCpu,
+      ).toBe(testCase.expected);
+
+      expect(
+        getBackendFeatureFlags((key) => {
+          if (key === "imagePipeline.backend.webgl.enabled") {
+            return testCase.value;
+          }
+          return false;
+        }).webglEnabled,
+      ).toBe(testCase.expected);
+
+      expect(
+        getBackendFeatureFlags((key) => {
+          if (key === "imagePipeline.backend.wasm.enabled") {
+            return testCase.value;
+          }
+          return false;
+        }).wasmEnabled,
+      ).toBe(testCase.expected);
+    }
+  });
+
+  it("falls back to defaults for invalid values", () => {
+    const invalidValues: unknown[] = [
+      2,
+      -1,
+      Number.NaN,
+      "yes",
+      "no",
+      "enabled",
+      "disabled",
+      "",
+      " ",
+      null,
+      undefined,
+      {},
+      [],
+    ];
+
+    for (const value of invalidValues) {
+      expect(
+        getBackendFeatureFlags(() => value),
+      ).toEqual({
+        forceCpu: false,
+        webglEnabled: false,
+        wasmEnabled: false,
+      });
+    }
+  });
+
+  it("prefers runtime store values over localStorage", () => {
+    globalThis.__LEMONSPACE_FEATURE_FLAGS__ = {
+      "imagePipeline.backend.forceCpu": true,
+      "imagePipeline.backend.webgl.enabled": "1",
+      "imagePipeline.backend.wasm.enabled": "off",
+    };
+
+    localStorage.setItem("imagePipeline.backend.forceCpu", "false");
+    localStorage.setItem("imagePipeline.backend.webgl.enabled", "0");
+    localStorage.setItem("imagePipeline.backend.wasm.enabled", "on");
+
+    expect(getBackendFeatureFlags()).toEqual({
+      forceCpu: true,
+      webglEnabled: true,
+      wasmEnabled: false,
+    });
+  });
+
+  it("returns defaults when localStorage access throws", () => {
+    const failingStorage = {
+      getItem() {
+        throw new Error("blocked");
+      },
+      setItem() {
+        // no-op
+      },
+      removeItem() {
+        // no-op
+      },
+      clear() {
+        // no-op
+      },
+      key() {
+        return null;
+      },
+      get length() {
+        return 0;
+      },
+    } as Storage;
+
+    globalThis.__LEMONSPACE_FEATURE_FLAGS__ = undefined;
+    vi.stubGlobal("localStorage", failingStorage);
+
+    expect(getBackendFeatureFlags()).toEqual({
+      forceCpu: false,
+      webglEnabled: false,
+      wasmEnabled: false,
+    });
+  });
+
   it("forceCpu overrides all backend choices", () => {
-    const reasons: string[] = [];
+    const fallbackEvents: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const backend = createBackends();
     const router = createBackendRouter({
       backends: backend.backends,
@@ -92,7 +260,11 @@ describe("backend feature flags", () => {
         wasmEnabled: true,
       }),
       onFallback: (event) => {
-        reasons.push(event.reason);
+        fallbackEvents.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -118,11 +290,26 @@ describe("backend feature flags", () => {
     expect(backend.webglFull).not.toHaveBeenCalled();
     expect(backend.wasmPreview).not.toHaveBeenCalled();
     expect(backend.wasmFull).not.toHaveBeenCalled();
-    expect(reasons).toEqual(["flag_disabled", "flag_disabled"]);
+    expect(fallbackEvents).toEqual([
+      {
+        reason: "flag_disabled",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+      {
+        reason: "flag_disabled",
+        requestedBackend: "wasm",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 
   it("webgl and wasm can be independently enabled or disabled", () => {
-    const reasonA: string[] = [];
+    const reasonA: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const backendA = createBackends();
     const routerA = createBackendRouter({
       backends: backendA.backends,
@@ -142,7 +329,11 @@ describe("backend feature flags", () => {
         wasmEnabled: false,
       }),
       onFallback: (event) => {
-        reasonA.push(event.reason);
+        reasonA.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -164,9 +355,19 @@ describe("backend feature flags", () => {
     expect(backendA.webglPreview).toHaveBeenCalledTimes(1);
     expect(backendA.wasmPreview).not.toHaveBeenCalled();
     expect(backendA.cpuPreview).toHaveBeenCalledTimes(1);
-    expect(reasonA).toEqual(["flag_disabled"]);
+    expect(reasonA).toEqual([
+      {
+        reason: "flag_disabled",
+        requestedBackend: "wasm",
+        fallbackBackend: "cpu",
+      },
+    ]);
 
-    const reasonB: string[] = [];
+    const reasonB: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const backendB = createBackends();
     const routerB = createBackendRouter({
       backends: backendB.backends,
@@ -186,7 +387,11 @@ describe("backend feature flags", () => {
         wasmEnabled: true,
       }),
       onFallback: (event) => {
-        reasonB.push(event.reason);
+        reasonB.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -208,11 +413,21 @@ describe("backend feature flags", () => {
     expect(backendB.webglPreview).not.toHaveBeenCalled();
     expect(backendB.wasmPreview).toHaveBeenCalledTimes(1);
     expect(backendB.cpuPreview).toHaveBeenCalledTimes(1);
-    expect(reasonB).toEqual(["flag_disabled"]);
+    expect(reasonB).toEqual([
+      {
+        reason: "flag_disabled",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 
   it("defaults preserve cpu behavior when no explicit flags are set", () => {
-    const reasons: string[] = [];
+    const fallbackEvents: Array<{
+      reason: string;
+      requestedBackend: string;
+      fallbackBackend: string;
+    }> = [];
     const backend = createBackends();
     const router = createBackendRouter({
       backends: backend.backends,
@@ -228,7 +443,11 @@ describe("backend feature flags", () => {
       },
       featureFlags: getBackendFeatureFlags(),
       onFallback: (event) => {
-        reasons.push(event.reason);
+        fallbackEvents.push({
+          reason: event.reason,
+          requestedBackend: event.requestedBackend,
+          fallbackBackend: event.fallbackBackend,
+        });
       },
     });
 
@@ -258,6 +477,17 @@ describe("backend feature flags", () => {
     expect(backend.cpuPreview).toHaveBeenCalledTimes(3);
     expect(backend.webglPreview).not.toHaveBeenCalled();
     expect(backend.wasmPreview).not.toHaveBeenCalled();
-    expect(reasons).toEqual(["flag_disabled", "flag_disabled"]);
+    expect(fallbackEvents).toEqual([
+      {
+        reason: "flag_disabled",
+        requestedBackend: "webgl",
+        fallbackBackend: "cpu",
+      },
+      {
+        reason: "flag_disabled",
+        requestedBackend: "wasm",
+        fallbackBackend: "cpu",
+      },
+    ]);
   });
 });
