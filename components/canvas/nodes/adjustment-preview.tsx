@@ -111,6 +111,7 @@ export default function AdjustmentPreview({
       sourceUrl,
       steps,
       nodeWidth,
+      includeHistogram: true,
       // Die Vorschau muss in-Node gut lesbar bleiben, aber nicht in voller
       // Display-Auflösung rechnen.
       previewScale: 0.5,

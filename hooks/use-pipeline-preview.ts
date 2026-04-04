@@ -14,6 +14,7 @@ type UsePipelinePreviewOptions = {
   sourceUrl: string | null;
   steps: readonly PipelineStep[];
   nodeWidth: number;
+  includeHistogram?: boolean;
   previewScale?: number;
   maxPreviewWidth?: number;
   maxDevicePixelRatio?: number;
@@ -125,6 +126,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
         sourceUrl,
         steps: stableRenderInputRef.current?.steps ?? [],
         previewWidth,
+        includeHistogram: options.includeHistogram,
         signal: abortController.signal,
       })
         .then((result: PreviewRenderResult) => {
@@ -163,7 +165,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
       window.clearTimeout(timer);
       abortController.abort();
     };
-  }, [pipelineHash, previewWidth]);
+  }, [options.includeHistogram, pipelineHash, previewWidth]);
 
   return {
     canvasRef,

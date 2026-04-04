@@ -8,6 +8,7 @@ type PreviewWorkerPayload = {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
+  includeHistogram?: boolean;
 };
 
 type WorkerRequestMessage =
@@ -93,6 +94,7 @@ async function handlePreviewRequest(requestId: number, payload: PreviewWorkerPay
       sourceUrl: payload.sourceUrl,
       steps: payload.steps,
       previewWidth: payload.previewWidth,
+      includeHistogram: payload.includeHistogram,
       signal: controller.signal,
     });
 

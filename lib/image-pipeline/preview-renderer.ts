@@ -1,5 +1,5 @@
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
-import { computeHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
+import { computeHistogram, emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import { applyPipelineStep } from "@/lib/image-pipeline/render-core";
 import { loadSourceBitmap } from "@/lib/image-pipeline/source-loader";
 
@@ -54,6 +54,7 @@ export async function renderPreview(options: {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
+  includeHistogram?: boolean;
   signal?: AbortSignal;
 }): Promise<PreviewRenderResult> {
   const bitmap = await loadSourceBitmap(options.sourceUrl, {
@@ -82,7 +83,9 @@ export async function renderPreview(options: {
     }
   }
 
-  const histogram = computeHistogram(imageData.data);
+  const histogram = options.includeHistogram === false
+    ? emptyHistogram()
+    : computeHistogram(imageData.data);
 
   return {
     width,

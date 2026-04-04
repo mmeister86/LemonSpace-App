@@ -13,6 +13,7 @@ type PreviewWorkerPayload = {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
+  includeHistogram?: boolean;
 };
 
 type WorkerRequestMessage =
@@ -261,6 +262,7 @@ export async function renderPreviewWithWorkerFallback(options: {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
+  includeHistogram?: boolean;
   signal?: AbortSignal;
 }): Promise<PreviewRenderResult> {
   try {
@@ -270,6 +272,7 @@ export async function renderPreviewWithWorkerFallback(options: {
         sourceUrl: options.sourceUrl,
         steps: options.steps,
         previewWidth: options.previewWidth,
+        includeHistogram: options.includeHistogram,
       },
       signal: options.signal,
     });

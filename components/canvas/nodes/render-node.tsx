@@ -614,6 +614,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     sourceUrl: isFullscreenOpen && sourceUrl ? sourceUrl : null,
     steps,
     nodeWidth: fullscreenPreviewWidth,
+    includeHistogram: false,
     previewScale: 0.85,
     maxPreviewWidth: 1920,
     maxDevicePixelRatio: 1.5,

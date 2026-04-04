@@ -31,6 +31,7 @@ export default function CompareSurface({
     sourceUrl: previewSourceUrl,
     steps: previewSteps,
     nodeWidth,
+    includeHistogram: false,
     // Compare-Nodes zeigen nur eine kompakte Live-Ansicht; kleinere Kacheln
     // halten lange Workflows spürbar reaktionsfreudiger.
     previewScale: 0.5,
