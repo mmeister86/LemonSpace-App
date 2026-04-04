@@ -137,6 +137,13 @@ Success target for initial migration:
 - No increase in user-visible render failures.
 - <=1% forced downgrade due to runtime backend errors after rollout stabilization.
 
+## Verification Snapshot (Task 8, 2026-04-04)
+
+- Backend/parity verification command: PASS (`39/39` tests).
+- Worker + preview integration command: PASS (`16/16` tests).
+- Lint gate: initial FAIL (`7` errors across `wasm-loader` and related tests), PASS after minimal remediation.
+- Rollout guardrails: `backend selection correctness`, `CPU/WebGL parity checks`, `worker/main-thread fallback coverage`, and `pipeline lint cleanliness` are all `GREEN`.
+
 ## Out of Scope
 
 - New visual adjustment features.

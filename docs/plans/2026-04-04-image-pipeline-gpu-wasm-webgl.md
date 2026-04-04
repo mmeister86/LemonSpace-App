@@ -284,3 +284,10 @@ Expected: PASS
 Run:
 - `git add docs/plans/2026-04-04-image-pipeline-gpu-wasm-webgl-design.md docs/plans/2026-04-04-image-pipeline-gpu-wasm-webgl.md`
 - `git commit -m "docs(plans): finalize image pipeline gpu wasm webgl rollout plan"`
+
+**Task 8 verification notes (2026-04-04):**
+
+- Backend/parity tests: PASS (`6` files, `39` tests).
+- Worker/preview integration tests: PASS (`2` files, `16` tests).
+- Lint: FAIL on first run (`7` errors: `@next/next/no-assign-module-variable`, `@typescript-eslint/no-explicit-any`), PASS after minimal in-scope fixes.
+- Rollout guardrail status: `GREEN` for backend routing, parity, integration, and lint gates after rerun.
