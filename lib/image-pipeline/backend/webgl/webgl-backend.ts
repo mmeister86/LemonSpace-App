@@ -3,9 +3,15 @@ import type {
   BackendStepRequest,
   ImagePipelineBackend,
 } from "@/lib/image-pipeline/backend/backend-types";
+import {
+  normalizeDetailAdjustData,
+  normalizeLightAdjustData,
+} from "@/lib/image-pipeline/adjustment-types";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import colorAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/color-adjust.frag.glsl?raw";
 import curvesFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/curves.frag.glsl?raw";
+import detailAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/detail-adjust.frag.glsl?raw";
+import lightAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/light-adjust.frag.glsl?raw";
 
 const VERTEX_SHADER_SOURCE = `
 attribute vec2 aPosition;
@@ -17,18 +23,22 @@ void main() {
 }
 `;
 
-type SupportedPreviewStepType = "curves" | "color-adjust";
+type SupportedPreviewStepType = "curves" | "color-adjust" | "light-adjust" | "detail-adjust";
 
 type WebglBackendContext = {
   gl: WebGLRenderingContext;
   curvesProgram: WebGLProgram;
   colorAdjustProgram: WebGLProgram;
+  lightAdjustProgram: WebGLProgram;
+  detailAdjustProgram: WebGLProgram;
   quadBuffer: WebGLBuffer;
 };
 
 const SUPPORTED_PREVIEW_STEP_TYPES = new Set<SupportedPreviewStepType>([
   "curves",
   "color-adjust",
+  "light-adjust",
+  "detail-adjust",
 ]);
 
 function assertSupportedStep(step: PipelineStep): void {
@@ -156,9 +166,127 @@ function mapColorShift(step: PipelineStep): [number, number, number] {
   ];
 }
 
+function applyStepUniforms(
+  gl: WebGLRenderingContext,
+  shaderProgram: WebGLProgram,
+  request: BackendStepRequest,
+): void {
+  if (request.step.type === "curves") {
+    const gammaLocation = gl.getUniformLocation(shaderProgram, "uGamma");
+    if (gammaLocation) {
+      gl.uniform1f(gammaLocation, mapCurvesGamma(request.step));
+    }
+    return;
+  }
+
+  if (request.step.type === "color-adjust") {
+    const colorShiftLocation = gl.getUniformLocation(shaderProgram, "uColorShift");
+    if (colorShiftLocation) {
+      const [r, g, b] = mapColorShift(request.step);
+      gl.uniform3f(colorShiftLocation, r, g, b);
+    }
+    return;
+  }
+
+  if (request.step.type === "light-adjust") {
+    const light = normalizeLightAdjustData(request.step.params);
+    const exposureFactorLocation = gl.getUniformLocation(shaderProgram, "uExposureFactor");
+    if (exposureFactorLocation) {
+      gl.uniform1f(exposureFactorLocation, Math.pow(2, light.exposure / 2));
+    }
+
+    const contrastFactorLocation = gl.getUniformLocation(shaderProgram, "uContrastFactor");
+    if (contrastFactorLocation) {
+      gl.uniform1f(contrastFactorLocation, 1 + light.contrast / 100);
+    }
+
+    const brightnessShiftLocation = gl.getUniformLocation(shaderProgram, "uBrightnessShift");
+    if (brightnessShiftLocation) {
+      gl.uniform1f(brightnessShiftLocation, light.brightness * 1.8);
+    }
+
+    const highlightsLocation = gl.getUniformLocation(shaderProgram, "uHighlights");
+    if (highlightsLocation) {
+      gl.uniform1f(highlightsLocation, light.highlights / 100);
+    }
+
+    const shadowsLocation = gl.getUniformLocation(shaderProgram, "uShadows");
+    if (shadowsLocation) {
+      gl.uniform1f(shadowsLocation, light.shadows / 100);
+    }
+
+    const whitesLocation = gl.getUniformLocation(shaderProgram, "uWhites");
+    if (whitesLocation) {
+      gl.uniform1f(whitesLocation, light.whites / 100);
+    }
+
+    const blacksLocation = gl.getUniformLocation(shaderProgram, "uBlacks");
+    if (blacksLocation) {
+      gl.uniform1f(blacksLocation, light.blacks / 100);
+    }
+
+    const vignetteAmountLocation = gl.getUniformLocation(shaderProgram, "uVignetteAmount");
+    if (vignetteAmountLocation) {
+      gl.uniform1f(vignetteAmountLocation, light.vignette.amount);
+    }
+
+    const vignetteSizeLocation = gl.getUniformLocation(shaderProgram, "uVignetteSize");
+    if (vignetteSizeLocation) {
+      gl.uniform1f(vignetteSizeLocation, light.vignette.size);
+    }
+
+    const vignetteRoundnessLocation = gl.getUniformLocation(shaderProgram, "uVignetteRoundness");
+    if (vignetteRoundnessLocation) {
+      gl.uniform1f(vignetteRoundnessLocation, light.vignette.roundness);
+    }
+    return;
+  }
+
+  if (request.step.type === "detail-adjust") {
+    const detail = normalizeDetailAdjustData(request.step.params);
+
+    const sharpenBoostLocation = gl.getUniformLocation(shaderProgram, "uSharpenBoost");
+    if (sharpenBoostLocation) {
+      gl.uniform1f(sharpenBoostLocation, detail.sharpen.amount / 500);
+    }
+
+    const clarityBoostLocation = gl.getUniformLocation(shaderProgram, "uClarityBoost");
+    if (clarityBoostLocation) {
+      gl.uniform1f(clarityBoostLocation, detail.clarity / 100);
+    }
+
+    const denoiseLumaLocation = gl.getUniformLocation(shaderProgram, "uDenoiseLuma");
+    if (denoiseLumaLocation) {
+      gl.uniform1f(denoiseLumaLocation, detail.denoise.luminance / 100);
+    }
+
+    const denoiseColorLocation = gl.getUniformLocation(shaderProgram, "uDenoiseColor");
+    if (denoiseColorLocation) {
+      gl.uniform1f(denoiseColorLocation, detail.denoise.color / 100);
+    }
+
+    const grainAmountLocation = gl.getUniformLocation(shaderProgram, "uGrainAmount");
+    if (grainAmountLocation) {
+      gl.uniform1f(grainAmountLocation, detail.grain.amount / 100);
+    }
+
+    const grainScaleLocation = gl.getUniformLocation(shaderProgram, "uGrainScale");
+    if (grainScaleLocation) {
+      gl.uniform1f(grainScaleLocation, Math.max(0.5, detail.grain.size));
+    }
+  }
+}
+
 function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest): void {
   const { gl } = context;
-  const shaderProgram = request.step.type === "curves" ? context.curvesProgram : context.colorAdjustProgram;
+  const shaderProgram =
+    request.step.type === "curves"
+      ? context.curvesProgram
+      : request.step.type === "color-adjust"
+        ? context.colorAdjustProgram
+        : request.step.type === "light-adjust"
+          ? context.lightAdjustProgram
+          : context.detailAdjustProgram;
   gl.useProgram(shaderProgram);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, context.quadBuffer);
@@ -239,18 +367,7 @@ function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest)
     gl.uniform1i(sourceLocation, 0);
   }
 
-  if (request.step.type === "curves") {
-    const gammaLocation = gl.getUniformLocation(shaderProgram, "uGamma");
-    if (gammaLocation) {
-      gl.uniform1f(gammaLocation, mapCurvesGamma(request.step));
-    }
-  } else {
-    const colorShiftLocation = gl.getUniformLocation(shaderProgram, "uColorShift");
-    if (colorShiftLocation) {
-      const [r, g, b] = mapColorShift(request.step);
-      gl.uniform3f(colorShiftLocation, r, g, b);
-    }
-  }
+  applyStepUniforms(gl, shaderProgram, request);
 
   gl.viewport(0, 0, request.width, request.height);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -286,6 +403,8 @@ export function createWebglPreviewBackend(): ImagePipelineBackend {
       gl,
       curvesProgram: compileProgram(gl, curvesFragmentShaderSource),
       colorAdjustProgram: compileProgram(gl, colorAdjustFragmentShaderSource),
+      lightAdjustProgram: compileProgram(gl, lightAdjustFragmentShaderSource),
+      detailAdjustProgram: compileProgram(gl, detailAdjustFragmentShaderSource),
       quadBuffer: createQuadBuffer(gl),
     };
 

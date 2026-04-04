@@ -58,7 +58,7 @@ function createColorAdjustStep(): PipelineStep {
 function createUnsupportedStep(): PipelineStep {
   return {
     nodeId: "light-1",
-    type: "light-adjust",
+    type: "unsupported-adjust" as PipelineStep["type"],
     params: {
       exposure: 0,
     },

@@ -7,6 +7,9 @@ type ParityPipelineKey =
   | "curvesOnly"
   | "colorAdjustOnly"
   | "curvesPlusColorAdjust"
+  | "lightAdjustOnly"
+  | "detailAdjustOnly"
+  | "curvesColorLightDetailChain"
   | "curvesChannelPressure"
   | "colorAdjustPressure"
   | "curvesColorPressureChain";
@@ -60,6 +63,21 @@ export const parityTolerances: Record<ParityPipelineKey, ParityTolerance> = {
     maxChannelDelta: 71,
     histogramSimilarity: 0.16,
     spatialRmse: 43.5,
+  },
+  lightAdjustOnly: {
+    maxChannelDelta: 52,
+    histogramSimilarity: 0.5,
+    spatialRmse: 20.0,
+  },
+  detailAdjustOnly: {
+    maxChannelDelta: 2,
+    histogramSimilarity: 0.99,
+    spatialRmse: 1.2,
+  },
+  curvesColorLightDetailChain: {
+    maxChannelDelta: 130,
+    histogramSimilarity: 0.17,
+    spatialRmse: 57.5,
   },
   curvesChannelPressure: {
     maxChannelDelta: 99,
@@ -223,9 +241,59 @@ function createCurvesColorPressureChainSteps(): PipelineStep[] {
   ];
 }
 
+function createLightAdjustStep(): PipelineStep {
+  return {
+    nodeId: "light-adjust-parity",
+    type: "light-adjust",
+    params: {
+      brightness: 14,
+      contrast: 22,
+      exposure: 0.8,
+      highlights: -16,
+      shadows: 24,
+      whites: 8,
+      blacks: -10,
+      vignette: {
+        amount: 0.25,
+        size: 0.72,
+        roundness: 0.85,
+      },
+    },
+  };
+}
+
+function createDetailAdjustStep(): PipelineStep {
+  return {
+    nodeId: "detail-adjust-parity",
+    type: "detail-adjust",
+    params: {
+      sharpen: {
+        amount: 210,
+        radius: 1.4,
+        threshold: 6,
+      },
+      clarity: 32,
+      denoise: {
+        luminance: 18,
+        color: 14,
+      },
+      grain: {
+        amount: 12,
+        size: 1.3,
+      },
+    },
+  };
+}
+
+function createCurvesColorLightDetailChainSteps(): PipelineStep[] {
+  return [createCurvesStep(), createColorAdjustStep(), createLightAdjustStep(), createDetailAdjustStep()];
+}
+
 export function createParityPipelines(): Record<ParityPipelineKey, ParityPipeline> {
   const curvesStep = createCurvesStep();
   const colorAdjustStep = createColorAdjustStep();
+  const lightAdjustStep = createLightAdjustStep();
+  const detailAdjustStep = createDetailAdjustStep();
   const curvesChannelPressureStep = createCurvesChannelPressureStep();
   const colorAdjustPressureStep = createColorAdjustPressureStep();
 
@@ -241,6 +309,18 @@ export function createParityPipelines(): Record<ParityPipelineKey, ParityPipelin
     curvesPlusColorAdjust: {
       key: "curvesPlusColorAdjust",
       steps: [curvesStep, colorAdjustStep],
+    },
+    lightAdjustOnly: {
+      key: "lightAdjustOnly",
+      steps: [lightAdjustStep],
+    },
+    detailAdjustOnly: {
+      key: "detailAdjustOnly",
+      steps: [detailAdjustStep],
+    },
+    curvesColorLightDetailChain: {
+      key: "curvesColorLightDetailChain",
+      steps: createCurvesColorLightDetailChainSteps(),
     },
     curvesChannelPressure: {
       key: "curvesChannelPressure",
@@ -277,7 +357,13 @@ function clonePixels(pixels: Uint8ClampedArray): Uint8ClampedArray {
   return new Uint8ClampedArray(pixels);
 }
 
-type ShaderKind = "curves" | "color-adjust" | "vertex" | "unknown";
+type ShaderKind =
+  | "curves"
+  | "color-adjust"
+  | "light-adjust"
+  | "detail-adjust"
+  | "vertex"
+  | "unknown";
 
 type FakeShader = {
   type: number;
@@ -292,6 +378,12 @@ type FakeProgram = {
 };
 
 type FakeTexture = {
+  width: number;
+  height: number;
+  data: Uint8Array;
+};
+
+type FakeTextureImageSource = {
   width: number;
   height: number;
   data: Uint8Array;
@@ -315,6 +407,12 @@ function inferShaderKind(source: string): ShaderKind {
   }
   if (source.includes("uColorShift")) {
     return "color-adjust";
+  }
+  if (source.includes("uExposureFactor")) {
+    return "light-adjust";
+  }
+  if (source.includes("uSharpenBoost")) {
+    return "detail-adjust";
   }
   if (source.includes("aPosition")) {
     return "vertex";
@@ -364,6 +462,139 @@ function runColorAdjustShader(input: Uint8Array, shift: [number, number, number]
   return output;
 }
 
+function pseudoNoise(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function runLightAdjustShader(
+  input: Uint8Array,
+  width: number,
+  height: number,
+  uniforms: Map<string, number | [number, number, number]>,
+): Uint8Array {
+  const output = new Uint8Array(input.length);
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  const exposureFactor = Number(uniforms.get("uExposureFactor") ?? 1);
+  const contrastFactor = Number(uniforms.get("uContrastFactor") ?? 1);
+  const brightnessShift = Number(uniforms.get("uBrightnessShift") ?? 0);
+  const highlights = Number(uniforms.get("uHighlights") ?? 0);
+  const shadows = Number(uniforms.get("uShadows") ?? 0);
+  const whites = Number(uniforms.get("uWhites") ?? 0);
+  const blacks = Number(uniforms.get("uBlacks") ?? 0);
+  const vignetteAmount = Number(uniforms.get("uVignetteAmount") ?? 0);
+  const vignetteSize = Number(uniforms.get("uVignetteSize") ?? 0.5);
+  const vignetteRoundness = Number(uniforms.get("uVignetteRoundness") ?? 1);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+
+      let red = input[index] ?? 0;
+      let green = input[index + 1] ?? 0;
+      let blue = input[index + 2] ?? 0;
+
+      red *= exposureFactor;
+      green *= exposureFactor;
+      blue *= exposureFactor;
+
+      red = (red - 128) * contrastFactor + 128 + brightnessShift;
+      green = (green - 128) * contrastFactor + 128 + brightnessShift;
+      blue = (blue - 128) * contrastFactor + 128 + brightnessShift;
+
+      const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+      const highlightsBoost = (luma / 255) * highlights * 40;
+      const shadowsBoost = ((255 - luma) / 255) * shadows * 40;
+      const whitesBoost = (luma / 255) * whites * 35;
+      const blacksBoost = ((255 - luma) / 255) * blacks * 35;
+      const totalBoost = highlightsBoost + shadowsBoost + whitesBoost + blacksBoost;
+
+      red += totalBoost;
+      green += totalBoost;
+      blue += totalBoost;
+
+      if (vignetteAmount > 0) {
+        const dx = (x - centerX) / Math.max(1, centerX);
+        const dy = (y - centerY) / Math.max(1, centerY);
+        const radialDistance = Math.sqrt(dx * dx + dy * dy);
+        const softEdge = Math.pow(1 - Math.max(0, Math.min(1, radialDistance)), 1 + vignetteRoundness);
+        const strength = 1 - vignetteAmount * (1 - softEdge) * (1.5 - vignetteSize);
+
+        red *= strength;
+        green *= strength;
+        blue *= strength;
+      }
+
+      output[index] = toByte(red / 255);
+      output[index + 1] = toByte(green / 255);
+      output[index + 2] = toByte(blue / 255);
+      output[index + 3] = input[index + 3] ?? 255;
+    }
+  }
+
+  return output;
+}
+
+function runDetailAdjustShader(
+  input: Uint8Array,
+  uniforms: Map<string, number | [number, number, number]>,
+): Uint8Array {
+  const output = new Uint8Array(input.length);
+
+  const sharpenBoost = Number(uniforms.get("uSharpenBoost") ?? 0);
+  const clarityBoost = Number(uniforms.get("uClarityBoost") ?? 0);
+  const denoiseLuma = Number(uniforms.get("uDenoiseLuma") ?? 0);
+  const denoiseColor = Number(uniforms.get("uDenoiseColor") ?? 0);
+  const grainAmount = Number(uniforms.get("uGrainAmount") ?? 0);
+  const grainScale = Math.max(0.5, Number(uniforms.get("uGrainScale") ?? 1));
+
+  for (let index = 0; index < input.length; index += 4) {
+    let red = input[index] ?? 0;
+    let green = input[index + 1] ?? 0;
+    let blue = input[index + 2] ?? 0;
+
+    const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+
+    red = red + (red - luma) * sharpenBoost * 0.6;
+    green = green + (green - luma) * sharpenBoost * 0.6;
+    blue = blue + (blue - luma) * sharpenBoost * 0.6;
+
+    const midtoneFactor = 1 - Math.abs(luma / 255 - 0.5) * 2;
+    const clarityScale = 1 + clarityBoost * midtoneFactor * 0.7;
+
+    red = (red - 128) * clarityScale + 128;
+    green = (green - 128) * clarityScale + 128;
+    blue = (blue - 128) * clarityScale + 128;
+
+    if (denoiseLuma > 0 || denoiseColor > 0) {
+      red = red * (1 - denoiseLuma * 0.2) + luma * denoiseLuma * 0.2;
+      green = green * (1 - denoiseLuma * 0.2) + luma * denoiseLuma * 0.2;
+      blue = blue * (1 - denoiseLuma * 0.2) + luma * denoiseLuma * 0.2;
+
+      const average = (red + green + blue) / 3;
+      red = red * (1 - denoiseColor * 0.2) + average * denoiseColor * 0.2;
+      green = green * (1 - denoiseColor * 0.2) + average * denoiseColor * 0.2;
+      blue = blue * (1 - denoiseColor * 0.2) + average * denoiseColor * 0.2;
+    }
+
+    if (grainAmount > 0) {
+      const grain = (pseudoNoise((index + 1) / grainScale) - 0.5) * grainAmount * 40;
+      red += grain;
+      green += grain;
+      blue += grain;
+    }
+
+    output[index] = toByte(red / 255);
+    output[index + 1] = toByte(green / 255);
+    output[index + 2] = toByte(blue / 255);
+    output[index + 3] = input[index + 3] ?? 255;
+  }
+
+  return output;
+}
+
 function createParityWebglContext(): WebGLRenderingContext {
   const glConstants = {
     VERTEX_SHADER: 0x8b31,
@@ -392,6 +623,9 @@ function createParityWebglContext(): WebGLRenderingContext {
   let currentProgram: FakeProgram | null = null;
   let currentTexture: FakeTexture | null = null;
   let currentFramebuffer: FakeFramebuffer | null = null;
+  let sourceTexture: FakeTexture | null = null;
+  let drawWidth = 1;
+  let drawHeight = 1;
 
   const gl = {
     ...glConstants,
@@ -453,6 +687,9 @@ function createParityWebglContext(): WebGLRenderingContext {
     },
     bindTexture(_target: number, texture: FakeTexture | null) {
       currentTexture = texture;
+      if (texture) {
+        sourceTexture = texture;
+      }
     },
     texParameteri() {},
     texImage2D(
@@ -464,7 +701,7 @@ function createParityWebglContext(): WebGLRenderingContext {
       _border: number,
       _format: number,
       _type: number,
-      pixels: ArrayBufferView | null,
+      pixels: ArrayBufferView | FakeTextureImageSource | null,
     ) {
       if (!currentTexture) {
         return;
@@ -473,7 +710,13 @@ function createParityWebglContext(): WebGLRenderingContext {
       if (pixels) {
         currentTexture.width = width;
         currentTexture.height = height;
-        currentTexture.data = new Uint8Array(pixels.buffer.slice(0));
+        if ("buffer" in pixels) {
+          const byteOffset = pixels.byteOffset ?? 0;
+          const byteLength = pixels.byteLength ?? pixels.buffer.byteLength;
+          currentTexture.data = new Uint8Array(pixels.buffer.slice(byteOffset, byteOffset + byteLength));
+        } else {
+          currentTexture.data = new Uint8Array(pixels.data);
+        }
         return;
       }
 
@@ -520,15 +763,18 @@ function createParityWebglContext(): WebGLRenderingContext {
       return glConstants.FRAMEBUFFER_COMPLETE;
     },
     deleteFramebuffer() {},
-    viewport() {},
+    viewport(_x: number, _y: number, width: number, height: number) {
+      drawWidth = width;
+      drawHeight = height;
+    },
     drawArrays() {
-      if (!currentProgram || !currentTexture || !currentFramebuffer?.attachment) {
+      if (!currentProgram || !sourceTexture || !currentFramebuffer?.attachment) {
         throw new Error("Parity WebGL mock is missing required render state.");
       }
 
       if (currentProgram.kind === "curves") {
         const gamma = Number(currentProgram.uniforms.get("uGamma") ?? 1);
-        currentFramebuffer.attachment.data = runCurvesShader(currentTexture.data, gamma);
+        currentFramebuffer.attachment.data = runCurvesShader(sourceTexture.data, gamma);
         return;
       }
 
@@ -537,7 +783,22 @@ function createParityWebglContext(): WebGLRenderingContext {
         const shift: [number, number, number] = Array.isArray(colorShift)
           ? [colorShift[0] ?? 0, colorShift[1] ?? 0, colorShift[2] ?? 0]
           : [0, 0, 0];
-        currentFramebuffer.attachment.data = runColorAdjustShader(currentTexture.data, shift);
+        currentFramebuffer.attachment.data = runColorAdjustShader(sourceTexture.data, shift);
+        return;
+      }
+
+      if (currentProgram.kind === "light-adjust") {
+        currentFramebuffer.attachment.data = runLightAdjustShader(
+          sourceTexture.data,
+          drawWidth,
+          drawHeight,
+          currentProgram.uniforms,
+        );
+        return;
+      }
+
+      if (currentProgram.kind === "detail-adjust") {
+        currentFramebuffer.attachment.data = runDetailAdjustShader(sourceTexture.data, currentProgram.uniforms);
         return;
       }
 

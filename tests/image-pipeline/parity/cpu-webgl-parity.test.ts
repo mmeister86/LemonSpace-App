@@ -62,6 +62,47 @@ describe("cpu vs webgl parity", () => {
     );
   });
 
+  it("keeps light-adjust-only pipeline within parity tolerance", () => {
+    const pipelines = createParityPipelines();
+    installParityWebglContextMock();
+
+    const metrics = evaluateCpuWebglParity(pipelines.lightAdjustOnly);
+
+    expect(metrics.maxChannelDelta).toBeLessThanOrEqual(parityTolerances.lightAdjustOnly.maxChannelDelta);
+    expect(metrics.histogramSimilarity).toBeGreaterThanOrEqual(
+      parityTolerances.lightAdjustOnly.histogramSimilarity,
+    );
+    expect(metrics.spatialRmse).toBeLessThanOrEqual(parityTolerances.lightAdjustOnly.spatialRmse);
+  });
+
+  it("keeps detail-adjust-only pipeline within parity tolerance", () => {
+    const pipelines = createParityPipelines();
+    installParityWebglContextMock();
+
+    const metrics = evaluateCpuWebglParity(pipelines.detailAdjustOnly);
+
+    expect(metrics.maxChannelDelta).toBeLessThanOrEqual(parityTolerances.detailAdjustOnly.maxChannelDelta);
+    expect(metrics.histogramSimilarity).toBeGreaterThanOrEqual(
+      parityTolerances.detailAdjustOnly.histogramSimilarity,
+    );
+    expect(metrics.spatialRmse).toBeLessThanOrEqual(parityTolerances.detailAdjustOnly.spatialRmse);
+  });
+
+  it("keeps curves + color-adjust + light-adjust + detail-adjust chain within parity tolerance", () => {
+    const pipelines = createParityPipelines();
+    installParityWebglContextMock();
+
+    const metrics = evaluateCpuWebglParity(pipelines.curvesColorLightDetailChain);
+
+    expect(metrics.maxChannelDelta).toBeLessThanOrEqual(
+      parityTolerances.curvesColorLightDetailChain.maxChannelDelta,
+    );
+    expect(metrics.histogramSimilarity).toBeGreaterThanOrEqual(
+      parityTolerances.curvesColorLightDetailChain.histogramSimilarity,
+    );
+    expect(metrics.spatialRmse).toBeLessThanOrEqual(parityTolerances.curvesColorLightDetailChain.spatialRmse);
+  });
+
   it("keeps channel-specific curves pressure case within parity tolerance", () => {
     const pipelines = createParityPipelines();
     installParityWebglContextMock();
