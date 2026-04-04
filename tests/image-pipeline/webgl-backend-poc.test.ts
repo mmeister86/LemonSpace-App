@@ -174,6 +174,8 @@ describe("webgl backend poc", () => {
   }
 
   it("selects webgl for preview when webgl is available and enabled", async () => {
+    // Parity gate in jsdom with mocked WebGL verifies backend contract behavior,
+    // not GPU-driver conformance.
     enforceCpuWebglParityGates();
 
     const webglPreview = vi.fn();
@@ -227,6 +229,7 @@ describe("webgl backend poc", () => {
   });
 
   it("uses cpu for every step in a mixed pipeline request", async () => {
+    // Keep backend-contract parity gate explicit for mocked jsdom runs.
     enforceCpuWebglParityGates();
 
     vi.doMock("@/lib/image-pipeline/backend/feature-flags", async () => {

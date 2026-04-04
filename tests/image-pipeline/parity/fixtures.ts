@@ -3,7 +3,13 @@ import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import { applyPipelineStep } from "@/lib/image-pipeline/render-core";
 import { vi } from "vitest";
 
-type ParityPipelineKey = "curvesOnly" | "colorAdjustOnly" | "curvesPlusColorAdjust";
+type ParityPipelineKey =
+  | "curvesOnly"
+  | "colorAdjustOnly"
+  | "curvesPlusColorAdjust"
+  | "curvesChannelPressure"
+  | "colorAdjustPressure"
+  | "curvesColorPressureChain";
 
 type HistogramBundle = {
   red: number[];
@@ -15,6 +21,7 @@ type HistogramBundle = {
 export type ParityMetrics = {
   maxChannelDelta: number;
   histogramSimilarity: number;
+  spatialRmse: number;
 };
 
 type ParityPipeline = {
@@ -25,6 +32,7 @@ type ParityPipeline = {
 type ParityTolerance = {
   maxChannelDelta: number;
   histogramSimilarity: number;
+  spatialRmse: number;
 };
 
 const FIXTURE_WIDTH = 8;
@@ -33,17 +41,40 @@ const FIXTURE_HEIGHT = 8;
 let contextSpy: { mockRestore: () => void } | null = null;
 
 export const parityTolerances: Record<ParityPipelineKey, ParityTolerance> = {
+  // Tightened against measured jsdom+mock outputs (2026-04-04 baseline):
+  // - maxChannelDelta / spatialRmse gates use ~+2 delta and ~+1.3 RMSE headroom.
+  // - histogramSimilarity gates use ~0.005-0.01 headroom below measured values.
+  // This intentionally validates backend-contract parity in deterministic jsdom mocks,
+  // not driver-level GPU conformance.
   curvesOnly: {
-    maxChannelDelta: 64,
+    maxChannelDelta: 33,
     histogramSimilarity: 0.16,
+    spatialRmse: 24.7,
   },
   colorAdjustOnly: {
-    maxChannelDelta: 64,
+    maxChannelDelta: 42,
     histogramSimilarity: 0.15,
+    spatialRmse: 21.6,
   },
   curvesPlusColorAdjust: {
-    maxChannelDelta: 72,
+    maxChannelDelta: 71,
     histogramSimilarity: 0.16,
+    spatialRmse: 43.5,
+  },
+  curvesChannelPressure: {
+    maxChannelDelta: 99,
+    histogramSimilarity: 0.08,
+    spatialRmse: 52.5,
+  },
+  colorAdjustPressure: {
+    maxChannelDelta: 203,
+    histogramSimilarity: 0.17,
+    spatialRmse: 75.8,
+  },
+  curvesColorPressureChain: {
+    maxChannelDelta: 203,
+    histogramSimilarity: 0.18,
+    spatialRmse: 75.5,
   },
 };
 
@@ -97,9 +128,106 @@ function createColorAdjustStep(): PipelineStep {
   };
 }
 
+function createCurvesChannelPressureStep(): PipelineStep {
+  return {
+    nodeId: "curves-channel-pressure-parity",
+    type: "curves",
+    params: {
+      channelMode: "red",
+      levels: {
+        blackPoint: 20,
+        whitePoint: 230,
+        gamma: 0.72,
+      },
+      points: {
+        rgb: [
+          { x: 0, y: 0 },
+          { x: 80, y: 68 },
+          { x: 190, y: 224 },
+          { x: 255, y: 255 },
+        ],
+        red: [
+          { x: 0, y: 0 },
+          { x: 60, y: 36 },
+          { x: 180, y: 228 },
+          { x: 255, y: 255 },
+        ],
+        green: [
+          { x: 0, y: 0 },
+          { x: 124, y: 104 },
+          { x: 255, y: 255 },
+        ],
+        blue: [
+          { x: 0, y: 0 },
+          { x: 120, y: 146 },
+          { x: 255, y: 255 },
+        ],
+      },
+    },
+  };
+}
+
+function createColorAdjustPressureStep(): PipelineStep {
+  return {
+    nodeId: "color-adjust-pressure-parity",
+    type: "color-adjust",
+    params: {
+      hsl: {
+        hue: 48,
+        saturation: 64,
+        luminance: 18,
+      },
+      temperature: 24,
+      tint: -28,
+      vibrance: 52,
+    },
+  };
+}
+
+function createCurvesColorPressureChainSteps(): PipelineStep[] {
+  return [
+    createCurvesChannelPressureStep(),
+    {
+      nodeId: "curves-master-pressure-parity",
+      type: "curves",
+      params: {
+        channelMode: "master",
+        levels: {
+          blackPoint: 10,
+          whitePoint: 246,
+          gamma: 1.36,
+        },
+        points: {
+          rgb: [
+            { x: 0, y: 0 },
+            { x: 62, y: 40 },
+            { x: 172, y: 214 },
+            { x: 255, y: 255 },
+          ],
+          red: [
+            { x: 0, y: 0 },
+            { x: 255, y: 255 },
+          ],
+          green: [
+            { x: 0, y: 0 },
+            { x: 255, y: 255 },
+          ],
+          blue: [
+            { x: 0, y: 0 },
+            { x: 255, y: 255 },
+          ],
+        },
+      },
+    },
+    createColorAdjustPressureStep(),
+  ];
+}
+
 export function createParityPipelines(): Record<ParityPipelineKey, ParityPipeline> {
   const curvesStep = createCurvesStep();
   const colorAdjustStep = createColorAdjustStep();
+  const curvesChannelPressureStep = createCurvesChannelPressureStep();
+  const colorAdjustPressureStep = createColorAdjustPressureStep();
 
   return {
     curvesOnly: {
@@ -113,6 +241,18 @@ export function createParityPipelines(): Record<ParityPipelineKey, ParityPipelin
     curvesPlusColorAdjust: {
       key: "curvesPlusColorAdjust",
       steps: [curvesStep, colorAdjustStep],
+    },
+    curvesChannelPressure: {
+      key: "curvesChannelPressure",
+      steps: [curvesChannelPressureStep],
+    },
+    colorAdjustPressure: {
+      key: "colorAdjustPressure",
+      steps: [colorAdjustPressureStep],
+    },
+    curvesColorPressureChain: {
+      key: "curvesColorPressureChain",
+      steps: createCurvesColorPressureChainSteps(),
     },
   };
 }
@@ -506,6 +646,22 @@ function calculateMaxChannelDelta(lhs: Uint8ClampedArray, rhs: Uint8ClampedArray
   return maxDelta;
 }
 
+function calculateSpatialRmse(lhs: Uint8ClampedArray, rhs: Uint8ClampedArray): number {
+  let squaredErrorSum = 0;
+  let sampleCount = 0;
+
+  for (let index = 0; index < lhs.length; index += 4) {
+    const redDelta = (lhs[index] ?? 0) - (rhs[index] ?? 0);
+    const greenDelta = (lhs[index + 1] ?? 0) - (rhs[index + 1] ?? 0);
+    const blueDelta = (lhs[index + 2] ?? 0) - (rhs[index + 2] ?? 0);
+
+    squaredErrorSum += redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
+    sampleCount += 3;
+  }
+
+  return Math.sqrt(squaredErrorSum / Math.max(1, sampleCount));
+}
+
 export function evaluateCpuWebglParity(pipeline: ParityPipeline): ParityMetrics {
   const source = createFixturePixels();
   const cpuPixels = clonePixels(source);
@@ -528,6 +684,7 @@ export function evaluateCpuWebglParity(pipeline: ParityPipeline): ParityMetrics 
   return {
     maxChannelDelta: calculateMaxChannelDelta(cpuPixels, webglPixels),
     histogramSimilarity: calculateHistogramSimilarity(cpuPixels, webglPixels),
+    spatialRmse: calculateSpatialRmse(cpuPixels, webglPixels),
   };
 }
 
@@ -551,6 +708,12 @@ export function enforceCpuWebglParityGates(): Record<ParityPipelineKey, ParityMe
       if (metrics.histogramSimilarity < tolerance.histogramSimilarity) {
         throw new Error(
           `${pipeline.key} histogram similarity ${metrics.histogramSimilarity.toFixed(4)} below tolerance ${tolerance.histogramSimilarity.toFixed(4)}`,
+        );
+      }
+
+      if (metrics.spatialRmse > tolerance.spatialRmse) {
+        throw new Error(
+          `${pipeline.key} spatial RMSE ${metrics.spatialRmse.toFixed(4)} exceeded tolerance ${tolerance.spatialRmse.toFixed(4)}`,
         );
       }
     }
