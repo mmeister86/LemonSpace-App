@@ -9,6 +9,12 @@ import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/r
 
 export type { PreviewRenderResult };
 
+export type BackendDiagnosticsMetadata = {
+  backendId?: string;
+  fallbackReason?: string;
+  details?: Record<string, unknown>;
+};
+
 type PreviewWorkerPayload = {
   sourceUrl: string;
   steps: readonly PipelineStep[];
@@ -37,6 +43,7 @@ type WorkerResultPreviewPayload = {
   height: number;
   histogram: HistogramData;
   pixels: ArrayBuffer;
+  diagnostics?: BackendDiagnosticsMetadata;
 };
 
 type WorkerResponseMessage =
@@ -48,7 +55,9 @@ type WorkerResponseMessage =
   | {
       kind: "full-result";
       requestId: number;
-      payload: RenderFullResult;
+      payload: RenderFullResult & {
+        diagnostics?: BackendDiagnosticsMetadata;
+      };
     }
   | {
       kind: "error";
@@ -56,6 +65,7 @@ type WorkerResponseMessage =
       payload: {
         name: string;
         message: string;
+        diagnostics?: BackendDiagnosticsMetadata;
       };
     };
 
@@ -77,6 +87,7 @@ let workerInitError: Error | null = null;
 let requestIdCounter = 0;
 const pendingRequests = new Map<number, PendingRequest>();
 const inFlightPreviewRequests = new Map<string, SharedPreviewRequest>();
+let lastBackendDiagnostics: BackendDiagnosticsMetadata | null = null;
 
 type SharedPreviewRequest = {
   promise: Promise<PreviewRenderResult>;
@@ -126,6 +137,18 @@ function shouldFallbackToMainThread(error: unknown): error is WorkerUnavailableE
   return error instanceof WorkerUnavailableError;
 }
 
+function updateLastBackendDiagnostics(metadata: BackendDiagnosticsMetadata | undefined): void {
+  if (!metadata) {
+    return;
+  }
+
+  lastBackendDiagnostics = metadata;
+}
+
+export function getLastBackendDiagnostics(): BackendDiagnosticsMetadata | null {
+  return lastBackendDiagnostics;
+}
+
 function getWorker(): Worker {
   if (typeof window === "undefined" || typeof Worker === "undefined") {
     throw new WorkerUnavailableError("Worker API is not available.");
@@ -154,6 +177,7 @@ function getWorker(): Worker {
       pendingRequests.delete(message.requestId);
 
       if (message.kind === "error") {
+        updateLastBackendDiagnostics(message.payload.diagnostics);
         const workerError = new Error(message.payload.message);
         workerError.name = message.payload.name;
         pending.reject(workerError);
@@ -161,6 +185,7 @@ function getWorker(): Worker {
       }
 
       if (pending.kind === "preview" && message.kind === "preview-result") {
+        updateLastBackendDiagnostics(message.payload.diagnostics);
         const pixels = new Uint8ClampedArray(message.payload.pixels);
         pending.resolve({
           width: message.payload.width,
@@ -172,6 +197,7 @@ function getWorker(): Worker {
       }
 
       if (pending.kind === "full" && message.kind === "full-result") {
+        updateLastBackendDiagnostics(message.payload.diagnostics);
         pending.resolve(message.payload);
         return;
       }
@@ -206,6 +232,7 @@ function runWorkerRequest<TResponse extends PreviewRenderResult | RenderFullResu
   }
 
   const worker = getWorker();
+  lastBackendDiagnostics = null;
   const requestId = nextRequestId();
 
   return new Promise<TResponse>((resolve, reject) => {
