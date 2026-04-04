@@ -116,6 +116,36 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
     return undefined;
   };
 
+  const resolveRenderOutputUrl = (node: RFNode): string | undefined => {
+    const nodeData = node.data as {
+      url?: string;
+      lastUploadUrl?: string;
+      storageId?: string;
+      lastUploadStorageId?: string;
+    };
+
+    if (typeof nodeData.lastUploadUrl === "string" && nodeData.lastUploadUrl.length > 0) {
+      return nodeData.lastUploadUrl;
+    }
+
+    if (typeof nodeData.url === "string" && nodeData.url.length > 0) {
+      return nodeData.url;
+    }
+
+    const storageId =
+      typeof nodeData.storageId === "string"
+        ? nodeData.storageId
+        : typeof nodeData.lastUploadStorageId === "string"
+          ? nodeData.lastUploadStorageId
+          : undefined;
+
+    if (storageId) {
+      return resolveStorageFallbackUrl(storageId);
+    }
+
+    return undefined;
+  };
+
   const resolvePipelineImageUrl = (sourceNode: RFNode): string | undefined => {
     const direct = resolveImageFromNode(sourceNode);
     if (direct) {
@@ -163,7 +193,10 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
             ? sourceDataRecord.lastUploadStorageId
             : undefined;
       const hasSourceUrl = typeof srcData.url === "string" && srcData.url.length > 0;
-      let resolvedUrl = resolvePipelineImageUrl(source);
+      let resolvedUrl =
+        source.type === "render"
+          ? resolveRenderOutputUrl(source)
+          : resolvePipelineImageUrl(source);
       if (
         resolvedUrl === undefined &&
         !hasSourceUrl &&

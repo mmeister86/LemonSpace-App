@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "tests/**/*.test.ts",
+      "components/canvas/__tests__/canvas-helpers.test.ts",
       "components/canvas/__tests__/canvas-flow-reconciliation-helpers.test.ts",
       "components/canvas/__tests__/use-canvas-flow-reconciliation.test.ts",
       "components/canvas/__tests__/use-canvas-drop.test.tsx",
