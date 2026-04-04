@@ -20,6 +20,8 @@ type UsePipelinePreviewOptions = {
   maxDevicePixelRatio?: number;
 };
 
+const PREVIEW_RENDER_DEBOUNCE_MS = 48;
+
 function computePreviewWidth(
   nodeWidth: number,
   previewScale: number,
@@ -159,7 +161,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
           if (runIdRef.current !== currentRun) return;
           setIsRendering(false);
         });
-    }, 16);
+    }, PREVIEW_RENDER_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timer);

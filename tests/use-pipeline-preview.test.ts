@@ -11,12 +11,46 @@ const workerClientMocks = vi.hoisted(() => ({
   renderPreviewWithWorkerFallback: vi.fn(),
 }));
 
+const PREVIEW_SETTLE_MS = 80;
+
 vi.mock("@/lib/image-pipeline/worker-client", () => ({
   isPipelineAbortError: () => false,
   renderPreviewWithWorkerFallback: workerClientMocks.renderPreviewWithWorkerFallback,
 }));
 
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
+
+function createPreviewResult(width: number, height: number) {
+  return {
+    width,
+    height,
+    imageData: { data: new Uint8ClampedArray(width * height * 4) },
+    histogram: emptyHistogram(),
+  };
+}
+
+function createDeferredPreviewResult() {
+  let resolve: ((value: ReturnType<typeof createPreviewResult>) => void) | null = null;
+
+  return {
+    promise: new Promise<ReturnType<typeof createPreviewResult>>((innerResolve) => {
+      resolve = innerResolve;
+    }),
+    resolve(value: ReturnType<typeof createPreviewResult>) {
+      resolve?.(value);
+    },
+  };
+}
+
+function createLightAdjustSteps(brightness: number): PipelineStep[] {
+  return [
+    {
+      nodeId: "light-1",
+      type: "light-adjust",
+      params: { brightness },
+    },
+  ];
+}
 
 const previewHarnessState = {
   latestHistogram: emptyHistogram(),
@@ -53,6 +87,8 @@ function PreviewHarness({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("usePipelinePreview", () => {
+  let putImageDataSpy: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.useFakeTimers();
     previewHarnessState.latestHistogram = emptyHistogram();
@@ -66,8 +102,10 @@ describe("usePipelinePreview", () => {
       histogram: emptyHistogram(),
     });
 
+    putImageDataSpy = vi.fn();
+
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      putImageData: vi.fn(),
+      putImageData: putImageDataSpy,
     } as unknown as CanvasRenderingContext2D);
 
     container = document.createElement("div");
@@ -107,7 +145,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -129,7 +167,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -160,7 +198,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -199,7 +237,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -223,7 +261,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -243,7 +281,7 @@ describe("usePipelinePreview", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
       await Promise.resolve();
     });
 
@@ -258,6 +296,154 @@ describe("usePipelinePreview", () => {
       2,
       expect.objectContaining({
         previewWidth: 640,
+      }),
+    );
+  });
+
+  it("only commits the latest visible preview after rapid sequential invalidations", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(10),
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(20),
+          includeHistogram: false,
+        }),
+      );
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(30),
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(1);
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        steps: createLightAdjustSteps(30),
+      }),
+    );
+    expect(putImageDataSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let stale finished renders overwrite a newer preview", async () => {
+    const firstRender = createDeferredPreviewResult();
+    const secondRender = createDeferredPreviewResult();
+
+    workerClientMocks.renderPreviewWithWorkerFallback.mockReset();
+    workerClientMocks.renderPreviewWithWorkerFallback
+      .mockReturnValueOnce(firstRender.promise)
+      .mockReturnValueOnce(secondRender.promise);
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(10),
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(20),
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+
+    const latestResult = createPreviewResult(240, 120);
+    await act(async () => {
+      secondRender.resolve(latestResult);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      firstRender.resolve(createPreviewResult(120, 80));
+      await Promise.resolve();
+    });
+
+    const canvas = container?.querySelector("canvas");
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(2);
+    expect(putImageDataSpy).toHaveBeenCalledTimes(1);
+    expect(putImageDataSpy).toHaveBeenCalledWith(latestResult.imageData, 0, 0);
+    expect(canvas?.width).toBe(240);
+    expect(canvas?.height).toBe(120);
+  });
+
+  it("coalesces slider churn so transient values do not fan out one render per value", async () => {
+    workerClientMocks.renderPreviewWithWorkerFallback.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(10),
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    for (const brightness of [20, 30, 40, 50]) {
+      await act(async () => {
+        vi.advanceTimersByTime(20);
+        await Promise.resolve();
+      });
+
+      expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(0);
+
+      await act(async () => {
+        root?.render(
+          createElement(PreviewHarness, {
+            sourceUrl: "https://cdn.example.com/source.png",
+            steps: createLightAdjustSteps(brightness),
+            includeHistogram: false,
+          }),
+        );
+      });
+    }
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(1);
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        steps: createLightAdjustSteps(50),
       }),
     );
   });
