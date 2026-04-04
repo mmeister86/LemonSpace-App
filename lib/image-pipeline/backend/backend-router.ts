@@ -13,6 +13,11 @@ import {
   getBackendFeatureFlags,
   type BackendFeatureFlags,
 } from "@/lib/image-pipeline/backend/feature-flags";
+import { detectBackendCapabilities } from "@/lib/image-pipeline/backend/capabilities";
+import {
+  createWebglPreviewBackend,
+  isWebglPreviewPipelineSupported,
+} from "@/lib/image-pipeline/backend/webgl/webgl-backend";
 
 type BackendFallbackReason = "unsupported_api" | "flag_disabled" | "runtime_error";
 
@@ -103,12 +108,15 @@ export function createBackendRouter(options?: {
       return cpuFallbackBackend;
     }
 
+    const availability = readAvailability(configuredDefaultBackend.id);
+    if (availability?.enabled === false || availability?.supported === false) {
+      return cpuFallbackBackend;
+    }
+
     return configuredDefaultBackend;
   }
 
   const defaultBackend = resolveDefaultBackend();
-  const normalizedDefaultId = defaultBackend.id.toLowerCase();
-
   function readAvailability(backendId: string): BackendAvailability | undefined {
     return options?.backendAvailability?.[backendId.toLowerCase()];
   }
@@ -196,7 +204,7 @@ export function createBackendRouter(options?: {
         throw error;
       }
 
-      if (selection.backend.id.toLowerCase() === normalizedDefaultId) {
+      if (selection.backend.id.toLowerCase() === cpuFallbackBackend.id.toLowerCase()) {
         throw error;
       }
 
@@ -205,10 +213,10 @@ export function createBackendRouter(options?: {
       emitFallback({
         reason: "runtime_error",
         requestedBackend: selection.backend.id.toLowerCase(),
-        fallbackBackend: defaultBackend.id,
+        fallbackBackend: cpuFallbackBackend.id,
         error: normalizedError,
       });
-      args.runBackend(defaultBackend);
+      args.runBackend(cpuFallbackBackend);
     }
   }
 
@@ -237,9 +245,30 @@ export function createBackendRouter(options?: {
   };
 }
 
+const rolloutFeatureFlags = getBackendFeatureFlags();
+const rolloutCapabilities = detectBackendCapabilities();
+const rolloutWebglAvailable = rolloutCapabilities.webgl;
+const rolloutWebglEnabled = rolloutFeatureFlags.webglEnabled && !rolloutFeatureFlags.forceCpu;
+
 const rolloutRouter = createBackendRouter({
-  featureFlags: getBackendFeatureFlags(),
+  backends: [cpuBackend, createWebglPreviewBackend()],
+  defaultBackendId: "webgl",
+  backendAvailability: {
+    webgl: {
+      supported: rolloutWebglAvailable,
+      enabled: rolloutWebglEnabled,
+    },
+  },
+  featureFlags: rolloutFeatureFlags,
 });
+
+export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequest["step"][]): BackendHint {
+  if (!rolloutWebglEnabled || !rolloutWebglAvailable) {
+    return CPU_BACKEND_ID;
+  }
+
+  return isWebglPreviewPipelineSupported(steps) ? "webgl" : CPU_BACKEND_ID;
+}
 
 export function runPreviewStepWithBackendRouter(request: PreviewBackendRequest): void {
   rolloutRouter.runPreviewStep(request);

@@ -1,5 +1,8 @@
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
-import { runPreviewStepWithBackendRouter } from "@/lib/image-pipeline/backend/backend-router";
+import {
+  getPreviewBackendHintForSteps,
+  runPreviewStepWithBackendRouter,
+} from "@/lib/image-pipeline/backend/backend-router";
 import { computeHistogram, emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import { loadSourceBitmap } from "@/lib/image-pipeline/source-loader";
 
@@ -75,6 +78,7 @@ export async function renderPreview(options: {
 
   context.drawImage(bitmap, 0, 0, width, height);
   const imageData = context.getImageData(0, 0, width, height);
+  const backendHint = getPreviewBackendHintForSteps(options.steps);
 
   for (let index = 0; index < options.steps.length; index += 1) {
     runPreviewStepWithBackendRouter({
@@ -82,6 +86,7 @@ export async function renderPreview(options: {
       step: options.steps[index]!,
       width,
       height,
+      backendHint,
       executionOptions: {
         shouldAbort: () => Boolean(options.signal?.aborted),
       },
