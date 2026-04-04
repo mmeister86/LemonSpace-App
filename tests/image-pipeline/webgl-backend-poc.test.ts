@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
+import { enforceCpuWebglParityGates } from "@/tests/image-pipeline/parity/fixtures";
 
 function createCurvesStep(): PipelineStep {
   return {
@@ -173,6 +174,8 @@ describe("webgl backend poc", () => {
   }
 
   it("selects webgl for preview when webgl is available and enabled", async () => {
+    enforceCpuWebglParityGates();
+
     const webglPreview = vi.fn();
 
     vi.doMock("@/lib/image-pipeline/backend/feature-flags", async () => {
@@ -224,6 +227,8 @@ describe("webgl backend poc", () => {
   });
 
   it("uses cpu for every step in a mixed pipeline request", async () => {
+    enforceCpuWebglParityGates();
+
     vi.doMock("@/lib/image-pipeline/backend/feature-flags", async () => {
       const actual = await vi.importActual<typeof import("@/lib/image-pipeline/backend/feature-flags")>(
         "@/lib/image-pipeline/backend/feature-flags",
