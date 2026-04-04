@@ -245,25 +245,55 @@ export function createBackendRouter(options?: {
   };
 }
 
-const rolloutFeatureFlags = getBackendFeatureFlags();
-const rolloutCapabilities = detectBackendCapabilities();
-const rolloutWebglAvailable = rolloutCapabilities.webgl;
-const rolloutWebglEnabled = rolloutFeatureFlags.webglEnabled && !rolloutFeatureFlags.forceCpu;
+type RolloutRouterState = {
+  router: BackendRouter;
+  webglAvailable: boolean;
+  webglEnabled: boolean;
+};
 
-const rolloutRouter = createBackendRouter({
-  backends: [cpuBackend, createWebglPreviewBackend()],
-  defaultBackendId: "webgl",
-  backendAvailability: {
-    webgl: {
-      supported: rolloutWebglAvailable,
-      enabled: rolloutWebglEnabled,
-    },
-  },
-  featureFlags: rolloutFeatureFlags,
-});
+let cachedRolloutState: RolloutRouterState | null = null;
+let cachedRolloutKey: string | null = null;
+
+function getRolloutRouterState(): RolloutRouterState {
+  const featureFlags = getBackendFeatureFlags();
+  const capabilities = detectBackendCapabilities();
+  const webglAvailable = capabilities.webgl;
+  const webglEnabled = featureFlags.webglEnabled && !featureFlags.forceCpu;
+  const rolloutKey = JSON.stringify({
+    forceCpu: featureFlags.forceCpu,
+    webglEnabled: featureFlags.webglEnabled,
+    wasmEnabled: featureFlags.wasmEnabled,
+    webglAvailable,
+  });
+
+  if (cachedRolloutState && cachedRolloutKey === rolloutKey) {
+    return cachedRolloutState;
+  }
+
+  cachedRolloutState = {
+    router: createBackendRouter({
+      backends: [cpuBackend, createWebglPreviewBackend()],
+      defaultBackendId: "webgl",
+      backendAvailability: {
+        webgl: {
+          supported: webglAvailable,
+          enabled: webglEnabled,
+        },
+      },
+      featureFlags,
+    }),
+    webglAvailable,
+    webglEnabled,
+  };
+  cachedRolloutKey = rolloutKey;
+
+  return cachedRolloutState;
+}
 
 export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequest["step"][]): BackendHint {
-  if (!rolloutWebglEnabled || !rolloutWebglAvailable) {
+  const rolloutState = getRolloutRouterState();
+
+  if (!rolloutState.webglEnabled || !rolloutState.webglAvailable) {
     return CPU_BACKEND_ID;
   }
 
@@ -271,9 +301,9 @@ export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequ
 }
 
 export function runPreviewStepWithBackendRouter(request: PreviewBackendRequest): void {
-  rolloutRouter.runPreviewStep(request);
+  getRolloutRouterState().router.runPreviewStep(request);
 }
 
 export function runFullPipelineWithBackendRouter(request: FullBackendRequest): void {
-  rolloutRouter.runFullPipeline(request);
+  getRolloutRouterState().router.runFullPipeline(request);
 }

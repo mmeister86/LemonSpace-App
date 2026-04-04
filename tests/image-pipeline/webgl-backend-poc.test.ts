@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
-import type { ImagePipelineBackend } from "@/lib/image-pipeline/backend/backend-types";
 
 function createCurvesStep(): PipelineStep {
   return {
@@ -65,24 +64,6 @@ function createUnsupportedStep(): PipelineStep {
   };
 }
 
-function createCpuAndWebglBackends(args: {
-  webglPreview?: ImagePipelineBackend["runPreviewStep"];
-  cpuPreview?: ImagePipelineBackend["runPreviewStep"];
-}): readonly ImagePipelineBackend[] {
-  return [
-    {
-      id: "cpu",
-      runPreviewStep: args.cpuPreview ?? vi.fn(),
-      runFullPipeline: vi.fn(),
-    },
-    {
-      id: "webgl",
-      runPreviewStep: args.webglPreview ?? vi.fn(),
-      runFullPipeline: vi.fn(),
-    },
-  ];
-}
-
 describe("webgl backend poc", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -95,7 +76,101 @@ describe("webgl backend poc", () => {
     vi.unmock("@/lib/image-pipeline/backend/webgl/webgl-backend");
     vi.unmock("@/lib/image-pipeline/backend/backend-router");
     vi.unmock("@/lib/image-pipeline/source-loader");
+    vi.unmock("@/lib/image-pipeline/render-core");
   });
+
+  function createFakeWebglContext(options?: {
+    compileSuccess?: boolean;
+    linkSuccess?: boolean;
+    readbackPixels?: Uint8Array;
+  }): WebGLRenderingContext {
+    const compileSuccess = options?.compileSuccess ?? true;
+    const linkSuccess = options?.linkSuccess ?? true;
+    const readbackPixels = options?.readbackPixels ?? new Uint8Array([0, 0, 0, 255]);
+
+    return {
+      VERTEX_SHADER: 0x8b31,
+      FRAGMENT_SHADER: 0x8b30,
+      COMPILE_STATUS: 0x8b81,
+      LINK_STATUS: 0x8b82,
+      ARRAY_BUFFER: 0x8892,
+      STATIC_DRAW: 0x88e4,
+      TRIANGLE_STRIP: 0x0005,
+      FLOAT: 0x1406,
+      TEXTURE_2D: 0x0de1,
+      RGBA: 0x1908,
+      UNSIGNED_BYTE: 0x1401,
+      TEXTURE0: 0x84c0,
+      TEXTURE_MIN_FILTER: 0x2801,
+      TEXTURE_MAG_FILTER: 0x2800,
+      TEXTURE_WRAP_S: 0x2802,
+      TEXTURE_WRAP_T: 0x2803,
+      CLAMP_TO_EDGE: 0x812f,
+      NEAREST: 0x2600,
+      FRAMEBUFFER: 0x8d40,
+      COLOR_ATTACHMENT0: 0x8ce0,
+      FRAMEBUFFER_COMPLETE: 0x8cd5,
+      createShader: vi.fn(() => ({ shader: true })),
+      shaderSource: vi.fn(),
+      compileShader: vi.fn(),
+      getShaderParameter: vi.fn((_shader: unknown, pname: number) => {
+        if (pname === 0x8b81) {
+          return compileSuccess;
+        }
+        return true;
+      }),
+      getShaderInfoLog: vi.fn(() => "compile error"),
+      deleteShader: vi.fn(),
+      createProgram: vi.fn(() => ({ program: true })),
+      attachShader: vi.fn(),
+      linkProgram: vi.fn(),
+      getProgramParameter: vi.fn((_program: unknown, pname: number) => {
+        if (pname === 0x8b82) {
+          return linkSuccess;
+        }
+        return true;
+      }),
+      getProgramInfoLog: vi.fn(() => "link error"),
+      deleteProgram: vi.fn(),
+      useProgram: vi.fn(),
+      createBuffer: vi.fn(() => ({ buffer: true })),
+      bindBuffer: vi.fn(),
+      bufferData: vi.fn(),
+      getAttribLocation: vi.fn(() => 0),
+      enableVertexAttribArray: vi.fn(),
+      vertexAttribPointer: vi.fn(),
+      createTexture: vi.fn(() => ({ texture: true })),
+      bindTexture: vi.fn(),
+      texParameteri: vi.fn(),
+      texImage2D: vi.fn(),
+      activeTexture: vi.fn(),
+      getUniformLocation: vi.fn(() => ({ uniform: true })),
+      uniform1i: vi.fn(),
+      uniform1f: vi.fn(),
+      uniform3f: vi.fn(),
+      createFramebuffer: vi.fn(() => ({ framebuffer: true })),
+      bindFramebuffer: vi.fn(),
+      framebufferTexture2D: vi.fn(),
+      checkFramebufferStatus: vi.fn(() => 0x8cd5),
+      deleteFramebuffer: vi.fn(),
+      viewport: vi.fn(),
+      drawArrays: vi.fn(),
+      deleteTexture: vi.fn(),
+      readPixels: vi.fn(
+        (
+          _x: number,
+          _y: number,
+          _width: number,
+          _height: number,
+          _format: number,
+          _type: number,
+          pixels: Uint8Array,
+        ) => {
+          pixels.set(readbackPixels);
+        },
+      ),
+    } as unknown as WebGLRenderingContext;
+  }
 
   it("selects webgl for preview when webgl is available and enabled", async () => {
     const webglPreview = vi.fn();
@@ -224,8 +299,49 @@ describe("webgl backend poc", () => {
     }
   });
 
+  it("runs a supported preview step through gpu shader path with readback", async () => {
+    const cpuPreview = vi.fn();
+
+    vi.doMock("@/lib/image-pipeline/render-core", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/image-pipeline/render-core")>(
+        "@/lib/image-pipeline/render-core",
+      );
+      return {
+        ...actual,
+        applyPipelineStep: cpuPreview,
+      };
+    });
+
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([10, 20, 30, 255]),
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+
+    const pixels = new Uint8ClampedArray([200, 100, 50, 255]);
+    const backend = createWebglPreviewBackend();
+
+    backend.runPreviewStep({
+      pixels,
+      step: createCurvesStep(),
+      width: 1,
+      height: 1,
+    });
+
+    expect(Array.from(pixels)).toEqual([10, 20, 30, 255]);
+    expect(cpuPreview).not.toHaveBeenCalled();
+    expect(fakeGl.readPixels).toHaveBeenCalledTimes(1);
+  });
+
   it("downgrades compile/link failures to cpu with runtime_error reason", async () => {
     const { createBackendRouter } = await import("@/lib/image-pipeline/backend/backend-router");
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
     const cpuPreview = vi.fn();
     const fallbackEvents: Array<{
       reason: string;
@@ -233,13 +349,25 @@ describe("webgl backend poc", () => {
       fallbackBackend: string;
     }> = [];
 
+    const fakeGl = createFakeWebglContext({
+      compileSuccess: false,
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
     const router = createBackendRouter({
-      backends: createCpuAndWebglBackends({
-        cpuPreview,
-        webglPreview: () => {
-          throw new Error("WebGL shader compile failed");
+      backends: [
+        {
+          id: "cpu",
+          runPreviewStep: cpuPreview,
+          runFullPipeline: vi.fn(),
         },
-      }),
+        createWebglPreviewBackend(),
+      ],
       defaultBackendId: "webgl",
       backendAvailability: {
         webgl: {
@@ -276,5 +404,50 @@ describe("webgl backend poc", () => {
         fallbackBackend: "cpu",
       },
     ]);
+  });
+
+  it("re-evaluates rollout flags and capabilities at runtime", async () => {
+    const runtimeState = {
+      flags: {
+        forceCpu: false,
+        webglEnabled: false,
+        wasmEnabled: false,
+      },
+      capabilities: {
+        webgl: false,
+        wasmSimd: false,
+        offscreenCanvas: false,
+      },
+    };
+
+    vi.doMock("@/lib/image-pipeline/backend/feature-flags", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/image-pipeline/backend/feature-flags")>(
+        "@/lib/image-pipeline/backend/feature-flags",
+      );
+      return {
+        ...actual,
+        getBackendFeatureFlags: () => runtimeState.flags,
+      };
+    });
+
+    vi.doMock("@/lib/image-pipeline/backend/capabilities", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/image-pipeline/backend/capabilities")>(
+        "@/lib/image-pipeline/backend/capabilities",
+      );
+      return {
+        ...actual,
+        detectBackendCapabilities: () => runtimeState.capabilities,
+      };
+    });
+
+    const { getPreviewBackendHintForSteps } = await import("@/lib/image-pipeline/backend/backend-router");
+    const steps = [createCurvesStep()] as const;
+
+    expect(getPreviewBackendHintForSteps(steps)).toBe("cpu");
+
+    runtimeState.flags.webglEnabled = true;
+    runtimeState.capabilities.webgl = true;
+
+    expect(getPreviewBackendHintForSteps(steps)).toBe("webgl");
   });
 });
