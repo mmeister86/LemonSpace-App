@@ -210,6 +210,57 @@ describe("usePipelinePreview", () => {
     );
     expect(previewHarnessState.latestHistogram).toEqual(histogram);
   });
+
+  it("restarts preview rendering when the computed preview width changes", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(16);
+      await Promise.resolve();
+    });
+
+    function WidePreviewHarness() {
+      const { canvasRef } = usePipelinePreview({
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [],
+        nodeWidth: 640,
+        includeHistogram: false,
+      });
+
+      return createElement("canvas", { ref: canvasRef });
+    }
+
+    await act(async () => {
+      root?.render(createElement(WidePreviewHarness));
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(16);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(2);
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        previewWidth: 320,
+      }),
+    );
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        previewWidth: 640,
+      }),
+    );
+  });
 });
 
 describe("preview histogram call sites", () => {

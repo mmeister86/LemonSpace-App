@@ -3,7 +3,7 @@ import {
   renderPreview,
   type PreviewRenderResult,
 } from "@/lib/image-pipeline/preview-renderer";
-import type { PipelineStep } from "@/lib/image-pipeline/contracts";
+import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
 import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/render-types";
 
@@ -76,6 +76,14 @@ let workerInstance: Worker | null = null;
 let workerInitError: Error | null = null;
 let requestIdCounter = 0;
 const pendingRequests = new Map<number, PendingRequest>();
+const inFlightPreviewRequests = new Map<string, SharedPreviewRequest>();
+
+type SharedPreviewRequest = {
+  promise: Promise<PreviewRenderResult>;
+  abortController: AbortController;
+  consumers: Set<symbol>;
+  settled: boolean;
+};
 
 function nextRequestId(): number {
   requestIdCounter += 1;
@@ -264,7 +272,20 @@ function runWorkerRequest<TResponse extends PreviewRenderResult | RenderFullResu
   });
 }
 
-export async function renderPreviewWithWorkerFallback(options: {
+function getPreviewRequestKey(options: {
+  sourceUrl: string;
+  steps: readonly PipelineStep[];
+  previewWidth: number;
+  includeHistogram?: boolean;
+}): string {
+  return [
+    hashPipeline(options.sourceUrl, options.steps),
+    options.previewWidth,
+    options.includeHistogram === true ? 1 : 0,
+  ].join(":");
+}
+
+async function runPreviewRequest(options: {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
@@ -293,6 +314,105 @@ export async function renderPreviewWithWorkerFallback(options: {
 
     return await renderPreview(options);
   }
+}
+
+function getOrCreateSharedPreviewRequest(options: {
+  sourceUrl: string;
+  steps: readonly PipelineStep[];
+  previewWidth: number;
+  includeHistogram?: boolean;
+}): SharedPreviewRequest {
+  const key = getPreviewRequestKey(options);
+  const existing = inFlightPreviewRequests.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const abortController = new AbortController();
+  const sharedRequest: SharedPreviewRequest = {
+    abortController,
+    consumers: new Set(),
+    settled: false,
+    promise: Promise.resolve(undefined as never),
+  };
+
+  sharedRequest.promise = runPreviewRequest({
+    ...options,
+    signal: abortController.signal,
+  }).finally(() => {
+    sharedRequest.settled = true;
+    inFlightPreviewRequests.delete(key);
+  });
+
+  inFlightPreviewRequests.set(key, sharedRequest);
+  return sharedRequest;
+}
+
+export async function renderPreviewWithWorkerFallback(options: {
+  sourceUrl: string;
+  steps: readonly PipelineStep[];
+  previewWidth: number;
+  includeHistogram?: boolean;
+  signal?: AbortSignal;
+}): Promise<PreviewRenderResult> {
+  if (options.signal?.aborted) {
+    throw makeAbortError();
+  }
+
+  const sharedRequest = getOrCreateSharedPreviewRequest({
+    sourceUrl: options.sourceUrl,
+    steps: options.steps,
+    previewWidth: options.previewWidth,
+    includeHistogram: options.includeHistogram,
+  });
+
+  return await new Promise<PreviewRenderResult>((resolve, reject) => {
+    const consumerId = Symbol("preview-consumer");
+    let settled = false;
+
+    const settleOnce = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      sharedRequest.consumers.delete(consumerId);
+      if (options.signal) {
+        options.signal.removeEventListener("abort", abortHandler);
+      }
+
+      if (!sharedRequest.settled && sharedRequest.consumers.size === 0) {
+        sharedRequest.abortController.abort();
+      }
+
+      callback();
+    };
+
+    const abortHandler = () => {
+      settleOnce(() => {
+        reject(makeAbortError());
+      });
+    };
+
+    sharedRequest.consumers.add(consumerId);
+
+    if (options.signal) {
+      options.signal.addEventListener("abort", abortHandler, { once: true });
+    }
+
+    sharedRequest.promise.then(
+      (result) => {
+        settleOnce(() => {
+          resolve(result);
+        });
+      },
+      (error: unknown) => {
+        settleOnce(() => {
+          reject(error);
+        });
+      },
+    );
+  });
 }
 
 export async function renderFullWithWorkerFallback(
