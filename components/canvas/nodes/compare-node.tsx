@@ -148,7 +148,9 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
     [incomingEdges, nodesById],
   );
   const shouldDefaultToPreview =
-    resolvedSides.left.isStaleRenderOutput || resolvedSides.right.isStaleRenderOutput;
+    hasConnectedRenderInput ||
+    resolvedSides.left.isStaleRenderOutput ||
+    resolvedSides.right.isStaleRenderOutput;
   const effectiveDisplayMode =
     manualDisplayMode ?? (shouldDefaultToPreview ? "preview" : "render");
   const previewNodeWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));

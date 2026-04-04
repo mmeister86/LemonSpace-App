@@ -13,6 +13,7 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "components/canvas/__tests__/canvas-helpers.test.ts",
       "components/canvas/__tests__/canvas-flow-reconciliation-helpers.test.ts",
+      "components/canvas/__tests__/compare-node.test.tsx",
       "components/canvas/__tests__/use-canvas-flow-reconciliation.test.ts",
       "components/canvas/__tests__/use-canvas-drop.test.tsx",
       "components/canvas/__tests__/use-canvas-node-interactions.test.tsx",
