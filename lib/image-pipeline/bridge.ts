@@ -1,4 +1,4 @@
-import { applyPipelineSteps } from "@/lib/image-pipeline/render-core";
+import { runFullPipelineWithBackendRouter } from "@/lib/image-pipeline/backend/backend-router";
 import { resolveRenderSize } from "@/lib/image-pipeline/render-size";
 import {
   RENDER_FORMAT_TO_MIME,
@@ -108,15 +108,15 @@ export async function renderFull(options: RenderFullOptions): Promise<RenderFull
   context.drawImage(bitmap, 0, 0, resolvedSize.width, resolvedSize.height);
 
   const imageData = context.getImageData(0, 0, resolvedSize.width, resolvedSize.height);
-  applyPipelineSteps(
-    imageData.data,
-    options.steps,
-    resolvedSize.width,
-    resolvedSize.height,
-    {
+  runFullPipelineWithBackendRouter({
+    pixels: imageData.data,
+    steps: options.steps,
+    width: resolvedSize.width,
+    height: resolvedSize.height,
+    executionOptions: {
       shouldAbort: () => Boolean(signal?.aborted),
     },
-  );
+  });
 
   if (signal?.aborted) {
     throw new DOMException("The operation was aborted.", "AbortError");
