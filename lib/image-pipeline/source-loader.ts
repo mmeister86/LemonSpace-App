@@ -3,6 +3,7 @@ export const SOURCE_BITMAP_CACHE_MAX_ENTRIES = 32;
 type CacheEntry = {
   promise: Promise<ImageBitmap>;
   bitmap?: ImageBitmap;
+  released?: boolean;
 };
 
 const imageBitmapCache = new Map<string, CacheEntry>();
@@ -29,6 +30,7 @@ function deleteCacheEntry(sourceUrl: string): void {
     return;
   }
 
+  entry.released = true;
   imageBitmapCache.delete(sourceUrl);
   closeBitmap(entry.bitmap);
 }
@@ -77,6 +79,12 @@ function getOrCreateSourceBitmapPromise(sourceUrl: string): Promise<ImageBitmap>
 
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
+
+    if (entry.released || imageBitmapCache.get(sourceUrl) !== entry) {
+      closeBitmap(bitmap);
+      return bitmap;
+    }
+
     entry.bitmap = bitmap;
     evictIfNeeded(sourceUrl);
     return bitmap;

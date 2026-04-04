@@ -253,4 +253,49 @@ describe("loadSourceBitmap", () => {
       expect(bitmap.close).toHaveBeenCalledTimes(1);
     }
   });
+
+  it("closes a decoded bitmap that resolves after its cache entry was cleared in flight", async () => {
+    const subject = (await importSubject()) as typeof import("@/lib/image-pipeline/source-loader") & {
+      clearSourceBitmapCache?: () => void;
+    };
+    const { clearSourceBitmapCache, loadSourceBitmap } = subject;
+
+    expect(clearSourceBitmapCache).toBeTypeOf("function");
+
+    const firstBitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const secondBitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const decodeDeferred = createDeferred<ImageBitmap>();
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi
+        .fn()
+        .mockImplementationOnce(async () => await decodeDeferred.promise)
+        .mockResolvedValueOnce(secondBitmap),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: string | URL | Request) => ({
+        ok: true,
+        status: 200,
+        blob: vi.fn().mockResolvedValue(new Blob([String(input)])),
+      })),
+    );
+
+    const sourceUrl = "https://cdn.example.com/source-in-flight.png";
+    const pendingLoad = loadSourceBitmap(sourceUrl);
+
+    await vi.waitFor(() => {
+      expect(createImageBitmap).toHaveBeenCalledTimes(1);
+    });
+
+    clearSourceBitmapCache!();
+    decodeDeferred.resolve(firstBitmap);
+
+    await expect(pendingLoad).resolves.toBe(firstBitmap);
+    expect(firstBitmap.close).toHaveBeenCalledTimes(1);
+
+    await expect(loadSourceBitmap(sourceUrl)).resolves.toBe(secondBitmap);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
