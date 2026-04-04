@@ -25,8 +25,8 @@ function assertWasmSimdRuntimeSupport(): void {
     throw new Error("WebAssembly SIMD is unavailable.");
   }
 
-  const module = new WebAssembly.Module(WASM_SIMD_PROBE_MODULE);
-  void new WebAssembly.Instance(module);
+  const wasmModule = new WebAssembly.Module(WASM_SIMD_PROBE_MODULE);
+  void new WebAssembly.Instance(wasmModule);
 }
 
 export function loadWasmKernelModule(): WasmKernelModule {

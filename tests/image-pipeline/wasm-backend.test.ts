@@ -326,13 +326,13 @@ describe("wasm backend fallback behavior", () => {
     vi.stubGlobal("SharedArrayBuffer", undefined);
     vi.stubGlobal("Worker", undefined);
 
-    const module: WasmKernelModule = {
+    const wasmModule: WasmKernelModule = {
       applyPreviewStep: vi.fn(),
       applyFullPipeline: vi.fn(),
     };
 
     const backend = createWasmSimdBackend({
-      loadModule: () => module,
+      loadModule: () => wasmModule,
     });
 
     expect(() => {
@@ -343,6 +343,6 @@ describe("wasm backend fallback behavior", () => {
         height: 1,
       });
     }).not.toThrow();
-    expect(module.applyPreviewStep).toHaveBeenCalledTimes(1);
+    expect(wasmModule.applyPreviewStep).toHaveBeenCalledTimes(1);
   });
 });

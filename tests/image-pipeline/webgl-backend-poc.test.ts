@@ -380,8 +380,9 @@ describe("webgl backend poc", () => {
       height: 1,
     });
 
-    const sourceTexture = (fakeGl.createTexture as any).mock.results[0]?.value;
-    const outputTexture = (fakeGl.createTexture as any).mock.results[1]?.value;
+    const createTextureMock = vi.mocked(fakeGl.createTexture);
+    const sourceTexture = createTextureMock.mock.results[0]?.value;
+    const outputTexture = createTextureMock.mock.results[1]?.value;
     expect(sourceTexture).toBeTruthy();
     expect(outputTexture).toBeTruthy();
 
@@ -393,9 +394,11 @@ describe("webgl backend poc", () => {
       0,
     );
 
-    const bindTextureCalls = (fakeGl.bindTexture as any).mock.calls as Array<[number, unknown]>;
-    const bindTextureOrder = (fakeGl.bindTexture as any).mock.invocationCallOrder as number[];
-    const drawOrder = (fakeGl.drawArrays as any).mock.invocationCallOrder[0] as number;
+    const bindTextureMock = vi.mocked(fakeGl.bindTexture);
+    const drawArraysMock = vi.mocked(fakeGl.drawArrays);
+    const bindTextureCalls = bindTextureMock.mock.calls;
+    const bindTextureOrder = bindTextureMock.mock.invocationCallOrder;
+    const drawOrder = drawArraysMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
     const lastBindBeforeDrawIndex = bindTextureOrder
       .map((callOrder, index) => ({ callOrder, index }))
       .filter(({ callOrder, index }) => callOrder < drawOrder && bindTextureCalls[index]?.[0] === fakeGl.TEXTURE_2D)
