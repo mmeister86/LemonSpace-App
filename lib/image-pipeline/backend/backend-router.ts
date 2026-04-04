@@ -18,6 +18,7 @@ import {
   createWebglPreviewBackend,
   isWebglPreviewPipelineSupported,
 } from "@/lib/image-pipeline/backend/webgl/webgl-backend";
+import { createWasmSimdBackend } from "@/lib/image-pipeline/backend/wasm/wasm-backend";
 
 type BackendFallbackReason = "unsupported_api" | "flag_disabled" | "runtime_error";
 
@@ -249,6 +250,8 @@ type RolloutRouterState = {
   router: BackendRouter;
   webglAvailable: boolean;
   webglEnabled: boolean;
+  wasmAvailable: boolean;
+  wasmEnabled: boolean;
 };
 
 let cachedRolloutState: RolloutRouterState | null = null;
@@ -258,12 +261,15 @@ function getRolloutRouterState(): RolloutRouterState {
   const featureFlags = getBackendFeatureFlags();
   const capabilities = detectBackendCapabilities();
   const webglAvailable = capabilities.webgl;
+  const wasmAvailable = capabilities.wasmSimd;
   const webglEnabled = featureFlags.webglEnabled && !featureFlags.forceCpu;
+  const wasmEnabled = featureFlags.wasmEnabled && !featureFlags.forceCpu;
   const rolloutKey = JSON.stringify({
     forceCpu: featureFlags.forceCpu,
     webglEnabled: featureFlags.webglEnabled,
     wasmEnabled: featureFlags.wasmEnabled,
     webglAvailable,
+    wasmAvailable,
   });
 
   if (cachedRolloutState && cachedRolloutKey === rolloutKey) {
@@ -272,18 +278,25 @@ function getRolloutRouterState(): RolloutRouterState {
 
   cachedRolloutState = {
     router: createBackendRouter({
-      backends: [cpuBackend, createWebglPreviewBackend()],
-      defaultBackendId: "webgl",
+      backends: [cpuBackend, createWasmSimdBackend(), createWebglPreviewBackend()],
+      defaultBackendId:
+        webglEnabled && webglAvailable ? "webgl" : wasmEnabled && wasmAvailable ? "wasm" : CPU_BACKEND_ID,
       backendAvailability: {
         webgl: {
           supported: webglAvailable,
           enabled: webglEnabled,
+        },
+        wasm: {
+          supported: wasmAvailable,
+          enabled: wasmEnabled,
         },
       },
       featureFlags,
     }),
     webglAvailable,
     webglEnabled,
+    wasmAvailable,
+    wasmEnabled,
   };
   cachedRolloutKey = rolloutKey;
 
@@ -293,11 +306,15 @@ function getRolloutRouterState(): RolloutRouterState {
 export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequest["step"][]): BackendHint {
   const rolloutState = getRolloutRouterState();
 
-  if (!rolloutState.webglEnabled || !rolloutState.webglAvailable) {
-    return CPU_BACKEND_ID;
+  if (rolloutState.webglEnabled && rolloutState.webglAvailable) {
+    return isWebglPreviewPipelineSupported(steps) ? "webgl" : CPU_BACKEND_ID;
   }
 
-  return isWebglPreviewPipelineSupported(steps) ? "webgl" : CPU_BACKEND_ID;
+  if (rolloutState.wasmEnabled && rolloutState.wasmAvailable) {
+    return "wasm";
+  }
+
+  return CPU_BACKEND_ID;
 }
 
 export function runPreviewStepWithBackendRouter(request: PreviewBackendRequest): void {

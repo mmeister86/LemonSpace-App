@@ -10,7 +10,7 @@ type CapabilityProbes = {
   probeOffscreenCanvas: () => boolean;
 };
 
-const WASM_SIMD_PROBE_MODULE = new Uint8Array([
+export const WASM_SIMD_PROBE_MODULE = new Uint8Array([
   0x00,
   0x61,
   0x73,
