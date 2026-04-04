@@ -31,8 +31,11 @@ export default function CompareSurface({
     sourceUrl: previewSourceUrl,
     steps: previewSteps,
     nodeWidth,
-    previewScale: 0.7,
-    maxPreviewWidth: 960,
+    // Compare-Nodes zeigen nur eine kompakte Live-Ansicht; kleinere Kacheln
+    // halten lange Workflows spürbar reaktionsfreudiger.
+    previewScale: 0.5,
+    maxPreviewWidth: 720,
+    maxDevicePixelRatio: 1.25,
   });
 
   const hasPreview = Boolean(usePreview && previewInput);

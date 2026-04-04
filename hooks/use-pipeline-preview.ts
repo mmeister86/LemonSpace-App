@@ -16,11 +16,21 @@ type UsePipelinePreviewOptions = {
   nodeWidth: number;
   previewScale?: number;
   maxPreviewWidth?: number;
+  maxDevicePixelRatio?: number;
 };
 
-function computePreviewWidth(nodeWidth: number, previewScale: number, maxPreviewWidth: number): number {
+function computePreviewWidth(
+  nodeWidth: number,
+  previewScale: number,
+  maxPreviewWidth: number,
+  maxDevicePixelRatio: number,
+): number {
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  return Math.max(1, Math.round(Math.min(nodeWidth * dpr * previewScale, maxPreviewWidth)));
+  const effectiveDpr = Math.max(1, Math.min(dpr, maxDevicePixelRatio));
+  return Math.max(
+    1,
+    Math.round(Math.min(nodeWidth * effectiveDpr * previewScale, maxPreviewWidth)),
+  );
 }
 
 export function usePipelinePreview(options: UsePipelinePreviewOptions): {
@@ -57,9 +67,19 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     return Math.max(128, Math.round(options.maxPreviewWidth));
   }, [options.maxPreviewWidth]);
 
+  const maxDevicePixelRatio = useMemo(() => {
+    if (
+      typeof options.maxDevicePixelRatio !== "number" ||
+      !Number.isFinite(options.maxDevicePixelRatio)
+    ) {
+      return 1.5;
+    }
+    return Math.max(1, options.maxDevicePixelRatio);
+  }, [options.maxDevicePixelRatio]);
+
   const previewWidth = useMemo(
-    () => computePreviewWidth(options.nodeWidth, previewScale, maxPreviewWidth),
-    [maxPreviewWidth, options.nodeWidth, previewScale],
+    () => computePreviewWidth(options.nodeWidth, previewScale, maxPreviewWidth, maxDevicePixelRatio),
+    [maxDevicePixelRatio, maxPreviewWidth, options.nodeWidth, previewScale],
   );
 
   const pipelineHash = useMemo(() => {

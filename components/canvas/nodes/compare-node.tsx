@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CompareSurface from "./compare-surface";
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import {
   resolveRenderPipelineHash,
-  resolveRenderPreviewInput,
+  resolveRenderPreviewInputFromGraph,
   type RenderPreviewInput,
 } from "@/lib/canvas-render-preview";
 
@@ -31,31 +32,13 @@ type CompareDisplayMode = "render" | "preview";
 
 export default function CompareNode({ id, data, selected, width }: NodeProps) {
   const nodeData = data as CompareNodeData;
-  const nodes = useStore((state) => state.nodes);
-  const edges = useStore((state) => state.edges);
+  const graph = useCanvasGraph();
   const [sliderX, setSliderX] = useState(50);
   const [manualDisplayMode, setManualDisplayMode] = useState<CompareDisplayMode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const pipelineNodes = useMemo(
-    () => nodes.map((node) => ({ id: node.id, type: node.type ?? "", data: node.data })),
-    [nodes],
-  );
-  const pipelineEdges = useMemo(
-    () => edges.map((edge) => ({ source: edge.source, target: edge.target })),
-    [edges],
-  );
-
-  const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const incomingEdges = useMemo(
-    () =>
-      edges.filter(
-        (edge) =>
-          edge.target === id &&
-          edge.className !== "temp" &&
-          (edge.targetHandle === "left" || edge.targetHandle === "right"),
-      ),
-    [edges, id],
+    () => graph.incomingEdgesByTarget.get(id) ?? [],
+    [graph, id],
   );
 
   const resolvedSides = useMemo(() => {
@@ -66,7 +49,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
       defaultLabel: string,
     ): CompareSideState => {
       const incomingEdge = incomingEdges.find((edge) => edge.targetHandle === side);
-      const sourceNode = incomingEdge ? nodesById.get(incomingEdge.source) : undefined;
+      const sourceNode = incomingEdge ? graph.nodesById.get(incomingEdge.source) : undefined;
       const sourceData = (sourceNode?.data ?? {}) as Record<string, unknown>;
       const sourceLabel =
         typeof sourceData.label === "string" && sourceData.label.length > 0
@@ -79,10 +62,9 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
       let isStaleRenderOutput = false;
 
       if (sourceNode && sourceNode.type === "render") {
-        const preview = resolveRenderPreviewInput({
+        const preview = resolveRenderPreviewInputFromGraph({
           nodeId: sourceNode.id,
-          nodes: pipelineNodes,
-          edges: pipelineEdges,
+          graph,
         });
 
         if (preview.sourceUrl) {
@@ -132,9 +114,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
     nodeData.leftUrl,
     nodeData.rightLabel,
     nodeData.rightUrl,
-    nodesById,
-    pipelineEdges,
-    pipelineNodes,
+    graph,
   ]);
 
   const hasLeft = Boolean(resolvedSides.left.finalUrl || resolvedSides.left.previewInput);
@@ -142,10 +122,10 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
   const hasConnectedRenderInput = useMemo(
     () =>
       incomingEdges.some((edge) => {
-        const sourceNode = nodesById.get(edge.source);
+        const sourceNode = graph.nodesById.get(edge.source);
         return sourceNode?.type === "render";
       }),
-    [incomingEdges, nodesById],
+    [graph, incomingEdges],
   );
   const shouldDefaultToPreview =
     hasConnectedRenderInput ||

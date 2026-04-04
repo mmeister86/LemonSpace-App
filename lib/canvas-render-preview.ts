@@ -1,6 +1,4 @@
 import {
-  collectPipeline,
-  getSourceImage,
   hashPipeline,
   type PipelineStep,
 } from "@/lib/image-pipeline/contracts";
@@ -19,6 +17,25 @@ export type RenderPreviewGraphEdge = {
 export type RenderPreviewInput = {
   sourceUrl: string;
   steps: PipelineStep[];
+};
+
+export type CanvasGraphNodeLike = {
+  id: string;
+  type: string;
+  data?: unknown;
+};
+
+export type CanvasGraphEdgeLike = {
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  className?: string | null;
+};
+
+export type CanvasGraphSnapshot = {
+  nodesById: ReadonlyMap<string, CanvasGraphNodeLike>;
+  incomingEdgesByTarget: ReadonlyMap<string, readonly CanvasGraphEdgeLike[]>;
 };
 
 type RenderResolutionOption = "original" | "2x" | "custom";
@@ -115,28 +132,197 @@ export function resolveNodeImageUrl(data: unknown): string | null {
   return null;
 }
 
-export function resolveRenderPreviewInput(args: {
+export function buildGraphSnapshot(
+  nodes: readonly CanvasGraphNodeLike[],
+  edges: readonly CanvasGraphEdgeLike[],
+  includeTempEdges = false,
+): CanvasGraphSnapshot {
+  const nodesById = new Map<string, CanvasGraphNodeLike>();
+  for (const node of nodes) {
+    nodesById.set(node.id, node);
+  }
+
+  const incomingEdgesByTarget = new Map<string, CanvasGraphEdgeLike[]>();
+  for (const edge of edges) {
+    if (!includeTempEdges && edge.className === "temp") {
+      continue;
+    }
+
+    const bucket = incomingEdgesByTarget.get(edge.target);
+    if (bucket) {
+      bucket.push(edge);
+    } else {
+      incomingEdgesByTarget.set(edge.target, [edge]);
+    }
+  }
+
+  for (const edgesForTarget of incomingEdgesByTarget.values()) {
+    edgesForTarget.sort((left, right) => {
+      const sourceCompare = left.source.localeCompare(right.source);
+      if (sourceCompare !== 0) return sourceCompare;
+      const leftHandle = left.sourceHandle ?? "";
+      const rightHandle = right.sourceHandle ?? "";
+      const handleCompare = leftHandle.localeCompare(rightHandle);
+      if (handleCompare !== 0) return handleCompare;
+      return (left.targetHandle ?? "").localeCompare(right.targetHandle ?? "");
+    });
+  }
+
+  return {
+    nodesById,
+    incomingEdgesByTarget,
+  };
+}
+
+function getSortedIncomingEdge(
+  incomingEdges: readonly CanvasGraphEdgeLike[] | undefined,
+): CanvasGraphEdgeLike | null {
+  if (!incomingEdges || incomingEdges.length === 0) {
+    return null;
+  }
+
+  return incomingEdges[0] ?? null;
+}
+
+function walkUpstreamFromGraph(
+  graph: CanvasGraphSnapshot,
+  nodeId: string,
+): { path: CanvasGraphNodeLike[]; selectedEdges: CanvasGraphEdgeLike[] } {
+  const path: CanvasGraphNodeLike[] = [];
+  const selectedEdges: CanvasGraphEdgeLike[] = [];
+  const visiting = new Set<string>();
+
+  const visit = (currentId: string): void => {
+    if (visiting.has(currentId)) {
+      throw new Error(`Cycle detected in pipeline graph at node '${currentId}'.`);
+    }
+
+    visiting.add(currentId);
+
+    const incoming = getSortedIncomingEdge(graph.incomingEdgesByTarget.get(currentId));
+    if (incoming) {
+      selectedEdges.push(incoming);
+      visit(incoming.source);
+    }
+
+    visiting.delete(currentId);
+
+    const current = graph.nodesById.get(currentId);
+    if (current) {
+      path.push(current);
+    }
+  };
+
+  visit(nodeId);
+
+  return {
+    path,
+    selectedEdges,
+  };
+}
+
+export function collectPipelineFromGraph(
+  graph: CanvasGraphSnapshot,
+  options: {
+    nodeId: string;
+    isPipelineNode: (node: CanvasGraphNodeLike) => boolean;
+  },
+): PipelineStep[] {
+  const traversal = walkUpstreamFromGraph(graph, options.nodeId);
+
+  const steps: PipelineStep[] = [];
+  for (const node of traversal.path) {
+    if (!options.isPipelineNode(node)) {
+      continue;
+    }
+
+    steps.push({
+      nodeId: node.id,
+      type: node.type,
+      params: node.data,
+    });
+  }
+
+  return steps;
+}
+
+export function getSourceImageFromGraph<TSourceImage>(
+  graph: CanvasGraphSnapshot,
+  options: {
+    nodeId: string;
+    isSourceNode: (node: CanvasGraphNodeLike) => boolean;
+    getSourceImageFromNode: (node: CanvasGraphNodeLike) => TSourceImage | null | undefined;
+  },
+): TSourceImage | null {
+  const traversal = walkUpstreamFromGraph(graph, options.nodeId);
+
+  for (let index = traversal.path.length - 1; index >= 0; index -= 1) {
+    const node = traversal.path[index];
+    if (!options.isSourceNode(node)) {
+      continue;
+    }
+
+    const sourceImage = options.getSourceImageFromNode(node);
+    if (sourceImage != null) {
+      return sourceImage;
+    }
+  }
+
+  return null;
+}
+
+export function findSourceNodeFromGraph(
+  graph: CanvasGraphSnapshot,
+  options: {
+    nodeId: string;
+    isSourceNode: (node: CanvasGraphNodeLike) => boolean;
+    getSourceImageFromNode: (node: CanvasGraphNodeLike) => unknown;
+  },
+): CanvasGraphNodeLike | null {
+  const traversal = walkUpstreamFromGraph(graph, options.nodeId);
+
+  for (let index = traversal.path.length - 1; index >= 0; index -= 1) {
+    const node = traversal.path[index];
+    if (!options.isSourceNode(node)) {
+      continue;
+    }
+
+    if (options.getSourceImageFromNode(node) != null) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
+export function resolveRenderPreviewInputFromGraph(args: {
   nodeId: string;
-  nodes: readonly RenderPreviewGraphNode[];
-  edges: readonly RenderPreviewGraphEdge[];
+  graph: CanvasGraphSnapshot;
 }): { sourceUrl: string | null; steps: PipelineStep[] } {
-  const sourceUrl = getSourceImage({
+  const sourceUrl = getSourceImageFromGraph(args.graph, {
     nodeId: args.nodeId,
-    nodes: args.nodes,
-    edges: args.edges,
     isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
     getSourceImageFromNode: (node) => resolveNodeImageUrl(node.data),
   });
 
-  const steps = collectPipeline({
+  const steps = collectPipelineFromGraph(args.graph, {
     nodeId: args.nodeId,
-    nodes: args.nodes,
-    edges: args.edges,
     isPipelineNode: (node) => RENDER_PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
-  }) as PipelineStep[];
+  });
 
   return {
     sourceUrl,
     steps,
   };
+}
+
+export function resolveRenderPreviewInput(args: {
+  nodeId: string;
+  nodes: readonly RenderPreviewGraphNode[];
+  edges: readonly RenderPreviewGraphEdge[];
+}): { sourceUrl: string | null; steps: PipelineStep[] } {
+  return resolveRenderPreviewInputFromGraph({
+    nodeId: args.nodeId,
+    graph: buildGraphSnapshot(args.nodes, args.edges),
+  });
 }

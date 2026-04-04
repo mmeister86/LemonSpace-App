@@ -1,10 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { useStore, type Node } from "@xyflow/react";
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
-import { collectPipeline, getSourceImage, type PipelineStep } from "@/lib/image-pipeline/contracts";
+import {
+  collectPipelineFromGraph,
+  getSourceImageFromGraph,
+  type PipelineStep,
+} from "@/lib/canvas-render-preview";
 
 const PREVIEW_PIPELINE_TYPES = new Set([
   "curves",
@@ -12,19 +16,6 @@ const PREVIEW_PIPELINE_TYPES = new Set([
   "light-adjust",
   "detail-adjust",
 ]);
-
-function resolveNodeImageUrl(node: Node): string | null {
-  const data = (node.data ?? {}) as Record<string, unknown>;
-  const directUrl = typeof data.url === "string" ? data.url : null;
-  if (directUrl && directUrl.length > 0) {
-    return directUrl;
-  }
-  const previewUrl = typeof data.previewUrl === "string" ? data.previewUrl : null;
-  if (previewUrl && previewUrl.length > 0) {
-    return previewUrl;
-  }
-  return null;
-}
 
 function compactHistogram(values: readonly number[], points = 64): number[] {
   if (points <= 0) {
@@ -76,39 +67,31 @@ export default function AdjustmentPreview({
   currentType: string;
   currentParams: unknown;
 }) {
-  const nodes = useStore((state) => state.nodes);
-  const edges = useStore((state) => state.edges);
-
-  const pipelineNodes = useMemo(
-    () => nodes.map((node) => ({ id: node.id, type: node.type ?? "", data: node.data })),
-    [nodes],
-  );
-  const pipelineEdges = useMemo(
-    () => edges.map((edge) => ({ source: edge.source, target: edge.target })),
-    [edges],
-  );
+  const graph = useCanvasGraph();
 
   const sourceUrl = useMemo(
     () =>
-      getSourceImage({
+      getSourceImageFromGraph(graph, {
         nodeId,
-        nodes: pipelineNodes,
-        edges: pipelineEdges,
         isSourceNode: (node) =>
           node.type === "image" || node.type === "ai-image" || node.type === "asset",
         getSourceImageFromNode: (node) => {
-          const sourceNode = nodes.find((candidate) => candidate.id === node.id);
-          return sourceNode ? resolveNodeImageUrl(sourceNode) : null;
+          const sourceData = (node.data ?? {}) as Record<string, unknown>;
+          const directUrl = typeof sourceData.url === "string" ? sourceData.url : null;
+          if (directUrl && directUrl.length > 0) {
+            return directUrl;
+          }
+          const previewUrl =
+            typeof sourceData.previewUrl === "string" ? sourceData.previewUrl : null;
+          return previewUrl && previewUrl.length > 0 ? previewUrl : null;
         },
       }),
-    [nodeId, nodes, pipelineEdges, pipelineNodes],
+    [graph, nodeId],
   );
 
   const steps = useMemo(() => {
-    const collected = collectPipeline({
+    const collected = collectPipelineFromGraph(graph, {
       nodeId,
-      nodes: pipelineNodes,
-      edges: pipelineEdges,
       isPipelineNode: (node) => PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
     });
 
@@ -121,13 +104,18 @@ export default function AdjustmentPreview({
       }
       return step as PipelineStep;
     });
-  }, [currentParams, currentType, nodeId, pipelineEdges, pipelineNodes]);
+  }, [currentParams, currentType, graph, nodeId]);
 
   const { canvasRef, histogram, isRendering, hasSource, previewAspectRatio, error } =
     usePipelinePreview({
       sourceUrl,
       steps,
       nodeWidth,
+      // Die Vorschau muss in-Node gut lesbar bleiben, aber nicht in voller
+      // Display-Auflösung rechnen.
+      previewScale: 0.5,
+      maxPreviewWidth: 720,
+      maxDevicePixelRatio: 1.25,
     });
 
   const histogramSeries = useMemo(() => {

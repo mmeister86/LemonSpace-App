@@ -45,6 +45,7 @@ import {
   CanvasConnectionDropMenu,
 } from "@/components/canvas/canvas-connection-drop-menu";
 import { CanvasPlacementProvider } from "@/components/canvas/canvas-placement-context";
+import { CanvasGraphProvider } from "@/components/canvas/canvas-graph-context";
 import { CanvasPresetsProvider } from "@/components/canvas/canvas-presets-context";
 import {
   AssetBrowserTargetContext,
@@ -169,6 +170,28 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       close: () => setAssetBrowserTargetNodeId(null),
     }),
     [assetBrowserTargetNodeId],
+  );
+
+  const canvasGraphNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        id: node.id,
+        type: node.type ?? "",
+        data: node.data,
+      })),
+    [nodes],
+  );
+
+  const canvasGraphEdges = useMemo(
+    () =>
+      edges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? undefined,
+        targetHandle: edge.targetHandle ?? undefined,
+        className: edge.className ?? undefined,
+      })),
+    [edges],
   );
 
   const pendingRemovedEdgeIds = useMemo(
@@ -483,52 +506,54 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             scissorsMode ? onScissorsFlowPointerDownCapture : undefined
           }
         >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onlyRenderVisibleElements
-          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-          connectionLineComponent={CustomConnectionLine}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeDragStart={onNodeDragStart}
-          onNodeDrag={onNodeDrag}
-          onNodeDragStop={onNodeDragStop}
-          onConnect={onConnect}
-          onConnectEnd={onConnectEnd}
-          onReconnect={onReconnect}
-          onReconnectStart={onReconnectStart}
-          onReconnectEnd={onReconnectEnd}
-          onBeforeDelete={onBeforeDelete}
-          onNodesDelete={onNodesDelete}
-          onEdgesDelete={onEdgesDelete}
-          onEdgeClick={scissorsMode ? onEdgeClickScissors : undefined}
-          onError={onFlowError}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          fitView
-          minZoom={CANVAS_MIN_ZOOM}
-          snapToGrid={false}
-          deleteKeyCode={["Backspace", "Delete"]}
-          multiSelectionKeyCode="Shift"
-          nodesConnectable={!scissorsMode}
-          panOnDrag={flowPanOnDrag}
-          selectionOnDrag={flowSelectionOnDrag}
-          panActivationKeyCode="Space"
-          proOptions={{ hideAttribution: true }}
-          colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-          className={cn("bg-background", scissorsMode && "canvas-scissors-mode")}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-          <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
-          <MiniMap
-            className="bg-card! border! shadow-sm! rounded-lg!"
-            nodeColor={getMiniMapNodeColor}
-            nodeStrokeColor={getMiniMapNodeStrokeColor}
-            maskColor="rgba(0, 0, 0, 0.1)"
-          />
-        </ReactFlow>
+        <CanvasGraphProvider nodes={canvasGraphNodes} edges={canvasGraphEdges}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onlyRenderVisibleElements
+            defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+            connectionLineComponent={CustomConnectionLine}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
+            onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
+            onBeforeDelete={onBeforeDelete}
+            onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
+            onEdgeClick={scissorsMode ? onEdgeClickScissors : undefined}
+            onError={onFlowError}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            fitView
+            minZoom={CANVAS_MIN_ZOOM}
+            snapToGrid={false}
+            deleteKeyCode={["Backspace", "Delete"]}
+            multiSelectionKeyCode="Shift"
+            nodesConnectable={!scissorsMode}
+            panOnDrag={flowPanOnDrag}
+            selectionOnDrag={flowSelectionOnDrag}
+            panActivationKeyCode="Space"
+            proOptions={{ hideAttribution: true }}
+            colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+            className={cn("bg-background", scissorsMode && "canvas-scissors-mode")}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+            <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
+            <MiniMap
+              className="bg-card! border! shadow-sm! rounded-lg!"
+              nodeColor={getMiniMapNodeColor}
+              nodeStrokeColor={getMiniMapNodeStrokeColor}
+              maskColor="rgba(0, 0, 0, 0.1)"
+            />
+          </ReactFlow>
+        </CanvasGraphProvider>
         </div>
       </div>
           </AssetBrowserTargetContext.Provider>

@@ -3,7 +3,10 @@ import type { DefaultEdgeOptions, Edge as RFEdge, Node as RFNode } from "@xyflow
 import { readCanvasOps } from "@/lib/canvas-local-persistence";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNodeDeleteBlockReason } from "@/lib/toast";
-import { getSourceImage } from "@/lib/image-pipeline/contracts";
+import {
+  buildGraphSnapshot,
+  getSourceImageFromGraph,
+} from "@/lib/canvas-render-preview";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
@@ -200,15 +203,20 @@ function resolveStorageFallbackUrl(storageId: string): string | undefined {
 
 export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNode[] {
   const persistedEdges = edges.filter((edge) => edge.className !== "temp");
-  const pipelineNodes = nodes.map((node) => ({
-    id: node.id,
-    type: node.type ?? "",
-    data: node.data,
-  }));
-  const pipelineEdges = persistedEdges.map((edge) => ({
-    source: edge.source,
-    target: edge.target,
-  }));
+  const graph = buildGraphSnapshot(
+    nodes.map((node) => ({
+      id: node.id,
+      type: node.type ?? "",
+      data: node.data,
+    })),
+    persistedEdges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? undefined,
+      targetHandle: edge.targetHandle ?? undefined,
+      className: edge.className ?? undefined,
+    })),
+  );
 
   const resolveImageFromNode = (node: RFNode): string | undefined => {
     const nodeData = node.data as { url?: string; previewUrl?: string };
@@ -257,21 +265,21 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
       return direct;
     }
 
-    return getSourceImage({
-      nodeId: sourceNode.id,
-      nodes: pipelineNodes,
-      edges: pipelineEdges,
-      isSourceNode: (node) =>
-        node.type === "image" ||
-        node.type === "ai-image" ||
-        node.type === "asset" ||
-        node.type === "render",
-      getSourceImageFromNode: (node) => {
-        const candidate = nodes.find((entry) => entry.id === node.id);
-        if (!candidate) return null;
-        return resolveImageFromNode(candidate) ?? null;
-      },
-    }) ?? undefined;
+    return (
+      getSourceImageFromGraph(graph, {
+        nodeId: sourceNode.id,
+        isSourceNode: (node) =>
+          node.type === "image" ||
+          node.type === "ai-image" ||
+          node.type === "asset" ||
+          node.type === "render",
+        getSourceImageFromNode: (node) => {
+          const candidate = graph.nodesById.get(node.id);
+          if (!candidate) return null;
+          return resolveImageFromNode(candidate as RFNode) ?? null;
+        },
+      }) ?? undefined
+    );
   };
 
   let hasNodeUpdates = false;
@@ -279,14 +287,14 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
   const nextNodes = nodes.map((node) => {
     if (node.type !== "compare") return node;
 
-    const incoming = persistedEdges.filter((edge) => edge.target === node.id);
+    const incoming = graph.incomingEdgesByTarget.get(node.id) ?? [];
     let leftUrl: string | undefined;
     let rightUrl: string | undefined;
     let leftLabel: string | undefined;
     let rightLabel: string | undefined;
 
     for (const edge of incoming) {
-      const source = nodes.find((candidate) => candidate.id === edge.source);
+      const source = graph.nodesById.get(edge.source);
       if (!source) continue;
 
       const srcData = source.data as { url?: string; label?: string };
@@ -300,8 +308,8 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
       const hasSourceUrl = typeof srcData.url === "string" && srcData.url.length > 0;
       let resolvedUrl =
         source.type === "render"
-          ? resolveRenderOutputUrl(source)
-          : resolvePipelineImageUrl(source);
+          ? resolveRenderOutputUrl(source as RFNode)
+          : resolvePipelineImageUrl(source as RFNode);
       if (
         resolvedUrl === undefined &&
         !hasSourceUrl &&

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2, Maximize2, X } from "lucide-react";
 import { useMutation } from "convex/react";
 
@@ -12,10 +12,14 @@ import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { api } from "@/convex/_generated/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
-import { resolveRenderPreviewInput } from "@/lib/canvas-render-preview";
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import {
+  findSourceNodeFromGraph,
+  resolveRenderPreviewInputFromGraph,
+} from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
-import { getSourceImage, hashPipeline } from "@/lib/image-pipeline/contracts";
+import { hashPipeline } from "@/lib/image-pipeline/contracts";
 import {
   isPipelineAbortError,
   renderFullWithWorkerFallback,
@@ -431,8 +435,7 @@ async function uploadBlobToConvex(args: {
 export default function RenderNode({ id, data, selected, width, height }: NodeProps<RenderNodeType>) {
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
-  const nodes = useStore((state) => state.nodes);
-  const edges = useStore((state) => state.edges);
+  const graph = useCanvasGraph();
 
   const [localData, setLocalData] = useState<PersistedRenderData>(() =>
     sanitizeRenderData(data),
@@ -485,24 +488,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     });
   };
 
-  const pipelineNodes = useMemo(
-    () => nodes.map((node) => ({ id: node.id, type: node.type ?? "", data: node.data })),
-    [nodes],
-  );
-
-  const pipelineEdges = useMemo(
-    () => edges.map((edge) => ({ source: edge.source, target: edge.target })),
-    [edges],
-  );
-
   const renderPreviewInput = useMemo(
     () =>
-      resolveRenderPreviewInput({
+      resolveRenderPreviewInputFromGraph({
         nodeId: id,
-        nodes: pipelineNodes,
-        edges: pipelineEdges,
+        graph,
       }),
-    [id, pipelineEdges, pipelineNodes],
+    [graph, id],
   );
 
   const sourceUrl = renderPreviewInput.sourceUrl;
@@ -531,15 +523,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
     () =>
-      getSourceImage({
+      findSourceNodeFromGraph(graph, {
         nodeId: id,
-        nodes: pipelineNodes,
-        edges: pipelineEdges,
         isSourceNode: (node) =>
           node.type === "image" || node.type === "ai-image" || node.type === "asset",
-        getSourceImageFromNode: (node) => node as SourceNodeDescriptor,
+        getSourceImageFromNode: () => true,
       }),
-    [id, pipelineEdges, pipelineNodes],
+    [graph, id],
   );
 
   const steps = renderPreviewInput.steps;
@@ -608,8 +598,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     sourceUrl,
     steps,
     nodeWidth: previewNodeWidth,
-    previewScale: 0.7,
-    maxPreviewWidth: 960,
+    // Inline-Preview: bewusst kompakt halten, damit Änderungen schneller
+    // sichtbar werden, besonders in langen Graphen.
+    previewScale: 0.5,
+    maxPreviewWidth: 720,
+    maxDevicePixelRatio: 1.25,
   });
 
   const fullscreenPreviewWidth = Math.max(960, Math.round((width ?? 320) * 3));
@@ -621,8 +614,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     sourceUrl: isFullscreenOpen && sourceUrl ? sourceUrl : null,
     steps,
     nodeWidth: fullscreenPreviewWidth,
-    previewScale: 1,
-    maxPreviewWidth: 3072,
+    previewScale: 0.85,
+    maxPreviewWidth: 1920,
+    maxDevicePixelRatio: 1.5,
   });
 
   const targetAspectRatio = useMemo(() => {

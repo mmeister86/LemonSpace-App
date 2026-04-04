@@ -1232,12 +1232,6 @@ export const move = mutation({
 
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
     await ctx.db.patch(nodeId, { positionX, positionY });
-    console.info("[canvas.updatedAt] touch", {
-      canvasId: node.canvasId,
-      source: "nodes.move",
-      nodeId,
-    });
-    await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });
 
@@ -1261,13 +1255,6 @@ export const resize = mutation({
         ? ADJUSTMENT_MIN_WIDTH
         : width;
     await ctx.db.patch(nodeId, { width: clampedWidth, height });
-    console.info("[canvas.updatedAt] touch", {
-      canvasId: node.canvasId,
-      source: "nodes.resize",
-      nodeId,
-      nodeType: node.type,
-    });
-    await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });
 
@@ -1289,7 +1276,7 @@ export const batchMove = mutation({
     if (moves.length === 0) return;
 
     const nodeIds = moves.map((move) => move.nodeId);
-    const { canvasId } = await getValidatedBatchNodesOrThrow(
+    await getValidatedBatchNodesOrThrow(
       ctx,
       user.userId,
       nodeIds,
@@ -1298,13 +1285,6 @@ export const batchMove = mutation({
     for (const { nodeId, positionX, positionY } of moves) {
       await ctx.db.patch(nodeId, { positionX, positionY });
     }
-
-    console.info("[canvas.updatedAt] touch", {
-      canvasId,
-      source: "nodes.batchMove",
-      moveCount: moves.length,
-    });
-    await ctx.db.patch(canvasId, { updatedAt: Date.now() });
   },
 });
 
@@ -1324,14 +1304,6 @@ export const updateData = mutation({
     await getCanvasOrThrow(ctx, node.canvasId, user.userId);
     const normalizedData = normalizeNodeDataForWrite(node.type, data);
     await ctx.db.patch(nodeId, { data: normalizedData });
-    console.info("[canvas.updatedAt] touch", {
-      canvasId: node.canvasId,
-      source: "nodes.updateData",
-      nodeId,
-      nodeType: node.type,
-      approxDataBytes: estimateSerializedBytes(normalizedData),
-    });
-    await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });
 
