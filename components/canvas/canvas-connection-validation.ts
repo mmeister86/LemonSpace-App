@@ -5,11 +5,16 @@ import {
   type CanvasConnectionValidationReason,
 } from "@/lib/canvas-connection-policy";
 
+import { isOptimisticEdgeId } from "./canvas-helpers";
+
 export function validateCanvasConnection(
   connection: Connection,
   nodes: RFNode[],
   edges: RFEdge[],
   edgeToReplaceId?: string,
+  options?: {
+    includeOptimisticEdges?: boolean;
+  },
 ): CanvasConnectionValidationReason | null {
   if (!connection.source || !connection.target) return "incomplete";
   if (connection.source === connection.target) return "self-loop";
@@ -24,6 +29,7 @@ export function validateCanvasConnection(
     targetNodeId: connection.target,
     edges,
     edgeToReplaceId,
+    includeOptimisticEdges: options?.includeOptimisticEdges,
   });
 }
 
@@ -33,9 +39,14 @@ export function validateCanvasConnectionByType(args: {
   targetNodeId: string;
   edges: RFEdge[];
   edgeToReplaceId?: string;
+  includeOptimisticEdges?: boolean;
 }): CanvasConnectionValidationReason | null {
   const targetIncomingCount = args.edges.filter(
-    (edge) => edge.target === args.targetNodeId && edge.id !== args.edgeToReplaceId,
+    (edge) =>
+      edge.className !== "temp" &&
+      (args.includeOptimisticEdges || !isOptimisticEdgeId(edge.id)) &&
+      edge.target === args.targetNodeId &&
+      edge.id !== args.edgeToReplaceId,
   ).length;
 
   return validateCanvasConnectionPolicy({

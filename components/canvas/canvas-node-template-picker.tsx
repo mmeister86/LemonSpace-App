@@ -62,6 +62,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
 export type CanvasNodeTemplatePickerProps = {
   onPick: (template: CanvasNodeTemplate) => void;
   groupHeading?: string;
+  templates?: readonly CanvasNodeTemplate[];
 };
 
 /**
@@ -70,10 +71,11 @@ export type CanvasNodeTemplatePickerProps = {
 export function CanvasNodeTemplatePicker({
   onPick,
   groupHeading = "Knoten",
+  templates = CANVAS_NODE_TEMPLATES,
 }: CanvasNodeTemplatePickerProps) {
   return (
     <CommandGroup heading={groupHeading}>
-      {CANVAS_NODE_TEMPLATES.map((template) => {
+      {templates.map((template) => {
         const Icon = NODE_ICONS[template.type];
         return (
           <CommandItem

@@ -14,6 +14,7 @@ import { toast } from "@/lib/toast";
 import { type CanvasNodeDeleteBlockReason } from "@/lib/toast";
 
 import { getNodeDeleteBlockReason } from "./canvas-helpers";
+import { validateCanvasConnection } from "./canvas-connection-validation";
 
 type ToastTranslations = ReturnType<typeof useTranslations<'toasts'>>;
 
@@ -22,6 +23,8 @@ type UseCanvasDeleteHandlersParams = {
   canvasId: Id<"canvases">;
   nodes: RFNode[];
   edges: RFEdge[];
+  nodesRef: MutableRefObject<RFNode[]>;
+  edgesRef: MutableRefObject<RFEdge[]>;
   deletingNodeIds: MutableRefObject<Set<string>>;
   setAssetBrowserTargetNodeId: Dispatch<SetStateAction<string | null>>;
   runBatchRemoveNodesMutation: (args: { nodeIds: Id<"nodes">[] }) => Promise<unknown>;
@@ -40,6 +43,8 @@ export function useCanvasDeleteHandlers({
   canvasId,
   nodes,
   edges,
+  nodesRef,
+  edgesRef,
   deletingNodeIds,
   setAssetBrowserTargetNodeId,
   runBatchRemoveNodesMutation,
@@ -50,6 +55,12 @@ export function useCanvasDeleteHandlers({
   onNodesDelete: (deletedNodes: RFNode[]) => void;
   onEdgesDelete: (deletedEdges: RFEdge[]) => void;
 } {
+  const edgeKey = useCallback(
+    (edge: Pick<RFEdge, "source" | "target" | "sourceHandle" | "targetHandle">) =>
+      `${edge.source}\0${edge.target}\0${edge.sourceHandle ?? ""}\0${edge.targetHandle ?? ""}`,
+    [],
+  );
+
   const onBeforeDelete = useCallback(
     async ({
       nodes: matchingNodes,
@@ -117,11 +128,33 @@ export function useCanvasDeleteHandlers({
         current !== null && removedTargetSet.has(current) ? null : current,
       );
 
+      const liveNodes = nodesRef.current;
+      const liveEdges = edgesRef.current;
+
       const bridgeCreates = computeBridgeCreatesForDeletedNodes(
         deletedNodes,
-        nodes,
-        edges,
+        liveNodes,
+        liveEdges,
       );
+      const connectedDeletedEdges = getConnectedEdges(deletedNodes, liveEdges);
+      const remainingNodes = liveNodes.filter(
+        (node) => !removedTargetSet.has(node.id),
+      );
+      let remainingEdges = liveEdges.filter(
+        (edge) => !connectedDeletedEdges.includes(edge) && edge.className !== "temp",
+      );
+
+      if (bridgeCreates.length > 0) {
+        console.info("[Canvas] computed bridge edges for delete", {
+          canvasId,
+          deletedNodeIds: idsToDelete,
+          deletedNodes: deletedNodes.map((node) => ({
+            id: node.id,
+            type: node.type ?? null,
+          })),
+          bridgeCreates,
+        });
+      }
 
       void (async () => {
         await runBatchRemoveNodesMutation({
@@ -129,13 +162,77 @@ export function useCanvasDeleteHandlers({
         });
 
         for (const bridgeCreate of bridgeCreates) {
-          await runCreateEdgeMutation({
-            canvasId,
-            sourceNodeId: bridgeCreate.sourceNodeId,
-            targetNodeId: bridgeCreate.targetNodeId,
+          const bridgeKey = edgeKey({
+            source: bridgeCreate.sourceNodeId,
+            target: bridgeCreate.targetNodeId,
             sourceHandle: bridgeCreate.sourceHandle,
             targetHandle: bridgeCreate.targetHandle,
           });
+          if (remainingEdges.some((edge) => edgeKey(edge) === bridgeKey)) {
+            console.info("[Canvas] skipped duplicate bridge edge after delete", {
+              canvasId,
+              deletedNodeIds: idsToDelete,
+              bridgeCreate,
+            });
+            continue;
+          }
+
+          const validationError = validateCanvasConnection(
+            {
+              source: bridgeCreate.sourceNodeId,
+              target: bridgeCreate.targetNodeId,
+              sourceHandle: bridgeCreate.sourceHandle ?? null,
+              targetHandle: bridgeCreate.targetHandle ?? null,
+            },
+            remainingNodes,
+            remainingEdges,
+            undefined,
+            { includeOptimisticEdges: true },
+          );
+
+          if (validationError) {
+            console.info("[Canvas] skipped invalid bridge edge after delete", {
+              canvasId,
+              deletedNodeIds: idsToDelete,
+              bridgeCreate,
+              validationError,
+            });
+            continue;
+          }
+
+          try {
+            console.info("[Canvas] creating bridge edge after delete", {
+              canvasId,
+              deletedNodeIds: idsToDelete,
+              bridgeCreate,
+            });
+
+            await runCreateEdgeMutation({
+              canvasId,
+              sourceNodeId: bridgeCreate.sourceNodeId,
+              targetNodeId: bridgeCreate.targetNodeId,
+              sourceHandle: bridgeCreate.sourceHandle,
+              targetHandle: bridgeCreate.targetHandle,
+            });
+            remainingEdges = [
+              ...remainingEdges,
+              {
+                id: `bridge-${bridgeCreate.sourceNodeId}-${bridgeCreate.targetNodeId}-${remainingEdges.length}`,
+                source: bridgeCreate.sourceNodeId,
+                target: bridgeCreate.targetNodeId,
+                sourceHandle: bridgeCreate.sourceHandle,
+                targetHandle: bridgeCreate.targetHandle,
+              },
+            ];
+          } catch (error: unknown) {
+            console.error("[Canvas] bridge edge create failed", {
+              canvasId,
+              deletedNodeIds: idsToDelete,
+              bridgeCreate,
+              error,
+            });
+            throw error;
+          }
         }
       })()
         .then(() => {
@@ -156,8 +253,11 @@ export function useCanvasDeleteHandlers({
       t,
       canvasId,
       deletingNodeIds,
+      edgeKey,
       edges,
+      edgesRef,
       nodes,
+      nodesRef,
       runBatchRemoveNodesMutation,
       runCreateEdgeMutation,
       setAssetBrowserTargetNodeId,

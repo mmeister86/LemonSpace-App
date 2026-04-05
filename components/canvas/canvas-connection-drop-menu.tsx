@@ -32,6 +32,7 @@ type CanvasConnectionDropMenuProps = {
   anchor: CanvasMenuAnchor | null;
   onClose: () => void;
   onPick: (template: CanvasNodeTemplate) => void;
+  templates?: readonly CanvasNodeTemplate[];
 };
 
 const PANEL_MAX_W = 360;
@@ -41,6 +42,7 @@ export function CanvasConnectionDropMenu({
   anchor,
   onClose,
   onPick,
+  templates,
 }: CanvasConnectionDropMenuProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +111,7 @@ export function CanvasConnectionDropMenu({
               onClose();
             }}
             groupHeading="Knoten"
+            templates={templates}
           />
         </CommandList>
       </Command>

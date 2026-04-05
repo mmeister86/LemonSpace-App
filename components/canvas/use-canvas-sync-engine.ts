@@ -1145,6 +1145,25 @@ export function useCanvasSyncEngine({
     ],
   );
 
+  const remapOptimisticEdgeLocally = useCallback(
+    (clientRequestId: string, realId: Id<"edges">): void => {
+      const optimisticEdgeId = `${OPTIMISTIC_EDGE_PREFIX}${clientRequestId}`;
+      const realEdgeId = realId as string;
+
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === optimisticEdgeId
+            ? {
+                ...edge,
+                id: realEdgeId,
+              }
+            : edge,
+        ),
+      );
+    },
+    [setEdges],
+  );
+
   const splitEdgeAtExistingNodeMut = useMutation(
     api.nodes.splitEdgeAtExistingNode,
   ).withOptimisticUpdate((localStore, args) => {
@@ -1488,11 +1507,6 @@ export function useCanvasSyncEngine({
       const clientRequestId = args.clientRequestId ?? crypto.randomUUID();
       const payload = { ...args, clientRequestId };
 
-      if (isSyncOnline) {
-        await createEdge(payload);
-        return;
-      }
-
       addOptimisticEdgeLocally({
         clientRequestId,
         sourceNodeId: payload.sourceNodeId,
@@ -1500,9 +1514,31 @@ export function useCanvasSyncEngine({
         sourceHandle: payload.sourceHandle,
         targetHandle: payload.targetHandle,
       });
+
+      if (isSyncOnline) {
+        try {
+          const realId = await createEdge(payload);
+          remapOptimisticEdgeLocally(clientRequestId, realId);
+        } catch (error) {
+          removeOptimisticCreateLocally({
+            clientRequestId,
+            removeEdge: true,
+          });
+          throw error;
+        }
+        return;
+      }
+
       await enqueueSyncMutation("createEdge", payload);
     },
-    [addOptimisticEdgeLocally, createEdge, enqueueSyncMutation, isSyncOnline],
+    [
+      addOptimisticEdgeLocally,
+      createEdge,
+      enqueueSyncMutation,
+      isSyncOnline,
+      remapOptimisticEdgeLocally,
+      removeOptimisticCreateLocally,
+    ],
   );
 
   const runRemoveEdgeMutation = useCallback(
@@ -1611,7 +1647,8 @@ export function useCanvasSyncEngine({
             );
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "createEdge") {
-            await createEdgeRaw(op.payload);
+            const realEdgeId = await createEdgeRaw(op.payload);
+            remapOptimisticEdgeLocally(op.payload.clientRequestId, realEdgeId);
           } else if (op.type === "removeEdge") {
             await removeEdgeRaw(op.payload);
           } else if (op.type === "batchRemoveNodes") {
@@ -1729,6 +1766,7 @@ export function useCanvasSyncEngine({
     moveNode,
     refreshPendingSyncCount,
     remapOptimisticNodeLocally,
+    remapOptimisticEdgeLocally,
     removeEdgeRaw,
     removeOptimisticCreateLocally,
     resizeNode,

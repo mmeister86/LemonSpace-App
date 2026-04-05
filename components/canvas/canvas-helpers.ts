@@ -28,6 +28,18 @@ export type EdgeInsertLayout = {
   targetPosition?: XYPosition;
 };
 
+type EdgeInsertReflowMove = {
+  nodeId: string;
+  positionX: number;
+  positionY: number;
+};
+
+export type EdgeInsertReflowPlan = {
+  moves: EdgeInsertReflowMove[];
+  sourcePosition?: XYPosition;
+  targetPosition?: XYPosition;
+};
+
 function readNodeDimension(node: RFNode, key: "width" | "height"): number | null {
   const nodeRecord = node as { width?: unknown; height?: unknown };
   const direct = nodeRecord[key];
@@ -125,6 +137,131 @@ export function computeEdgeInsertLayout(args: ComputeEdgeInsertLayoutArgs): Edge
   }
 
   return layout;
+}
+
+function collectReachableNodeIds(args: {
+  startNodeId: string;
+  adjacency: Map<string, string[]>;
+}): Set<string> {
+  const visited = new Set<string>();
+  const queue: string[] = [args.startNodeId];
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (!nodeId || visited.has(nodeId)) {
+      continue;
+    }
+
+    visited.add(nodeId);
+    const next = args.adjacency.get(nodeId) ?? [];
+    for (const candidate of next) {
+      if (!visited.has(candidate)) {
+        queue.push(candidate);
+      }
+    }
+  }
+
+  return visited;
+}
+
+export function computeEdgeInsertReflowPlan(args: {
+  nodes: RFNode[];
+  edges: RFEdge[];
+  splitEdge: RFEdge;
+  sourceNode: RFNode;
+  targetNode: RFNode;
+  newNodeWidth: number;
+  newNodeHeight: number;
+  gapPx: number;
+}): EdgeInsertReflowPlan {
+  const layout = computeEdgeInsertLayout({
+    sourceNode: args.sourceNode,
+    targetNode: args.targetNode,
+    newNodeWidth: args.newNodeWidth,
+    newNodeHeight: args.newNodeHeight,
+    gapPx: args.gapPx,
+  });
+
+  const sourcePosition = layout.sourcePosition;
+  const targetPosition = layout.targetPosition;
+
+  if (!sourcePosition && !targetPosition) {
+    return {
+      moves: [],
+      sourcePosition,
+      targetPosition,
+    };
+  }
+
+  const sourceDx = sourcePosition ? sourcePosition.x - args.sourceNode.position.x : 0;
+  const sourceDy = sourcePosition ? sourcePosition.y - args.sourceNode.position.y : 0;
+  const targetDx = targetPosition ? targetPosition.x - args.targetNode.position.x : 0;
+  const targetDy = targetPosition ? targetPosition.y - args.targetNode.position.y : 0;
+
+  const incomingByTarget = new Map<string, string[]>();
+  const outgoingBySource = new Map<string, string[]>();
+
+  for (const edge of args.edges) {
+    const incoming = incomingByTarget.get(edge.target) ?? [];
+    incoming.push(edge.source);
+    incomingByTarget.set(edge.target, incoming);
+
+    const outgoing = outgoingBySource.get(edge.source) ?? [];
+    outgoing.push(edge.target);
+    outgoingBySource.set(edge.source, outgoing);
+  }
+
+  const upstreamIds = collectReachableNodeIds({
+    startNodeId: args.splitEdge.source,
+    adjacency: incomingByTarget,
+  });
+  const downstreamIds = collectReachableNodeIds({
+    startNodeId: args.splitEdge.target,
+    adjacency: outgoingBySource,
+  });
+
+  const deltaByNodeId = new Map<string, { dx: number; dy: number }>();
+
+  for (const nodeId of upstreamIds) {
+    const previous = deltaByNodeId.get(nodeId);
+    deltaByNodeId.set(nodeId, {
+      dx: (previous?.dx ?? 0) + sourceDx,
+      dy: (previous?.dy ?? 0) + sourceDy,
+    });
+  }
+
+  for (const nodeId of downstreamIds) {
+    const previous = deltaByNodeId.get(nodeId);
+    deltaByNodeId.set(nodeId, {
+      dx: (previous?.dx ?? 0) + targetDx,
+      dy: (previous?.dy ?? 0) + targetDy,
+    });
+  }
+
+  const moves: EdgeInsertReflowMove[] = [];
+
+  for (const node of args.nodes) {
+    const delta = deltaByNodeId.get(node.id);
+    if (!delta) {
+      continue;
+    }
+
+    if (Math.abs(delta.dx) <= Number.EPSILON && Math.abs(delta.dy) <= Number.EPSILON) {
+      continue;
+    }
+
+    moves.push({
+      nodeId: node.id,
+      positionX: node.position.x + delta.dx,
+      positionY: node.position.y + delta.dy,
+    });
+  }
+
+  return {
+    moves,
+    sourcePosition,
+    targetPosition,
+  };
 }
 
 export function createCanvasOpId(): string {

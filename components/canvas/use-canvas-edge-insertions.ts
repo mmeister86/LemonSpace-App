@@ -3,15 +3,20 @@ import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
-import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
+import {
+  CANVAS_NODE_TEMPLATES,
+  type CanvasNodeTemplate,
+} from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
 import {
+  computeEdgeInsertReflowPlan,
   computeEdgeInsertLayout,
   hasHandleKey,
   isOptimisticEdgeId,
   normalizeHandle,
+  rfEdgeConnectionSignature,
 } from "./canvas-helpers";
 import { validateCanvasEdgeSplit } from "./canvas-connection-validation";
 
@@ -22,6 +27,13 @@ export type EdgeInsertMenuState = {
 };
 
 const EDGE_INSERT_GAP_PX = 10;
+const DEFAULT_REFLOW_SETTLE_MS = 1297;
+
+function waitForReflowSettle(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 type UseCanvasEdgeInsertionsArgs = {
   canvasId: Id<"canvases">;
@@ -49,7 +61,16 @@ type UseCanvasEdgeInsertionsArgs = {
       positionY: number;
     }[];
   }) => Promise<void>;
+  applyLocalNodeMoves?: (
+    moves: {
+      nodeId: Id<"nodes">;
+      positionX: number;
+      positionY: number;
+    }[],
+  ) => void;
   showConnectionRejectedToast: (reason: CanvasConnectionValidationReason) => void;
+  onReflowStateChange?: (isReflowing: boolean) => void;
+  reflowSettleMs?: number;
 };
 
 export function useCanvasEdgeInsertions({
@@ -58,10 +79,17 @@ export function useCanvasEdgeInsertions({
   edges,
   runCreateNodeWithEdgeSplitOnlineOnly,
   runBatchMoveNodesMutation,
+  applyLocalNodeMoves,
   showConnectionRejectedToast,
+  onReflowStateChange,
+  reflowSettleMs = DEFAULT_REFLOW_SETTLE_MS,
 }: UseCanvasEdgeInsertionsArgs) {
   const [edgeInsertMenu, setEdgeInsertMenu] = useState<EdgeInsertMenuState | null>(null);
   const edgeInsertMenuRef = useRef<EdgeInsertMenuState | null>(null);
+
+  const policyEdges = edges.filter(
+    (edge) => edge.className !== "temp" && !isOptimisticEdgeId(edge.id),
+  );
 
   useEffect(() => {
     edgeInsertMenuRef.current = edgeInsertMenu;
@@ -73,20 +101,67 @@ export function useCanvasEdgeInsertions({
 
   const openEdgeInsertMenu = useCallback(
     ({ edgeId, screenX, screenY }: EdgeInsertMenuState) => {
-      const edge = edges.find(
-        (candidate) =>
-          candidate.id === edgeId &&
-          candidate.className !== "temp" &&
-          !isOptimisticEdgeId(candidate.id),
+      const clickedEdge = edges.find(
+        (candidate) => candidate.id === edgeId && candidate.className !== "temp",
       );
-      if (!edge) {
+      if (!clickedEdge) {
         return;
       }
 
-      setEdgeInsertMenu({ edgeId, screenX, screenY });
+      let resolvedEdgeId: string | null = null;
+      if (!isOptimisticEdgeId(edgeId)) {
+        const persisted = policyEdges.find((candidate) => candidate.id === edgeId);
+        resolvedEdgeId = persisted?.id ?? null;
+      } else {
+        const signature = rfEdgeConnectionSignature(clickedEdge);
+        const persistedTwin = policyEdges.find(
+          (candidate) => rfEdgeConnectionSignature(candidate) === signature,
+        );
+        resolvedEdgeId = persistedTwin?.id ?? null;
+      }
+
+      if (!resolvedEdgeId) {
+        return;
+      }
+
+      setEdgeInsertMenu({ edgeId: resolvedEdgeId, screenX, screenY });
     },
-    [edges],
+    [edges, policyEdges],
   );
+
+  const edgeInsertTemplates = (() => {
+    if (!edgeInsertMenu) {
+      return [] as CanvasNodeTemplate[];
+    }
+
+    const splitEdge = policyEdges.find((edge) => edge.id === edgeInsertMenu.edgeId);
+    if (!splitEdge) {
+      return [] as CanvasNodeTemplate[];
+    }
+
+    return CANVAS_NODE_TEMPLATES.filter((template) => {
+      const handles = NODE_HANDLE_MAP[template.type];
+      if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
+        return false;
+      }
+
+      const middleNode: RFNode = {
+        id: "__pending_edge_insert__",
+        type: template.type,
+        position: { x: 0, y: 0 },
+        data: {},
+      };
+
+      const splitValidationError = validateCanvasEdgeSplit({
+        nodes,
+        edges: policyEdges,
+        splitEdge,
+        middleNode,
+      });
+
+      return splitValidationError === null;
+    });
+  })();
 
   const handleEdgeInsertPick = useCallback(
     async (template: CanvasNodeTemplate) => {
@@ -95,10 +170,7 @@ export function useCanvasEdgeInsertions({
         return;
       }
 
-      const splitEdge = edges.find(
-        (edge) =>
-          edge.id === menu.edgeId && edge.className !== "temp" && !isOptimisticEdgeId(edge.id),
-      );
+      const splitEdge = policyEdges.find((edge) => edge.id === menu.edgeId);
       if (!splitEdge) {
         showConnectionRejectedToast("unknown-node");
         return;
@@ -133,7 +205,7 @@ export function useCanvasEdgeInsertions({
 
       const splitValidationError = validateCanvasEdgeSplit({
         nodes,
-        edges,
+        edges: policyEdges,
         splitEdge,
         middleNode,
       });
@@ -143,9 +215,49 @@ export function useCanvasEdgeInsertions({
         return;
       }
 
-      const layout = computeEdgeInsertLayout({
+      const reflowPlan = computeEdgeInsertReflowPlan({
+        nodes,
+        edges: policyEdges,
+        splitEdge,
         sourceNode,
         targetNode,
+        newNodeWidth: width,
+        newNodeHeight: height,
+        gapPx: EDGE_INSERT_GAP_PX,
+      });
+
+      const reflowMoves = reflowPlan.moves.map((move) => ({
+        nodeId: move.nodeId as Id<"nodes">,
+        positionX: move.positionX,
+        positionY: move.positionY,
+      }));
+
+      if (reflowMoves.length > 0) {
+        onReflowStateChange?.(true);
+        try {
+          applyLocalNodeMoves?.(reflowMoves);
+          await runBatchMoveNodesMutation({
+            moves: reflowMoves,
+          });
+
+          if (reflowSettleMs > 0) {
+            await waitForReflowSettle(reflowSettleMs);
+          }
+        } finally {
+          onReflowStateChange?.(false);
+        }
+      }
+
+      const sourceAfterMove = reflowPlan.sourcePosition
+        ? { ...sourceNode, position: reflowPlan.sourcePosition }
+        : sourceNode;
+      const targetAfterMove = reflowPlan.targetPosition
+        ? { ...targetNode, position: reflowPlan.targetPosition }
+        : targetNode;
+
+      const layout = computeEdgeInsertLayout({
+        sourceNode: sourceAfterMove,
+        targetNode: targetAfterMove,
         newNodeWidth: width,
         newNodeHeight: height,
         gapPx: EDGE_INSERT_GAP_PX,
@@ -170,47 +282,25 @@ export function useCanvasEdgeInsertions({
         splitTargetHandle: normalizeHandle(splitEdge.targetHandle),
       });
 
-      const moves: {
-        nodeId: Id<"nodes">;
-        positionX: number;
-        positionY: number;
-      }[] = [];
-
-      if (layout.sourcePosition) {
-        moves.push({
-          nodeId: sourceNode.id as Id<"nodes">,
-          positionX: layout.sourcePosition.x,
-          positionY: layout.sourcePosition.y,
-        });
-      }
-
-      if (layout.targetPosition) {
-        moves.push({
-          nodeId: targetNode.id as Id<"nodes">,
-          positionX: layout.targetPosition.x,
-          positionY: layout.targetPosition.y,
-        });
-      }
-
-      if (moves.length > 0) {
-        await runBatchMoveNodesMutation({ moves });
-      }
-
       closeEdgeInsertMenu();
     },
     [
       canvasId,
       closeEdgeInsertMenu,
-      edges,
       nodes,
+      policyEdges,
       runBatchMoveNodesMutation,
+      applyLocalNodeMoves,
       runCreateNodeWithEdgeSplitOnlineOnly,
       showConnectionRejectedToast,
+      onReflowStateChange,
+      reflowSettleMs,
     ],
   );
 
   return {
     edgeInsertMenu,
+    edgeInsertTemplates,
     openEdgeInsertMenu,
     closeEdgeInsertMenu,
     handleEdgeInsertPick,

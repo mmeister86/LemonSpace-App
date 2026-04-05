@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   useCallback,
   useEffect,
   useMemo,
@@ -81,6 +82,8 @@ interface CanvasInnerProps {
   canvasId: Id<"canvases">;
 }
 
+const EDGE_INSERT_REFLOW_SETTLE_MS = 1297;
+
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const t = useTranslations('toasts');
   const showConnectionRejectedToast = useCallback(
@@ -154,6 +157,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const nodesRef = useRef<RFNode[]>(nodes);
 
   const [scissorsMode, setScissorsMode] = useState(false);
+  const [isEdgeInsertReflowing, setIsEdgeInsertReflowing] = useState(false);
   const [scissorStrokePreview, setScissorStrokePreview] = useState<
     { x: number; y: number }[] | null
   >(null);
@@ -300,6 +304,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     canvasId,
     nodes,
     edges,
+    nodesRef,
+    edgesRef,
     deletingNodeIds,
     setAssetBrowserTargetNodeId,
     runBatchRemoveNodesMutation,
@@ -339,8 +345,46 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     showConnectionRejectedToast,
   });
 
+  const applyLocalEdgeInsertMoves = useCallback(
+    (
+      moves: {
+        nodeId: Id<"nodes">;
+        positionX: number;
+        positionY: number;
+      }[],
+    ) => {
+      if (moves.length === 0) {
+        return;
+      }
+
+      const positionByNodeId = new Map(
+        moves.map((move) => [move.nodeId, { x: move.positionX, y: move.positionY }]),
+      );
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          const nextPosition = positionByNodeId.get(node.id as Id<"nodes">);
+          if (!nextPosition) {
+            return node;
+          }
+
+          if (node.position.x === nextPosition.x && node.position.y === nextPosition.y) {
+            return node;
+          }
+
+          return {
+            ...node,
+            position: nextPosition,
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   const {
     edgeInsertMenu,
+    edgeInsertTemplates,
     closeEdgeInsertMenu,
     openEdgeInsertMenu,
     handleEdgeInsertPick,
@@ -350,7 +394,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     edges,
     runCreateNodeWithEdgeSplitOnlineOnly,
     runBatchMoveNodesMutation,
+    applyLocalNodeMoves: applyLocalEdgeInsertMoves,
     showConnectionRejectedToast,
+    onReflowStateChange: setIsEdgeInsertReflowing,
+    reflowSettleMs: EDGE_INSERT_REFLOW_SETTLE_MS,
   });
 
   const handleEdgeInsertClick = useCallback(
@@ -372,6 +419,13 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       ...DEFAULT_EDGE_OPTIONS,
       type: "canvas-default" as const,
     }),
+    [],
+  );
+
+  const edgeInsertReflowStyle = useMemo<CSSProperties>(
+    () => ({
+      "--ls-edge-insert-reflow-duration": `${EDGE_INSERT_REFLOW_SETTLE_MS}ms`,
+    }) as CSSProperties,
     [],
   );
 
@@ -545,6 +599,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           }
           onClose={closeEdgeInsertMenu}
           onPick={handleEdgeInsertPick}
+          templates={edgeInsertTemplates}
         />
         {scissorsMode ? (
           <div className="pointer-events-none absolute top-14 left-1/2 z-50 max-w-[min(100%-2rem,28rem)] -translate-x-1/2 rounded-lg bg-popover/95 px-3 py-1.5 text-center text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
@@ -578,6 +633,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         >
         <CanvasGraphProvider nodes={canvasGraphNodes} edges={canvasGraphEdges}>
           <ReactFlow
+            style={edgeInsertReflowStyle}
             nodes={nodes}
             edges={edges}
             onlyRenderVisibleElements
@@ -614,7 +670,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             panActivationKeyCode="Space"
             proOptions={{ hideAttribution: true }}
             colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-            className={cn("bg-background", scissorsMode && "canvas-scissors-mode")}
+            className={cn(
+              "bg-background",
+              scissorsMode && "canvas-scissors-mode",
+              isEdgeInsertReflowing && "canvas-edge-insert-reflowing",
+            )}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
             <Controls className="bg-card! border! shadow-sm! rounded-lg!" />

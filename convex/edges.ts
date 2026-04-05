@@ -65,16 +65,27 @@ async function assertConnectionPolicy(
     throw new Error("Source or target node not found");
   }
 
+  const targetIncomingCount = await countIncomingEdges(ctx, {
+    targetNodeId: args.targetNodeId,
+    edgeIdToIgnore: args.edgeIdToIgnore,
+  });
+
   const reason = validateCanvasConnectionPolicy({
     sourceType: sourceNode.type,
     targetType: targetNode.type,
-    targetIncomingCount: await countIncomingEdges(ctx, {
-      targetNodeId: args.targetNodeId,
-      edgeIdToIgnore: args.edgeIdToIgnore,
-    }),
+    targetIncomingCount,
   });
 
   if (reason) {
+    console.warn("[edges.create] connection policy rejected", {
+      sourceNodeId: args.sourceNodeId,
+      targetNodeId: args.targetNodeId,
+      edgeIdToIgnore: args.edgeIdToIgnore,
+      sourceType: sourceNode.type,
+      targetType: targetNode.type,
+      targetIncomingCount,
+      reason,
+    });
     throw new Error(getCanvasConnectionValidationMessage(reason));
   }
 }
@@ -178,6 +189,13 @@ export const create = mutation({
     const source = await ctx.db.get(args.sourceNodeId);
     const target = await ctx.db.get(args.targetNodeId);
     if (!source || !target) {
+      console.warn("[edges.create] missing source or target node", {
+        canvasId: args.canvasId,
+        sourceNodeId: args.sourceNodeId,
+        targetNodeId: args.targetNodeId,
+        hasSource: Boolean(source),
+        hasTarget: Boolean(target),
+      });
       throw new Error("Source or target node not found");
     }
     if (source.canvasId !== args.canvasId || target.canvasId !== args.canvasId) {

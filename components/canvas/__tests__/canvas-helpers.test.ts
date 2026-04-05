@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
-import { computeEdgeInsertLayout, withResolvedCompareData } from "../canvas-helpers";
+import {
+  computeEdgeInsertLayout,
+  computeEdgeInsertReflowPlan,
+  withResolvedCompareData,
+} from "../canvas-helpers";
 import {
   buildGraphSnapshot,
   pruneCanvasGraphNodeDataOverrides,
@@ -412,5 +416,54 @@ describe("computeEdgeInsertLayout", () => {
     expect(layout.insertPosition).toEqual({ x: 25, y: 75 });
     expect(layout.sourcePosition).toBeUndefined();
     expect(layout.targetPosition).toBeUndefined();
+  });
+});
+
+describe("computeEdgeInsertReflowPlan", () => {
+  it("propagates source and target shifts across full upstream/downstream chains", () => {
+    const upstream = createNode({
+      id: "upstream",
+      position: { x: -120, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+    const source = createNode({
+      id: "source",
+      position: { x: 0, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+    const target = createNode({
+      id: "target",
+      position: { x: 120, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+    const downstream = createNode({
+      id: "downstream",
+      position: { x: 240, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+
+    const edges = [
+      createEdge({ id: "edge-upstream", source: "upstream", target: "source" }),
+      createEdge({ id: "edge-split", source: "source", target: "target" }),
+      createEdge({ id: "edge-downstream", source: "target", target: "downstream" }),
+    ];
+
+    const plan = computeEdgeInsertReflowPlan({
+      nodes: [upstream, source, target, downstream],
+      edges,
+      splitEdge: edges[1],
+      sourceNode: source,
+      targetNode: target,
+      newNodeWidth: 220,
+      newNodeHeight: 120,
+      gapPx: 10,
+    });
+
+    expect(plan.moves).toEqual([
+      { nodeId: "upstream", positionX: -230, positionY: 0 },
+      { nodeId: "source", positionX: -110, positionY: 0 },
+      { nodeId: "target", positionX: 230, positionY: 0 },
+      { nodeId: "downstream", positionX: 350, positionY: 0 },
+    ]);
   });
 });

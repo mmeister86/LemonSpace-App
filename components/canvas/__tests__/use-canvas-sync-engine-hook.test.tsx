@@ -116,7 +116,20 @@ function HookHarness({ canvasId }: { canvasId: Id<"canvases"> }) {
     latestHookValueRef.current = hookValue;
   }, [hookValue]);
 
+  useEffect(() => {
+    latestEdgesRef.current = edges;
+  }, [edges]);
+
   return null;
+}
+
+const latestEdgesRef: { current: RFEdge[] } = { current: [] };
+
+function setNavigatorOnline(online: boolean) {
+  Object.defineProperty(window.navigator, "onLine", {
+    configurable: true,
+    value: online,
+  });
 }
 
 describe("useCanvasSyncEngine hook wiring", () => {
@@ -125,6 +138,8 @@ describe("useCanvasSyncEngine hook wiring", () => {
 
   afterEach(async () => {
     latestHookValueRef.current = null;
+    latestEdgesRef.current = [];
+    setNavigatorOnline(true);
     mocks.mutationMocks.clear();
     vi.clearAllMocks();
     if (root) {
@@ -169,5 +184,101 @@ describe("useCanvasSyncEngine hook wiring", () => {
         },
       }),
     );
+  });
+
+  it("remaps optimistic edge ids to persisted ids after online createEdge returns", async () => {
+    const createEdgeMutation = vi.fn(async () => "edge-real-1");
+    Object.assign(createEdgeMutation, {
+      withOptimisticUpdate: () => createEdgeMutation,
+    });
+    mocks.mutationMocks.set("edges.create", createEdgeMutation);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<HookHarness canvasId={asCanvasId("canvas-1")} />);
+    });
+
+    await act(async () => {
+      await latestHookValueRef.current?.actions.createEdge({
+        canvasId: asCanvasId("canvas-1"),
+        sourceNodeId: asNodeId("node-a"),
+        targetNodeId: asNodeId("node-b"),
+        clientRequestId: "req-1",
+      });
+    });
+
+    expect(createEdgeMutation).toHaveBeenCalledTimes(1);
+    expect(latestEdgesRef.current.some((edge) => edge.id === "edge-real-1")).toBe(true);
+    expect(
+      latestEdgesRef.current.some((edge) => edge.id === "optimistic_edge_req-1"),
+    ).toBe(false);
+  });
+
+  it("remaps optimistic edge ids to persisted ids while flushing queued createEdge ops", async () => {
+    setNavigatorOnline(false);
+    const queuedCreateEdgeOp = {
+      id: "op-1",
+      canvasId: "canvas-1",
+      type: "createEdge",
+      payload: {
+        canvasId: "canvas-1",
+        sourceNodeId: "node-a",
+        targetNodeId: "node-b",
+        clientRequestId: "req-2",
+      },
+      enqueuedAt: Date.now(),
+      attemptCount: 0,
+      nextRetryAt: 0,
+      expiresAt: Date.now() + 60_000,
+    };
+
+    const typedListCanvasSyncOps = mocks.listCanvasSyncOps as unknown as {
+      mockResolvedValueOnce: (value: unknown) => { mockResolvedValueOnce: (v: unknown) => void };
+    };
+    typedListCanvasSyncOps
+      .mockResolvedValueOnce([queuedCreateEdgeOp])
+      .mockResolvedValueOnce([]);
+
+    const createEdgeMutation = vi.fn(async () => "edge-real-2");
+    Object.assign(createEdgeMutation, {
+      withOptimisticUpdate: () => createEdgeMutation,
+    });
+    mocks.mutationMocks.set("edges.create", createEdgeMutation);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<HookHarness canvasId={asCanvasId("canvas-1")} />);
+    });
+
+    await act(async () => {
+      await latestHookValueRef.current?.actions.createEdge({
+        canvasId: asCanvasId("canvas-1"),
+        sourceNodeId: asNodeId("node-a"),
+        targetNodeId: asNodeId("node-b"),
+        clientRequestId: "req-2",
+      });
+    });
+
+    expect(
+      latestEdgesRef.current.some((edge) => edge.id === "optimistic_edge_req-2"),
+    ).toBe(true);
+
+    setNavigatorOnline(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+      await latestHookValueRef.current?.actions.flushCanvasSyncQueue();
+    });
+
+    expect(createEdgeMutation).toHaveBeenCalledTimes(1);
+    expect(latestEdgesRef.current.some((edge) => edge.id === "edge-real-2")).toBe(true);
+    expect(
+      latestEdgesRef.current.some((edge) => edge.id === "optimistic_edge_req-2"),
+    ).toBe(false);
   });
 });
