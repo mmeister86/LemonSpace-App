@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import { emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import {
+  getLastBackendDiagnostics,
   isPipelineAbortError,
   renderPreviewWithWorkerFallback,
   type PreviewRenderResult,
@@ -155,6 +156,19 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
             renderError instanceof Error
               ? renderError.message
               : "Preview rendering failed";
+
+          if (process.env.NODE_ENV !== "production") {
+            console.error("[usePipelinePreview] render failed", {
+              message,
+              sourceUrl,
+              pipelineHash,
+              previewWidth,
+              includeHistogram: options.includeHistogram,
+              diagnostics: getLastBackendDiagnostics(),
+              error: renderError,
+            });
+          }
+
           setError(message);
         })
         .finally(() => {

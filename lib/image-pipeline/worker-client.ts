@@ -137,6 +137,14 @@ function shouldFallbackToMainThread(error: unknown): error is WorkerUnavailableE
   return error instanceof WorkerUnavailableError;
 }
 
+function logWorkerClientDebug(event: string, details: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  console.error(`[worker-client] ${event}`, details);
+}
+
 function updateLastBackendDiagnostics(metadata: BackendDiagnosticsMetadata | undefined): void {
   if (!metadata) {
     return;
@@ -178,6 +186,13 @@ function getWorker(): Worker {
 
       if (message.kind === "error") {
         updateLastBackendDiagnostics(message.payload.diagnostics);
+        logWorkerClientDebug("worker response error", {
+          requestId: message.requestId,
+          pendingKind: pending.kind,
+          errorName: message.payload.name,
+          errorMessage: message.payload.message,
+          diagnostics: message.payload.diagnostics,
+        });
         const workerError = new Error(message.payload.message);
         workerError.name = message.payload.name;
         pending.reject(workerError);
@@ -336,8 +351,22 @@ async function runPreviewRequest(options: {
     }
 
     if (!shouldFallbackToMainThread(error)) {
+      logWorkerClientDebug("preview request failed without fallback", {
+        sourceUrl: options.sourceUrl,
+        previewWidth: options.previewWidth,
+        includeHistogram: options.includeHistogram,
+        diagnostics: getLastBackendDiagnostics(),
+        error,
+      });
       throw error;
     }
+
+    logWorkerClientDebug("preview request falling back to main-thread", {
+      sourceUrl: options.sourceUrl,
+      previewWidth: options.previewWidth,
+      includeHistogram: options.includeHistogram,
+      error,
+    });
 
     return await renderPreview(options);
   }

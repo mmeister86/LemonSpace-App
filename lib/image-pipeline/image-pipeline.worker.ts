@@ -113,6 +113,16 @@ async function handlePreviewRequest(requestId: number, payload: PreviewWorkerPay
       [pixels],
     );
   } catch (error: unknown) {
+    if (typeof console !== "undefined" && process.env.NODE_ENV !== "production") {
+      console.error("[image-pipeline.worker] preview request failed", {
+        requestId,
+        sourceUrl: payload.sourceUrl,
+        previewWidth: payload.previewWidth,
+        includeHistogram: payload.includeHistogram,
+        error,
+      });
+    }
+
     postMessageSafe({
       kind: "error",
       requestId,
@@ -139,6 +149,16 @@ async function handleFullRequest(requestId: number, payload: RenderFullOptions):
       payload: result,
     });
   } catch (error: unknown) {
+    if (typeof console !== "undefined" && process.env.NODE_ENV !== "production") {
+      console.error("[image-pipeline.worker] preview request failed", {
+        requestId,
+        sourceUrl: payload.sourceUrl,
+        previewWidth: payload.previewWidth,
+        includeHistogram: payload.includeHistogram,
+        error,
+      });
+    }
+
     postMessageSafe({
       kind: "error",
       requestId,

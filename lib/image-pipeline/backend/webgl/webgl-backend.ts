@@ -8,10 +8,141 @@ import {
   normalizeLightAdjustData,
 } from "@/lib/image-pipeline/adjustment-types";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
-import colorAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/color-adjust.frag.glsl?raw";
-import curvesFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/curves.frag.glsl?raw";
-import detailAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/detail-adjust.frag.glsl?raw";
-import lightAdjustFragmentShaderSource from "@/lib/image-pipeline/backend/webgl/shaders/light-adjust.frag.glsl?raw";
+
+const CURVES_FRAGMENT_SHADER_SOURCE = `
+precision mediump float;
+
+varying vec2 vUv;
+uniform sampler2D uSource;
+uniform float uGamma;
+
+void main() {
+  vec4 color = texture2D(uSource, vUv);
+  color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(max(uGamma, 0.001)));
+  gl_FragColor = color;
+}
+`;
+
+const COLOR_ADJUST_FRAGMENT_SHADER_SOURCE = `
+precision mediump float;
+
+varying vec2 vUv;
+uniform sampler2D uSource;
+uniform vec3 uColorShift;
+
+void main() {
+  vec4 color = texture2D(uSource, vUv);
+  color.rgb = clamp(color.rgb + uColorShift, 0.0, 1.0);
+  gl_FragColor = color;
+}
+`;
+
+const LIGHT_ADJUST_FRAGMENT_SHADER_SOURCE = `
+precision mediump float;
+
+varying vec2 vUv;
+uniform sampler2D uSource;
+uniform float uExposureFactor;
+uniform float uContrastFactor;
+uniform float uBrightnessShift;
+uniform float uHighlights;
+uniform float uShadows;
+uniform float uWhites;
+uniform float uBlacks;
+uniform float uVignetteAmount;
+uniform float uVignetteSize;
+uniform float uVignetteRoundness;
+
+float toByte(float value) {
+  return clamp(floor(value + 0.5), 0.0, 255.0);
+}
+
+void main() {
+  vec4 color = texture2D(uSource, vUv);
+  vec3 rgb = color.rgb * 255.0;
+
+  rgb *= uExposureFactor;
+  rgb = (rgb - 128.0) * uContrastFactor + 128.0 + uBrightnessShift;
+
+  float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float highlightsBoost = (luma / 255.0) * uHighlights * 40.0;
+  float shadowsBoost = ((255.0 - luma) / 255.0) * uShadows * 40.0;
+  float whitesBoost = (luma / 255.0) * uWhites * 35.0;
+  float blacksBoost = ((255.0 - luma) / 255.0) * uBlacks * 35.0;
+  float totalBoost = highlightsBoost + shadowsBoost + whitesBoost + blacksBoost;
+  rgb = vec3(
+    toByte(rgb.r + totalBoost),
+    toByte(rgb.g + totalBoost),
+    toByte(rgb.b + totalBoost)
+  );
+
+  if (uVignetteAmount > 0.0) {
+    vec2 centeredUv = (vUv - vec2(0.5)) / vec2(0.5);
+    float radialDistance = length(centeredUv);
+    float softEdge = pow(1.0 - clamp(radialDistance, 0.0, 1.0), 1.0 + uVignetteRoundness);
+    float strength = 1.0 - uVignetteAmount * (1.0 - softEdge) * (1.5 - uVignetteSize);
+    rgb = vec3(
+      toByte(rgb.r * strength),
+      toByte(rgb.g * strength),
+      toByte(rgb.b * strength)
+    );
+  }
+
+  gl_FragColor = vec4(clamp(rgb / 255.0, 0.0, 1.0), color.a);
+}
+`;
+
+const DETAIL_ADJUST_FRAGMENT_SHADER_SOURCE = `
+precision mediump float;
+
+varying vec2 vUv;
+uniform sampler2D uSource;
+uniform float uSharpenBoost;
+uniform float uClarityBoost;
+uniform float uDenoiseLuma;
+uniform float uDenoiseColor;
+uniform float uGrainAmount;
+uniform float uGrainScale;
+uniform float uImageWidth;
+
+float pseudoNoise(float seed) {
+  float x = sin(seed * 12.9898) * 43758.5453;
+  return fract(x);
+}
+
+void main() {
+  vec4 color = texture2D(uSource, vUv);
+  vec3 rgb = color.rgb * 255.0;
+
+  float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+
+  rgb.r = rgb.r + (rgb.r - luma) * uSharpenBoost * 0.6;
+  rgb.g = rgb.g + (rgb.g - luma) * uSharpenBoost * 0.6;
+  rgb.b = rgb.b + (rgb.b - luma) * uSharpenBoost * 0.6;
+
+  float midtoneFactor = 1.0 - abs(luma / 255.0 - 0.5) * 2.0;
+  float clarityScale = 1.0 + uClarityBoost * midtoneFactor * 0.7;
+  rgb = (rgb - 128.0) * clarityScale + 128.0;
+
+  if (uDenoiseLuma > 0.0 || uDenoiseColor > 0.0) {
+    rgb = rgb * (1.0 - uDenoiseLuma * 0.2) + vec3(luma) * uDenoiseLuma * 0.2;
+
+    float average = (rgb.r + rgb.g + rgb.b) / 3.0;
+    rgb = rgb * (1.0 - uDenoiseColor * 0.2) + vec3(average) * uDenoiseColor * 0.2;
+  }
+
+  if (uGrainAmount > 0.0) {
+    float pixelX = floor(gl_FragCoord.x);
+    float pixelY = floor(gl_FragCoord.y);
+    float pixelIndex = ((pixelY * max(1.0, uImageWidth)) + pixelX) * 4.0;
+    float grainSeed = (pixelIndex + 1.0) / max(0.5, uGrainScale);
+    float grain = (pseudoNoise(grainSeed) - 0.5) * uGrainAmount * 40.0;
+    rgb += vec3(grain);
+  }
+
+  gl_FragColor = vec4(clamp(rgb / 255.0, 0.0, 1.0), color.a);
+}
+`;
 
 const VERTEX_SHADER_SOURCE = `
 attribute vec2 aPosition;
@@ -406,10 +537,10 @@ export function createWebglPreviewBackend(): ImagePipelineBackend {
     const gl = createGlContext();
     context = {
       gl,
-      curvesProgram: compileProgram(gl, curvesFragmentShaderSource),
-      colorAdjustProgram: compileProgram(gl, colorAdjustFragmentShaderSource),
-      lightAdjustProgram: compileProgram(gl, lightAdjustFragmentShaderSource),
-      detailAdjustProgram: compileProgram(gl, detailAdjustFragmentShaderSource),
+      curvesProgram: compileProgram(gl, CURVES_FRAGMENT_SHADER_SOURCE),
+      colorAdjustProgram: compileProgram(gl, COLOR_ADJUST_FRAGMENT_SHADER_SOURCE),
+      lightAdjustProgram: compileProgram(gl, LIGHT_ADJUST_FRAGMENT_SHADER_SOURCE),
+      detailAdjustProgram: compileProgram(gl, DETAIL_ADJUST_FRAGMENT_SHADER_SOURCE),
       quadBuffer: createQuadBuffer(gl),
     };
 

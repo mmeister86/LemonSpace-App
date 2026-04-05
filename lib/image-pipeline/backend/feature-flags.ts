@@ -65,9 +65,10 @@ function parseBooleanFlag(value: unknown): boolean | undefined {
 function readFlagFromRuntimeStore(
   key: (typeof IMAGE_PIPELINE_BACKEND_FLAG_KEYS)[keyof typeof IMAGE_PIPELINE_BACKEND_FLAG_KEYS],
 ): unknown {
-  const runtimeStore =
-    globalThis.__LEMONSPACE_FEATURE_FLAGS__ ??
-    (typeof window !== "undefined" ? window.__LEMONSPACE_FEATURE_FLAGS__ : undefined);
+  const runtimeStore = (globalThis as typeof globalThis & {
+    __LEMONSPACE_FEATURE_FLAGS__?: RuntimeFeatureFlagStore;
+  }).__LEMONSPACE_FEATURE_FLAGS__;
+
   if (runtimeStore && key in runtimeStore) {
     return runtimeStore[key];
   }
