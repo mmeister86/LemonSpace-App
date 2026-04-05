@@ -2,6 +2,7 @@
 
 import React, { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import type { Edge as RFEdge } from "@xyflow/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "@/convex/_generated/dataModel";
@@ -33,26 +34,32 @@ type HookHarnessProps = {
   isSyncOnline?: boolean;
   generateUploadUrl?: ReturnType<typeof vi.fn>;
   runCreateNodeOnlineOnly?: ReturnType<typeof vi.fn>;
+  runCreateNodeWithEdgeSplitOnlineOnly?: ReturnType<typeof vi.fn>;
   notifyOfflineUnsupported?: ReturnType<typeof vi.fn>;
   syncPendingMoveForClientRequest?: ReturnType<typeof vi.fn>;
   screenToFlowPosition?: (position: { x: number; y: number }) => { x: number; y: number };
+  edges?: RFEdge[];
 };
 
 function HookHarness({
   isSyncOnline = true,
   generateUploadUrl = vi.fn(async () => "https://upload.test"),
   runCreateNodeOnlineOnly = vi.fn(async () => "node-1"),
+  runCreateNodeWithEdgeSplitOnlineOnly = vi.fn(async () => "node-1"),
   notifyOfflineUnsupported = vi.fn(),
   syncPendingMoveForClientRequest = vi.fn(async () => undefined),
   screenToFlowPosition = (position) => position,
+  edges = [],
 }: HookHarnessProps) {
   const handlers = useCanvasDrop({
     canvasId: asCanvasId("canvas-1"),
     isSyncOnline,
     t: ((key: string) => key) as (key: string) => string,
+    edges,
     screenToFlowPosition,
     generateUploadUrl,
     runCreateNodeOnlineOnly,
+    runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
     syncPendingMoveForClientRequest,
   });
@@ -258,6 +265,72 @@ describe("useCanvasDrop", () => {
       clientRequestId: "req-1",
     });
     expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-video");
+  });
+
+  it("splits an intersected persisted edge for sidebar node drops", async () => {
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-note");
+    const runCreateNodeWithEdgeSplitOnlineOnly = vi.fn(async () => "node-note");
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+    const edgeContainer = document.createElement("g");
+    edgeContainer.classList.add("react-flow__edge");
+    edgeContainer.setAttribute("data-id", "edge-a");
+    const interaction = document.createElement("path");
+    interaction.classList.add("react-flow__edge-interaction");
+    edgeContainer.appendChild(interaction);
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => [interaction]),
+      configurable: true,
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          runCreateNodeWithEdgeSplitOnlineOnly={runCreateNodeWithEdgeSplitOnlineOnly}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+          edges={[{ id: "edge-a", source: "node-1", target: "node-2" } as RFEdge]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 120,
+        clientY: 340,
+        dataTransfer: {
+          getData: vi.fn((type: string) =>
+            type === CANVAS_NODE_DND_MIME ? "note" : "",
+          ),
+          files: [],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(runCreateNodeWithEdgeSplitOnlineOnly).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      type: "note",
+      positionX: 120,
+      positionY: 340,
+      width: NODE_DEFAULTS.note.width,
+      height: NODE_DEFAULTS.note.height,
+      data: {
+        ...NODE_DEFAULTS.note.data,
+        canvasId: "canvas-1",
+      },
+      splitEdgeId: "edge-a",
+      newNodeTargetHandle: undefined,
+      newNodeSourceHandle: undefined,
+      splitSourceHandle: undefined,
+      splitTargetHandle: undefined,
+      clientRequestId: "req-1",
+    });
+    expect(runCreateNodeOnlineOnly).not.toHaveBeenCalled();
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-note");
   });
 
   it("shows an upload failure toast when the dropped file upload fails", async () => {

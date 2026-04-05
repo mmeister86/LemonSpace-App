@@ -41,9 +41,10 @@ export function useNodeLocalData<T>({
     useCanvasGraphPreviewOverrides();
   const [localData, setLocalDataState] = useState<T>(() => normalize(data));
   const localDataRef = useRef(localData);
-  const persistedDataRef = useRef(localData);
+  const acceptedPersistedDataRef = useRef(localData);
   const hasPendingLocalChangesRef = useRef(false);
   const localChangeVersionRef = useRef(0);
+  const acknowledgedSaveVersionRef = useRef(0);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function useNodeLocalData<T>({
           return;
         }
 
-        hasPendingLocalChangesRef.current = false;
+        acknowledgedSaveVersionRef.current = savedVersion;
       })
       .catch(() => {
         if (!isMountedRef.current || savedVersion !== localChangeVersionRef.current) {
@@ -68,34 +69,49 @@ export function useNodeLocalData<T>({
         }
 
         hasPendingLocalChangesRef.current = false;
-        localDataRef.current = persistedDataRef.current;
-        setLocalDataState(persistedDataRef.current);
+        acknowledgedSaveVersionRef.current = 0;
+        localDataRef.current = acceptedPersistedDataRef.current;
+        setLocalDataState(acceptedPersistedDataRef.current);
         clearPreviewNodeDataOverride(nodeId);
       });
   }, saveDelayMs);
 
   useEffect(() => {
     const incomingData = normalize(data);
-    persistedDataRef.current = incomingData;
     const incomingHash = hashNodeData(incomingData);
     const localHash = hashNodeData(localDataRef.current);
+    const acceptedPersistedHash = hashNodeData(acceptedPersistedDataRef.current);
 
     if (incomingHash === localHash) {
+      acceptedPersistedDataRef.current = incomingData;
       hasPendingLocalChangesRef.current = false;
+      acknowledgedSaveVersionRef.current = 0;
       clearPreviewNodeDataOverride(nodeId);
       return;
     }
 
     if (hasPendingLocalChangesRef.current) {
-      logNodeDataDebug("skip-stale-external-data", {
-        nodeType: debugLabel,
-        incomingHash,
-        localHash,
-      });
-      return;
+      const saveAcknowledgedForCurrentVersion =
+        acknowledgedSaveVersionRef.current === localChangeVersionRef.current;
+      const shouldKeepBlockingIncomingData =
+        !saveAcknowledgedForCurrentVersion || incomingHash === acceptedPersistedHash;
+
+      if (shouldKeepBlockingIncomingData) {
+        logNodeDataDebug("skip-stale-external-data", {
+          nodeId,
+          nodeType: debugLabel,
+          incomingHash,
+          localHash,
+          saveAcknowledgedForCurrentVersion,
+        });
+        return;
+      }
     }
 
     const timer = window.setTimeout(() => {
+      acceptedPersistedDataRef.current = incomingData;
+      hasPendingLocalChangesRef.current = false;
+      acknowledgedSaveVersionRef.current = 0;
       localDataRef.current = incomingData;
       setLocalDataState(incomingData);
       clearPreviewNodeDataOverride(nodeId);
@@ -123,7 +139,7 @@ export function useNodeLocalData<T>({
       setPreviewNodeDataOverride(nodeId, next);
       queueSave();
     },
-    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
+    [nodeId, queueSave, setPreviewNodeDataOverride],
   );
 
   const updateLocalData = useCallback(
@@ -137,7 +153,7 @@ export function useNodeLocalData<T>({
       setPreviewNodeDataOverride(nodeId, next);
       queueSave();
     },
-    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
+    [nodeId, queueSave, setPreviewNodeDataOverride],
   );
 
   return {

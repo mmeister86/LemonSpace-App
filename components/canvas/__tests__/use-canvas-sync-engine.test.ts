@@ -74,4 +74,44 @@ describe("useCanvasSyncEngine", () => {
     expect(controller.pendingResizeAfterCreateRef.current.has("req-2")).toBe(false);
     expect(controller.pendingDataAfterCreateRef.current.has("req-2")).toBe(false);
   });
+
+
+  it("pins local node data immediately when queueing an update", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+    let nodes = [
+      {
+        id: "node-1",
+        type: "curves",
+        position: { x: 0, y: 0 },
+        data: { blackPoint: 124 },
+      },
+    ];
+    const setNodes = (updater: (current: typeof nodes) => typeof nodes) => {
+      nodes = updater(nodes);
+      return nodes;
+    };
+
+    const controller = createCanvasSyncEngineController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+      getSetNodes: () => setNodes,
+    });
+
+    await controller.queueNodeDataUpdate({
+      nodeId: asNodeId("node-1"),
+      data: { blackPoint: 209 },
+    });
+
+    expect(nodes[0]?.data).toEqual({ blackPoint: 209 });
+    expect(controller.pendingLocalNodeDataUntilConvexMatchesRef.current).toEqual(
+      new Map([["node-1", { blackPoint: 209 }]]),
+    );
+    expect(enqueueSyncMutation).toHaveBeenCalledWith("updateData", {
+      nodeId: asNodeId("node-1"),
+      data: { blackPoint: 209 },
+    });
+  });
 });

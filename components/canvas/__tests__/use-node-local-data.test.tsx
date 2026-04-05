@@ -445,4 +445,140 @@ describe("useNodeLocalData preview overrides", () => {
 
     vi.useRealTimers();
   });
+
+  it("keeps local data when save resolves before Convex catches up", async () => {
+    vi.useFakeTimers();
+    const onSave = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <TestApp
+          nodeId="node-1"
+          data={{ exposure: 0.2, label: "persisted" }}
+          mounted
+          onSave={onSave}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHookRef.current?.applyLocalData({
+        exposure: 0.8,
+        label: "local",
+      });
+    });
+
+    expect(latestHookRef.current?.localData).toEqual({
+      exposure: 0.8,
+      label: "local",
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root?.render(
+        <TestApp
+          nodeId="node-1"
+          data={{ exposure: 0.2, label: "persisted" }}
+          mounted
+          onSave={onSave}
+        />,
+      );
+    });
+
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(latestHookRef.current?.localData).toEqual({
+      exposure: 0.8,
+      label: "local",
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("accepts a later normalized server value after blocking a stale rerender", async () => {
+    vi.useFakeTimers();
+    const onSave = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <TestApp
+          nodeId="node-1"
+          data={{ exposure: 0.2, label: "persisted" }}
+          mounted
+          onSave={onSave}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHookRef.current?.applyLocalData({
+        exposure: 0.8,
+        label: "local",
+      });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root?.render(
+        <TestApp
+          nodeId="node-1"
+          data={{ exposure: 0.2, label: "persisted" }}
+          mounted
+          onSave={onSave}
+        />,
+      );
+    });
+
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(latestHookRef.current?.localData).toEqual({
+      exposure: 0.8,
+      label: "local",
+    });
+
+    await act(async () => {
+      root?.render(
+        <TestApp
+          nodeId="node-1"
+          data={{ exposure: 0.75, label: "server-normalized" }}
+          mounted
+          onSave={onSave}
+        />,
+      );
+    });
+
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(latestHookRef.current?.localData).toEqual({
+      exposure: 0.75,
+      label: "server-normalized",
+    });
+    expect(latestOverridesRef.current).toEqual(new Map());
+
+    vi.useRealTimers();
+  });
 });

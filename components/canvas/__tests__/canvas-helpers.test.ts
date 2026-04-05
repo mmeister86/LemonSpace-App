@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
-import { withResolvedCompareData } from "../canvas-helpers";
+import { computeEdgeInsertLayout, withResolvedCompareData } from "../canvas-helpers";
 import {
   buildGraphSnapshot,
   pruneCanvasGraphNodeDataOverrides,
@@ -308,5 +308,109 @@ describe("canvas preview graph helpers", () => {
         params: { exposure: 0.8 },
       },
     ]);
+  });
+});
+
+describe("computeEdgeInsertLayout", () => {
+  it("shifts source and target along a horizontal axis when spacing is too tight", () => {
+    const source = createNode({
+      id: "source",
+      position: { x: 0, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+    const target = createNode({
+      id: "target",
+      position: { x: 120, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+
+    const layout = computeEdgeInsertLayout({
+      sourceNode: source,
+      targetNode: target,
+      newNodeWidth: 80,
+      newNodeHeight: 40,
+      gapPx: 10,
+    });
+
+    expect(layout.insertPosition).toEqual({ x: 70, y: 10 });
+    expect(layout.sourcePosition).toEqual({ x: -40, y: 0 });
+    expect(layout.targetPosition).toEqual({ x: 160, y: 0 });
+  });
+
+  it("keeps diagonal-axis spacing adjustments aligned to the edge direction", () => {
+    const source = createNode({
+      id: "source",
+      position: { x: 0, y: 0 },
+      style: { width: 100, height: 100 },
+    });
+    const target = createNode({
+      id: "target",
+      position: { x: 100, y: 100 },
+      style: { width: 100, height: 100 },
+    });
+
+    const layout = computeEdgeInsertLayout({
+      sourceNode: source,
+      targetNode: target,
+      newNodeWidth: 80,
+      newNodeHeight: 80,
+      gapPx: 10,
+    });
+
+    expect(layout.insertPosition).toEqual({ x: 60, y: 60 });
+    expect(layout.sourcePosition).toBeDefined();
+    expect(layout.targetPosition).toBeDefined();
+    expect(layout.sourcePosition?.x).toBeCloseTo(layout.sourcePosition?.y ?? 0, 6);
+    expect(layout.targetPosition?.x).toBeCloseTo(layout.targetPosition?.y ?? 0, 6);
+    expect(layout.sourcePosition?.x).toBeLessThan(source.position.x);
+    expect(layout.targetPosition?.x).toBeGreaterThan(target.position.x);
+  });
+
+  it("does not shift source or target when there is enough spacing", () => {
+    const source = createNode({
+      id: "source",
+      position: { x: 0, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+    const target = createNode({
+      id: "target",
+      position: { x: 320, y: 0 },
+      style: { width: 100, height: 60 },
+    });
+
+    const layout = computeEdgeInsertLayout({
+      sourceNode: source,
+      targetNode: target,
+      newNodeWidth: 80,
+      newNodeHeight: 40,
+      gapPx: 10,
+    });
+
+    expect(layout.insertPosition).toEqual({ x: 170, y: 10 });
+    expect(layout.sourcePosition).toBeUndefined();
+    expect(layout.targetPosition).toBeUndefined();
+  });
+
+  it("falls back to midpoint placement without aggressive shifts in degenerate cases", () => {
+    const source = createNode({
+      id: "source",
+      position: { x: 40, y: 80 },
+    });
+    const target = createNode({
+      id: "target",
+      position: { x: 40, y: 80 },
+    });
+
+    const layout = computeEdgeInsertLayout({
+      sourceNode: source,
+      targetNode: target,
+      newNodeWidth: 30,
+      newNodeHeight: 10,
+      gapPx: 10,
+    });
+
+    expect(layout.insertPosition).toEqual({ x: 25, y: 75 });
+    expect(layout.sourcePosition).toBeUndefined();
+    expect(layout.targetPosition).toBeUndefined();
   });
 });

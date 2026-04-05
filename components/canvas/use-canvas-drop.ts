@@ -4,19 +4,34 @@ import type { Id } from "@/convex/_generated/dataModel";
 import {
   CANVAS_NODE_DND_MIME,
 } from "@/lib/canvas-connection-policy";
-import { NODE_DEFAULTS } from "@/lib/canvas-utils";
+import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import {
   isCanvasNodeType,
   type CanvasNodeType,
 } from "@/lib/canvas-node-types";
 import { toast } from "@/lib/toast";
 
+import {
+  getIntersectedEdgeId,
+  hasHandleKey,
+  isOptimisticEdgeId,
+  logCanvasConnectionDebug,
+  normalizeHandle,
+} from "./canvas-helpers";
 import { getImageDimensions } from "./canvas-media-utils";
 
 type UseCanvasDropParams = {
   canvasId: Id<"canvases">;
   isSyncOnline: boolean;
   t: (key: string) => string;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    className?: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }>;
   screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number };
   generateUploadUrl: () => Promise<string>;
   runCreateNodeOnlineOnly: (args: {
@@ -27,6 +42,21 @@ type UseCanvasDropParams = {
     width: number;
     height: number;
     data: Record<string, unknown>;
+    clientRequestId?: string;
+  }) => Promise<Id<"nodes">>;
+  runCreateNodeWithEdgeSplitOnlineOnly: (args: {
+    canvasId: Id<"canvases">;
+    type: CanvasNodeType;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+    data: Record<string, unknown>;
+    splitEdgeId: Id<"edges">;
+    newNodeTargetHandle?: string;
+    newNodeSourceHandle?: string;
+    splitSourceHandle?: string;
+    splitTargetHandle?: string;
     clientRequestId?: string;
   }) => Promise<Id<"nodes">>;
   notifyOfflineUnsupported: (featureLabel: string) => void;
@@ -66,9 +96,11 @@ export function useCanvasDrop({
   canvasId,
   isSyncOnline,
   t,
+  edges,
   screenToFlowPosition,
   generateUploadUrl,
   runCreateNodeOnlineOnly,
+  runCreateNodeWithEdgeSplitOnlineOnly,
   notifyOfflineUnsupported,
   syncPendingMoveForClientRequest,
 }: UseCanvasDropParams) {
@@ -169,23 +201,92 @@ export function useCanvasDrop({
         x: event.clientX,
         y: event.clientY,
       });
+      const intersectedEdgeId =
+        typeof document !== "undefined" &&
+        typeof document.elementsFromPoint === "function"
+          ? getIntersectedEdgeId({
+              x: event.clientX,
+              y: event.clientY,
+            })
+          : null;
       const defaults = NODE_DEFAULTS[parsedPayload.nodeType] ?? {
         width: 200,
         height: 100,
         data: {},
       };
       const clientRequestId = crypto.randomUUID();
+      const hitEdge = intersectedEdgeId
+        ? edges.find(
+            (edge) =>
+              edge.id === intersectedEdgeId &&
+              edge.className !== "temp" &&
+              !isOptimisticEdgeId(edge.id),
+          )
+        : undefined;
+      const handles = NODE_HANDLE_MAP[parsedPayload.nodeType];
+      const canSplitEdge =
+        hitEdge !== undefined &&
+        handles !== undefined &&
+        hasHandleKey(handles, "source") &&
+        hasHandleKey(handles, "target");
 
-      void runCreateNodeOnlineOnly({
-        canvasId,
-        type: parsedPayload.nodeType,
-        positionX: position.x,
-        positionY: position.y,
-        width: defaults.width,
-        height: defaults.height,
-        data: { ...defaults.data, ...parsedPayload.payloadData, canvasId },
-        clientRequestId,
-      }).then((realId) => {
+      logCanvasConnectionDebug("node-drop", {
+        nodeType: parsedPayload.nodeType,
+        clientPoint: { x: event.clientX, y: event.clientY },
+        flowPoint: position,
+        intersectedEdgeId,
+        hitEdgeId: hitEdge?.id ?? null,
+        usesEdgeSplitPath: canSplitEdge,
+      });
+
+      const createNodePromise = canSplitEdge
+        ? (() => {
+            logCanvasConnectionDebug("node-drop:split-edge", {
+              nodeType: parsedPayload.nodeType,
+              clientPoint: { x: event.clientX, y: event.clientY },
+              flowPoint: position,
+              intersectedEdgeId,
+              splitEdgeId: hitEdge.id,
+            });
+            return runCreateNodeWithEdgeSplitOnlineOnly({
+              canvasId,
+              type: parsedPayload.nodeType,
+              positionX: position.x,
+              positionY: position.y,
+              width: defaults.width,
+              height: defaults.height,
+              data: { ...defaults.data, ...parsedPayload.payloadData, canvasId },
+              splitEdgeId: hitEdge.id as Id<"edges">,
+              newNodeTargetHandle: normalizeHandle(handles.target),
+              newNodeSourceHandle: normalizeHandle(handles.source),
+              splitSourceHandle: normalizeHandle(hitEdge.sourceHandle),
+              splitTargetHandle: normalizeHandle(hitEdge.targetHandle),
+              clientRequestId,
+            });
+          })()
+        : (() => {
+            if (intersectedEdgeId) {
+              logCanvasConnectionDebug("node-drop:edge-detected-no-split", {
+                nodeType: parsedPayload.nodeType,
+                clientPoint: { x: event.clientX, y: event.clientY },
+                flowPoint: position,
+                intersectedEdgeId,
+              });
+            }
+
+            return runCreateNodeOnlineOnly({
+              canvasId,
+              type: parsedPayload.nodeType,
+              positionX: position.x,
+              positionY: position.y,
+              width: defaults.width,
+              height: defaults.height,
+              data: { ...defaults.data, ...parsedPayload.payloadData, canvasId },
+              clientRequestId,
+            });
+          })();
+
+      void createNodePromise.then((realId) => {
         void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
           (error: unknown) => {
             console.error("[Canvas] createNode syncPendingMove failed", error);
@@ -195,9 +296,11 @@ export function useCanvasDrop({
     },
     [
       canvasId,
+      edges,
       generateUploadUrl,
       isSyncOnline,
       notifyOfflineUnsupported,
+      runCreateNodeWithEdgeSplitOnlineOnly,
       runCreateNodeOnlineOnly,
       screenToFlowPosition,
       syncPendingMoveForClientRequest,

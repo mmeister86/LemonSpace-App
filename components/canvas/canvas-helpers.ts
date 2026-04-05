@@ -12,6 +12,121 @@ import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 export const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
 
+type XYPosition = { x: number; y: number };
+
+export type ComputeEdgeInsertLayoutArgs = {
+  sourceNode: RFNode;
+  targetNode: RFNode;
+  newNodeWidth: number;
+  newNodeHeight: number;
+  gapPx: number;
+};
+
+export type EdgeInsertLayout = {
+  insertPosition: XYPosition;
+  sourcePosition?: XYPosition;
+  targetPosition?: XYPosition;
+};
+
+function readNodeDimension(node: RFNode, key: "width" | "height"): number | null {
+  const nodeRecord = node as { width?: unknown; height?: unknown };
+  const direct = nodeRecord[key];
+  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
+    return direct;
+  }
+
+  const styleValue = node.style?.[key];
+  if (typeof styleValue === "number" && Number.isFinite(styleValue) && styleValue > 0) {
+    return styleValue;
+  }
+
+  return null;
+}
+
+function readNodeBox(node: RFNode): {
+  width: number;
+  height: number;
+  hasDimensions: boolean;
+} {
+  const width = readNodeDimension(node, "width");
+  const height = readNodeDimension(node, "height");
+  return {
+    width: width ?? 0,
+    height: height ?? 0,
+    hasDimensions: width !== null && height !== null,
+  };
+}
+
+export function computeEdgeInsertLayout(args: ComputeEdgeInsertLayoutArgs): EdgeInsertLayout {
+  const sourceBox = readNodeBox(args.sourceNode);
+  const targetBox = readNodeBox(args.targetNode);
+  const safeGap = Number.isFinite(args.gapPx) ? Math.max(0, args.gapPx) : 0;
+  const newWidth = Number.isFinite(args.newNodeWidth) ? Math.max(0, args.newNodeWidth) : 0;
+  const newHeight = Number.isFinite(args.newNodeHeight) ? Math.max(0, args.newNodeHeight) : 0;
+
+  const sourceCenter = {
+    x: args.sourceNode.position.x + sourceBox.width / 2,
+    y: args.sourceNode.position.y + sourceBox.height / 2,
+  };
+  const targetCenter = {
+    x: args.targetNode.position.x + targetBox.width / 2,
+    y: args.targetNode.position.y + targetBox.height / 2,
+  };
+
+  const midpoint = {
+    x: (sourceCenter.x + targetCenter.x) / 2,
+    y: (sourceCenter.y + targetCenter.y) / 2,
+  };
+
+  const layout: EdgeInsertLayout = {
+    insertPosition: {
+      x: midpoint.x - newWidth / 2,
+      y: midpoint.y - newHeight / 2,
+    },
+  };
+
+  if (!sourceBox.hasDimensions || !targetBox.hasDimensions) {
+    return layout;
+  }
+
+  const axisDx = targetCenter.x - sourceCenter.x;
+  const axisDy = targetCenter.y - sourceCenter.y;
+  const axisLength = Math.hypot(axisDx, axisDy);
+  if (axisLength <= Number.EPSILON) {
+    return layout;
+  }
+
+  const ux = axisDx / axisLength;
+  const uy = axisDy / axisLength;
+
+  const extentAlongAxis = (width: number, height: number): number =>
+    Math.abs(ux) * (width / 2) + Math.abs(uy) * (height / 2);
+
+  const sourceExtent = extentAlongAxis(sourceBox.width, sourceBox.height);
+  const targetExtent = extentAlongAxis(targetBox.width, targetBox.height);
+  const newExtent = extentAlongAxis(newWidth, newHeight);
+  const halfAxisLength = axisLength / 2;
+
+  const sourceShift = Math.max(0, sourceExtent + newExtent + safeGap - halfAxisLength);
+  const targetShift = Math.max(0, targetExtent + newExtent + safeGap - halfAxisLength);
+
+  if (sourceShift > 0) {
+    layout.sourcePosition = {
+      x: args.sourceNode.position.x - ux * sourceShift,
+      y: args.sourceNode.position.y - uy * sourceShift,
+    };
+  }
+
+  if (targetShift > 0) {
+    layout.targetPosition = {
+      x: args.targetNode.position.x + ux * targetShift,
+      y: args.targetNode.position.y + uy * targetShift,
+    };
+  }
+
+  return layout;
+}
+
 export function createCanvasOpId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -78,19 +193,50 @@ export type DroppedConnectionTarget = {
   targetHandle?: string;
 };
 
-function getNodeElementAtClientPoint(point: { x: number; y: number }): HTMLElement | null {
+function describeConnectionDebugElement(element: Element): Record<string, unknown> {
+  if (!(element instanceof HTMLElement)) {
+    return {
+      tagName: element.tagName.toLowerCase(),
+    };
+  }
+
+  return {
+    tagName: element.tagName.toLowerCase(),
+    id: element.id || undefined,
+    dataId: element.dataset.id || undefined,
+    className: element.className || undefined,
+  };
+}
+
+export function logCanvasConnectionDebug(
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  console.info("[Canvas connection debug]", event, payload);
+}
+
+function getNodeElementAtClientPoint(
+  point: { x: number; y: number },
+  elementsAtPoint?: Element[],
+): HTMLElement | null {
   if (typeof document === "undefined") {
     return null;
   }
 
-  const hit = document.elementsFromPoint(point.x, point.y).find((element) => {
-    if (!(element instanceof HTMLElement)) return false;
-    return (
-      element.classList.contains("react-flow__node") &&
-      typeof element.dataset.id === "string" &&
-      element.dataset.id.length > 0
-    );
-  });
+  const hit = (elementsAtPoint ?? document.elementsFromPoint(point.x, point.y)).find(
+    (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      return (
+        element.classList.contains("react-flow__node") &&
+        typeof element.dataset.id === "string" &&
+        element.dataset.id.length > 0
+      );
+    },
+  );
 
   return hit instanceof HTMLElement ? hit : null;
 }
@@ -133,25 +279,52 @@ export function resolveDroppedConnectionTarget(args: {
   nodes: RFNode[];
   edges: RFEdge[];
 }): DroppedConnectionTarget | null {
-  const nodeElement = getNodeElementAtClientPoint(args.point);
+  const elementsAtPoint =
+    typeof document === "undefined"
+      ? []
+      : document.elementsFromPoint(args.point.x, args.point.y);
+  const nodeElement = getNodeElementAtClientPoint(args.point, elementsAtPoint);
   if (!nodeElement) {
+    logCanvasConnectionDebug("drop-target:node-missed", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      elementsAtPoint: elementsAtPoint.slice(0, 6).map(describeConnectionDebugElement),
+    });
     return null;
   }
 
   const targetNodeId = nodeElement.dataset.id;
   if (!targetNodeId) {
+    logCanvasConnectionDebug("drop-target:node-missing-data-id", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      nodeElement: describeConnectionDebugElement(nodeElement),
+    });
     return null;
   }
 
   const targetNode = args.nodes.find((node) => node.id === targetNodeId);
   if (!targetNode) {
+    logCanvasConnectionDebug("drop-target:node-not-in-state", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      targetNodeId,
+      nodeCount: args.nodes.length,
+      nodeElement: describeConnectionDebugElement(nodeElement),
+    });
     return null;
   }
 
   const handles = NODE_HANDLE_MAP[targetNode.type ?? ""];
 
   if (args.fromHandleType === "source") {
-    return {
+    const droppedConnection = {
       sourceNodeId: args.fromNodeId,
       targetNodeId,
       sourceHandle: args.fromHandleId,
@@ -165,14 +338,40 @@ export function resolveDroppedConnectionTarget(args: {
             })
           : handles?.target,
     };
+
+    logCanvasConnectionDebug("drop-target:node-detected", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      targetNodeId,
+      targetNodeType: targetNode.type ?? null,
+      nodeElement: describeConnectionDebugElement(nodeElement),
+      resolvedConnection: droppedConnection,
+    });
+
+    return droppedConnection;
   }
 
-  return {
+  const droppedConnection = {
     sourceNodeId: targetNodeId,
     targetNodeId: args.fromNodeId,
     sourceHandle: handles?.source,
     targetHandle: args.fromHandleId,
   };
+
+  logCanvasConnectionDebug("drop-target:node-detected", {
+    point: args.point,
+    fromNodeId: args.fromNodeId,
+    fromHandleId: args.fromHandleId ?? null,
+    fromHandleType: args.fromHandleType,
+    targetNodeId,
+    targetNodeType: targetNode.type ?? null,
+    nodeElement: describeConnectionDebugElement(nodeElement),
+    resolvedConnection: droppedConnection,
+  });
+
+  return droppedConnection;
 }
 
 /** Kanten-Split nach Drag: wartet auf echte Node-ID, wenn der Knoten noch optimistisch ist. */

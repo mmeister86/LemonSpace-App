@@ -44,19 +44,27 @@ const latestHandlersRef: {
 type HookHarnessProps = {
   helperResult: DroppedConnectionTarget | null;
   runCreateEdgeMutation?: ReturnType<typeof vi.fn>;
+  runSplitEdgeAtExistingNodeMutation?: ReturnType<typeof vi.fn>;
   showConnectionRejectedToast?: ReturnType<typeof vi.fn>;
+  nodes?: RFNode[];
+  edges?: RFEdge[];
 };
 
 function HookHarness({
   helperResult,
   runCreateEdgeMutation = vi.fn(async () => undefined),
+  runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined),
   showConnectionRejectedToast = vi.fn(),
+  nodes: providedNodes,
+  edges: providedEdges,
 }: HookHarnessProps) {
-  const [nodes] = useState<RFNode[]>([
-    { id: "node-source", type: "image", position: { x: 0, y: 0 }, data: {} },
-    { id: "node-target", type: "text", position: { x: 300, y: 200 }, data: {} },
-  ]);
-  const [edges] = useState<RFEdge[]>([]);
+  const [nodes] = useState<RFNode[]>(
+    providedNodes ?? [
+      { id: "node-source", type: "image", position: { x: 0, y: 0 }, data: {} },
+      { id: "node-target", type: "text", position: { x: 300, y: 200 }, data: {} },
+    ],
+  );
+  const [edges] = useState<RFEdge[]>(providedEdges ?? []);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const edgeReconnectSuccessful = useRef(true);
@@ -90,9 +98,10 @@ function HookHarness({
     resolvedRealIdByClientRequestRef,
     setEdges,
     setEdgeSyncNonce,
-    screenToFlowPosition: (position) => position,
+    screenToFlowPosition: (position: { x: number; y: number }) => position,
     syncPendingMoveForClientRequest: vi.fn(async () => undefined),
     runCreateEdgeMutation,
+    runSplitEdgeAtExistingNodeMutation,
     runRemoveEdgeMutation: vi.fn(async () => undefined),
     runCreateNodeWithEdgeFromSourceOnlineOnly: vi.fn(async () => "node-1"),
     runCreateNodeWithEdgeToTargetOnlineOnly: vi.fn(async () => "node-1"),
@@ -344,6 +353,83 @@ describe("useCanvasConnections", () => {
       sourceHandle: undefined,
       targetHandle: "target-handle",
     });
+  });
+
+  it("splits the existing incoming edge when dropping onto an already-connected adjustment node", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const showConnectionRejectedToast = vi.fn();
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={{
+            sourceNodeId: "node-curves",
+            targetNodeId: "node-light",
+            sourceHandle: undefined,
+            targetHandle: undefined,
+          }}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          showConnectionRejectedToast={showConnectionRejectedToast}
+          nodes={[
+            { id: "node-image", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-curves", type: "curves", position: { x: 180, y: 120 }, data: {} },
+            { id: "node-light", type: "light-adjust", position: { x: 360, y: 120 }, data: {} },
+          ]}
+          edges={[
+            {
+              id: "edge-image-light",
+              source: "node-image",
+              target: "node-light",
+            },
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-curves",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 400, clientY: 260 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-curves", type: "curves" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 400, y: 260 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runSplitEdgeAtExistingNodeMutation).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      splitEdgeId: "edge-image-light",
+      middleNodeId: "node-curves",
+      splitSourceHandle: undefined,
+      splitTargetHandle: undefined,
+      newNodeSourceHandle: undefined,
+      newNodeTargetHandle: undefined,
+    });
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).not.toHaveBeenCalled();
+    expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
   });
 
   it("ignores onConnectEnd when no connect drag is active", async () => {

@@ -68,8 +68,11 @@ import { useCanvasNodeInteractions } from "./use-canvas-node-interactions";
 import { useCanvasConnections } from "./use-canvas-connections";
 import { useCanvasDrop } from "./use-canvas-drop";
 import { useCanvasScissors } from "./canvas-scissors";
+import { type DefaultEdgeInsertAnchor } from "./edges/default-edge";
 import { CanvasSyncProvider } from "./canvas-sync-context";
 import { useCanvasData } from "./use-canvas-data";
+import { useCanvasEdgeInsertions } from "./use-canvas-edge-insertions";
+import { useCanvasEdgeTypes } from "./use-canvas-edge-types";
 import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
@@ -111,6 +114,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       pendingEdgeSplitByClientRequestRef,
       pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef,
+      pendingLocalNodeDataUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
     },
     actions: {
@@ -328,10 +332,53 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     screenToFlowPosition,
     syncPendingMoveForClientRequest,
     runCreateEdgeMutation,
+    runSplitEdgeAtExistingNodeMutation,
     runRemoveEdgeMutation,
     runCreateNodeWithEdgeFromSourceOnlineOnly,
     runCreateNodeWithEdgeToTargetOnlineOnly,
     showConnectionRejectedToast,
+  });
+
+  const {
+    edgeInsertMenu,
+    closeEdgeInsertMenu,
+    openEdgeInsertMenu,
+    handleEdgeInsertPick,
+  } = useCanvasEdgeInsertions({
+    canvasId,
+    nodes,
+    edges,
+    runCreateNodeWithEdgeSplitOnlineOnly,
+    runBatchMoveNodesMutation,
+    showConnectionRejectedToast,
+  });
+
+  const handleEdgeInsertClick = useCallback(
+    (anchor: DefaultEdgeInsertAnchor) => {
+      closeConnectionDropMenu();
+      openEdgeInsertMenu(anchor);
+    },
+    [closeConnectionDropMenu, openEdgeInsertMenu],
+  );
+
+  useEffect(() => {
+    if (connectionDropMenu) {
+      closeEdgeInsertMenu();
+    }
+  }, [closeEdgeInsertMenu, connectionDropMenu]);
+
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      ...DEFAULT_EDGE_OPTIONS,
+      type: "canvas-default" as const,
+    }),
+    [],
+  );
+
+  const edgeTypes = useCanvasEdgeTypes({
+    edgeInsertMenuEdgeId: edgeInsertMenu?.edgeId ?? null,
+    scissorsMode,
+    onInsertClick: handleEdgeInsertClick,
   });
 
   useCanvasFlowReconciliation({
@@ -351,6 +398,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       resolvedRealIdByClientRequestRef,
       pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef,
+      pendingLocalNodeDataUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
       isDragging,
       isResizing,
@@ -411,9 +459,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     canvasId,
     isSyncOnline,
     t,
+    edges,
     screenToFlowPosition,
     generateUploadUrl,
     runCreateNodeOnlineOnly,
+    runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
     syncPendingMoveForClientRequest,
   });
@@ -473,9 +523,28 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         <CanvasAppMenu canvasId={canvasId} />
         <CanvasCommandPalette />
         <CanvasConnectionDropMenu
-          state={connectionDropMenu}
+          anchor={
+            connectionDropMenu
+              ? {
+                  screenX: connectionDropMenu.screenX,
+                  screenY: connectionDropMenu.screenY,
+                }
+              : null
+          }
           onClose={closeConnectionDropMenu}
           onPick={handleConnectionDropPick}
+        />
+        <CanvasConnectionDropMenu
+          anchor={
+            edgeInsertMenu
+              ? {
+                  screenX: edgeInsertMenu.screenX,
+                  screenY: edgeInsertMenu.screenY,
+                }
+              : null
+          }
+          onClose={closeEdgeInsertMenu}
+          onPick={handleEdgeInsertPick}
         />
         {scissorsMode ? (
           <div className="pointer-events-none absolute top-14 left-1/2 z-50 max-w-[min(100%-2rem,28rem)] -translate-x-1/2 rounded-lg bg-popover/95 px-3 py-1.5 text-center text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
@@ -512,9 +581,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             nodes={nodes}
             edges={edges}
             onlyRenderVisibleElements
-            defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+            defaultEdgeOptions={defaultEdgeOptions}
             connectionLineComponent={CustomConnectionLine}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStart={onNodeDragStart}

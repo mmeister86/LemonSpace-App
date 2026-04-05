@@ -277,6 +277,83 @@ function applyLocalPositionPins(args: {
   };
 }
 
+function isNodeDataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nodeDataIncludesPin(incoming: unknown, pin: unknown): boolean {
+  if (Array.isArray(pin)) {
+    return (
+      Array.isArray(incoming) &&
+      incoming.length === pin.length &&
+      pin.every((pinEntry, index) => nodeDataIncludesPin(incoming[index], pinEntry))
+    );
+  }
+
+  if (isNodeDataRecord(pin)) {
+    if (!isNodeDataRecord(incoming)) {
+      return false;
+    }
+
+    return Object.keys(pin).every((key) =>
+      nodeDataIncludesPin(incoming[key], pin[key]),
+    );
+  }
+
+  return Object.is(incoming, pin);
+}
+
+function mergeNodeDataWithPin(incoming: unknown, pin: unknown): unknown {
+  if (Array.isArray(pin)) {
+    return pin;
+  }
+
+  if (isNodeDataRecord(pin)) {
+    const base = isNodeDataRecord(incoming) ? incoming : {};
+    const next: Record<string, unknown> = { ...base };
+
+    for (const [key, value] of Object.entries(pin)) {
+      next[key] = mergeNodeDataWithPin(base[key], value);
+    }
+
+    return next;
+  }
+
+  return pin;
+}
+
+function applyLocalNodeDataPins(args: {
+  nodes: RFNode[];
+  pendingLocalNodeDataPins: ReadonlyMap<string, unknown>;
+}): {
+  nodes: RFNode[];
+  nextPendingLocalNodeDataPins: Map<string, unknown>;
+} {
+  const nodeIds = new Set(args.nodes.map((node) => node.id));
+  const nextPendingLocalNodeDataPins = new Map(
+    [...args.pendingLocalNodeDataPins].filter(([nodeId]) => nodeIds.has(nodeId)),
+  );
+  const nodes = args.nodes.map((node) => {
+    const pin = nextPendingLocalNodeDataPins.get(node.id);
+    if (pin === undefined) return node;
+
+    if (nodeDataIncludesPin(node.data, pin)) {
+      nextPendingLocalNodeDataPins.delete(node.id);
+      return node;
+    }
+
+    return {
+      ...node,
+      data: mergeNodeDataWithPin(node.data, pin) as Record<string, unknown>,
+    };
+  });
+
+  return {
+    nodes,
+    nextPendingLocalNodeDataPins,
+  };
+}
+
 export function reconcileCanvasFlowNodes(args: {
   previousNodes: RFNode[];
   incomingNodes: RFNode[];
@@ -286,11 +363,13 @@ export function reconcileCanvasFlowNodes(args: {
   pendingConnectionCreateIds: ReadonlySet<string>;
   preferLocalPositionNodeIds: ReadonlySet<string>;
   pendingLocalPositionPins: ReadonlyMap<string, { x: number; y: number }>;
+  pendingLocalNodeDataPins?: ReadonlyMap<string, unknown>;
   pendingMovePins: ReadonlyMap<string, { x: number; y: number }>;
 }): {
   nodes: RFNode[];
   inferredRealIdByClientRequest: Map<string, Id<"nodes">>;
   nextPendingLocalPositionPins: Map<string, { x: number; y: number }>;
+  nextPendingLocalNodeDataPins: Map<string, unknown>;
   clearedPreferLocalPositionNodeIds: string[];
 } {
   const inferredRealIdByClientRequest = inferPendingConnectionNodeHandoff({
@@ -309,8 +388,12 @@ export function reconcileCanvasFlowNodes(args: {
     inferredRealIdByClientRequest,
     args.preferLocalPositionNodeIds,
   );
-  const pinnedNodes = applyLocalPositionPins({
+  const dataPinnedNodes = applyLocalNodeDataPins({
     nodes: mergedNodes,
+    pendingLocalNodeDataPins: args.pendingLocalNodeDataPins ?? new Map(),
+  });
+  const pinnedNodes = applyLocalPositionPins({
+    nodes: dataPinnedNodes.nodes,
     pendingLocalPositionPins: args.pendingLocalPositionPins,
   });
   const nodes = applyPinnedNodePositionsReadOnly(
@@ -335,6 +418,7 @@ export function reconcileCanvasFlowNodes(args: {
     nodes,
     inferredRealIdByClientRequest,
     nextPendingLocalPositionPins: pinnedNodes.nextPendingLocalPositionPins,
+    nextPendingLocalNodeDataPins: dataPinnedNodes.nextPendingLocalNodeDataPins,
     clearedPreferLocalPositionNodeIds,
   };
 }

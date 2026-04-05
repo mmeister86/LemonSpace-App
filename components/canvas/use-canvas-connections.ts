@@ -10,11 +10,19 @@ import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-p
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
-import { getConnectEndClientPoint, isOptimisticNodeId } from "./canvas-helpers";
-import { resolveDroppedConnectionTarget } from "./canvas-helpers";
+import {
+  getConnectEndClientPoint,
+  hasHandleKey,
+  isOptimisticEdgeId,
+  isOptimisticNodeId,
+  logCanvasConnectionDebug,
+  normalizeHandle,
+  resolveDroppedConnectionTarget,
+} from "./canvas-helpers";
 import {
   validateCanvasConnection,
   validateCanvasConnectionByType,
+  validateCanvasEdgeSplit,
 } from "./canvas-connection-validation";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import type { ConnectionDropMenuState } from "./canvas-connection-drop-menu";
@@ -42,6 +50,15 @@ type UseCanvasConnectionsParams = {
     targetNodeId: Id<"nodes">;
     sourceHandle?: string;
     targetHandle?: string;
+  }) => Promise<unknown>;
+  runSplitEdgeAtExistingNodeMutation: (args: {
+    canvasId: Id<"canvases">;
+    splitEdgeId: Id<"edges">;
+    middleNodeId: Id<"nodes">;
+    splitSourceHandle?: string;
+    splitTargetHandle?: string;
+    newNodeSourceHandle?: string;
+    newNodeTargetHandle?: string;
   }) => Promise<unknown>;
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
   runCreateNodeWithEdgeFromSourceOnlineOnly: (args: {
@@ -92,6 +109,7 @@ export function useCanvasConnections({
   screenToFlowPosition,
   syncPendingMoveForClientRequest,
   runCreateEdgeMutation,
+  runSplitEdgeAtExistingNodeMutation,
   runRemoveEdgeMutation,
   runCreateNodeWithEdgeFromSourceOnlineOnly,
   runCreateNodeWithEdgeToTargetOnlineOnly,
@@ -107,8 +125,13 @@ export function useCanvasConnections({
     connectionDropMenuRef.current = connectionDropMenu;
   }, [connectionDropMenu]);
 
-  const onConnectStart = useCallback<OnConnectStart>(() => {
+  const onConnectStart = useCallback<OnConnectStart>((_event, params) => {
     isConnectDragActiveRef.current = true;
+    logCanvasConnectionDebug("connect:start", {
+      nodeId: params.nodeId,
+      handleId: params.handleId,
+      handleType: params.handleType,
+    });
   }, []);
 
   const onConnect = useCallback(
@@ -116,11 +139,33 @@ export function useCanvasConnections({
       isConnectDragActiveRef.current = false;
       const validationError = validateCanvasConnection(connection, nodes, edges);
       if (validationError) {
+        logCanvasConnectionDebug("connect:invalid-direct", {
+          sourceNodeId: connection.source ?? null,
+          targetNodeId: connection.target ?? null,
+          sourceHandle: connection.sourceHandle ?? null,
+          targetHandle: connection.targetHandle ?? null,
+          validationError,
+        });
         showConnectionRejectedToast(validationError);
         return;
       }
 
-      if (!connection.source || !connection.target) return;
+      if (!connection.source || !connection.target) {
+        logCanvasConnectionDebug("connect:missing-endpoint", {
+          sourceNodeId: connection.source ?? null,
+          targetNodeId: connection.target ?? null,
+          sourceHandle: connection.sourceHandle ?? null,
+          targetHandle: connection.targetHandle ?? null,
+        });
+        return;
+      }
+
+      logCanvasConnectionDebug("connect:direct", {
+        sourceNodeId: connection.source,
+        targetNodeId: connection.target,
+        sourceHandle: connection.sourceHandle ?? null,
+        targetHandle: connection.targetHandle ?? null,
+      });
 
       void runCreateEdgeMutation({
         canvasId,
@@ -136,18 +181,71 @@ export function useCanvasConnections({
   const onConnectEnd = useCallback<OnConnectEnd>(
     (event, connectionState) => {
       if (!isConnectDragActiveRef.current) {
+        logCanvasConnectionDebug("connect:end-ignored", {
+          reason: "drag-not-active",
+          isValid: connectionState.isValid ?? null,
+          fromNodeId: connectionState.fromNode?.id ?? null,
+          fromHandleId: connectionState.fromHandle?.id ?? null,
+          toNodeId: connectionState.toNode?.id ?? null,
+          toHandleId: connectionState.toHandle?.id ?? null,
+        });
         return;
       }
 
       isConnectDragActiveRef.current = false;
-      if (isReconnectDragActiveRef.current) return;
-      if (connectionState.isValid === true) return;
+      if (isReconnectDragActiveRef.current) {
+        logCanvasConnectionDebug("connect:end-ignored", {
+          reason: "reconnect-active",
+          isValid: connectionState.isValid ?? null,
+          fromNodeId: connectionState.fromNode?.id ?? null,
+          fromHandleId: connectionState.fromHandle?.id ?? null,
+          toNodeId: connectionState.toNode?.id ?? null,
+          toHandleId: connectionState.toHandle?.id ?? null,
+        });
+        return;
+      }
+      if (connectionState.isValid === true) {
+        logCanvasConnectionDebug("connect:end-ignored", {
+          reason: "react-flow-valid-connection",
+          fromNodeId: connectionState.fromNode?.id ?? null,
+          fromHandleId: connectionState.fromHandle?.id ?? null,
+          toNodeId: connectionState.toNode?.id ?? null,
+          toHandleId: connectionState.toHandle?.id ?? null,
+        });
+        return;
+      }
       const fromNode = connectionState.fromNode;
       const fromHandle = connectionState.fromHandle;
-      if (!fromNode || !fromHandle) return;
+      if (!fromNode || !fromHandle) {
+        logCanvasConnectionDebug("connect:end-aborted", {
+          reason: "missing-from-node-or-handle",
+          fromNodeId: fromNode?.id ?? null,
+          fromHandleId: fromHandle?.id ?? null,
+          toNodeId: connectionState.toNode?.id ?? null,
+          toHandleId: connectionState.toHandle?.id ?? null,
+        });
+        return;
+      }
 
       const pt = getConnectEndClientPoint(event);
-      if (!pt) return;
+      if (!pt) {
+        logCanvasConnectionDebug("connect:end-aborted", {
+          reason: "missing-client-point",
+          fromNodeId: fromNode.id,
+          fromHandleId: fromHandle.id ?? null,
+          fromHandleType: fromHandle.type,
+        });
+        return;
+      }
+
+      logCanvasConnectionDebug("connect:end", {
+        point: pt,
+        fromNodeId: fromNode.id,
+        fromHandleId: fromHandle.id ?? null,
+        fromHandleType: fromHandle.type,
+        toNodeId: connectionState.toNode?.id ?? null,
+        toHandleId: connectionState.toHandle?.id ?? null,
+      });
 
       const flow = screenToFlowPosition({ x: pt.x, y: pt.y });
       const droppedConnection = resolveDroppedConnectionTarget({
@@ -157,6 +255,15 @@ export function useCanvasConnections({
         fromHandleType: fromHandle.type,
         nodes: nodesRef.current,
         edges: edgesRef.current,
+      });
+
+      logCanvasConnectionDebug("connect:end-drop-result", {
+        point: pt,
+        flow,
+        fromNodeId: fromNode.id,
+        fromHandleId: fromHandle.id ?? null,
+        fromHandleType: fromHandle.type,
+        droppedConnection,
       });
 
       if (droppedConnection) {
@@ -171,9 +278,74 @@ export function useCanvasConnections({
           edgesRef.current,
         );
         if (validationError) {
+          const fullFromNode = nodesRef.current.find((node) => node.id === fromNode.id);
+          const splitHandles = NODE_HANDLE_MAP[fullFromNode?.type ?? ""];
+          const incomingEdges = edgesRef.current.filter(
+            (edge) =>
+              edge.target === droppedConnection.targetNodeId &&
+              edge.className !== "temp" &&
+              !isOptimisticEdgeId(edge.id),
+          );
+          const incomingEdge = incomingEdges.length === 1 ? incomingEdges[0] : undefined;
+          const splitValidationError =
+            validationError === "adjustment-incoming-limit" &&
+            droppedConnection.sourceNodeId === fromNode.id &&
+            fromHandle.type === "source" &&
+            fullFromNode !== undefined &&
+            splitHandles !== undefined &&
+            hasHandleKey(splitHandles, "source") &&
+            hasHandleKey(splitHandles, "target") &&
+            incomingEdge !== undefined &&
+            incomingEdge.source !== fullFromNode.id &&
+            incomingEdge.target !== fullFromNode.id
+              ? validateCanvasEdgeSplit({
+                  nodes: nodesRef.current,
+                  edges: edgesRef.current,
+                  splitEdge: incomingEdge,
+                  middleNode: fullFromNode,
+                })
+              : null;
+
+          if (!splitValidationError && incomingEdge && fullFromNode && splitHandles) {
+            logCanvasConnectionDebug("connect:end-auto-split", {
+              point: pt,
+              flow,
+              droppedConnection,
+              splitEdgeId: incomingEdge.id,
+              middleNodeId: fullFromNode.id,
+            });
+            void runSplitEdgeAtExistingNodeMutation({
+              canvasId,
+              splitEdgeId: incomingEdge.id as Id<"edges">,
+              middleNodeId: fullFromNode.id as Id<"nodes">,
+              splitSourceHandle: normalizeHandle(incomingEdge.sourceHandle),
+              splitTargetHandle: normalizeHandle(incomingEdge.targetHandle),
+              newNodeSourceHandle: normalizeHandle(splitHandles.source),
+              newNodeTargetHandle: normalizeHandle(splitHandles.target),
+            });
+            return;
+          }
+
+          logCanvasConnectionDebug("connect:end-drop-rejected", {
+            point: pt,
+            flow,
+            droppedConnection,
+            validationError,
+            attemptedAutoSplit:
+              validationError === "adjustment-incoming-limit" &&
+              droppedConnection.sourceNodeId === fromNode.id &&
+              fromHandle.type === "source",
+            splitValidationError,
+          });
           showConnectionRejectedToast(validationError);
           return;
         }
+
+        logCanvasConnectionDebug("connect:end-create-edge", {
+          point: pt,
+          flow,
+          droppedConnection,
+        });
 
         void runCreateEdgeMutation({
           canvasId,
@@ -184,6 +356,14 @@ export function useCanvasConnections({
         });
         return;
       }
+
+      logCanvasConnectionDebug("connect:end-open-menu", {
+        point: pt,
+        flow,
+        fromNodeId: fromNode.id,
+        fromHandleId: fromHandle.id ?? null,
+        fromHandleType: fromHandle.type,
+      });
 
       setConnectionDropMenu({
         screenX: pt.x,
@@ -201,6 +381,7 @@ export function useCanvasConnections({
       isReconnectDragActiveRef,
       nodesRef,
       runCreateEdgeMutation,
+      runSplitEdgeAtExistingNodeMutation,
       screenToFlowPosition,
       showConnectionRejectedToast,
     ],

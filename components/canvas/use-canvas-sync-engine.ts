@@ -205,6 +205,9 @@ export function createCanvasSyncEngineController({
   const pendingLocalPositionUntilConvexMatchesRef = {
     current: new Map<string, { x: number; y: number }>(),
   };
+  const pendingLocalNodeDataUntilConvexMatchesRef = {
+    current: new Map<string, unknown>(),
+  };
   const preferLocalPositionNodeIdsRef = { current: new Set<string>() };
 
   const flushPendingResizeForClientRequest = async (
@@ -221,6 +224,21 @@ export function createCanvasSyncEngineController({
     });
   };
 
+  const pinNodeDataLocally = (nodeId: string, data: unknown): void => {
+    pendingLocalNodeDataUntilConvexMatchesRef.current.set(nodeId, data);
+    const setNodes = getSetNodes?.();
+    setNodes?.((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: data as Record<string, unknown>,
+            }
+          : node,
+      ),
+    );
+  };
+
   const flushPendingDataForClientRequest = async (
     clientRequestId: string,
     realId: Id<"nodes">,
@@ -228,6 +246,7 @@ export function createCanvasSyncEngineController({
     if (!pendingDataAfterCreateRef.current.has(clientRequestId)) return;
     const pendingData = pendingDataAfterCreateRef.current.get(clientRequestId);
     pendingDataAfterCreateRef.current.delete(clientRequestId);
+    pinNodeDataLocally(realId as string, pendingData);
     await getEnqueueSyncMutation()("updateData", {
       nodeId: realId,
       data: pendingData,
@@ -272,6 +291,7 @@ export function createCanvasSyncEngineController({
     data: unknown;
   }): Promise<void> => {
     const rawNodeId = args.nodeId as string;
+    pinNodeDataLocally(rawNodeId, args.data);
     if (!isOptimisticNodeId(rawNodeId) || !getIsSyncOnline()) {
       await getEnqueueSyncMutation()("updateData", args);
       return;
@@ -311,6 +331,7 @@ export function createCanvasSyncEngineController({
         pendingMoveAfterCreateRef.current.delete(clientRequestId);
         pendingResizeAfterCreateRef.current.delete(clientRequestId);
         pendingDataAfterCreateRef.current.delete(clientRequestId);
+        pendingLocalNodeDataUntilConvexMatchesRef.current.delete(realId as string);
         pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
         pendingConnectionCreatesRef.current.delete(clientRequestId);
         resolvedRealIdByClientRequestRef.current.delete(clientRequestId);
@@ -459,6 +480,7 @@ export function createCanvasSyncEngineController({
     pendingDeleteAfterCreateClientRequestIdsRef,
     pendingConnectionCreatesRef,
     pendingLocalPositionUntilConvexMatchesRef,
+    pendingLocalNodeDataUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     flushPendingResizeForClientRequest,
     flushPendingDataForClientRequest,
@@ -998,6 +1020,9 @@ export function useCanvasSyncEngine({
       controller.pendingMoveAfterCreateRef.current.delete(args.clientRequestId);
       controller.pendingResizeAfterCreateRef.current.delete(args.clientRequestId);
       controller.pendingDataAfterCreateRef.current.delete(args.clientRequestId);
+      controller.pendingLocalNodeDataUntilConvexMatchesRef.current.delete(
+        optimisticNodeId,
+      );
       pendingCreatePromiseByClientRequestRef.current.delete(args.clientRequestId);
       controller.pendingEdgeSplitByClientRequestRef.current.delete(
         args.clientRequestId,
@@ -1080,6 +1105,20 @@ export function useCanvasSyncEngine({
         controller.pendingLocalPositionUntilConvexMatchesRef.current.set(
           realNodeId,
           pinnedPos,
+        );
+      }
+
+      const pinnedData =
+        controller.pendingLocalNodeDataUntilConvexMatchesRef.current.get(
+          optimisticNodeId,
+        );
+      if (pinnedData !== undefined) {
+        controller.pendingLocalNodeDataUntilConvexMatchesRef.current.delete(
+          optimisticNodeId,
+        );
+        controller.pendingLocalNodeDataUntilConvexMatchesRef.current.set(
+          realNodeId,
+          pinnedData,
         );
       }
 
@@ -1655,6 +1694,10 @@ export function useCanvasSyncEngine({
             for (const nodeId of op.payload.nodeIds) {
               deletingNodeIds.current.delete(nodeId as string);
             }
+          } else if (op.type === "updateData") {
+            controller.pendingLocalNodeDataUntilConvexMatchesRef.current.delete(
+              op.payload.nodeId as string,
+            );
           }
           await ackCanvasSyncOp(op.id);
           resolveCanvasOp(canvasId as string, op.id);
@@ -1767,6 +1810,8 @@ export function useCanvasSyncEngine({
       pendingConnectionCreatesRef: controller.pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef:
         controller.pendingLocalPositionUntilConvexMatchesRef,
+      pendingLocalNodeDataUntilConvexMatchesRef:
+        controller.pendingLocalNodeDataUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef: controller.preferLocalPositionNodeIdsRef,
       pendingCreatePromiseByClientRequestRef,
     },

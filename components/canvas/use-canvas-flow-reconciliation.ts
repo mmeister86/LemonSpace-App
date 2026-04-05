@@ -20,6 +20,7 @@ type CanvasFlowReconciliationRefs = {
   pendingLocalPositionUntilConvexMatchesRef: MutableRefObject<
     Map<string, PositionPin>
   >;
+  pendingLocalNodeDataUntilConvexMatchesRef: MutableRefObject<Map<string, unknown>>;
   preferLocalPositionNodeIdsRef: MutableRefObject<Set<string>>;
   isDragging: MutableRefObject<boolean>;
   isResizing: MutableRefObject<boolean>;
@@ -54,6 +55,7 @@ export function useCanvasFlowReconciliation(args: {
     resolvedRealIdByClientRequestRef,
     pendingConnectionCreatesRef,
     pendingLocalPositionUntilConvexMatchesRef,
+    pendingLocalNodeDataUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     isDragging,
     isResizing,
@@ -131,6 +133,8 @@ export function useCanvasFlowReconciliation(args: {
         pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
         preferLocalPositionNodeIds: preferLocalPositionNodeIdsRef.current,
         pendingLocalPositionPins: pendingLocalPositionUntilConvexMatchesRef.current,
+        pendingLocalNodeDataPins:
+          pendingLocalNodeDataUntilConvexMatchesRef.current,
         pendingMovePins,
       });
 
@@ -138,6 +142,8 @@ export function useCanvasFlowReconciliation(args: {
         reconciliation.inferredRealIdByClientRequest;
       pendingLocalPositionUntilConvexMatchesRef.current =
         reconciliation.nextPendingLocalPositionPins;
+      pendingLocalNodeDataUntilConvexMatchesRef.current =
+        reconciliation.nextPendingLocalNodeDataPins;
       for (const nodeId of reconciliation.clearedPreferLocalPositionNodeIds) {
         preferLocalPositionNodeIdsRef.current.delete(nodeId);
       }
@@ -155,6 +161,7 @@ export function useCanvasFlowReconciliation(args: {
     isResizing,
     pendingConnectionCreatesRef,
     pendingLocalPositionUntilConvexMatchesRef,
+    pendingLocalNodeDataUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     resolvedRealIdByClientRequestRef,
   ]);

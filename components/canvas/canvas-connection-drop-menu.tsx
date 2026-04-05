@@ -23,8 +23,13 @@ export type ConnectionDropMenuState = {
   fromHandleType: "source" | "target";
 };
 
+export type CanvasMenuAnchor = {
+  screenX: number;
+  screenY: number;
+};
+
 type CanvasConnectionDropMenuProps = {
-  state: ConnectionDropMenuState | null;
+  anchor: CanvasMenuAnchor | null;
   onClose: () => void;
   onPick: (template: CanvasNodeTemplate) => void;
 };
@@ -33,14 +38,14 @@ const PANEL_MAX_W = 360;
 const PANEL_MAX_H = 420;
 
 export function CanvasConnectionDropMenu({
-  state,
+  anchor,
   onClose,
   onPick,
 }: CanvasConnectionDropMenuProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!state) return;
+    if (!anchor) return;
 
     const onEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -59,9 +64,9 @@ export function CanvasConnectionDropMenu({
       document.removeEventListener("keydown", onEscape);
       document.removeEventListener("pointerdown", onPointerDownCapture, true);
     };
-  }, [state, onClose]);
+  }, [anchor, onClose]);
 
-  if (!state) return null;
+  if (!anchor) return null;
 
   const vw =
     typeof window !== "undefined" ? window.innerWidth : PANEL_MAX_W + 16;
@@ -69,11 +74,11 @@ export function CanvasConnectionDropMenu({
     typeof window !== "undefined" ? window.innerHeight : PANEL_MAX_H + 16;
   const left = Math.max(
     8,
-    Math.min(state.screenX, vw - PANEL_MAX_W - 8),
+    Math.min(anchor.screenX, vw - PANEL_MAX_W - 8),
   );
   const top = Math.max(
     8,
-    Math.min(state.screenY, vh - PANEL_MAX_H - 8),
+    Math.min(anchor.screenY, vh - PANEL_MAX_H - 8),
   );
 
   return (
