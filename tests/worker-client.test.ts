@@ -43,6 +43,11 @@ type WorkerMessage =
       payload?: {
         previewWidth?: number;
         includeHistogram?: boolean;
+        featureFlags?: {
+          forceCpu: boolean;
+          webglEnabled: boolean;
+          wasmEnabled: boolean;
+        };
       };
     }
   | {
@@ -313,6 +318,63 @@ describe("worker-client fallbacks", () => {
     ]);
 
     expect(workerMessages.filter((message) => message.kind === "preview")).toHaveLength(3);
+  });
+
+  it("passes backend feature flags to worker preview requests", async () => {
+    const workerMessages: WorkerMessage[] = [];
+    FakeWorker.behavior = (worker, message) => {
+      workerMessages.push(message);
+      if (message.kind !== "preview") {
+        return;
+      }
+
+      queueMicrotask(() => {
+        worker.onmessage?.({
+          data: {
+            kind: "preview-result",
+            requestId: message.requestId,
+            payload: {
+              width: 8,
+              height: 4,
+              histogram: emptyHistogram(),
+              pixels: new Uint8ClampedArray(8 * 4 * 4).buffer,
+            },
+          },
+        } as MessageEvent);
+      });
+    };
+    vi.stubGlobal("Worker", FakeWorker as unknown as typeof Worker);
+    (
+      globalThis as typeof globalThis & {
+        __LEMONSPACE_FEATURE_FLAGS__?: Record<string, unknown>;
+      }
+    ).__LEMONSPACE_FEATURE_FLAGS__ = {
+      "imagePipeline.backend.forceCpu": false,
+      "imagePipeline.backend.webgl.enabled": true,
+      "imagePipeline.backend.wasm.enabled": true,
+    };
+
+    const { renderPreviewWithWorkerFallback } = await import("@/lib/image-pipeline/worker-client");
+
+    await renderPreviewWithWorkerFallback({
+      sourceUrl: "https://cdn.example.com/source.png",
+      steps: [],
+      previewWidth: 128,
+      includeHistogram: true,
+    });
+
+    expect(workerMessages).toContainEqual(
+      expect.objectContaining({
+        kind: "preview",
+        payload: expect.objectContaining({
+          featureFlags: {
+            forceCpu: false,
+            webglEnabled: true,
+            wasmEnabled: true,
+          },
+        }),
+      }),
+    );
   });
 
   it("removes aborted subscribers without canceling surviving identical preview consumers", async () => {

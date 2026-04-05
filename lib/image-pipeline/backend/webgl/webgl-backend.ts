@@ -172,6 +172,14 @@ const SUPPORTED_PREVIEW_STEP_TYPES = new Set<SupportedPreviewStepType>([
   "detail-adjust",
 ]);
 
+function logWebglBackendDebug(event: string, payload: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info("[image-pipeline webgl]", event, payload);
+}
+
 function assertSupportedStep(step: PipelineStep): void {
   if (SUPPORTED_PREVIEW_STEP_TYPES.has(step.type as SupportedPreviewStepType)) {
     return;
@@ -415,6 +423,7 @@ function applyStepUniforms(
 
 function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest): void {
   const { gl } = context;
+  const startedAtMs = performance.now();
   const shaderProgram =
     request.step.type === "curves"
       ? context.curvesProgram
@@ -509,13 +518,23 @@ function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest)
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
   const readback = new Uint8Array(request.pixels.length);
+  const readbackStartedAtMs = performance.now();
   gl.readPixels(0, 0, request.width, request.height, gl.RGBA, gl.UNSIGNED_BYTE, readback);
+  const readbackDurationMs = performance.now() - readbackStartedAtMs;
   request.pixels.set(readback);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(framebuffer);
   gl.deleteTexture(sourceTexture);
   gl.deleteTexture(outputTexture);
+
+  logWebglBackendDebug("step-complete", {
+    stepType: request.step.type,
+    width: request.width,
+    height: request.height,
+    totalDurationMs: performance.now() - startedAtMs,
+    readbackDurationMs,
+  });
 }
 
 export function isWebglPreviewStepSupported(step: PipelineStep): boolean {

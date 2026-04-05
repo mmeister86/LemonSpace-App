@@ -6,6 +6,10 @@ import {
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
 import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/render-types";
+import {
+  getBackendFeatureFlags,
+  type BackendFeatureFlags,
+} from "@/lib/image-pipeline/backend/feature-flags";
 
 export type { PreviewRenderResult };
 
@@ -20,6 +24,11 @@ type PreviewWorkerPayload = {
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
+  featureFlags?: BackendFeatureFlags;
+};
+
+type FullWorkerPayload = RenderFullOptions & {
+  featureFlags?: BackendFeatureFlags;
 };
 
 type WorkerRequestMessage =
@@ -31,7 +40,7 @@ type WorkerRequestMessage =
   | {
       kind: "full";
       requestId: number;
-      payload: RenderFullOptions;
+      payload: FullWorkerPayload;
     }
   | {
       kind: "cancel";
@@ -239,7 +248,7 @@ function getWorker(): Worker {
 
 function runWorkerRequest<TResponse extends PreviewRenderResult | RenderFullResult>(args: {
   kind: "preview" | "full";
-  payload: PreviewWorkerPayload | RenderFullOptions;
+  payload: PreviewWorkerPayload | FullWorkerPayload;
   signal?: AbortSignal;
 }): Promise<TResponse> {
   if (args.signal?.aborted) {
@@ -327,6 +336,10 @@ function getPreviewRequestKey(options: {
   ].join(":");
 }
 
+function getWorkerFeatureFlagsSnapshot(): BackendFeatureFlags {
+  return getBackendFeatureFlags();
+}
+
 async function runPreviewRequest(options: {
   sourceUrl: string;
   steps: readonly PipelineStep[];
@@ -342,6 +355,7 @@ async function runPreviewRequest(options: {
         steps: options.steps,
         previewWidth: options.previewWidth,
         includeHistogram: options.includeHistogram,
+        featureFlags: getWorkerFeatureFlagsSnapshot(),
       },
       signal: options.signal,
     });
@@ -477,7 +491,10 @@ export async function renderFullWithWorkerFallback(
   try {
     return await runWorkerRequest<RenderFullResult>({
       kind: "full",
-      payload: options,
+      payload: {
+        ...options,
+        featureFlags: getWorkerFeatureFlagsSnapshot(),
+      },
       signal: options.signal,
     });
   } catch (error: unknown) {

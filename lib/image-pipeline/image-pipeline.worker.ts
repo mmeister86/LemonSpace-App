@@ -3,12 +3,21 @@ import { renderPreview } from "@/lib/image-pipeline/preview-renderer";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
 import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/render-types";
+import {
+  IMAGE_PIPELINE_BACKEND_FLAG_KEYS,
+  type BackendFeatureFlags,
+} from "@/lib/image-pipeline/backend/feature-flags";
 
 type PreviewWorkerPayload = {
   sourceUrl: string;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
+  featureFlags?: BackendFeatureFlags;
+};
+
+type FullWorkerPayload = RenderFullOptions & {
+  featureFlags?: BackendFeatureFlags;
 };
 
 type WorkerRequestMessage =
@@ -20,7 +29,7 @@ type WorkerRequestMessage =
   | {
       kind: "full";
       requestId: number;
-      payload: RenderFullOptions;
+      payload: FullWorkerPayload;
     }
   | {
       kind: "cancel";
@@ -62,6 +71,16 @@ type WorkerScope = {
 const workerScope = self as unknown as WorkerScope;
 const runningControllers = new Map<number, AbortController>();
 
+function applyWorkerFeatureFlags(featureFlags: BackendFeatureFlags | undefined): void {
+  (globalThis as typeof globalThis & {
+    __LEMONSPACE_FEATURE_FLAGS__?: Record<string, unknown>;
+  }).__LEMONSPACE_FEATURE_FLAGS__ = {
+    [IMAGE_PIPELINE_BACKEND_FLAG_KEYS.forceCpu]: featureFlags?.forceCpu ?? false,
+    [IMAGE_PIPELINE_BACKEND_FLAG_KEYS.webglEnabled]: featureFlags?.webglEnabled ?? false,
+    [IMAGE_PIPELINE_BACKEND_FLAG_KEYS.wasmEnabled]: featureFlags?.wasmEnabled ?? false,
+  };
+}
+
 function postMessageSafe(message: WorkerResponseMessage, transfer?: Transferable[]): void {
   if (transfer) {
     workerScope.postMessage(message, transfer);
@@ -90,6 +109,7 @@ async function handlePreviewRequest(requestId: number, payload: PreviewWorkerPay
   runningControllers.set(requestId, controller);
 
   try {
+    applyWorkerFeatureFlags(payload.featureFlags);
     const result = await renderPreview({
       sourceUrl: payload.sourceUrl,
       steps: payload.steps,
@@ -133,13 +153,16 @@ async function handlePreviewRequest(requestId: number, payload: PreviewWorkerPay
   }
 }
 
-async function handleFullRequest(requestId: number, payload: RenderFullOptions): Promise<void> {
+async function handleFullRequest(requestId: number, payload: FullWorkerPayload): Promise<void> {
   const controller = new AbortController();
   runningControllers.set(requestId, controller);
 
   try {
+    applyWorkerFeatureFlags(payload.featureFlags);
     const result = await renderFull({
-      ...payload,
+      sourceUrl: payload.sourceUrl,
+      steps: payload.steps,
+      render: payload.render,
       signal: controller.signal,
     });
 
@@ -150,11 +173,10 @@ async function handleFullRequest(requestId: number, payload: RenderFullOptions):
     });
   } catch (error: unknown) {
     if (typeof console !== "undefined" && process.env.NODE_ENV !== "production") {
-      console.error("[image-pipeline.worker] preview request failed", {
+      console.error("[image-pipeline.worker] full request failed", {
         requestId,
         sourceUrl: payload.sourceUrl,
-        previewWidth: payload.previewWidth,
-        includeHistogram: payload.includeHistogram,
+        render: payload.render,
         error,
       });
     }

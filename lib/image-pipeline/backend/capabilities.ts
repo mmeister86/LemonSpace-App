@@ -10,6 +10,8 @@ type CapabilityProbes = {
   probeOffscreenCanvas: () => boolean;
 };
 
+let cachedDefaultCapabilities: BackendCapabilities | null = null;
+
 export const WASM_SIMD_PROBE_MODULE = new Uint8Array([
   0x00,
   0x61,
@@ -46,12 +48,27 @@ function probeOffscreenCanvasAvailability(): boolean {
   return typeof OffscreenCanvas !== "undefined";
 }
 
+function releaseProbeWebglContext(
+  context: WebGLRenderingContext | WebGL2RenderingContext | null,
+): void {
+  if (!context) {
+    return;
+  }
+
+  try {
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    // Ignore cleanup failures in capability probes.
+  }
+}
+
 function probeWebglAvailability(): boolean {
   try {
     if (typeof document !== "undefined") {
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
       if (context) {
+        releaseProbeWebglContext(context);
         return true;
       }
     }
@@ -59,6 +76,7 @@ function probeWebglAvailability(): boolean {
     if (typeof OffscreenCanvas !== "undefined") {
       const offscreenCanvas = new OffscreenCanvas(1, 1);
       const context = offscreenCanvas.getContext("webgl2") ?? offscreenCanvas.getContext("webgl");
+      releaseProbeWebglContext(context);
       return Boolean(context);
     }
 
@@ -80,14 +98,28 @@ function probeWasmSimdAvailability(): boolean {
   }
 }
 
+export function resetBackendCapabilitiesCache(): void {
+  cachedDefaultCapabilities = null;
+}
+
 export function detectBackendCapabilities(probes?: Partial<CapabilityProbes>): BackendCapabilities {
+  if (!probes && cachedDefaultCapabilities) {
+    return cachedDefaultCapabilities;
+  }
+
   const probeWebgl = probes?.probeWebgl ?? probeWebglAvailability;
   const probeWasmSimd = probes?.probeWasmSimd ?? probeWasmSimdAvailability;
   const probeOffscreenCanvas = probes?.probeOffscreenCanvas ?? probeOffscreenCanvasAvailability;
 
-  return {
+  const capabilities = {
     webgl: probeWebgl(),
     wasmSimd: probeWasmSimd(),
     offscreenCanvas: probeOffscreenCanvas(),
   };
+
+  if (!probes) {
+    cachedDefaultCapabilities = capabilities;
+  }
+
+  return capabilities;
 }

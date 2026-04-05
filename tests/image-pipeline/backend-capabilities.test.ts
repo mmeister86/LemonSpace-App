@@ -3,7 +3,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ImagePipelineBackend } from "@/lib/image-pipeline/backend/backend-types";
-import { detectBackendCapabilities } from "@/lib/image-pipeline/backend/capabilities";
+import {
+  detectBackendCapabilities,
+  resetBackendCapabilitiesCache,
+} from "@/lib/image-pipeline/backend/capabilities";
 import { createBackendRouter } from "@/lib/image-pipeline/backend/backend-router";
 
 const previewRendererMocks = vi.hoisted(() => ({
@@ -23,6 +26,10 @@ vi.mock("@/lib/image-pipeline/bridge", () => ({
 }));
 
 describe("detectBackendCapabilities", () => {
+  beforeEach(() => {
+    resetBackendCapabilitiesCache();
+  });
+
   it("reports webgl, wasmSimd and offscreenCanvas independently", () => {
     expect(
       detectBackendCapabilities({
@@ -47,6 +54,39 @@ describe("detectBackendCapabilities", () => {
       wasmSimd: true,
       offscreenCanvas: false,
     });
+  });
+
+  it("caches default WebGL capability detection and releases the probe context", () => {
+    const loseContext = vi.fn();
+    const getContext = vi.fn(() => ({
+      getExtension: vi.fn((name: string) => {
+        if (name === "WEBGL_lose_context") {
+          return { loseContext };
+        }
+
+        return null;
+      }),
+    }));
+    const originalCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tagName) => {
+      if (tagName === "canvas") {
+        return {
+          getContext,
+        } as unknown as HTMLCanvasElement;
+      }
+
+      return originalCreateElement(tagName);
+    });
+
+    const first = detectBackendCapabilities();
+    const second = detectBackendCapabilities();
+
+    expect(first.webgl).toBe(true);
+    expect(second.webgl).toBe(true);
+    expect(getContext).toHaveBeenCalledTimes(1);
+    expect(loseContext).toHaveBeenCalledTimes(1);
+
+    createElementSpy.mockRestore();
   });
 });
 

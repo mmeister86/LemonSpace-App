@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
@@ -18,6 +18,30 @@ const PREVIEW_PIPELINE_TYPES = new Set([
   "detail-adjust",
 ]);
 
+type PreviewLatencyTrace = {
+  sequence: number;
+  changedAtMs: number;
+  nodeType: string;
+  origin: string;
+};
+
+function readPreviewLatencyTrace(): PreviewLatencyTrace | null {
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  const debugGlobals = globalThis as typeof globalThis & {
+    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
+    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
+  };
+
+  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
+    return null;
+  }
+
+  return debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ ?? null;
+}
+
 export default function AdjustmentPreview({
   nodeId,
   nodeWidth,
@@ -30,6 +54,7 @@ export default function AdjustmentPreview({
   currentParams: unknown;
 }) {
   const graph = useCanvasGraph();
+  const lastLoggedTraceSequenceRef = useRef<number | null>(null);
 
   const sourceUrl = useMemo(
     () =>
@@ -67,6 +92,30 @@ export default function AdjustmentPreview({
       return step as PipelineStep;
     });
   }, [currentParams, currentType, graph, nodeId]);
+
+  useEffect(() => {
+    const trace = readPreviewLatencyTrace();
+    if (!trace) {
+      return;
+    }
+
+    if (lastLoggedTraceSequenceRef.current === trace.sequence) {
+      return;
+    }
+
+    lastLoggedTraceSequenceRef.current = trace.sequence;
+
+    console.info("[Preview latency] downstream-graph-visible", {
+      nodeId,
+      nodeType: currentType,
+      sourceNodeType: trace.nodeType,
+      sourceOrigin: trace.origin,
+      sinceChangeMs: performance.now() - trace.changedAtMs,
+      pipelineDepth: steps.length,
+      stepTypes: steps.map((step) => step.type),
+      hasSource: Boolean(sourceUrl),
+    });
+  }, [currentType, nodeId, sourceUrl, steps]);
 
   const { canvasRef, histogram, isRendering, hasSource, previewAspectRatio, error } =
     usePipelinePreview({

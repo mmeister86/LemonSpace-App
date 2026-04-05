@@ -21,6 +21,37 @@ function logNodeDataDebug(event: string, payload: Record<string, unknown>): void
   console.info("[Canvas node debug]", event, payload);
 }
 
+type PreviewLatencyTrace = {
+  sequence: number;
+  changedAtMs: number;
+  nodeType: string;
+  origin: "applyLocalData" | "updateLocalData";
+};
+
+function writePreviewLatencyTrace(trace: Omit<PreviewLatencyTrace, "sequence">): void {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const debugGlobals = globalThis as typeof globalThis & {
+    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
+    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
+  };
+
+  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
+    return;
+  }
+
+  const nextTrace: PreviewLatencyTrace = {
+    ...trace,
+    sequence: (debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__?.sequence ?? 0) + 1,
+  };
+
+  debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ = nextTrace;
+
+  console.info("[Preview latency] node-local-change", nextTrace);
+}
+
 export function useNodeLocalData<T>({
   data,
   normalize,
@@ -78,11 +109,16 @@ export function useNodeLocalData<T>({
   const applyLocalData = useCallback(
     (next: T) => {
       hasPendingLocalChangesRef.current = true;
+      writePreviewLatencyTrace({
+        changedAtMs: performance.now(),
+        nodeType: debugLabel,
+        origin: "applyLocalData",
+      });
       localDataRef.current = next;
       setLocalDataState(next);
       queueSave();
     },
-    [queueSave],
+    [debugLabel, queueSave],
   );
 
   const updateLocalData = useCallback(
@@ -90,12 +126,17 @@ export function useNodeLocalData<T>({
       hasPendingLocalChangesRef.current = true;
       setLocalDataState((current) => {
         const next = updater(current);
+        writePreviewLatencyTrace({
+          changedAtMs: performance.now(),
+          nodeType: debugLabel,
+          origin: "updateLocalData",
+        });
         localDataRef.current = next;
         queueSave();
         return next;
       });
     },
-    [queueSave],
+    [debugLabel, queueSave],
   );
 
   return {

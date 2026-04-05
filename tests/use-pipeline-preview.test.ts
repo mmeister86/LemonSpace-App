@@ -8,12 +8,14 @@ import { emptyHistogram } from "@/lib/image-pipeline/histogram";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 
 const workerClientMocks = vi.hoisted(() => ({
+  getLastBackendDiagnostics: vi.fn(() => null),
   renderPreviewWithWorkerFallback: vi.fn(),
 }));
 
 const PREVIEW_SETTLE_MS = 80;
 
 vi.mock("@/lib/image-pipeline/worker-client", () => ({
+  getLastBackendDiagnostics: workerClientMocks.getLastBackendDiagnostics,
   isPipelineAbortError: () => false,
   renderPreviewWithWorkerFallback: workerClientMocks.renderPreviewWithWorkerFallback,
 }));
@@ -96,6 +98,8 @@ describe("usePipelinePreview", () => {
     previewHarnessState.latestHistogram = emptyHistogram();
     previewHarnessState.latestError = null;
     previewHarnessState.latestIsRendering = false;
+    workerClientMocks.getLastBackendDiagnostics.mockReset();
+    workerClientMocks.getLastBackendDiagnostics.mockReturnValue(null);
     workerClientMocks.renderPreviewWithWorkerFallback.mockReset();
     workerClientMocks.renderPreviewWithWorkerFallback.mockResolvedValue({
       width: 120,

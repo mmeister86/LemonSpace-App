@@ -23,6 +23,46 @@ type UsePipelinePreviewOptions = {
 
 const PREVIEW_RENDER_DEBOUNCE_MS = 48;
 
+type PreviewLatencyTrace = {
+  sequence: number;
+  changedAtMs: number;
+  nodeType: string;
+  origin: string;
+};
+
+function readPreviewLatencyTrace(): PreviewLatencyTrace | null {
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  const debugGlobals = globalThis as typeof globalThis & {
+    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
+    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
+  };
+
+  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
+    return null;
+  }
+
+  return debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ ?? null;
+}
+
+function logPreviewLatency(event: string, payload: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const debugGlobals = globalThis as typeof globalThis & {
+    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
+  };
+
+  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
+    return;
+  }
+
+  console.info("[Preview latency]", event, payload);
+}
+
 function computePreviewWidth(
   nodeWidth: number,
   previewScale: number,
@@ -121,8 +161,23 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     const currentRun = runIdRef.current + 1;
     runIdRef.current = currentRun;
     const abortController = new AbortController();
+    const effectStartedAtMs = performance.now();
 
     const timer = window.setTimeout(() => {
+      const requestStartedAtMs = performance.now();
+      const trace = readPreviewLatencyTrace();
+
+      logPreviewLatency("request-start", {
+        currentRun,
+        pipelineHash,
+        previewWidth,
+        includeHistogram: options.includeHistogram !== false,
+        debounceWaitMs: requestStartedAtMs - effectStartedAtMs,
+        sinceChangeMs: trace ? requestStartedAtMs - trace.changedAtMs : null,
+        sourceNodeType: trace?.nodeType ?? null,
+        sourceOrigin: trace?.origin ?? null,
+      });
+
       setIsRendering(true);
       setError(null);
       void renderPreviewWithWorkerFallback({
@@ -145,8 +200,20 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
             return;
           }
           context.putImageData(result.imageData, 0, 0);
+          const paintedAtMs = performance.now();
           setHistogram(result.histogram);
           setPreviewAspectRatio(result.width / result.height);
+
+          logPreviewLatency("paint-end", {
+            currentRun,
+            pipelineHash,
+            previewWidth,
+            imageWidth: result.width,
+            imageHeight: result.height,
+            requestDurationMs: paintedAtMs - requestStartedAtMs,
+            sinceChangeMs: trace ? paintedAtMs - trace.changedAtMs : null,
+            diagnostics: getLastBackendDiagnostics(),
+          });
         })
         .catch((renderError: unknown) => {
           if (runIdRef.current !== currentRun) return;
