@@ -4,8 +4,11 @@ import type {
   ImagePipelineBackend,
 } from "@/lib/image-pipeline/backend/backend-types";
 import {
+  normalizeColorAdjustData,
+  normalizeCurvesData,
   normalizeDetailAdjustData,
   normalizeLightAdjustData,
+  type CurvePoint,
 } from "@/lib/image-pipeline/adjustment-types";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 
@@ -14,12 +17,47 @@ precision mediump float;
 
 varying vec2 vUv;
 uniform sampler2D uSource;
-uniform float uGamma;
+uniform sampler2D uRgbLut;
+uniform sampler2D uRedLut;
+uniform sampler2D uGreenLut;
+uniform sampler2D uBlueLut;
+uniform float uBlackPoint;
+uniform float uWhitePoint;
+uniform float uInvGamma;
+uniform float uChannelMode;
+
+float sampleLut(sampler2D lut, float value) {
+  return texture2D(lut, vec2(clamp(value, 0.0, 1.0), 0.5)).r;
+}
 
 void main() {
   vec4 color = texture2D(uSource, vUv);
-  color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(max(uGamma, 0.001)));
-  gl_FragColor = color;
+  float levelRange = max(uWhitePoint - uBlackPoint, 1.0);
+  vec3 leveled = clamp((color.rgb * 255.0 - vec3(uBlackPoint)) / levelRange, 0.0, 1.0);
+  vec3 mapped = pow(max(leveled, vec3(0.0)), vec3(max(uInvGamma, 0.001)));
+
+  vec3 rgbCurve = vec3(
+    sampleLut(uRgbLut, mapped.r),
+    sampleLut(uRgbLut, mapped.g),
+    sampleLut(uRgbLut, mapped.b)
+  );
+
+  vec3 result = rgbCurve;
+  if (uChannelMode < 0.5) {
+    result = vec3(
+      sampleLut(uRedLut, rgbCurve.r),
+      sampleLut(uGreenLut, rgbCurve.g),
+      sampleLut(uBlueLut, rgbCurve.b)
+    );
+  } else if (uChannelMode < 1.5) {
+    result.r = sampleLut(uRedLut, rgbCurve.r);
+  } else if (uChannelMode < 2.5) {
+    result.g = sampleLut(uGreenLut, rgbCurve.g);
+  } else {
+    result.b = sampleLut(uBlueLut, rgbCurve.b);
+  }
+
+  gl_FragColor = vec4(result, color.a);
 }
 `;
 
@@ -28,12 +66,84 @@ precision mediump float;
 
 varying vec2 vUv;
 uniform sampler2D uSource;
-uniform vec3 uColorShift;
+uniform float uHueShift;
+uniform float uSaturationFactor;
+uniform float uLuminanceShift;
+uniform float uTemperatureShift;
+uniform float uTintShift;
+uniform float uVibranceBoost;
+
+vec3 rgbToHsl(vec3 color) {
+  float maxChannel = max(max(color.r, color.g), color.b);
+  float minChannel = min(min(color.r, color.g), color.b);
+  float delta = maxChannel - minChannel;
+  float lightness = (maxChannel + minChannel) * 0.5;
+
+  if (delta == 0.0) {
+    return vec3(0.0, 0.0, lightness);
+  }
+
+  float saturation = delta / (1.0 - abs(2.0 * lightness - 1.0));
+  float hue;
+
+  if (maxChannel == color.r) {
+    hue = mod((color.g - color.b) / delta, 6.0);
+  } else if (maxChannel == color.g) {
+    hue = (color.b - color.r) / delta + 2.0;
+  } else {
+    hue = (color.r - color.g) / delta + 4.0;
+  }
+
+  hue *= 60.0;
+  if (hue < 0.0) {
+    hue += 360.0;
+  }
+
+  return vec3(hue, saturation, lightness);
+}
+
+vec3 hslToRgb(float hue, float saturation, float lightness) {
+  float chroma = (1.0 - abs(2.0 * lightness - 1.0)) * saturation;
+  float x = chroma * (1.0 - abs(mod(hue / 60.0, 2.0) - 1.0));
+  float m = lightness - chroma * 0.5;
+  vec3 rgbPrime;
+
+  if (hue < 60.0) {
+    rgbPrime = vec3(chroma, x, 0.0);
+  } else if (hue < 120.0) {
+    rgbPrime = vec3(x, chroma, 0.0);
+  } else if (hue < 180.0) {
+    rgbPrime = vec3(0.0, chroma, x);
+  } else if (hue < 240.0) {
+    rgbPrime = vec3(0.0, x, chroma);
+  } else if (hue < 300.0) {
+    rgbPrime = vec3(x, 0.0, chroma);
+  } else {
+    rgbPrime = vec3(chroma, 0.0, x);
+  }
+
+  return clamp(rgbPrime + vec3(m), 0.0, 1.0);
+}
 
 void main() {
   vec4 color = texture2D(uSource, vUv);
-  color.rgb = clamp(color.rgb + uColorShift, 0.0, 1.0);
-  gl_FragColor = color;
+  vec3 hsl = rgbToHsl(color.rgb);
+  float shiftedHue = mod(hsl.x + uHueShift + 360.0, 360.0);
+  float shiftedSaturation = clamp(hsl.y * uSaturationFactor, 0.0, 1.0);
+  float shiftedLuminance = clamp(hsl.z + uLuminanceShift, 0.0, 1.0);
+  float saturationDelta = (1.0 - hsl.y) * uVibranceBoost;
+  vec3 vivid = hslToRgb(
+    shiftedHue,
+    clamp(shiftedSaturation + saturationDelta, 0.0, 1.0),
+    shiftedLuminance
+  );
+
+  vec3 shiftedBytes = vivid * 255.0;
+  shiftedBytes.r += uTemperatureShift;
+  shiftedBytes.g += uTintShift;
+  shiftedBytes.b -= uTemperatureShift + uTintShift * 0.3;
+
+  gl_FragColor = vec4(clamp(shiftedBytes / 255.0, 0.0, 1.0), color.a);
 }
 `;
 
@@ -172,12 +282,77 @@ const SUPPORTED_PREVIEW_STEP_TYPES = new Set<SupportedPreviewStepType>([
   "detail-adjust",
 ]);
 
-function logWebglBackendDebug(event: string, payload: Record<string, unknown>): void {
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "test") {
-    return;
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toByte(value: number): number {
+  return clamp(Math.round(value), 0, 255);
+}
+
+function buildCurveLut(points: CurvePoint[]): Uint8Array {
+  const lut = new Uint8Array(256);
+  const normalized = [...points].sort((left, right) => left.x - right.x);
+
+  for (let input = 0; input < 256; input += 1) {
+    const first = normalized[0] ?? { x: 0, y: 0 };
+    const last = normalized[normalized.length - 1] ?? { x: 255, y: 255 };
+    if (input <= first.x) {
+      lut[input] = toByte(first.y);
+      continue;
+    }
+
+    if (input >= last.x) {
+      lut[input] = toByte(last.y);
+      continue;
+    }
+
+    for (let index = 1; index < normalized.length; index += 1) {
+      const left = normalized[index - 1]!;
+      const right = normalized[index]!;
+      if (input < left.x || input > right.x) {
+        continue;
+      }
+
+      const span = Math.max(1, right.x - left.x);
+      const progress = (input - left.x) / span;
+      lut[input] = toByte(left.y + (right.y - left.y) * progress);
+      break;
+    }
   }
 
-  console.info("[image-pipeline webgl]", event, payload);
+  return lut;
+}
+
+function createLutTexture(
+  gl: WebGLRenderingContext,
+  lut: Uint8Array,
+  textureUnit: number,
+): WebGLTexture {
+  const texture = gl.createTexture();
+  if (!texture) {
+    throw new Error("WebGL LUT texture allocation failed.");
+  }
+
+  const rgba = new Uint8Array(256 * 4);
+  for (let index = 0; index < 256; index += 1) {
+    const value = lut[index] ?? 0;
+    const offset = index * 4;
+    rgba[offset] = value;
+    rgba[offset + 1] = value;
+    rgba[offset + 2] = value;
+    rgba[offset + 3] = 255;
+  }
+
+  gl.activeTexture(gl.TEXTURE0 + textureUnit);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+
+  return texture;
 }
 
 function assertSupportedStep(step: PipelineStep): void {
@@ -279,52 +454,98 @@ function createQuadBuffer(gl: WebGLRenderingContext): WebGLBuffer {
   return quadBuffer;
 }
 
-function mapCurvesGamma(step: PipelineStep): number {
-  const gamma = (step.params as { levels?: { gamma?: unknown } })?.levels?.gamma;
-  if (typeof gamma === "number" && Number.isFinite(gamma)) {
-    return Math.max(gamma, 0.001);
-  }
-  return 1;
-}
-
-function mapColorShift(step: PipelineStep): [number, number, number] {
-  const params = step.params as {
-    hsl?: { luminance?: unknown };
-    temperature?: unknown;
-    tint?: unknown;
-  };
-
-  const luminance = typeof params?.hsl?.luminance === "number" ? params.hsl.luminance : 0;
-  const temperature = typeof params?.temperature === "number" ? params.temperature : 0;
-  const tint = typeof params?.tint === "number" ? params.tint : 0;
-
-  return [
-    (luminance + temperature) / 255,
-    (luminance + tint) / 255,
-    (luminance - temperature) / 255,
-  ];
-}
-
 function applyStepUniforms(
   gl: WebGLRenderingContext,
   shaderProgram: WebGLProgram,
   request: BackendStepRequest,
-): void {
+): WebGLTexture[] {
+  const disposableTextures: WebGLTexture[] = [];
+
   if (request.step.type === "curves") {
-    const gammaLocation = gl.getUniformLocation(shaderProgram, "uGamma");
-    if (gammaLocation) {
-      gl.uniform1f(gammaLocation, mapCurvesGamma(request.step));
+    const curves = normalizeCurvesData(request.step.params);
+
+    const blackPointLocation = gl.getUniformLocation(shaderProgram, "uBlackPoint");
+    if (blackPointLocation) {
+      gl.uniform1f(blackPointLocation, curves.levels.blackPoint);
     }
-    return;
+
+    const whitePointLocation = gl.getUniformLocation(shaderProgram, "uWhitePoint");
+    if (whitePointLocation) {
+      gl.uniform1f(whitePointLocation, curves.levels.whitePoint);
+    }
+
+    const invGammaLocation = gl.getUniformLocation(shaderProgram, "uInvGamma");
+    if (invGammaLocation) {
+      gl.uniform1f(invGammaLocation, 1 / Math.max(curves.levels.gamma, 0.001));
+    }
+
+    const channelModeLocation = gl.getUniformLocation(shaderProgram, "uChannelMode");
+    if (channelModeLocation) {
+      const channelMode =
+        curves.channelMode === "red"
+          ? 1
+          : curves.channelMode === "green"
+            ? 2
+            : curves.channelMode === "blue"
+              ? 3
+              : 0;
+      gl.uniform1f(channelModeLocation, channelMode);
+    }
+
+    const lutBindings = [
+      { uniform: "uRgbLut", unit: 1, lut: buildCurveLut(curves.points.rgb) },
+      { uniform: "uRedLut", unit: 2, lut: buildCurveLut(curves.points.red) },
+      { uniform: "uGreenLut", unit: 3, lut: buildCurveLut(curves.points.green) },
+      { uniform: "uBlueLut", unit: 4, lut: buildCurveLut(curves.points.blue) },
+    ] as const;
+
+    for (const binding of lutBindings) {
+      const texture = createLutTexture(gl, binding.lut, binding.unit);
+      disposableTextures.push(texture);
+      const location = gl.getUniformLocation(shaderProgram, binding.uniform);
+      if (location) {
+        gl.uniform1i(location, binding.unit);
+      }
+    }
+
+    gl.activeTexture(gl.TEXTURE0);
+    return disposableTextures;
   }
 
   if (request.step.type === "color-adjust") {
-    const colorShiftLocation = gl.getUniformLocation(shaderProgram, "uColorShift");
-    if (colorShiftLocation) {
-      const [r, g, b] = mapColorShift(request.step);
-      gl.uniform3f(colorShiftLocation, r, g, b);
+    const color = normalizeColorAdjustData(request.step.params);
+
+    const hueShiftLocation = gl.getUniformLocation(shaderProgram, "uHueShift");
+    if (hueShiftLocation) {
+      gl.uniform1f(hueShiftLocation, color.hsl.hue);
     }
-    return;
+
+    const saturationFactorLocation = gl.getUniformLocation(shaderProgram, "uSaturationFactor");
+    if (saturationFactorLocation) {
+      gl.uniform1f(saturationFactorLocation, 1 + color.hsl.saturation / 100);
+    }
+
+    const luminanceShiftLocation = gl.getUniformLocation(shaderProgram, "uLuminanceShift");
+    if (luminanceShiftLocation) {
+      gl.uniform1f(luminanceShiftLocation, color.hsl.luminance / 100);
+    }
+
+    const temperatureShiftLocation = gl.getUniformLocation(shaderProgram, "uTemperatureShift");
+    if (temperatureShiftLocation) {
+      gl.uniform1f(temperatureShiftLocation, color.temperature * 0.6);
+    }
+
+    const tintShiftLocation = gl.getUniformLocation(shaderProgram, "uTintShift");
+    if (tintShiftLocation) {
+      gl.uniform1f(tintShiftLocation, color.tint * 0.4);
+    }
+
+    const vibranceBoostLocation = gl.getUniformLocation(shaderProgram, "uVibranceBoost");
+    if (vibranceBoostLocation) {
+      gl.uniform1f(vibranceBoostLocation, color.vibrance / 100);
+    }
+
+    return disposableTextures;
   }
 
   if (request.step.type === "light-adjust") {
@@ -378,7 +599,7 @@ function applyStepUniforms(
     if (vignetteRoundnessLocation) {
       gl.uniform1f(vignetteRoundnessLocation, light.vignette.roundness);
     }
-    return;
+    return disposableTextures;
   }
 
   if (request.step.type === "detail-adjust") {
@@ -419,6 +640,8 @@ function applyStepUniforms(
       gl.uniform1f(imageWidthLocation, request.width);
     }
   }
+
+  return disposableTextures;
 }
 
 function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest): void {
@@ -512,7 +735,7 @@ function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest)
     gl.uniform1i(sourceLocation, 0);
   }
 
-  applyStepUniforms(gl, shaderProgram, request);
+  const disposableTextures = applyStepUniforms(gl, shaderProgram, request);
 
   gl.viewport(0, 0, request.width, request.height);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -527,14 +750,9 @@ function runStepOnGpu(context: WebglBackendContext, request: BackendStepRequest)
   gl.deleteFramebuffer(framebuffer);
   gl.deleteTexture(sourceTexture);
   gl.deleteTexture(outputTexture);
-
-  logWebglBackendDebug("step-complete", {
-    stepType: request.step.type,
-    width: request.width,
-    height: request.height,
-    totalDurationMs: performance.now() - startedAtMs,
-    readbackDurationMs,
-  });
+  for (const texture of disposableTextures) {
+    gl.deleteTexture(texture);
+  }
 }
 
 export function isWebglPreviewStepSupported(step: PipelineStep): boolean {

@@ -65,14 +65,6 @@ function normalizeBackendHint(value: BackendHint): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function logBackendRouterDebug(event: string, payload: Record<string, unknown>): void {
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "test") {
-    return;
-  }
-
-  console.info("[image-pipeline backend]", event, payload);
-}
-
 export function createBackendRouter(options?: {
   backends?: readonly ImagePipelineBackend[];
   defaultBackendId?: string;
@@ -131,12 +123,6 @@ export function createBackendRouter(options?: {
   }
 
   function emitFallback(event: BackendFallbackEvent): void {
-    logBackendRouterDebug("fallback", {
-      reason: event.reason,
-      requestedBackend: event.requestedBackend,
-      fallbackBackend: event.fallbackBackend,
-      errorMessage: event.error?.message,
-    });
     options?.onFallback?.(event);
   }
 
@@ -364,15 +350,6 @@ export function getPreviewBackendHintForSteps(steps: readonly PreviewBackendRequ
   } else {
     backendHint = CPU_BACKEND_ID;
   }
-
-  logBackendRouterDebug("preview-backend-hint", {
-    backendHint,
-    stepTypes: steps.map((step) => step.type),
-    webglAvailable: rolloutState.webglAvailable,
-    webglEnabled: rolloutState.webglEnabled,
-    wasmAvailable: rolloutState.wasmAvailable,
-    wasmEnabled: rolloutState.wasmEnabled,
-  });
 
   return backendHint;
 }

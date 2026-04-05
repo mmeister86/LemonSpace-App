@@ -16,6 +16,7 @@ import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import {
   findSourceNodeFromGraph,
   resolveRenderPreviewInputFromGraph,
+  shouldFastPathPreviewPipeline,
 } from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
@@ -495,6 +496,12 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   );
 
   const steps = renderPreviewInput.steps;
+  const previewDebounceMs = shouldFastPathPreviewPipeline(
+    steps,
+    graph.previewNodeDataOverrides,
+  )
+    ? 16
+    : undefined;
 
   const renderFingerprint = useMemo(
     () => ({
@@ -560,6 +567,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     sourceUrl,
     steps,
     nodeWidth: previewNodeWidth,
+    debounceMs: previewDebounceMs,
     // Inline-Preview: bewusst kompakt halten, damit Änderungen schneller
     // sichtbar werden, besonders in langen Graphen.
     previewScale: 0.5,
@@ -577,6 +585,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     steps,
     nodeWidth: fullscreenPreviewWidth,
     includeHistogram: false,
+    debounceMs: previewDebounceMs,
     previewScale: 0.85,
     maxPreviewWidth: 1920,
     maxDevicePixelRatio: 1.5,

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import { emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import {
-  getLastBackendDiagnostics,
   isPipelineAbortError,
   renderPreviewWithWorkerFallback,
   type PreviewRenderResult,
@@ -19,49 +18,10 @@ type UsePipelinePreviewOptions = {
   previewScale?: number;
   maxPreviewWidth?: number;
   maxDevicePixelRatio?: number;
+  debounceMs?: number;
 };
 
 const PREVIEW_RENDER_DEBOUNCE_MS = 48;
-
-type PreviewLatencyTrace = {
-  sequence: number;
-  changedAtMs: number;
-  nodeType: string;
-  origin: string;
-};
-
-function readPreviewLatencyTrace(): PreviewLatencyTrace | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-
-  const debugGlobals = globalThis as typeof globalThis & {
-    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
-    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
-  };
-
-  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
-    return null;
-  }
-
-  return debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ ?? null;
-}
-
-function logPreviewLatency(event: string, payload: Record<string, unknown>): void {
-  if (process.env.NODE_ENV === "production") {
-    return;
-  }
-
-  const debugGlobals = globalThis as typeof globalThis & {
-    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
-  };
-
-  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
-    return;
-  }
-
-  console.info("[Preview latency]", event, payload);
-}
 
 function computePreviewWidth(
   nodeWidth: number,
@@ -121,6 +81,14 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     return Math.max(1, options.maxDevicePixelRatio);
   }, [options.maxDevicePixelRatio]);
 
+  const debounceMs = useMemo(() => {
+    if (typeof options.debounceMs !== "number" || !Number.isFinite(options.debounceMs)) {
+      return PREVIEW_RENDER_DEBOUNCE_MS;
+    }
+
+    return Math.max(0, Math.round(options.debounceMs));
+  }, [options.debounceMs]);
+
   const previewWidth = useMemo(
     () => computePreviewWidth(options.nodeWidth, previewScale, maxPreviewWidth, maxDevicePixelRatio),
     [maxDevicePixelRatio, maxPreviewWidth, options.nodeWidth, previewScale],
@@ -161,23 +129,8 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     const currentRun = runIdRef.current + 1;
     runIdRef.current = currentRun;
     const abortController = new AbortController();
-    const effectStartedAtMs = performance.now();
 
     const timer = window.setTimeout(() => {
-      const requestStartedAtMs = performance.now();
-      const trace = readPreviewLatencyTrace();
-
-      logPreviewLatency("request-start", {
-        currentRun,
-        pipelineHash,
-        previewWidth,
-        includeHistogram: options.includeHistogram !== false,
-        debounceWaitMs: requestStartedAtMs - effectStartedAtMs,
-        sinceChangeMs: trace ? requestStartedAtMs - trace.changedAtMs : null,
-        sourceNodeType: trace?.nodeType ?? null,
-        sourceOrigin: trace?.origin ?? null,
-      });
-
       setIsRendering(true);
       setError(null);
       void renderPreviewWithWorkerFallback({
@@ -200,20 +153,8 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
             return;
           }
           context.putImageData(result.imageData, 0, 0);
-          const paintedAtMs = performance.now();
           setHistogram(result.histogram);
           setPreviewAspectRatio(result.width / result.height);
-
-          logPreviewLatency("paint-end", {
-            currentRun,
-            pipelineHash,
-            previewWidth,
-            imageWidth: result.width,
-            imageHeight: result.height,
-            requestDurationMs: paintedAtMs - requestStartedAtMs,
-            sinceChangeMs: trace ? paintedAtMs - trace.changedAtMs : null,
-            diagnostics: getLastBackendDiagnostics(),
-          });
         })
         .catch((renderError: unknown) => {
           if (runIdRef.current !== currentRun) return;
@@ -231,7 +172,6 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
               pipelineHash,
               previewWidth,
               includeHistogram: options.includeHistogram,
-              diagnostics: getLastBackendDiagnostics(),
               error: renderError,
             });
           }
@@ -242,13 +182,13 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
           if (runIdRef.current !== currentRun) return;
           setIsRendering(false);
         });
-    }, PREVIEW_RENDER_DEBOUNCE_MS);
+    }, debounceMs);
 
     return () => {
       window.clearTimeout(timer);
       abortController.abort();
     };
-  }, [options.includeHistogram, pipelineHash, previewWidth]);
+  }, [debounceMs, options.includeHistogram, pipelineHash, previewWidth]);
 
   return {
     canvasRef,

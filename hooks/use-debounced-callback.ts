@@ -1,5 +1,10 @@
 import { useRef, useCallback, useEffect } from "react";
 
+type DebouncedCallback<Args extends unknown[]> = ((...args: Args) => void) & {
+  flush: () => void;
+  cancel: () => void;
+};
+
 /**
  * Debounced callback — ruft `callback` erst auf, wenn `delay` ms
  * ohne erneuten Aufruf vergangen sind. Perfekt für Auto-Save.
@@ -7,9 +12,10 @@ import { useRef, useCallback, useEffect } from "react";
 export function useDebouncedCallback<Args extends unknown[]>(
   callback: (...args: Args) => void,
   delay: number,
-): (...args: Args) => void {
+): DebouncedCallback<Args> {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callbackRef = useRef(callback);
+  const argsRef = useRef<Args | null>(null);
 
   // Callback-Ref aktuell halten ohne neu zu rendern
   useEffect(() => {
@@ -23,15 +29,49 @@ export function useDebouncedCallback<Args extends unknown[]>(
     };
   }, []);
 
+  const cancel = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    argsRef.current = null;
+  }, []);
+
+  const flush = useCallback(() => {
+    if (!timeoutRef.current) {
+      return;
+    }
+
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+
+    const args = argsRef.current;
+    argsRef.current = null;
+    if (args) {
+      callbackRef.current(...args);
+    }
+  }, []);
+
   const debouncedFn = useCallback(
     (...args: Args) => {
+      argsRef.current = args;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        callbackRef.current(...args);
+        timeoutRef.current = null;
+        const nextArgs = argsRef.current;
+        argsRef.current = null;
+        if (nextArgs) {
+          callbackRef.current(...nextArgs);
+        }
       }, delay);
     },
     [delay],
   );
 
-  return debouncedFn;
+  const debouncedCallback = debouncedFn as DebouncedCallback<Args>;
+  debouncedCallback.flush = flush;
+  debouncedCallback.cancel = cancel;
+
+  return debouncedCallback;
 }

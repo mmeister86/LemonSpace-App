@@ -122,22 +122,22 @@ export function useCanvasDeleteHandlers({
         nodes,
         edges,
       );
-      const edgePromises = bridgeCreates.map((bridgeCreate) =>
-        runCreateEdgeMutation({
-          canvasId,
-          sourceNodeId: bridgeCreate.sourceNodeId,
-          targetNodeId: bridgeCreate.targetNodeId,
-          sourceHandle: bridgeCreate.sourceHandle,
-          targetHandle: bridgeCreate.targetHandle,
-        }),
-      );
 
-      void Promise.all([
-        runBatchRemoveNodesMutation({
+      void (async () => {
+        await runBatchRemoveNodesMutation({
           nodeIds: idsToDelete as Id<"nodes">[],
-        }),
-        ...edgePromises,
-      ])
+        });
+
+        for (const bridgeCreate of bridgeCreates) {
+          await runCreateEdgeMutation({
+            canvasId,
+            sourceNodeId: bridgeCreate.sourceNodeId,
+            targetNodeId: bridgeCreate.targetNodeId,
+            sourceHandle: bridgeCreate.sourceHandle,
+            targetHandle: bridgeCreate.targetHandle,
+          });
+        }
+      })()
         .then(() => {
           // Erfolg bedeutet hier nur: Mutation/Queue wurde angenommen.
           // Den Delete-Lock erst lösen, wenn Convex-Snapshot die Node wirklich nicht mehr enthält.

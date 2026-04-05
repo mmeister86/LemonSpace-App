@@ -85,14 +85,14 @@ export const parityTolerances: Record<ParityPipelineKey, ParityTolerance> = {
     spatialRmse: 52.5,
   },
   colorAdjustPressure: {
-    maxChannelDelta: 203,
-    histogramSimilarity: 0.17,
-    spatialRmse: 75.8,
+    maxChannelDelta: 64,
+    histogramSimilarity: 0.5,
+    spatialRmse: 24,
   },
   curvesColorPressureChain: {
-    maxChannelDelta: 203,
-    histogramSimilarity: 0.18,
-    spatialRmse: 75.5,
+    maxChannelDelta: 96,
+    histogramSimilarity: 0.35,
+    spatialRmse: 36,
   },
 };
 
@@ -402,10 +402,10 @@ function createEmptyTexture(width: number, height: number): FakeTexture {
 }
 
 function inferShaderKind(source: string): ShaderKind {
-  if (source.includes("uGamma")) {
+  if (source.includes("uInvGamma") || source.includes("uRgbLut")) {
     return "curves";
   }
-  if (source.includes("uColorShift")) {
+  if (source.includes("uHueShift") || source.includes("uVibranceBoost")) {
     return "color-adjust";
   }
   if (source.includes("uExposureFactor")) {
@@ -428,13 +428,65 @@ function toByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value * 255)));
 }
 
-function runCurvesShader(input: Uint8Array, gamma: number): Uint8Array {
+function sampleLutTexture(texture: FakeTexture | null, value: number): number {
+  if (!texture) {
+    return value;
+  }
+
+  const index = Math.max(0, Math.min(255, Math.round(value * 255)));
+  return texture.data[index * 4] / 255;
+}
+
+function runCurvesShader(
+  input: Uint8Array,
+  uniforms: Map<string, number | [number, number, number]>,
+  textures: {
+    rgb: FakeTexture | null;
+    red: FakeTexture | null;
+    green: FakeTexture | null;
+    blue: FakeTexture | null;
+  },
+): Uint8Array {
   const output = new Uint8Array(input.length);
+  const blackPoint = Number(uniforms.get("uBlackPoint") ?? 0);
+  const whitePoint = Number(uniforms.get("uWhitePoint") ?? 255);
+  const invGamma = Number(uniforms.get("uInvGamma") ?? 1);
+  const channelMode = Number(uniforms.get("uChannelMode") ?? 0);
+  const levelRange = Math.max(1, whitePoint - blackPoint);
 
   for (let index = 0; index < input.length; index += 4) {
-    const red = Math.pow(Math.max(toNormalized(input[index]), 0), Math.max(gamma, 0.001));
-    const green = Math.pow(Math.max(toNormalized(input[index + 1]), 0), Math.max(gamma, 0.001));
-    const blue = Math.pow(Math.max(toNormalized(input[index + 2]), 0), Math.max(gamma, 0.001));
+    const mappedRed = Math.pow(
+      Math.max(Math.min(((input[index] - blackPoint) / levelRange), 1), 0),
+      Math.max(invGamma, 0.001),
+    );
+    const mappedGreen = Math.pow(
+      Math.max(Math.min(((input[index + 1] - blackPoint) / levelRange), 1), 0),
+      Math.max(invGamma, 0.001),
+    );
+    const mappedBlue = Math.pow(
+      Math.max(Math.min(((input[index + 2] - blackPoint) / levelRange), 1), 0),
+      Math.max(invGamma, 0.001),
+    );
+
+    const rgbRed = sampleLutTexture(textures.rgb, mappedRed);
+    const rgbGreen = sampleLutTexture(textures.rgb, mappedGreen);
+    const rgbBlue = sampleLutTexture(textures.rgb, mappedBlue);
+
+    let red = rgbRed;
+    let green = rgbGreen;
+    let blue = rgbBlue;
+
+    if (channelMode < 0.5) {
+      red = sampleLutTexture(textures.red, rgbRed);
+      green = sampleLutTexture(textures.green, rgbGreen);
+      blue = sampleLutTexture(textures.blue, rgbBlue);
+    } else if (channelMode < 1.5) {
+      red = sampleLutTexture(textures.red, rgbRed);
+    } else if (channelMode < 2.5) {
+      green = sampleLutTexture(textures.green, rgbGreen);
+    } else {
+      blue = sampleLutTexture(textures.blue, rgbBlue);
+    }
 
     output[index] = toByte(red);
     output[index + 1] = toByte(green);
@@ -445,13 +497,98 @@ function runCurvesShader(input: Uint8Array, gamma: number): Uint8Array {
   return output;
 }
 
-function runColorAdjustShader(input: Uint8Array, shift: [number, number, number]): Uint8Array {
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const delta = max - min;
+  const l = (max + min) / 2;
+  if (delta === 0) {
+    return { h: 0, s: 0, l };
+  }
+
+  const s = delta / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (max === rn) {
+    h = ((gn - bn) / delta) % 6;
+  } else if (max === gn) {
+    h = (bn - rn) / delta + 2;
+  } else {
+    h = (rn - gn) / delta + 4;
+  }
+
+  h *= 60;
+  if (h < 0) {
+    h += 360;
+  }
+
+  return { h, s, l };
+}
+
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let rp = 0;
+  let gp = 0;
+  let bp = 0;
+
+  if (h < 60) {
+    rp = c;
+    gp = x;
+  } else if (h < 120) {
+    rp = x;
+    gp = c;
+  } else if (h < 180) {
+    gp = c;
+    bp = x;
+  } else if (h < 240) {
+    gp = x;
+    bp = c;
+  } else if (h < 300) {
+    rp = x;
+    bp = c;
+  } else {
+    rp = c;
+    bp = x;
+  }
+
+  return {
+    r: Math.max(0, Math.min(255, Math.round((rp + m) * 255))),
+    g: Math.max(0, Math.min(255, Math.round((gp + m) * 255))),
+    b: Math.max(0, Math.min(255, Math.round((bp + m) * 255))),
+  };
+}
+
+function runColorAdjustShader(
+  input: Uint8Array,
+  uniforms: Map<string, number | [number, number, number]>,
+): Uint8Array {
   const output = new Uint8Array(input.length);
+  const hueShift = Number(uniforms.get("uHueShift") ?? 0);
+  const saturationFactor = Number(uniforms.get("uSaturationFactor") ?? 1);
+  const luminanceShift = Number(uniforms.get("uLuminanceShift") ?? 0);
+  const temperatureShift = Number(uniforms.get("uTemperatureShift") ?? 0);
+  const tintShift = Number(uniforms.get("uTintShift") ?? 0);
+  const vibranceBoost = Number(uniforms.get("uVibranceBoost") ?? 0);
 
   for (let index = 0; index < input.length; index += 4) {
-    const red = Math.max(0, Math.min(1, toNormalized(input[index]) + shift[0]));
-    const green = Math.max(0, Math.min(1, toNormalized(input[index + 1]) + shift[1]));
-    const blue = Math.max(0, Math.min(1, toNormalized(input[index + 2]) + shift[2]));
+    const hsl = rgbToHsl(input[index] ?? 0, input[index + 1] ?? 0, input[index + 2] ?? 0);
+    const shiftedHue = (hsl.h + hueShift + 360) % 360;
+    const shiftedSaturation = Math.max(0, Math.min(1, hsl.s * saturationFactor));
+    const shiftedLuminance = Math.max(0, Math.min(1, hsl.l + luminanceShift));
+    const saturationDelta = (1 - hsl.s) * vibranceBoost;
+    const vivid = hslToRgb(
+      shiftedHue,
+      Math.max(0, Math.min(1, shiftedSaturation + saturationDelta)),
+      shiftedLuminance,
+    );
+
+    const red = Math.max(0, Math.min(1, (vivid.r + temperatureShift) / 255));
+    const green = Math.max(0, Math.min(1, (vivid.g + tintShift) / 255));
+    const blue = Math.max(0, Math.min(1, (vivid.b - temperatureShift - tintShift * 0.3) / 255));
 
     output[index] = toByte(red);
     output[index + 1] = toByte(green);
@@ -629,7 +766,8 @@ function createParityWebglContext(): WebGLRenderingContext {
   let currentProgram: FakeProgram | null = null;
   let currentTexture: FakeTexture | null = null;
   let currentFramebuffer: FakeFramebuffer | null = null;
-  let sourceTexture: FakeTexture | null = null;
+  let activeTextureUnit = 0;
+  const boundTextures = new Map<number, FakeTexture | null>();
   let drawWidth = 1;
   let drawHeight = 1;
 
@@ -693,9 +831,7 @@ function createParityWebglContext(): WebGLRenderingContext {
     },
     bindTexture(_target: number, texture: FakeTexture | null) {
       currentTexture = texture;
-      if (texture) {
-        sourceTexture = texture;
-      }
+      boundTextures.set(activeTextureUnit, texture);
     },
     texParameteri() {},
     texImage2D(
@@ -730,7 +866,9 @@ function createParityWebglContext(): WebGLRenderingContext {
       currentTexture.height = height;
       currentTexture.data = new Uint8Array(width * height * 4);
     },
-    activeTexture() {},
+    activeTexture(textureUnit: number) {
+      activeTextureUnit = textureUnit - glConstants.TEXTURE0;
+    },
     getUniformLocation(program: FakeProgram, name: string) {
       return {
         program,
@@ -774,22 +912,30 @@ function createParityWebglContext(): WebGLRenderingContext {
       drawHeight = height;
     },
     drawArrays() {
+      const sourceTexture = boundTextures.get(0) ?? null;
       if (!currentProgram || !sourceTexture || !currentFramebuffer?.attachment) {
         throw new Error("Parity WebGL mock is missing required render state.");
       }
 
       if (currentProgram.kind === "curves") {
-        const gamma = Number(currentProgram.uniforms.get("uGamma") ?? 1);
-        currentFramebuffer.attachment.data = runCurvesShader(sourceTexture.data, gamma);
+        const rgbUnit = Number(currentProgram.uniforms.get("uRgbLut") ?? 1);
+        const redUnit = Number(currentProgram.uniforms.get("uRedLut") ?? 2);
+        const greenUnit = Number(currentProgram.uniforms.get("uGreenLut") ?? 3);
+        const blueUnit = Number(currentProgram.uniforms.get("uBlueLut") ?? 4);
+        currentFramebuffer.attachment.data = runCurvesShader(sourceTexture.data, currentProgram.uniforms, {
+          rgb: boundTextures.get(rgbUnit) ?? null,
+          red: boundTextures.get(redUnit) ?? null,
+          green: boundTextures.get(greenUnit) ?? null,
+          blue: boundTextures.get(blueUnit) ?? null,
+        });
         return;
       }
 
       if (currentProgram.kind === "color-adjust") {
-        const colorShift = currentProgram.uniforms.get("uColorShift");
-        const shift: [number, number, number] = Array.isArray(colorShift)
-          ? [colorShift[0] ?? 0, colorShift[1] ?? 0, colorShift[2] ?? 0]
-          : [0, 0, 0];
-        currentFramebuffer.attachment.data = runColorAdjustShader(sourceTexture.data, shift);
+        currentFramebuffer.attachment.data = runColorAdjustShader(
+          sourceTexture.data,
+          currentProgram.uniforms,
+        );
         return;
       }
 
@@ -828,7 +974,7 @@ function createParityWebglContext(): WebGLRenderingContext {
         throw new Error("Parity WebGL mock has no framebuffer attachment to read from.");
       }
 
-      output.set(currentFramebuffer.attachment.data);
+      output.set(currentFramebuffer.attachment.data.subarray(0, output.length));
     },
   };
 

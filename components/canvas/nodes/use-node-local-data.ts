@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useCanvasGraphPreviewOverrides } from "@/components/canvas/canvas-graph-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 
 function hashNodeData(value: unknown): string {
@@ -21,69 +22,67 @@ function logNodeDataDebug(event: string, payload: Record<string, unknown>): void
   console.info("[Canvas node debug]", event, payload);
 }
 
-type PreviewLatencyTrace = {
-  sequence: number;
-  changedAtMs: number;
-  nodeType: string;
-  origin: "applyLocalData" | "updateLocalData";
-};
-
-function writePreviewLatencyTrace(trace: Omit<PreviewLatencyTrace, "sequence">): void {
-  if (process.env.NODE_ENV === "production") {
-    return;
-  }
-
-  const debugGlobals = globalThis as typeof globalThis & {
-    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
-    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
-  };
-
-  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
-    return;
-  }
-
-  const nextTrace: PreviewLatencyTrace = {
-    ...trace,
-    sequence: (debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__?.sequence ?? 0) + 1,
-  };
-
-  debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ = nextTrace;
-
-  console.info("[Preview latency] node-local-change", nextTrace);
-}
-
 export function useNodeLocalData<T>({
+  nodeId,
   data,
   normalize,
   saveDelayMs,
   onSave,
   debugLabel,
 }: {
+  nodeId: string;
   data: unknown;
   normalize: (value: unknown) => T;
   saveDelayMs: number;
   onSave: (value: T) => Promise<void> | void;
   debugLabel: string;
 }) {
+  const { setPreviewNodeDataOverride, clearPreviewNodeDataOverride } =
+    useCanvasGraphPreviewOverrides();
   const [localData, setLocalDataState] = useState<T>(() => normalize(data));
   const localDataRef = useRef(localData);
+  const persistedDataRef = useRef(localData);
   const hasPendingLocalChangesRef = useRef(false);
+  const localChangeVersionRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     localDataRef.current = localData;
   }, [localData]);
 
   const queueSave = useDebouncedCallback(() => {
-    void onSave(localDataRef.current);
+    const savedValue = localDataRef.current;
+    const savedVersion = localChangeVersionRef.current;
+
+    Promise.resolve(onSave(savedValue))
+      .then(() => {
+        if (!isMountedRef.current || savedVersion !== localChangeVersionRef.current) {
+          return;
+        }
+
+        hasPendingLocalChangesRef.current = false;
+      })
+      .catch(() => {
+        if (!isMountedRef.current || savedVersion !== localChangeVersionRef.current) {
+          return;
+        }
+
+        hasPendingLocalChangesRef.current = false;
+        localDataRef.current = persistedDataRef.current;
+        setLocalDataState(persistedDataRef.current);
+        clearPreviewNodeDataOverride(nodeId);
+      });
   }, saveDelayMs);
 
   useEffect(() => {
     const incomingData = normalize(data);
+    persistedDataRef.current = incomingData;
     const incomingHash = hashNodeData(incomingData);
     const localHash = hashNodeData(localDataRef.current);
 
     if (incomingHash === localHash) {
       hasPendingLocalChangesRef.current = false;
+      clearPreviewNodeDataOverride(nodeId);
       return;
     }
 
@@ -99,44 +98,46 @@ export function useNodeLocalData<T>({
     const timer = window.setTimeout(() => {
       localDataRef.current = incomingData;
       setLocalDataState(incomingData);
+      clearPreviewNodeDataOverride(nodeId);
     }, 0);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [data, debugLabel, normalize]);
+  }, [clearPreviewNodeDataOverride, data, debugLabel, nodeId, normalize]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      queueSave.cancel();
+      clearPreviewNodeDataOverride(nodeId);
+    };
+  }, [clearPreviewNodeDataOverride, nodeId, queueSave]);
 
   const applyLocalData = useCallback(
     (next: T) => {
+      localChangeVersionRef.current += 1;
       hasPendingLocalChangesRef.current = true;
-      writePreviewLatencyTrace({
-        changedAtMs: performance.now(),
-        nodeType: debugLabel,
-        origin: "applyLocalData",
-      });
       localDataRef.current = next;
       setLocalDataState(next);
+      setPreviewNodeDataOverride(nodeId, next);
       queueSave();
     },
-    [debugLabel, queueSave],
+    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
   );
 
   const updateLocalData = useCallback(
     (updater: (current: T) => T) => {
+      const next = updater(localDataRef.current);
+
+      localChangeVersionRef.current += 1;
       hasPendingLocalChangesRef.current = true;
-      setLocalDataState((current) => {
-        const next = updater(current);
-        writePreviewLatencyTrace({
-          changedAtMs: performance.now(),
-          nodeType: debugLabel,
-          origin: "updateLocalData",
-        });
-        localDataRef.current = next;
-        queueSave();
-        return next;
-      });
+      localDataRef.current = next;
+      setLocalDataState(next);
+      setPreviewNodeDataOverride(nodeId, next);
+      queueSave();
     },
-    [debugLabel, queueSave],
+    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
   );
 
   return {

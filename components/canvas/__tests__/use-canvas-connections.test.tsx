@@ -147,6 +147,14 @@ describe("useCanvasConnections", () => {
     });
 
     await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
       latestHandlersRef.current?.onConnectEnd(
         { clientX: 400, clientY: 260 } as MouseEvent,
         {
@@ -192,6 +200,14 @@ describe("useCanvasConnections", () => {
     });
 
     await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
       latestHandlersRef.current?.onConnectEnd(
         { clientX: 123, clientY: 456 } as MouseEvent,
         {
@@ -244,6 +260,14 @@ describe("useCanvasConnections", () => {
     });
 
     await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
       latestHandlersRef.current?.onConnectEnd(
         { clientX: 300, clientY: 210 } as MouseEvent,
         {
@@ -288,6 +312,14 @@ describe("useCanvasConnections", () => {
     });
 
     await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: "target-handle",
+          handleType: "target",
+        } as never,
+      );
       latestHandlersRef.current?.onConnectEnd(
         { clientX: 200, clientY: 200 } as MouseEvent,
         {
@@ -312,5 +344,51 @@ describe("useCanvasConnections", () => {
       sourceHandle: undefined,
       targetHandle: "target-handle",
     });
+  });
+
+  it("ignores onConnectEnd when no connect drag is active", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+    const showConnectionRejectedToast = vi.fn();
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={{
+            sourceNodeId: "node-source",
+            targetNodeId: "node-target",
+            sourceHandle: undefined,
+            targetHandle: undefined,
+          }}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          showConnectionRejectedToast={showConnectionRejectedToast}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 400, clientY: 260 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-source", type: "image" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 400, y: 260 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).not.toHaveBeenCalled();
+    expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
   });
 });

@@ -38,6 +38,65 @@ export type CanvasGraphSnapshot = {
   incomingEdgesByTarget: ReadonlyMap<string, readonly CanvasGraphEdgeLike[]>;
 };
 
+export type CanvasGraphNodeDataOverrides = ReadonlyMap<string, unknown>;
+
+export function shouldFastPathPreviewPipeline(
+  steps: readonly Pick<PipelineStep, "nodeId">[],
+  overrides: CanvasGraphNodeDataOverrides,
+): boolean {
+  if (steps.length === 0 || overrides.size === 0) {
+    return false;
+  }
+
+  return steps.some((step) => overrides.has(step.nodeId));
+}
+
+export type BuildGraphSnapshotOptions = {
+  includeTempEdges?: boolean;
+  nodeDataOverrides?: CanvasGraphNodeDataOverrides;
+};
+
+function hashNodeData(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function pruneNodeDataOverride(data: unknown, override: unknown): unknown {
+  return hashNodeData(data) === hashNodeData(override) ? undefined : override;
+}
+
+export function pruneCanvasGraphNodeDataOverrides(
+  nodes: readonly CanvasGraphNodeLike[],
+  overrides: CanvasGraphNodeDataOverrides,
+): CanvasGraphNodeDataOverrides {
+  if (overrides.size === 0) {
+    return overrides;
+  }
+
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  let nextOverrides: Map<string, unknown> | null = null;
+
+  for (const [nodeId, override] of overrides) {
+    const node = nodesById.get(nodeId);
+    const nextOverride = node ? pruneNodeDataOverride(node.data, override) : undefined;
+
+    if (nextOverride === undefined) {
+      nextOverrides ??= new Map(overrides);
+      nextOverrides.delete(nodeId);
+      continue;
+    }
+
+    if (nextOverride !== override && !nextOverrides) {
+      nextOverrides = new Map(overrides);
+    }
+
+    if (nextOverrides) {
+      nextOverrides.set(nodeId, nextOverride);
+    }
+  }
+
+  return nextOverrides ?? overrides;
+}
+
 type RenderResolutionOption = "original" | "2x" | "custom";
 type RenderFormatOption = "png" | "jpeg" | "webp";
 
@@ -135,11 +194,17 @@ export function resolveNodeImageUrl(data: unknown): string | null {
 export function buildGraphSnapshot(
   nodes: readonly CanvasGraphNodeLike[],
   edges: readonly CanvasGraphEdgeLike[],
-  includeTempEdges = false,
+  options: boolean | BuildGraphSnapshotOptions = false,
 ): CanvasGraphSnapshot {
+  const includeTempEdges =
+    typeof options === "boolean" ? options : (options.includeTempEdges ?? false);
+  const nodeDataOverrides = typeof options === "boolean" ? undefined : options.nodeDataOverrides;
   const nodesById = new Map<string, CanvasGraphNodeLike>();
   for (const node of nodes) {
-    nodesById.set(node.id, node);
+    const nextNode = nodeDataOverrides?.has(node.id)
+      ? { ...node, data: nodeDataOverrides.get(node.id) }
+      : node;
+    nodesById.set(node.id, nextNode);
   }
 
   const incomingEdgesByTarget = new Map<string, CanvasGraphEdgeLike[]>();

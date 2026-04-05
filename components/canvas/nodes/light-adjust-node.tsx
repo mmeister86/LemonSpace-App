@@ -59,6 +59,7 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<LightAdjustData>({
+    nodeId: id,
     data,
     normalize: normalizeData,
     saveDelayMs: 16,

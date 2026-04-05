@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CanvasGraphProvider } from "@/components/canvas/canvas-graph-context";
 import { DEFAULT_LIGHT_ADJUST_DATA, type LightAdjustData } from "@/lib/image-pipeline/adjustment-types";
 
 type ParameterSliderProps = {
@@ -110,23 +111,30 @@ describe("LightAdjustNode", () => {
 
     const renderNode = (data: LightAdjustData) =>
       root?.render(
-        createElement(LightAdjustNode, {
-          id: "light-1",
-          data,
-          selected: false,
-          dragging: false,
-          zIndex: 0,
-          isConnectable: true,
-          type: "light-adjust",
-          xPos: 0,
-          yPos: 0,
-          width: 320,
-          height: 300,
-          sourcePosition: undefined,
-          targetPosition: undefined,
-          positionAbsoluteX: 0,
-          positionAbsoluteY: 0,
-        } as never),
+        createElement(
+          CanvasGraphProvider as never,
+          {
+            nodes: [{ id: "light-1", type: "light-adjust", data }],
+            edges: [],
+          } as never,
+          createElement(LightAdjustNode, {
+            id: "light-1",
+            data,
+            selected: false,
+            dragging: false,
+            zIndex: 0,
+            isConnectable: true,
+            type: "light-adjust",
+            xPos: 0,
+            yPos: 0,
+            width: 320,
+            height: 300,
+            sourcePosition: undefined,
+            targetPosition: undefined,
+            positionAbsoluteX: 0,
+            positionAbsoluteY: 0,
+          } as never),
+        ),
       );
 
     await act(async () => {
@@ -182,5 +190,65 @@ describe("LightAdjustNode", () => {
     expect(
       parameterSliderState.latestProps?.values.find((entry) => entry.id === "brightness")?.value,
     ).toBe(60);
+  });
+
+  it("does not trigger a render-phase CanvasGraphProvider update while dragging sliders", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const staleData: LightAdjustData = {
+      ...DEFAULT_LIGHT_ADJUST_DATA,
+      vignette: {
+        ...DEFAULT_LIGHT_ADJUST_DATA.vignette,
+      },
+    };
+
+    const renderNode = (data: LightAdjustData) =>
+      root?.render(
+        createElement(
+          CanvasGraphProvider as never,
+          {
+            nodes: [{ id: "light-1", type: "light-adjust", data }],
+            edges: [],
+          } as never,
+          createElement(LightAdjustNode, {
+            id: "light-1",
+            data,
+            selected: false,
+            dragging: false,
+            zIndex: 0,
+            isConnectable: true,
+            type: "light-adjust",
+            xPos: 0,
+            yPos: 0,
+            width: 320,
+            height: 300,
+            sourcePosition: undefined,
+            targetPosition: undefined,
+            positionAbsoluteX: 0,
+            positionAbsoluteY: 0,
+          } as never),
+        ),
+      );
+
+    await act(async () => {
+      renderNode({ ...staleData, vignette: { ...staleData.vignette } });
+      vi.runOnlyPendingTimers();
+    });
+
+    const sliderProps = parameterSliderState.latestProps;
+    expect(sliderProps).not.toBeNull();
+
+    await act(async () => {
+      sliderProps?.onChange(
+        sliderProps.values.map((entry) =>
+          entry.id === "brightness" ? { ...entry, value: 35 } : entry,
+        ),
+      );
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Cannot update a component (`CanvasGraphProvider`) while rendering a different component",
+      ),
+    );
   });
 });

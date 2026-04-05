@@ -59,6 +59,7 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<CurvesData>({
+    nodeId: id,
     data,
     normalize: normalizeData,
     saveDelayMs: 16,

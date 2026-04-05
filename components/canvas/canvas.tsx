@@ -308,6 +308,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     closeConnectionDropMenu,
     handleConnectionDropPick,
     onConnect,
+    onConnectStart,
     onConnectEnd,
     onReconnectStart,
     onReconnect,
@@ -520,6 +521,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             onNodeDrag={onNodeDrag}
             onNodeDragStop={onNodeDragStop}
             onConnect={onConnect}
+            onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
             onReconnect={onReconnect}
             onReconnectStart={onReconnectStart}

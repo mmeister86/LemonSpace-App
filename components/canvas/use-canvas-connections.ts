@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import type { Connection, Edge as RFEdge, Node as RFNode, OnConnectEnd } from "@xyflow/react";
+import type { Connection, Edge as RFEdge, Node as RFNode, OnConnectEnd, OnConnectStart } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -100,14 +100,20 @@ export function useCanvasConnections({
   const [connectionDropMenu, setConnectionDropMenu] =
     useState<ConnectionDropMenuState | null>(null);
   const connectionDropMenuRef = useRef<ConnectionDropMenuState | null>(null);
+  const isConnectDragActiveRef = useRef(false);
   const closeConnectionDropMenu = useCallback(() => setConnectionDropMenu(null), []);
 
   useEffect(() => {
     connectionDropMenuRef.current = connectionDropMenu;
   }, [connectionDropMenu]);
 
+  const onConnectStart = useCallback<OnConnectStart>(() => {
+    isConnectDragActiveRef.current = true;
+  }, []);
+
   const onConnect = useCallback(
     (connection: Connection) => {
+      isConnectDragActiveRef.current = false;
       const validationError = validateCanvasConnection(connection, nodes, edges);
       if (validationError) {
         showConnectionRejectedToast(validationError);
@@ -129,6 +135,11 @@ export function useCanvasConnections({
 
   const onConnectEnd = useCallback<OnConnectEnd>(
     (event, connectionState) => {
+      if (!isConnectDragActiveRef.current) {
+        return;
+      }
+
+      isConnectDragActiveRef.current = false;
       if (isReconnectDragActiveRef.current) return;
       if (connectionState.isValid === true) return;
       const fromNode = connectionState.fromNode;
@@ -153,8 +164,8 @@ export function useCanvasConnections({
           {
             source: droppedConnection.sourceNodeId,
             target: droppedConnection.targetNodeId,
-            sourceHandle: droppedConnection.sourceHandle,
-            targetHandle: droppedConnection.targetHandle,
+            sourceHandle: droppedConnection.sourceHandle ?? null,
+            targetHandle: droppedConnection.targetHandle ?? null,
           },
           nodesRef.current,
           edgesRef.current,
@@ -333,14 +344,15 @@ export function useCanvasConnections({
     },
   });
 
-  return {
-    connectionDropMenu,
-    closeConnectionDropMenu,
-    handleConnectionDropPick,
-    onConnect,
-    onConnectEnd,
-    onReconnectStart,
-    onReconnect,
-    onReconnectEnd,
-  };
+    return {
+      connectionDropMenu,
+      closeConnectionDropMenu,
+      handleConnectionDropPick,
+      onConnect,
+      onConnectStart,
+      onConnectEnd,
+      onReconnectStart,
+      onReconnect,
+      onReconnectEnd,
+    };
 }

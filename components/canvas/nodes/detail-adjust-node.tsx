@@ -59,6 +59,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<DetailAdjustData>({
+    nodeId: id,
     data,
     normalize: normalizeData,
     saveDelayMs: 16,

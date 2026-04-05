@@ -38,6 +38,41 @@ function createCurvesStep(): PipelineStep {
   };
 }
 
+function createCurvesPressureStep(): PipelineStep {
+  return {
+    nodeId: "curves-pressure-1",
+    type: "curves",
+    params: {
+      channelMode: "master",
+      levels: {
+        blackPoint: 12,
+        whitePoint: 232,
+        gamma: 2.5,
+      },
+      points: {
+        rgb: [
+          { x: 0, y: 0 },
+          { x: 64, y: 52 },
+          { x: 196, y: 228 },
+          { x: 255, y: 255 },
+        ],
+        red: [
+          { x: 0, y: 0 },
+          { x: 255, y: 255 },
+        ],
+        green: [
+          { x: 0, y: 0 },
+          { x: 255, y: 255 },
+        ],
+        blue: [
+          { x: 0, y: 0 },
+          { x: 255, y: 255 },
+        ],
+      },
+    },
+  };
+}
+
 function createColorAdjustStep(): PipelineStep {
   return {
     nodeId: "color-1",
@@ -51,6 +86,23 @@ function createColorAdjustStep(): PipelineStep {
       temperature: 0,
       tint: 0,
       vibrance: 0,
+    },
+  };
+}
+
+function createColorAdjustPressureStep(): PipelineStep {
+  return {
+    nodeId: "color-pressure-1",
+    type: "color-adjust",
+    params: {
+      hsl: {
+        hue: 48,
+        saturation: 64,
+        luminance: 18,
+      },
+      temperature: 24,
+      tint: -28,
+      vibrance: 52,
     },
   };
 }
@@ -158,7 +210,7 @@ describe("webgl backend poc", () => {
       texParameteri: vi.fn(),
       texImage2D: vi.fn(),
       activeTexture: vi.fn(),
-      getUniformLocation: vi.fn(() => ({ uniform: true })),
+      getUniformLocation: vi.fn((_program: unknown, name: string) => ({ uniform: true, name })),
       uniform1i: vi.fn(),
       uniform1f: vi.fn(),
       uniform3f: vi.fn(),
@@ -405,7 +457,7 @@ describe("webgl backend poc", () => {
       .at(-1)?.index;
 
     expect(lastBindBeforeDrawIndex).toBeTypeOf("number");
-    expect(bindTextureCalls[lastBindBeforeDrawIndex as number]?.[1]).toBe(sourceTexture);
+    expect(bindTextureCalls[lastBindBeforeDrawIndex as number]?.[1]).toStrictEqual(sourceTexture);
     expect(bindTextureCalls[lastBindBeforeDrawIndex as number]?.[1]).not.toBe(outputTexture);
   });
 
@@ -462,6 +514,90 @@ describe("webgl backend poc", () => {
     });
 
     expect(fakeGl.uniform1f).toHaveBeenCalledWith(expect.anything(), 7);
+  });
+
+  it("passes curves levels uniforms for non-default curves settings", async () => {
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([11, 22, 33, 255]),
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+    const backend = createWebglPreviewBackend();
+
+    backend.runPreviewStep({
+      pixels: new Uint8ClampedArray([200, 100, 50, 255]),
+      step: createCurvesPressureStep(),
+      width: 1,
+      height: 1,
+    });
+
+    expect(fakeGl.uniform1f).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "uBlackPoint" }),
+      12,
+    );
+    expect(fakeGl.uniform1f).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "uWhitePoint" }),
+      232,
+    );
+    expect(fakeGl.uniform1f).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "uInvGamma" }),
+      0.4,
+    );
+  });
+
+  it("passes hue, saturation, luminance, temperature, tint, and vibrance uniforms", async () => {
+    const fakeGl = createFakeWebglContext({
+      readbackPixels: new Uint8Array([11, 22, 33, 255]),
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((contextId) => {
+      if (contextId === "webgl") {
+        return fakeGl;
+      }
+      return null;
+    });
+
+    const { createWebglPreviewBackend } = await import("@/lib/image-pipeline/backend/webgl/webgl-backend");
+    const backend = createWebglPreviewBackend();
+
+    backend.runPreviewStep({
+      pixels: new Uint8ClampedArray([200, 100, 50, 255]),
+      step: createColorAdjustPressureStep(),
+      width: 1,
+      height: 1,
+    });
+
+    const uniform1fCalls = vi.mocked(fakeGl.uniform1f).mock.calls;
+
+    expect(fakeGl.uniform1f).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "uHueShift" }),
+      48,
+    );
+    expect(uniform1fCalls).toContainEqual([
+      expect.objectContaining({ name: "uSaturationFactor" }),
+      expect.closeTo(1.64, 5),
+    ]);
+    expect(uniform1fCalls).toContainEqual([
+      expect.objectContaining({ name: "uLuminanceShift" }),
+      expect.closeTo(0.18, 5),
+    ]);
+    expect(uniform1fCalls).toContainEqual([
+      expect.objectContaining({ name: "uTemperatureShift" }),
+      expect.closeTo(14.4, 5),
+    ]);
+    expect(uniform1fCalls).toContainEqual([
+      expect.objectContaining({ name: "uTintShift" }),
+      expect.closeTo(-11.2, 5),
+    ]);
+    expect(uniform1fCalls).toContainEqual([
+      expect.objectContaining({ name: "uVibranceBoost" }),
+      expect.closeTo(0.52, 5),
+    ]);
   });
 
   it("downgrades compile/link failures to cpu with runtime_error reason", async () => {

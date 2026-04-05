@@ -59,6 +59,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<ColorAdjustData>({
+    nodeId: id,
     data,
     normalize: normalizeData,
     saveDelayMs: 16,

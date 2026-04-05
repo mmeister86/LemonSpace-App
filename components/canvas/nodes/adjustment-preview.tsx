@@ -1,46 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
   collectPipelineFromGraph,
   getSourceImageFromGraph,
+  shouldFastPathPreviewPipeline,
 } from "@/lib/canvas-render-preview";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import { buildHistogramPlot } from "@/lib/image-pipeline/histogram-plot";
 
-const PREVIEW_PIPELINE_TYPES = new Set([
-  "curves",
-  "color-adjust",
-  "light-adjust",
-  "detail-adjust",
-]);
-
-type PreviewLatencyTrace = {
-  sequence: number;
-  changedAtMs: number;
-  nodeType: string;
-  origin: string;
-};
-
-function readPreviewLatencyTrace(): PreviewLatencyTrace | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-
-  const debugGlobals = globalThis as typeof globalThis & {
-    __LEMONSPACE_DEBUG_PREVIEW_LATENCY__?: boolean;
-    __LEMONSPACE_LAST_PREVIEW_TRACE__?: PreviewLatencyTrace;
-  };
-
-  if (debugGlobals.__LEMONSPACE_DEBUG_PREVIEW_LATENCY__ !== true) {
-    return null;
-  }
-
-  return debugGlobals.__LEMONSPACE_LAST_PREVIEW_TRACE__ ?? null;
-}
+const PREVIEW_PIPELINE_TYPES = new Set(["curves", "color-adjust", "light-adjust", "detail-adjust"]);
 
 export default function AdjustmentPreview({
   nodeId,
@@ -54,7 +26,6 @@ export default function AdjustmentPreview({
   currentParams: unknown;
 }) {
   const graph = useCanvasGraph();
-  const lastLoggedTraceSequenceRef = useRef<number | null>(null);
 
   const sourceUrl = useMemo(
     () =>
@@ -93,36 +64,21 @@ export default function AdjustmentPreview({
     });
   }, [currentParams, currentType, graph, nodeId]);
 
-  useEffect(() => {
-    const trace = readPreviewLatencyTrace();
-    if (!trace) {
-      return;
-    }
+  const usesFastPreviewDebounce = shouldFastPathPreviewPipeline(
+    steps,
+    graph.previewNodeDataOverrides,
+  );
+  const shouldDeferHistogram = graph.previewNodeDataOverrides.has(nodeId);
 
-    if (lastLoggedTraceSequenceRef.current === trace.sequence) {
-      return;
-    }
-
-    lastLoggedTraceSequenceRef.current = trace.sequence;
-
-    console.info("[Preview latency] downstream-graph-visible", {
-      nodeId,
-      nodeType: currentType,
-      sourceNodeType: trace.nodeType,
-      sourceOrigin: trace.origin,
-      sinceChangeMs: performance.now() - trace.changedAtMs,
-      pipelineDepth: steps.length,
-      stepTypes: steps.map((step) => step.type),
-      hasSource: Boolean(sourceUrl),
-    });
-  }, [currentType, nodeId, sourceUrl, steps]);
+  const previewDebounceMs = usesFastPreviewDebounce ? 16 : undefined;
 
   const { canvasRef, histogram, isRendering, hasSource, previewAspectRatio, error } =
     usePipelinePreview({
       sourceUrl,
       steps,
       nodeWidth,
-      includeHistogram: true,
+      includeHistogram: !shouldDeferHistogram,
+      debounceMs: previewDebounceMs,
       // Die Vorschau muss in-Node gut lesbar bleiben, aber nicht in voller
       // Display-Auflösung rechnen.
       previewScale: 0.5,

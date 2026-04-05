@@ -67,16 +67,19 @@ function PreviewHarness({
   sourceUrl,
   steps,
   includeHistogram,
+  debounceMs,
 }: {
   sourceUrl: string | null;
   steps: PipelineStep[];
   includeHistogram?: boolean;
+  debounceMs?: number;
 }) {
   const { canvasRef, histogram, error, isRendering } = usePipelinePreview({
     sourceUrl,
     steps,
     nodeWidth: 320,
     includeHistogram,
+    debounceMs,
   });
 
   useEffect(() => {
@@ -453,6 +456,33 @@ describe("usePipelinePreview", () => {
       }),
     );
   });
+
+  it("supports a faster debounce override for local preview updates", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: createLightAdjustSteps(10),
+          includeHistogram: false,
+          debounceMs: 16,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(15);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("preview histogram call sites", () => {
@@ -475,7 +505,7 @@ describe("preview histogram call sites", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps histogram enabled for AdjustmentPreview", async () => {
+  it("disables histogram for fast-path AdjustmentPreview", async () => {
     const hookSpy = vi.fn(() => ({
       canvasRef: { current: null },
       histogram: emptyHistogram(),
@@ -489,11 +519,78 @@ describe("preview histogram call sites", () => {
       usePipelinePreview: hookSpy,
     }));
     vi.doMock("@/components/canvas/canvas-graph-context", () => ({
-      useCanvasGraph: () => ({ nodes: [], edges: [] }),
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map([["light-1", { brightness: 10 }]]),
+      }),
     }));
     vi.doMock("@/lib/canvas-render-preview", () => ({
-      collectPipelineFromGraph: () => [],
+      collectPipelineFromGraph: () => [
+        {
+          nodeId: "light-1",
+          type: "light-adjust",
+          params: { brightness: 10 },
+        },
+      ],
       getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
+        steps.some((step) => overrides.has(step.nodeId)),
+    }));
+
+    const adjustmentPreviewModule = await import("@/components/canvas/nodes/adjustment-preview");
+    const AdjustmentPreview = adjustmentPreviewModule.default;
+
+    await act(async () => {
+      root?.render(
+        createElement(AdjustmentPreview, {
+          nodeId: "light-1",
+          nodeWidth: 320,
+          currentType: "light-adjust",
+          currentParams: { brightness: 10 },
+        }),
+      );
+    });
+
+    expect(hookSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeHistogram: false,
+        debounceMs: 16,
+      }),
+    );
+  });
+
+  it("does not fast-path AdjustmentPreview when overrides belong to another pipeline", async () => {
+    const hookSpy = vi.fn(() => ({
+      canvasRef: { current: null },
+      histogram: emptyHistogram(),
+      isRendering: false,
+      hasSource: true,
+      previewAspectRatio: 1,
+      error: null,
+    }));
+
+    vi.doMock("@/hooks/use-pipeline-preview", () => ({
+      usePipelinePreview: hookSpy,
+    }));
+    vi.doMock("@/components/canvas/canvas-graph-context", () => ({
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map([["other-node", { brightness: 10 }]]),
+      }),
+    }));
+    vi.doMock("@/lib/canvas-render-preview", () => ({
+      collectPipelineFromGraph: () => [
+        {
+          nodeId: "light-1",
+          type: "light-adjust",
+          params: { brightness: 10 },
+        },
+      ],
+      getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
+        steps.some((step) => overrides.has(step.nodeId)),
     }));
 
     const adjustmentPreviewModule = await import("@/components/canvas/nodes/adjustment-preview");
@@ -513,11 +610,72 @@ describe("preview histogram call sites", () => {
     expect(hookSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         includeHistogram: true,
+        debounceMs: undefined,
       }),
     );
   });
 
-  it("requests previews without histogram work in CompareSurface and fullscreen RenderNode", async () => {
+  it("keeps histogram enabled for downstream AdjustmentPreview fast path", async () => {
+    const hookSpy = vi.fn(() => ({
+      canvasRef: { current: null },
+      histogram: emptyHistogram(),
+      isRendering: false,
+      hasSource: true,
+      previewAspectRatio: 1,
+      error: null,
+    }));
+
+    vi.doMock("@/hooks/use-pipeline-preview", () => ({
+      usePipelinePreview: hookSpy,
+    }));
+    vi.doMock("@/components/canvas/canvas-graph-context", () => ({
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map([["upstream-node", { brightness: 10 }]]),
+      }),
+    }));
+    vi.doMock("@/lib/canvas-render-preview", () => ({
+      collectPipelineFromGraph: () => [
+        {
+          nodeId: "upstream-node",
+          type: "light-adjust",
+          params: { brightness: 10 },
+        },
+        {
+          nodeId: "light-1",
+          type: "light-adjust",
+          params: { brightness: 20 },
+        },
+      ],
+      getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
+        steps.some((step) => overrides.has(step.nodeId)),
+    }));
+
+    const adjustmentPreviewModule = await import("@/components/canvas/nodes/adjustment-preview");
+    const AdjustmentPreview = adjustmentPreviewModule.default;
+
+    await act(async () => {
+      root?.render(
+        createElement(AdjustmentPreview, {
+          nodeId: "light-1",
+          nodeWidth: 320,
+          currentType: "light-adjust",
+          currentParams: { brightness: 20 },
+        }),
+      );
+    });
+
+    expect(hookSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeHistogram: true,
+        debounceMs: 16,
+      }),
+    );
+  });
+
+  it("requests fast preview rendering without histogram work in CompareSurface and RenderNode", async () => {
     const hookSpy = vi.fn(() => ({
       canvasRef: { current: null },
       histogram: emptyHistogram(),
@@ -570,14 +728,29 @@ describe("preview histogram call sites", () => {
       useDebouncedCallback: (callback: () => void) => callback,
     }));
     vi.doMock("@/components/canvas/canvas-graph-context", () => ({
-      useCanvasGraph: () => ({ nodes: [], edges: [] }),
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map([
+          ["compare-step", { brightness: 20 }],
+          ["render-1-pipeline", { format: "png" }],
+        ]),
+      }),
     }));
     vi.doMock("@/lib/canvas-render-preview", () => ({
       resolveRenderPreviewInputFromGraph: () => ({
         sourceUrl: "https://cdn.example.com/source.png",
-        steps: [],
+        steps: [
+          {
+            nodeId: "render-1-pipeline",
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
       }),
       findSourceNodeFromGraph: () => null,
+      shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
+        steps.some((step) => overrides.has(step.nodeId)),
     }));
     vi.doMock("@/lib/canvas-utils", () => ({
       resolveMediaAspectRatio: () => null,
@@ -616,7 +789,13 @@ describe("preview histogram call sites", () => {
             nodeWidth: 320,
             previewInput: {
               sourceUrl: "https://cdn.example.com/source.png",
-              steps: [],
+              steps: [
+                {
+                  nodeId: "compare-step",
+                  type: "light-adjust",
+                  params: { brightness: 20 },
+                },
+              ],
             },
             preferPreview: true,
           }),
@@ -641,16 +820,229 @@ describe("preview histogram call sites", () => {
       );
     });
 
-    expect(hookSpy).toHaveBeenCalledWith(
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         includeHistogram: false,
         sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: "compare-step",
+            type: "light-adjust",
+            params: { brightness: 20 },
+          },
+        ],
+        debounceMs: 16,
       }),
     );
-    expect(hookSpy).toHaveBeenCalledWith(
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: "render-1-pipeline",
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
+        debounceMs: 16,
+      }),
+    );
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      3,
       expect.objectContaining({
         includeHistogram: false,
         sourceUrl: null,
+        debounceMs: 16,
+      }),
+    );
+  });
+
+  it("does not fast-path CompareSurface or RenderNode for unrelated overrides", async () => {
+    const hookSpy = vi.fn(() => ({
+      canvasRef: { current: null },
+      histogram: emptyHistogram(),
+      isRendering: false,
+      hasSource: true,
+      previewAspectRatio: 1,
+      error: null,
+    }));
+
+    vi.doMock("@/hooks/use-pipeline-preview", () => ({
+      usePipelinePreview: hookSpy,
+    }));
+    vi.doMock("@xyflow/react", () => ({
+      Handle: () => null,
+      Position: { Left: "left", Right: "right" },
+    }));
+    vi.doMock("convex/react", () => ({
+      useMutation: () => vi.fn(async () => undefined),
+    }));
+    vi.doMock("lucide-react", () => ({
+      AlertCircle: () => null,
+      ArrowDown: () => null,
+      CheckCircle2: () => null,
+      CloudUpload: () => null,
+      Loader2: () => null,
+      Maximize2: () => null,
+      X: () => null,
+    }));
+    vi.doMock("@/components/canvas/nodes/base-node-wrapper", () => ({
+      default: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+    }));
+    vi.doMock("@/components/canvas/nodes/adjustment-controls", () => ({
+      SliderRow: () => null,
+    }));
+    vi.doMock("@/components/ui/select", () => ({
+      Select: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectContent: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectItem: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectTrigger: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectValue: () => null,
+    }));
+    vi.doMock("@/components/canvas/canvas-sync-context", () => ({
+      useCanvasSync: () => ({
+        queueNodeDataUpdate: vi.fn(async () => undefined),
+        queueNodeResize: vi.fn(async () => undefined),
+        status: { isOffline: false },
+      }),
+    }));
+    vi.doMock("@/hooks/use-debounced-callback", () => ({
+      useDebouncedCallback: (callback: () => void) => callback,
+    }));
+    vi.doMock("@/components/canvas/canvas-graph-context", () => ({
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map([["unrelated-node", { format: "png" }]]),
+      }),
+    }));
+    vi.doMock("@/lib/canvas-render-preview", () => ({
+      resolveRenderPreviewInputFromGraph: ({ nodeId }: { nodeId: string }) => ({
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: `${nodeId}-pipeline`,
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
+      }),
+      findSourceNodeFromGraph: () => null,
+      shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
+        steps.some((step) => overrides.has(step.nodeId)),
+    }));
+    vi.doMock("@/lib/canvas-utils", () => ({
+      resolveMediaAspectRatio: () => null,
+    }));
+    vi.doMock("@/lib/image-formats", () => ({
+      parseAspectRatioString: () => ({ w: 1, h: 1 }),
+    }));
+    vi.doMock("@/lib/image-pipeline/contracts", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/image-pipeline/contracts")>(
+        "@/lib/image-pipeline/contracts",
+      );
+      return {
+        ...actual,
+        hashPipeline: () => "pipeline-hash",
+      };
+    });
+    vi.doMock("@/lib/image-pipeline/worker-client", () => ({
+      isPipelineAbortError: () => false,
+      renderFullWithWorkerFallback: vi.fn(),
+    }));
+    vi.doMock("@/components/ui/dialog", () => ({
+      Dialog: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      DialogContent: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      DialogTitle: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+    }));
+
+    const compareSurfaceModule = await import("@/components/canvas/nodes/compare-surface");
+    const CompareSurface = compareSurfaceModule.default;
+    const renderNodeModule = await import("@/components/canvas/nodes/render-node");
+    const RenderNode = renderNodeModule.default;
+
+    await act(async () => {
+      root?.render(
+        createElement("div", null,
+          createElement(CompareSurface, {
+            nodeWidth: 320,
+            previewInput: {
+              sourceUrl: "https://cdn.example.com/source.png",
+              steps: [
+                {
+                  nodeId: "compare-pipeline",
+                  type: "light-adjust",
+                  params: { brightness: 10 },
+                },
+              ],
+            },
+            preferPreview: true,
+          }),
+          createElement(RenderNode, {
+            id: "render-1",
+            data: {},
+            selected: false,
+            dragging: false,
+            zIndex: 0,
+            isConnectable: true,
+            type: "render",
+            xPos: 0,
+            yPos: 0,
+            width: 320,
+            height: 300,
+            sourcePosition: undefined,
+            targetPosition: undefined,
+            positionAbsoluteX: 0,
+            positionAbsoluteY: 0,
+          } as never),
+        ),
+      );
+    });
+
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        includeHistogram: false,
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: "compare-pipeline",
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
+        debounceMs: undefined,
+      }),
+    );
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: "render-1-pipeline",
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
+        debounceMs: undefined,
+      }),
+    );
+    expect(hookSpy).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        includeHistogram: false,
+        sourceUrl: null,
+        steps: [
+          {
+            nodeId: "render-1-pipeline",
+            type: "light-adjust",
+            params: { brightness: 10 },
+          },
+        ],
+        debounceMs: undefined,
       }),
     );
   });

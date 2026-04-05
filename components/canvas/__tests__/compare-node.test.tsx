@@ -2,6 +2,8 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { CanvasGraphProvider } from "@/components/canvas/canvas-graph-context";
+
 type StoreState = {
   nodes: Array<{ id: string; type?: string; data?: unknown }>;
   edges: Array<{
@@ -39,6 +41,17 @@ vi.mock("../nodes/compare-surface", () => ({
 
 import CompareNode from "../nodes/compare-node";
 
+function renderCompareNode(props: Record<string, unknown>) {
+  return renderToStaticMarkup(
+    <CanvasGraphProvider
+      nodes={storeState.nodes as Array<{ id: string; type: string; data?: unknown }>}
+      edges={storeState.edges}
+    >
+      <CompareNode {...(props as React.ComponentProps<typeof CompareNode>)} />
+    </CanvasGraphProvider>,
+  );
+}
+
 describe("CompareNode render preview inputs", () => {
   beforeEach(() => {
     storeState.nodes = [];
@@ -69,8 +82,7 @@ describe("CompareNode render preview inputs", () => {
       },
     ];
 
-    renderToStaticMarkup(
-      React.createElement(CompareNode, {
+    renderCompareNode({
         id: "compare-1",
         data: { leftUrl: "https://cdn.example.com/render-output.png" },
         selected: false,
@@ -86,8 +98,7 @@ describe("CompareNode render preview inputs", () => {
         targetPosition: undefined,
         positionAbsoluteX: 0,
         positionAbsoluteY: 0,
-      } as never),
-    );
+      });
 
     expect(compareSurfaceSpy).toHaveBeenCalled();
     const previewCall = compareSurfaceSpy.mock.calls.find(
@@ -131,8 +142,7 @@ describe("CompareNode render preview inputs", () => {
       },
     ];
 
-    renderToStaticMarkup(
-      React.createElement(CompareNode, {
+    renderCompareNode({
         id: "compare-1",
         data: { leftUrl: "https://cdn.example.com/render-output.png" },
         selected: false,
@@ -148,8 +158,7 @@ describe("CompareNode render preview inputs", () => {
         targetPosition: undefined,
         positionAbsoluteX: 0,
         positionAbsoluteY: 0,
-      } as never),
-    );
+      });
 
     expect(compareSurfaceSpy).toHaveBeenCalledTimes(1);
     expect(compareSurfaceSpy.mock.calls[0]?.[0]).toMatchObject({

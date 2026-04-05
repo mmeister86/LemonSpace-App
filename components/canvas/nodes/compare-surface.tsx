@@ -1,7 +1,11 @@
 "use client";
 
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
-import type { RenderPreviewInput } from "@/lib/canvas-render-preview";
+import {
+  shouldFastPathPreviewPipeline,
+  type RenderPreviewInput,
+} from "@/lib/canvas-render-preview";
 
 const EMPTY_STEPS: RenderPreviewInput["steps"] = [];
 
@@ -22,16 +26,24 @@ export default function CompareSurface({
   clipWidthPercent,
   preferPreview,
 }: CompareSurfaceProps) {
+  const graph = useCanvasGraph();
   const usePreview = Boolean(previewInput && (preferPreview || !finalUrl));
   const previewSourceUrl = usePreview ? previewInput?.sourceUrl ?? null : null;
   const previewSteps = usePreview ? previewInput?.steps ?? EMPTY_STEPS : EMPTY_STEPS;
   const visibleFinalUrl = usePreview ? undefined : finalUrl;
+  const previewDebounceMs = shouldFastPathPreviewPipeline(
+    previewSteps,
+    graph.previewNodeDataOverrides,
+  )
+    ? 16
+    : undefined;
 
   const { canvasRef, isRendering, error } = usePipelinePreview({
     sourceUrl: previewSourceUrl,
     steps: previewSteps,
     nodeWidth,
     includeHistogram: false,
+    debounceMs: previewDebounceMs,
     // Compare-Nodes zeigen nur eine kompakte Live-Ansicht; kleinere Kacheln
     // halten lange Workflows spürbar reaktionsfreudiger.
     previewScale: 0.5,
