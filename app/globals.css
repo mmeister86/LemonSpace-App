@@ -145,6 +145,17 @@
   }
 }
 
+@keyframes ls-edge-insert-enter {
+  0% {
+    opacity: 0;
+    scale: 0.82;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
 .ls-connection-line-marching {
   animation: ls-connection-dash-offset 0.4s linear infinite;
 }
@@ -250,9 +261,16 @@
 
   .react-flow.canvas-edge-insert-reflowing .react-flow__node {
     transition-property: transform;
-    transition-duration: var(--ls-edge-insert-reflow-duration, 997ms);
+    transition-duration: var(--ls-edge-insert-reflow-duration, 1297ms);
     transition-timing-function: cubic-bezier(0.68, -0.6, 0.32, 1.6);
     will-change: transform;
+  }
+
+  .react-flow__node.canvas-edge-insert-enter,
+  .react-flow__node .canvas-edge-insert-enter {
+    animation: ls-edge-insert-enter 300ms cubic-bezier(0.68, -0.6, 0.32, 1.6) both;
+    transform-origin: center center;
+    will-change: scale, opacity;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -262,6 +280,14 @@
 
     .react-flow.canvas-edge-insert-reflowing .react-flow__node {
       transition: none;
+    }
+
+    .react-flow__node.canvas-edge-insert-enter,
+    .react-flow__node .canvas-edge-insert-enter {
+      animation: none;
+      opacity: 1;
+      scale: 1;
+      will-change: auto;
     }
   }
 }

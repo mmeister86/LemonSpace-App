@@ -90,9 +90,17 @@ const latestHookValueRef: {
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function HookHarness({ canvasId }: { canvasId: Id<"canvases"> }) {
-  const [, setNodes] = useState<RFNode[]>([]);
-  const [edges, setEdges] = useState<RFEdge[]>([]);
+function HookHarness({
+  canvasId,
+  initialNodes = [],
+  initialEdges = [],
+}: {
+  canvasId: Id<"canvases">;
+  initialNodes?: RFNode[];
+  initialEdges?: RFEdge[];
+}) {
+  const [nodes, setNodes] = useState<RFNode[]>(initialNodes);
+  const [edges, setEdges] = useState<RFEdge[]>(initialEdges);
   const edgesRef = useRef<RFEdge[]>(edges);
   const deletingNodeIds = useRef(new Set<string>());
   const [, setAssetBrowserTargetNodeId] = useState<string | null>(null);
@@ -120,10 +128,15 @@ function HookHarness({ canvasId }: { canvasId: Id<"canvases"> }) {
     latestEdgesRef.current = edges;
   }, [edges]);
 
+  useEffect(() => {
+    latestNodesRef.current = nodes;
+  }, [nodes]);
+
   return null;
 }
 
 const latestEdgesRef: { current: RFEdge[] } = { current: [] };
+const latestNodesRef: { current: RFNode[] } = { current: [] };
 
 function setNavigatorOnline(online: boolean) {
   Object.defineProperty(window.navigator, "onLine", {
@@ -139,6 +152,7 @@ describe("useCanvasSyncEngine hook wiring", () => {
   afterEach(async () => {
     latestHookValueRef.current = null;
     latestEdgesRef.current = [];
+    latestNodesRef.current = [];
     setNavigatorOnline(true);
     mocks.mutationMocks.clear();
     vi.clearAllMocks();
@@ -280,5 +294,98 @@ describe("useCanvasSyncEngine hook wiring", () => {
     expect(
       latestEdgesRef.current.some((edge) => edge.id === "optimistic_edge_req-2"),
     ).toBe(false);
+  });
+
+  it("adds optimistic split node and edges immediately in online mode before mutation resolves", async () => {
+    let createSplitResolver!: (value: string) => void;
+    const createSplitPromise = new Promise<string>((resolve) => {
+      createSplitResolver = resolve;
+    });
+    const createSplitMutation = vi.fn(() => createSplitPromise);
+    Object.assign(createSplitMutation, {
+      withOptimisticUpdate: () => createSplitMutation,
+    });
+    mocks.mutationMocks.set("nodes.createWithEdgeSplit", createSplitMutation);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          canvasId={asCanvasId("canvas-1")}
+          initialNodes={[
+            {
+              id: "node-source",
+              type: "note",
+              position: { x: 0, y: 0 },
+              data: {},
+              style: { width: 120, height: 80 },
+            },
+            {
+              id: "node-target",
+              type: "note",
+              position: { x: 360, y: 0 },
+              data: {},
+              style: { width: 120, height: 80 },
+            },
+          ]}
+          initialEdges={[
+            {
+              id: "edge-base",
+              source: "node-source",
+              target: "node-target",
+              sourceHandle: "source-handle",
+              targetHandle: "target-handle",
+            },
+          ]}
+        />,
+      );
+    });
+
+    let pendingCreateSplit: Promise<Id<"nodes">> | undefined;
+    await act(async () => {
+      pendingCreateSplit = latestHookValueRef.current?.actions.createNodeWithEdgeSplit({
+        canvasId: asCanvasId("canvas-1"),
+        type: "note",
+        positionX: 180,
+        positionY: 0,
+        width: 140,
+        height: 100,
+        data: {},
+        splitEdgeId: "edge-base" as Id<"edges">,
+        splitSourceHandle: "source-handle",
+        splitTargetHandle: "target-handle",
+        newNodeSourceHandle: "new-source-handle",
+        newNodeTargetHandle: "new-target-handle",
+        clientRequestId: "split-1",
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      latestNodesRef.current.find((node) => node.id === "optimistic_split-1"),
+    ).toMatchObject({
+      className: "canvas-edge-insert-enter",
+    });
+    expect(
+      latestEdgesRef.current.some((edge) => edge.id === "edge-base"),
+    ).toBe(false);
+    expect(
+      latestEdgesRef.current.some(
+        (edge) => edge.id === "optimistic_edge_split-1_split_a",
+      ),
+    ).toBe(true);
+    expect(
+      latestEdgesRef.current.some(
+        (edge) => edge.id === "optimistic_edge_split-1_split_b",
+      ),
+    ).toBe(true);
+
+    createSplitResolver("node-real-split-1");
+    await act(async () => {
+      await pendingCreateSplit;
+    });
   });
 });

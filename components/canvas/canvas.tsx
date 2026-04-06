@@ -82,7 +82,7 @@ interface CanvasInnerProps {
   canvasId: Id<"canvases">;
 }
 
-const EDGE_INSERT_REFLOW_SETTLE_MS = 997;
+const EDGE_INSERT_REFLOW_SETTLE_MS = 1297;
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const t = useTranslations('toasts');
