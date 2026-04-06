@@ -9,6 +9,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | Datei | Zweck |
 |-------|-------|
 | `schema.ts` | Einzige Wahrheitsquelle für alle Tabellen und Typen |
+| `node_type_validator.ts` | Node-Typen Validator (Phase 1, Phase 2, Phase 3, Adjustment Presets) |
 | `ai.ts` | KI-Bildgenerierungs-Pipeline |
 | `credits.ts` | Credit-System: Balance, Reservation+Commit, Tier-Config |
 | `nodes.ts` | CRUD für Canvas-Nodes |
@@ -17,6 +18,8 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `openrouter.ts` | OpenRouter-HTTP-Client + Modell-Config (Backend) |
 | `auth.ts` | Better Auth Integration |
 | `helpers.ts` | `requireAuth()` + `optionalAuth()` für Auth-Checks |
+| `batch_validation_utils.ts` | Validierung von Batch-Node-Operationen |
+| `canvas-connection-policy.ts` | Verbindungspolitiken zwischen Nodes (Validierung) |
 | `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
 | `pexels.ts` | Pexels Stock-Bilder API |
 | `freepik.ts` | Freepik Asset-Browser API |
@@ -28,7 +31,31 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 
 ## Schema (`schema.ts`)
 
-Alle Node-Typen sind in zwei Validators definiert: `phase1NodeTypes` (aktiv) und `nodeType` (alle Phasen). Phase-2/3-Typen werden im Schema vordeklariert, um spätere Schema-Migrationen zu vermeiden — die UI filtert nach Phase.
+Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `nodeTypeValidator` (Phase 1+), `adjustmentNodeTypeValidator`, und `adjustmentPresetNodeTypeValidator`.
+
+### Phase-Struktur
+
+- **Phase 1 Nodes:** Aktiv implementierte Nodes (`PHASE1_CANVAS_NODE_TYPES`)
+- **Phase 2/3 Nodes:** Vordeklariert, aber `implemented: false` — UI filtert nach Phase
+- **Adjustment Presets:** Spezielle Presets für Curves, Color Adjust, Light Adjust, Detail Adjust
+
+### Node Data Shapes
+
+| Node-Typ | Felder | Bemerkung |
+|----------|--------|-----------|
+| `image` | `storageId`, `url`, `mimeType`, `width`, `height` | Bild-Upload oder URL |
+| `text` | `content` | Markdown-Text |
+| `prompt` | `content`, `model`, `modelTier` | KI-Generierungsanweisung |
+| `ai-image` | `storageId`, `prompt`, `model`, `modelTier`, `parameters`, `generationTimeMs`, `creditCost` | Generiertes KI-Bild |
+| `text-node` | `content` | Generierter KI-Text |
+| `compare` | `leftNodeId`, `rightNodeId`, `sliderPosition` | Vergleichs-Node |
+| `frame` | `label`, `exportWidth`, `exportHeight`, `backgroundColor` | Artboard |
+| `group` | `label`, `collapsed` | Container-Node |
+| `note` | `content`, `color` | Anmerkung |
+| `curves` | Presets (Kurven) | Nicht im UI als Node-Typ, sondern als Presets |
+| `color-adjust` | Presets (Farbkorrektur) | |
+| `light-adjust` | Presets (Helligkeit) | |
+| `detail-adjust` | Presets (Details) | |
 
 ### Tabellen
 
@@ -36,11 +63,13 @@ Alle Node-Typen sind in zwei Validators definiert: `phase1NodeTypes` (aktiv) und
 
 **`nodes`** — Alle Nodes eines Canvas. Felder: `type`, `positionX/Y`, `width`, `height`, `status` (`idle|analyzing|clarifying|executing|done|error`), `statusMessage`, `retryCount`, `data` (v.any()), `parentId`, `zIndex`. Index: `by_canvas`, `by_canvas_type`, `by_parent`.
 
-> `data` ist `v.any()` — Typ-Safety läuft über den `type`-Discriminator + Zod im Frontend. Die Node-Data-Shapes sind in `schema.ts` dokumentiert (`imageNodeData`, `promptNodeData`, etc.).
+> `data` ist `v.any()` — Typ-Safety läuft über den `type`-Discriminator + Zod im Frontend. Die Node-Data-Shapes sind in `schema.ts` dokumentiert.
 
 **`edges`** — Verbindungen zwischen Nodes. Index: `by_canvas`, `by_source`, `by_target`.
 
 **`mutationRequests`** — Idempotenz-Layer für Client-Replay (`clientRequestId`) bei offline/Retry-Sync. Felder: `userId`, `mutation`, `clientRequestId`, optionale Ziel-IDs (`canvasId`, `nodeId`, `edgeId`). Index: `by_user_mutation_request`.
+
+**`adjustmentPresets`** — Benutzerspezifische Presets für Adjustment-Nodes. Index: `by_userId`, `by_userId_nodeType`.
 
 **`creditBalances`** — Pro User: `balance`, `reserved`, `monthlyAllocation`. `available = balance - reserved` (computed, nicht gespeichert).
 
@@ -145,6 +174,43 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `edges.create` ist über `clientRequestId` idempotent.
 - `nodes.splitEdgeAtExistingNode` ist über `clientRequestId` idempotent (Replay wird als No-op behandelt).
 - `nodes.batchRemove` ist idempotent tolerant: wenn alle angefragten Nodes bereits entfernt sind, wird die Mutation als No-op beendet.
+
+---
+
+## Nodes & Edges (`nodes.ts` / `edges.ts`)
+
+### Nodes (`nodes.ts`)
+
+**Validierung:**
+- `getValidatedBatchNodesOrThrow()` — Validiert Batch von Nodes mit `validateBatchNodesForUserOrThrow()`
+- Verwendet `canvas-connection-policy.ts` für Verbindungsberechtigungen
+
+**Mutationen:**
+- `create`, `update`, `delete` — Standard CRUD
+- `createWithEdgeSplit`, `createWithEdgeFromSource`, `createWithEdgeToTarget` — Erstellen mit Edge-Verbindung
+- `batchRemove`, `batchRemoveNodes` — Batch-Entfernung
+- `splitEdgeAtExistingNode` — Split einer Edge am existierenden Node
+
+**Optimistische IDs:**
+- Nodes erhalten temporäre IDs mit `optimistic_`-Prefix für optimistic updates
+
+**Bridge-Edges:**
+- Bei Node-Löschung werden `computeBridgeCreatesForDeletedNodes` in `canvas-utils.ts` verwendet, um Kanten neu zu verbinden
+
+### Edges (`edges.ts`)
+
+**Validierung:**
+- `assertConnectionPolicy()` — Prüft, ob Source-Node Output erlaubt und Target-Node Input erlaubt
+- `assertTargetAllowsIncomingEdge()` — Performance-optimierte Prüfung auf eingehende Edges
+- `getCanvasConnectionValidationMessage()` — Fehlermeldung bei ungültigen Verbindungen
+
+**Validierungsregeln (aus `canvas-connection-policy.ts`):**
+- Source-Typ muss Output-Ports haben
+- Target-Typ muss Input-Ports haben
+- Keine self-loops (Edge von Node zu sich selbst)
+- Quelle: `image`, `text`, `note`, `group`, `compare`, `frame` → Source-Ports
+- Ziel: `ai-image`, `compare` → Target-Ports
+- Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---
 

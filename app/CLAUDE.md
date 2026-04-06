@@ -13,7 +13,8 @@ app/
 ├── globals.css                   ← Tailwind v4 + Design-Tokens
 ├── (app)/                        ← Authentifizierte App-Routen
 │   ├── canvas/[canvasId]/        ← Canvas-Editor
-│   │   └── page.tsx              ← SSR-Auth/ID-Validation, rendert dann `CanvasShell`
+│   │   ├── page.tsx              ← SSR-Auth/ID-Validation, rendert dann `CanvasShell`
+│   │   └── error.tsx             ← Error Boundary für Canvas
 │   └── settings/
 │       └── billing/              ← Billing-Einstellungen
 ├── auth/                         ← Auth-Routen (Better Auth)
@@ -39,10 +40,7 @@ Server Component. Initialisiert:
 5. **Providers:** `<Providers initialToken={...}>` — Convex + Theme + Auth
 6. **InitUser:** `<InitUser />` — Ruft `api.credits.initBalance` beim ersten Login auf
 
----
-
-## Provider-Pattern
-
+**Provider-Pattern:**
 ```tsx
 // components/providers.tsx
 <ConvexProvider client={convex}>
@@ -91,3 +89,31 @@ BETTER_AUTH_SECRET
 BETTER_AUTH_URL
 NEXT_PUBLIC_CONVEX_URL
 ```
+
+---
+
+## Canvas Route (`app/(app)/canvas/[canvasId]/`)
+
+**Server Component** (`page.tsx`):
+
+1. **Auth-Check (SSR):** `getAuthUser()` ruft Dashboard zurück, wenn nicht authentifiziert
+2. **Canvas-Existenz-Check:** `api.canvases.get` prüft ob Canvas existiert und gehört zum User
+3. **Rendering:** Wenn alles ok → `CanvasShell` rendern
+4. **Error Boundary:** `error.tsx` fängt Fälle ab, wo Canvas-Daten fehlen
+
+**Client Component** (`CanvasShell`):
+
+- Injiziert über `useEffect` nach SSR, um Hydration-Sync sicherzustellen
+- Verwaltet Canvas-Sync-Kontext (`CanvasSyncContext`)
+- Responsive Resizing Sidebar/Main-Layout
+- Rail-Mode Unterstützung (collapsible Sidebar)
+
+---
+
+## Konventionen
+
+- Alle Server Components zuerst prüfen ob sie User-Daten brauchen (`getAuthUser()`)
+- Alle Client Components mit `"use client"` markieren
+- Auth-Queries über `useAuthQuery` (aus `hooks/use-auth-query.ts`) statt `useQuery`, um Auth-Races zu vermeiden
+- Fehlerbehandlung immer mit Error Boundaries und Toasts
+- SEO-Optimierung für Landing-Page (`page.tsx`)

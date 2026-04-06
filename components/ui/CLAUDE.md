@@ -49,3 +49,31 @@ transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1); /* expo-out */
 2. In `components/ui/` ablegen (automatisch durch ShadCN-CLI)
 3. Anpassungen direkt in der Komponente — keine separaten Override-Dateien
 4. Token-Konventionen aus `globals.css` verwenden, keine Hardcoded-Farben
+
+---
+
+## Layout-Komponenten
+
+| Komponente | Pfad | Verwendung |
+|------------|------|------------|
+| `resizable` | `components/ui/resizable.tsx` | Sidebar-Resizing in Canvas |
+| `dialog` | `components/ui/dialog.tsx` | Confirmations, Popovers |
+| `popover` | `components/ui/popover.tsx` | Dropdowns, Kontext-Menüs |
+| `badge` | `components/ui/badge.tsx` | Status-Tags, Badges |
+| `tooltip` | `components/ui/tooltip.tsx` | Explainer-Texte |
+| `separator` | `components/ui/separator.tsx` | Trennungen |
+
+---
+
+## ShadCN Integration
+
+ShadCN-Komponenten werden nicht als npm-Paket installiert, sondern als Copy-Paste in das Projekt kopiert. Dies ermöglicht volle Kontrolle über die Implementierung und Anpassung an die LemonSpace-Design-Systeme.
+
+**Standard-Prozess:**
+```bash
+npx shadcn@latest add button
+npx shadcn@latest add input
+# ... andere Komponenten
+```
+
+Komponenten werden direkt in `components/ui/` abgelegt. Lokale Anpassungen erfolgen durch Überladen von Props oder direkt in der Komponentendatei.

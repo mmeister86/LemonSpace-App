@@ -48,3 +48,41 @@ Die Credit-Balance wird auch in `components/dashboard/credit-overview.tsx` angez
 - Tier-Upgrades immer über Polar-Checkout (kein direktes Schreiben in `subscriptions`-Tabelle)
 - `topUp` Mutation (`convex/credits.ts`) für Credit-Nachkauf aufrufen
 - Monatliches Top-Up-Limit pro Tier beachten (siehe `TIER_CONFIG.topUpLimit`)
+
+---
+
+## Features
+
+### Pricing Cards
+
+Zeigt alle verfügbaren Tiers mit:
+- Beschreibung
+- Credits pro Monat
+- Preise (Euro)
+- Feature-Checkmarks
+- Aktives Tier hervorheben
+
+### Manage Subscription
+
+UI für:
+- Aktuelles Tier anzeigen
+- Upgrade zum nächsthöheren Tier
+- Abonnement verwalten (Stornierung, Abo verwalten)
+- Webhook-Feedback-Feedback
+
+### Top-Up Panel
+
+Bietet:
+- Feste Pakete (z.B. 100 Credits, 500 Credits)
+- Custom-Betrag
+- Bonus-Staffel-Berechnung (`topup-calculator.ts`)
+- Direkter Checkout über Polar
+
+---
+
+## Best Practices
+
+1. **UI-Updates**: Änderungen an Tiers/Kosten immer in `convex/credits.ts` zuerst ändern, dann in UI-Dateien anpassen
+2. **Mock-Mode**: Für Development kann `ALLOW_TEST_CREDIT_GRANT=true` verwendet werden, um Test-Credits zu generieren
+3. **Error Handling**: Webhook-Fehler und Payment-Fehler müssen im Dashboard transparent dargestellt werden
+4. **Audit Trail**: Alle Credit-Transaktionen (subscriptions, topups, usage) müssen im Backend persistiert werden

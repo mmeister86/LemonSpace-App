@@ -10,7 +10,9 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 |-------|-------|
 | `canvas-utils.ts` | Convex↔React Flow Adapter, Edge-Glow, Node-Defaults, Bridge-Edges |
 | `canvas-node-catalog.ts` | Vollständige Node-Taxonomie (alle Phasen, Kategorien, Phase-Flags) |
+| `canvas-node-types.ts` | TypeScript-Typen und Union-Typen für Canvas-Nodes |
 | `canvas-node-templates.ts` | Default-Daten für neue Nodes (beim Einfügen aus Palette) |
+| `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
 | `ai-models.ts` | Client-seitige Modell-Definitionen (muss mit `convex/openrouter.ts` in sync bleiben) |
 | `image-formats.ts` | Aspect-Ratio-Strings, Node-Chrome-Höhen (`AI_IMAGE_NODE_HEADER_PX` etc.) |
 | `auth.ts` | Better Auth Server-Instanz |
@@ -47,6 +49,21 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 
 ---
 
+## `canvas-node-types.ts` — TypeScript-Typen
+
+Einzige Quelle für Node-Typ-Union-Typen und Schema-Validatoren.
+
+```typescript
+PHASE1_CANVAS_NODE_TYPES    // Phase 1 Nodes (aktiv)
+CANVAS_NODE_TYPES           // Phase 1 + Phase 2 + Phase 3 (alle)
+ADJUSTMENT_NODE_TYPES       // Adjustment-Preset-Nodes (curves, color-adjust, etc.)
+ADJUSTMENT_PRESET_NODE_TYPES // Spezifische Adjustment-Presets
+```
+
+**Wichtig:** Dieser Datei und `convex/node_type_validator.ts` müssen immer synchron gehalten werden. Neue Nodes → Validator anpassen.
+
+---
+
 ## `canvas-node-catalog.ts` — Node-Taxonomie
 
 Einzige Wahrheitsquelle für alle Node-Typen auf Client-Seite.
@@ -54,13 +71,57 @@ Einzige Wahrheitsquelle für alle Node-Typen auf Client-Seite.
 ```typescript
 NODE_CATALOG          // Alle Nodes aller Phasen
 NODE_CATEGORY_META    // Label + Sortierung pro Kategorie
-isNodePaletteEnabled  // true wenn: implementiert + kein systemOutput + Template vorhanden
+NODE_CATEGORIES_ORDERED // Sortierte Kategorien-Liste
 catalogEntriesByCategory() // Gruppiert für Sidebar-Rendering
+isNodePaletteEnabled  // true wenn: implementiert + kein systemOutput + Template vorhanden
 ```
 
-**Kategorien:** `source`, `ai-output`, `transform`, `image-edit`, `control`, `layout`
+**Kategorien:**
+- `source` — Quelle (image, text, video, asset, color)
+- `ai-output` — KI-Ausgabe (prompt, ai-text, ai-video, agent-output)
+- `transform` — Transformation (crop, bg-remove, upscale)
+- `image-edit` — Bildbearbeitung (adjustments)
+- `control` — Steuerung & Flow
+- `layout` — Canvas & Layout (group, frame, note, compare)
 
-Phase-2/3-Nodes haben `implemented: false` und `disabledHint`. Nie `implemented: true` setzen ohne zugehörige React-Flow-Komponente in `components/canvas/nodes/`.
+**Node-Eigenschaften:**
+- `type` — Node-Typ (als String)
+- `label` — Anzeigetext
+- `category` — Kategorisierung
+- `phase` — 1, 2 oder 3 (für zukünftige Feature-Phasen)
+- `implemented` — true wenn React-Flow-Komponente vorhanden
+- `systemOutput` — true wenn KI-System diese Nodes erzeugt (nicht aus Palette nutzbar)
+- `disabledHint` — Kurzer Hinweis für deaktivierte Nodes
+
+**Phase-2/3-Nodes:** Haben `implemented: false` und `disabledHint`. UI filtert nach Phase, niemals ohne zugehörige React-Flow-Komponente `implemented: true` setzen.
+
+---
+
+## `canvas-node-templates.ts` — Default-Daten
+
+Default-Initial-Daten für neue Nodes beim Einfügen aus Palette.
+
+- Erstellt durch die Node-Katalog-Einträge
+- Enthält default-Werte für `data`-Felder
+- Wird von `canvas.tsx` verwendet beim Node-Create
+
+---
+
+## `canvas-connection-policy.ts` — Validierungsregeln
+
+Regeln für erlaubte Verbindungen zwischen Node-Typen.
+
+**Validierungs-Funktionen:**
+- `validateCanvasConnectionPolicy()` — Prüft, ob Verbindung erlaubt ist
+- `getCanvasConnectionValidationMessage()` — Gibt lesbare Fehlermeldung zurück
+- `assertConnectionPolicy()` — Wirft Fehler bei ungültiger Verbindung
+
+**Regeln:**
+- Source-Typ muss Output-Ports haben, Target-Typ muss Input-Ports haben
+- Keine self-loops (Edge von Node zu sich selbst)
+- Quelle: `image`, `text`, `note`, `group`, `compare`, `frame` → Source-Ports
+- Ziel: `ai-image`, `compare` → Target-Ports
+- Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---
 

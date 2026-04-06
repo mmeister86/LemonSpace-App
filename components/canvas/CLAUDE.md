@@ -39,47 +39,52 @@ app/(app)/canvas/[canvasId]/page.tsx
 
 ---
 
-## Convex ↔ React Flow Mapping
+## Node-Taxonomie (Phase 1)
 
-Convex und React Flow verwenden unterschiedliche Datenmodelle. Das Mapping liegt in `lib/canvas-utils.ts`:
+Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 
-| Richtung | Funktion |
-|----------|----------|
-| Convex Node → RF Node | `convexNodeToRF(doc)` |
-| Convex Edge → RF Edge | `convexEdgeToRF(doc)` |
-| Edge + Glow | `convexEdgeToRFWithSourceGlow(edge, sourceType, colorMode)` |
-| StorageId → URL merge | `convexNodeDocWithMergedStorageUrl(node, urlMap, prevMap)` |
+### Kategorien
 
-**Wichtig:** Convex speichert `positionX` / `positionY` als separate Felder. React Flow erwartet `position: { x, y }`. Niemals RF-Node-Objekte direkt in Convex schreiben.
+| Kategorie | Nodes | Beschreibung |
+|-----------|-------|-------------|
+| **source** (Quelle) | `image`, `text`, `video`, `asset`, `color` | Input-Quellen für den Workflow |
+| **ai-output** (KI-Ausgabe) | `prompt`, `ai-text`, `ai-video`, `agent-output` | KI-generierte Inhalte |
+| **transform** (Transformation) | `crop`, `bg-remove`, `upscale` | Bildbearbeitung-Transformationen |
+| **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust` | Preset-basierte Adjustments |
+| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch` | Kontrollfluss-Elemente |
+| **layout** (Canvas & Layout) | `group`, `frame`, `note`, `compare` | Layout-Elemente |
 
-**Status-Injection:** `convexNodeToRF` schreibt `_status`, `_statusMessage` und `retryCount` in `data`, damit Node-Komponenten darauf zugreifen können ohne das Node-Dokument direkt zu kennen.
+### Node-Typen im Detail
 
-**URL-Caching:** Images mit `storageId` werden im Canvas nicht mehr über eine reaktive Query aufgelöst. `canvas.tsx` sammelt die aktuellen `storageId`s aus `nodes.list` und ruft `storage.batchGetUrlsForCanvas` gezielt per Mutation auf, nur wenn sich das Set ändert. Die vorherige URL wird in `previousDataByNodeId` gecacht, um Flackern beim Reload zu vermeiden.
+| Typ | Phase | Implementiert | Kategorie | Handles |
+|-----|-------|---------------|-----------|---------|
+| `image` | 1 | ✅ | source | source (default), target (default) |
+| `text` | 1 | ✅ | source | source (default), target (default) |
+| `video` | 1 | ✅ | source | source (default), target (default) |
+| `asset` | 1 | ✅ | source | source (default), target (default) |
+| `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
+| `ai-text` | 2 | 🔲 | ai-output | source: `text-out`, target: `text-in` |
+| `ai-video` | 2 | 🔲 | ai-output | source: `video-out`, target: `video-in` |
+| `agent-output` | 3 | 🔲 | ai-output | systemOutput: true |
+| `crop` | 2 | 🔲 | transform | 🔲 |
+| `bg-remove` | 2 | 🔲 | transform | 🔲 |
+| `upscale` | 2 | 🔲 | transform | 🔲 |
+| `curves` | 1 | ✅ | image-edit | Preset-basiert (nicht standalone) |
+| `color-adjust` | 1 | ✅ | image-edit | Preset-basiert |
+| `light-adjust` | 1 | ✅ | image-edit | Preset-basiert |
+| `detail-adjust` | 1 | ✅ | image-edit | Preset-basiert |
+| `group` | 1 | ✅ | layout | source (default), target (default) |
+| `frame` | 1 | ✅ | layout | source: `frame-out`, target: `frame-in` |
+| `note` | 1 | ✅ | layout | source (default), target (default) |
+| `compare` | 1 | ✅ | layout | source: `compare-out`, targets: `left`, `right` |
 
-**Load-Shedding-Hot-Path:** Der Canvas-Hot-Path soll so wenig Convex-Abhängigkeiten wie möglich haben. Direkt reaktiv bleiben nur die Kernmodelle (`nodes.list`, `edges.list`, `canvases.get`). Nebenpfade wie Storage-URL-Auflösung, Adjustment-Presets und Toolbar-Credits sind bewusst entkoppelt oder zusammengefasst.
+> `implemented: false` (🔲) bedeutet Phase-2/3 Node, der noch nicht implementiert ist. **Hinweis:** Phase-2/3 Nodes müssen im Schema (`convex/node_type_validator.ts`) vordeklariert werden, damit das System nicht bei jeder Phasenübergang neu migriert werden muss. Die UI filtert Nodes nach Phase.
+
+**SystemOutput Nodes** (`ai-text`, `ai-video`, `agent-output`): Wird typischerweise vom KI-System erzeugt — nicht aus Palette/DnD anlegbar.
 
 ---
 
-## Node-Typen (Phase 1)
-
-Alle registrierten Node-Typen in `node-types.ts`:
-
-| Typ | Komponente | Kategorie | Handles |
-|-----|-----------|-----------|---------|
-| `image` | `ImageNode` | Quelle | source (default), target (default) |
-| `text` | `TextNode` | Quelle | source (default), target (default) |
-| `prompt` | `PromptNode` | KI-Ausgabe | source: `prompt-out`, target: `image-in` |
-| `ai-image` | `AiImageNode` | KI-Ausgabe | source: `image-out`, target: `prompt-in` |
-| `group` | `GroupNode` | Layout | source (default), target (default) |
-| `frame` | `FrameNode` | Layout | source: `frame-out`, target: `frame-in` |
-| `note` | `NoteNode` | Layout | source (default), target (default) |
-| `compare` | `CompareNode` | Layout | source: `compare-out`, targets: `left`, `right` |
-| `asset` | `AssetNode` | Quelle | source (default), target (default) |
-| `video` | `VideoNode` | Quelle | source (default), target (default) |
-
-> `nodeTypes`-Map **muss** außerhalb jeder React-Komponente definiert sein (sonst re-rendert React Flow bei jedem Render alle Nodes).
-
-### Default-Größen (`lib/canvas-utils.ts → NODE_DEFAULTS`)
+## Default-Größen (`lib/canvas-utils.ts → NODE_DEFAULTS`)
 
 ```
 image:    280 × 200    prompt:   288 × 220
@@ -94,7 +99,7 @@ note:     208 × 100    compare:  500 × 380
 
 ```
 idle → analyzing → clarifying → executing (retry N/2) → done
-                                                       → error
+                                                        → error
 ```
 
 Status + `statusMessage` werden direkt am Node angezeigt. Kein globales Loading-Banner. Bei `error` zeigt `statusMessage` die Kategorie: `Credits: ...`, `Timeout: ...`, `Provider: ...` etc.
@@ -109,10 +114,25 @@ Jede Edge bekommt einen `drop-shadow`-Filter entsprechend dem Quell-Node-Typ. Fa
 - `image`, `text`, `note` → Teal (13, 148, 136)
 - `frame` → Orange (249, 115, 22)
 - `group`, `compare` → Grau (100, 116, 139)
+- `curves`, `color-adjust`, `light-adjust`, `detail-adjust` → Pink (236, 72, 153)
 
 Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right` → Smaragd).
 
 Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzentfarbe abgeleitet und mit **50% Transparenz** gerendert (`rgba(..., 0.5)`), damit Linie und Glow farblich konsistent bleiben.
+
+---
+
+## Adjustments (Curves, Color, Light, Detail)
+
+**Wichtig:** Diese Nodes werden **nicht als eigene Node-Typen** in der Palette angezeigt. Stattdessen existieren sie als **Presets**, die direkt in einem vorhandenen Node angewendet werden können.
+
+- Preset-Verwaltung: `presets.list` (Convex-Query)
+- Preset-Provider: `CanvasPresetsProvider` (Kontext)
+- Hook: `useCanvasAdjustmentPresets()` für Preset-Management
+
+**Regeln:**
+- Curves-, Color-, Light-, Detail-Adjustment Nodes dürfen keine eigene `presets.list`-Query feuern.
+- Immer `CanvasPresetsProvider` + `useCanvasAdjustmentPresets(...)` verwenden.
 
 ---
 
@@ -153,6 +173,10 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `export-button.tsx` | Export-Button mit Format-Auswahl |
 | `connection-banner.tsx` | Offline-Banner bei Convex-Verbindungsverlust |
 | `custom-connection-line.tsx` | Angepasste temporäre Verbindungslinie |
+| `default-edge.tsx` | Standard Edge-Rendering |
+| `node-error-boundary.tsx` | Error-Boundary für Node-Fehler |
+| `adjustment-preview.tsx` | Vorschau für Adjustment-Presets |
+| `adjustment-controls.tsx` | UI-Controls für Adjustments |
 
 ---
 
@@ -181,3 +205,5 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 - **Parent-Nodes:** `parentId` zeigt auf einen Group- oder Frame-Node. React Flow erwartet, dass Parent-Nodes vor Child-Nodes in der `nodes`-Array stehen.
 - **Bridge-Edges:** Beim Löschen eines mittleren Nodes werden Kanten automatisch neu verbunden (`computeBridgeCreatesForDeletedNodes` aus `lib/canvas-utils.ts`).
 - **`"null"`-Handles:** Convex kann `"null"` als String speichern. `convexEdgeToRF` sanitized Handles: `"null"` → `undefined`.
+- **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
+- **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
