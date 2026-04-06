@@ -746,6 +746,8 @@ export function useCanvasSyncEngine({
     ]);
   });
 
+  const createNodeWithEdgeSplitMut = useMutation(api.nodes.createWithEdgeSplit);
+
   const createEdge = useMutation(api.edges.create).withOptimisticUpdate(
     (localStore, args) => {
       const edgeList = localStore.getQuery(api.edges.list, {
@@ -847,10 +849,7 @@ export function useCanvasSyncEngine({
 
   const addOptimisticNodeLocally = useCallback(
     (
-      args: Parameters<typeof createNode>[0] & {
-        clientRequestId: string;
-        className?: string;
-      },
+      args: Parameters<typeof createNode>[0] & { clientRequestId: string },
     ): Id<"nodes"> => {
       const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${args.clientRequestId}`;
       setNodes((current) => {
@@ -867,7 +866,6 @@ export function useCanvasSyncEngine({
             style: { width: args.width, height: args.height },
             parentId: args.parentId as string | undefined,
             zIndex: args.zIndex,
-            className: args.className,
             selected: false,
           },
         ];
@@ -1392,24 +1390,15 @@ export function useCanvasSyncEngine({
   );
 
   const runCreateNodeWithEdgeSplitOnlineOnly = useCallback(
-    async (args: Parameters<typeof createNodeWithEdgeSplitRaw>[0]) => {
+    async (args: Parameters<typeof createNodeWithEdgeSplitMut>[0]) => {
       const clientRequestId = args.clientRequestId ?? crypto.randomUUID();
       const payload = { ...args, clientRequestId };
-      const splitEdgeId = payload.splitEdgeId as string;
 
-      controller.pendingConnectionCreatesRef.current.add(clientRequestId);
+      if (isSyncOnline) {
+        return await createNodeWithEdgeSplitMut(payload);
+      }
 
-      const originalSplitEdge = edgesRef.current.find(
-        (edge) =>
-          edge.id === splitEdgeId &&
-          edge.className !== "temp" &&
-          !isOptimisticEdgeId(edge.id),
-      );
-
-      const optimisticNodeId = addOptimisticNodeLocally({
-        ...payload,
-        className: "canvas-edge-insert-enter",
-      });
+      const optimisticNodeId = addOptimisticNodeLocally(payload);
       const splitApplied = applyEdgeSplitLocally({
         clientRequestId,
         splitEdgeId: payload.splitEdgeId,
@@ -1421,34 +1410,6 @@ export function useCanvasSyncEngine({
         positionX: payload.positionX,
         positionY: payload.positionY,
       });
-
-      if (isSyncOnline) {
-        try {
-          const realId = await trackPendingNodeCreate(
-            clientRequestId,
-            createNodeWithEdgeSplitRaw({ ...payload }),
-          );
-          await remapOptimisticNodeLocally(clientRequestId, realId);
-          return realId;
-        } catch (error) {
-          removeOptimisticCreateLocally({
-            clientRequestId,
-            removeNode: true,
-            removeEdge: true,
-          });
-
-          if (splitApplied && originalSplitEdge) {
-            setEdges((current) => {
-              if (current.some((edge) => edge.id === originalSplitEdge.id)) {
-                return current;
-              }
-              return [...current, originalSplitEdge];
-            });
-          }
-
-          throw error;
-        }
-      }
 
       if (splitApplied) {
         await enqueueSyncMutation("createNodeWithEdgeSplit", payload);
@@ -1469,19 +1430,7 @@ export function useCanvasSyncEngine({
 
       return optimisticNodeId;
     },
-    [
-      addOptimisticNodeLocally,
-      applyEdgeSplitLocally,
-      controller.pendingConnectionCreatesRef,
-      createNodeWithEdgeSplitRaw,
-      edgesRef,
-      enqueueSyncMutation,
-      isSyncOnline,
-      remapOptimisticNodeLocally,
-      removeOptimisticCreateLocally,
-      setEdges,
-      trackPendingNodeCreate,
-    ],
+    [addOptimisticNodeLocally, applyEdgeSplitLocally, createNodeWithEdgeSplitMut, enqueueSyncMutation, isSyncOnline],
   );
 
   const runBatchRemoveNodesMutation = useCallback<RunBatchRemoveNodesMutation>(

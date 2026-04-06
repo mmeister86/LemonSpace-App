@@ -27,7 +27,7 @@ export type EdgeInsertMenuState = {
 };
 
 const EDGE_INSERT_GAP_PX = 10;
-const DEFAULT_REFLOW_SETTLE_MS = 1297;
+const DEFAULT_REFLOW_SETTLE_MS = 997;
 
 function waitForReflowSettle(ms: number): Promise<void> {
   return new Promise((resolve) => {
