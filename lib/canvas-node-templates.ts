@@ -21,6 +21,18 @@ export const CANVAS_NODE_TEMPLATES = [
     defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
   },
   {
+    type: "video-prompt",
+    label: "KI-Video",
+    width: 320,
+    height: 220,
+    defaultData: {
+      prompt: "",
+      modelId: "wan-2-2-720p",
+      durationSeconds: 5,
+      hasAudio: false,
+    },
+  },
+  {
     type: "note",
     label: "Notiz",
     width: 220,

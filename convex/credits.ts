@@ -420,6 +420,12 @@ export const reserve = mutation({
     nodeId: v.optional(v.id("nodes")),
     canvasId: v.optional(v.id("canvases")),
     model: v.optional(v.string()),
+    provider: v.optional(v.union(v.literal("openrouter"), v.literal("freepik"))),
+    videoMeta: v.optional(v.object({
+      model: v.string(),
+      durationSeconds: v.number(),
+      hasAudio: v.boolean(),
+    })),
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
@@ -502,6 +508,8 @@ export const reserve = mutation({
       nodeId: args.nodeId,
       canvasId: args.canvasId,
       model: args.model,
+      provider: args.provider,
+      videoMeta: args.videoMeta,
     });
 
     return transactionId;

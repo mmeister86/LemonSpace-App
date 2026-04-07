@@ -432,6 +432,64 @@ describe("useCanvasConnections", () => {
     expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
   });
 
+  it("rejects text to ai-video body drops", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+    const showConnectionRejectedToast = vi.fn();
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={{
+            sourceNodeId: "node-source",
+            targetNodeId: "node-target",
+            sourceHandle: undefined,
+            targetHandle: undefined,
+          }}
+          nodes={[
+            { id: "node-source", type: "text", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-target", type: "ai-video", position: { x: 300, y: 200 }, data: {} },
+          ]}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          showConnectionRejectedToast={showConnectionRejectedToast}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 400, clientY: 260 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-source", type: "text" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 400, y: 260 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).toHaveBeenCalledWith("ai-video-source-invalid");
+    expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
+  });
+
   it("ignores onConnectEnd when no connect drag is active", async () => {
     const runCreateEdgeMutation = vi.fn(async () => undefined);
     const showConnectionRejectedToast = vi.fn();

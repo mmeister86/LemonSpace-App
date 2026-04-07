@@ -102,7 +102,9 @@ export function convexEdgeToRF(edge: Doc<"edges">): RFEdge {
  */
 const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = {
   prompt: [139, 92, 246],
+  "video-prompt": [124, 58, 237],
   "ai-image": [139, 92, 246],
+  "ai-video": [124, 58, 237],
   image: [13, 148, 136],
   text: [13, 148, 136],
   note: [13, 148, 136],
@@ -208,7 +210,9 @@ export const NODE_HANDLE_MAP: Record<
   image: { source: undefined, target: undefined },
   text: { source: undefined, target: undefined },
   prompt: { source: "prompt-out", target: "image-in" },
+  "video-prompt": { source: "video-prompt-out", target: "video-prompt-in" },
   "ai-image": { source: "image-out", target: "prompt-in" },
+  "ai-video": { source: "video-out", target: "video-in" },
   group: { source: undefined, target: undefined },
   frame: { source: "frame-out", target: "frame-in" },
   note: { source: undefined, target: undefined },
@@ -232,8 +236,19 @@ export const NODE_DEFAULTS: Record<
   image: { width: 280, height: 200, data: {} },
   text: { width: 256, height: 120, data: { content: "" } },
   prompt: { width: 288, height: 220, data: { prompt: "", aspectRatio: "1:1" } },
+  "video-prompt": {
+    width: 288,
+    height: 220,
+    data: {
+      prompt: "",
+      modelId: "wan-2-2-720p",
+      durationSeconds: 5,
+      hasAudio: false,
+    },
+  },
   // 1:1 viewport 320 + chrome 88 ≈ äußere Höhe (siehe lib/image-formats.ts)
   "ai-image": { width: 320, height: 408, data: {} },
+  "ai-video": { width: 360, height: 280, data: {} },
   group: { width: 400, height: 300, data: { label: "Gruppe" } },
   frame: {
     width: 400,

@@ -28,6 +28,8 @@ export type CanvasConnectionValidationReason =
   | "incomplete"
   | "self-loop"
   | "unknown-node"
+  | "ai-video-source-invalid"
+  | "video-prompt-target-invalid"
   | "adjustment-source-invalid"
   | "adjustment-incoming-limit"
   | "compare-incoming-limit"
@@ -41,7 +43,19 @@ export function validateCanvasConnectionPolicy(args: {
 }): CanvasConnectionValidationReason | null {
   const { sourceType, targetType, targetIncomingCount } = args;
 
-  if (isAdjustmentNodeType(targetType)) {
+  if (targetType === "ai-video" && sourceType !== "video-prompt") {
+    return "ai-video-source-invalid";
+  }
+
+  if (sourceType === "video-prompt" && targetType !== "ai-video") {
+    return "video-prompt-target-invalid";
+  }
+
+  if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+    return "render-source-invalid";
+  }
+
+  if (isAdjustmentNodeType(targetType) && targetType !== "render") {
     if (!ADJUSTMENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       return "adjustment-source-invalid";
     }
@@ -52,10 +66,6 @@ export function validateCanvasConnectionPolicy(args: {
 
   if (targetType === "compare" && targetIncomingCount >= 2) {
     return "compare-incoming-limit";
-  }
-
-  if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
-    return "render-source-invalid";
   }
 
   if (
@@ -78,6 +88,10 @@ export function getCanvasConnectionValidationMessage(
       return "Node kann nicht mit sich selbst verbunden werden.";
     case "unknown-node":
       return "Verbindung enthaelt unbekannte Nodes.";
+    case "ai-video-source-invalid":
+      return "KI-Video-Ausgabe akzeptiert nur Eingaben von KI-Video.";
+    case "video-prompt-target-invalid":
+      return "KI-Video kann nur mit KI-Video-Ausgabe verbunden werden.";
     case "adjustment-source-invalid":
       return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
     case "adjustment-incoming-limit":

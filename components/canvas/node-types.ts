@@ -1,7 +1,9 @@
 import ImageNode from "./nodes/image-node";
 import TextNode from "./nodes/text-node";
 import PromptNode from "./nodes/prompt-node";
+import VideoPromptNode from "./nodes/video-prompt-node";
 import AiImageNode from "./nodes/ai-image-node";
+import AiVideoNode from "./nodes/ai-video-node";
 import GroupNode from "./nodes/group-node";
 import FrameNode from "./nodes/frame-node";
 import NoteNode from "./nodes/note-node";
@@ -25,7 +27,9 @@ export const nodeTypes = {
   image: ImageNode,
   text: TextNode,
   prompt: PromptNode,
+  "video-prompt": VideoPromptNode,
   "ai-image": AiImageNode,
+  "ai-video": AiVideoNode,
   group: GroupNode,
   frame: FrameNode,
   note: NoteNode,

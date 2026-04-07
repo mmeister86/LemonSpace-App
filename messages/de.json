@@ -125,6 +125,29 @@
       "failed": "Fehlgeschlagen"
     }
   },
+  "videoPromptNode": {
+    "label": "KI-Video",
+    "promptPlaceholder": "Beschreibe dein Video...",
+    "promptFromTextNode": "Prompt aus Text-Node",
+    "modelLabel": "Modell",
+    "durationLabel": "Laenge",
+    "duration5s": "5 Sek.",
+    "duration10s": "10 Sek.",
+    "generateButton": "Video generieren",
+    "insufficientCredits": "Nicht genug Credits",
+    "noPromptHint": "Prompt eingeben oder Text-Node verbinden"
+  },
+  "aiVideoNode": {
+    "label": "KI-Video-Ausgabe",
+    "idleHint": "Verbinde eine KI-Video-Node und starte dort die Generierung.",
+    "generating": "Video wird generiert...",
+    "retryButton": "Erneut versuchen",
+    "downloadButton": "Video herunterladen",
+    "modelMeta": "Modell: {model}",
+    "durationMeta": "{duration} Sek.",
+    "creditMeta": "{credits} Credits",
+    "errorFallback": "Video-Generierung fehlgeschlagen"
+  },
   "credits": {
     "balance": "Guthaben",
     "available": "Verfügbar",
@@ -205,6 +228,8 @@
       "contentPolicyDesc": "Versuche, den Prompt umzuformulieren.",
       "timeoutTitle": "Generierung abgelaufen",
       "timeoutDesc": "Credits wurden nicht abgebucht.",
+      "providerIssuesTitle": "KI-Anbieter moeglicherweise gestoert",
+      "providerIssuesDesc": "Mehrere Bild- oder Video-Generierungen sind fehlgeschlagen.",
       "openrouterIssuesTitle": "OpenRouter möglicherweise gestört",
       "openrouterIssuesDesc": "Mehrere Generierungen fehlgeschlagen.",
       "concurrentLimitReachedTitle": "Generierung bereits aktiv",

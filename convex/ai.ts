@@ -13,8 +13,23 @@ import {
 } from "./openrouter";
 import type { Id } from "./_generated/dataModel";
 import { assertNodeBelongsToCanvasOrThrow } from "./ai_utils";
+import {
+  createVideoTask,
+  downloadVideoAsBlob,
+  FreepikApiError,
+  getVideoTaskStatus,
+} from "./freepik";
+import { getVideoModel, isVideoModelId } from "../lib/ai-video-models";
+import {
+  shouldLogVideoPollAttempt,
+  shouldLogVideoPollResult,
+  type VideoPollStatus,
+} from "../lib/video-poll-logging";
+import { normalizePublicTier } from "../lib/tier-credits";
 
 const MAX_IMAGE_RETRIES = 2;
+const MAX_VIDEO_POLL_ATTEMPTS = 30;
+const MAX_VIDEO_POLL_TOTAL_MS = 10 * 60 * 1000;
 
 type ErrorCategory =
   | "credits"
@@ -34,7 +49,34 @@ function getErrorCode(error: unknown): string | undefined {
     const data = error.data as ErrorData;
     return data?.code;
   }
+  if (error instanceof FreepikApiError) {
+    return error.code;
+  }
   return undefined;
+}
+
+function getErrorSource(error: unknown): string | undefined {
+  if (error instanceof FreepikApiError) {
+    return error.source;
+  }
+  if (error && typeof error === "object") {
+    const source = (error as { source?: unknown }).source;
+    return typeof source === "string" ? source : undefined;
+  }
+  return undefined;
+}
+
+function getProviderStatus(error: unknown): number | null {
+  if (error instanceof FreepikApiError) {
+    return typeof error.status === "number" ? error.status : null;
+  }
+  if (error && typeof error === "object") {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number" && Number.isFinite(status)) {
+      return status;
+    }
+  }
+  return null;
 }
 
 function errorMessage(error: unknown): string {
@@ -54,9 +96,25 @@ function categorizeError(error: unknown): {
   retryable: boolean;
 } {
   const code = getErrorCode(error);
+  const source = getErrorSource(error);
   const message = errorMessage(error);
   const lower = message.toLowerCase();
-  const status = parseOpenRouterStatus(message);
+  const status = getProviderStatus(error) ?? parseOpenRouterStatus(message);
+
+  if (source === "freepik") {
+    if (code === "model_unavailable") {
+      return {
+        category: "provider",
+        retryable: status === 503,
+      };
+    }
+    if (code === "timeout") {
+      return { category: "timeout", retryable: true };
+    }
+    if (code === "transient") {
+      return { category: "transient", retryable: true };
+    }
+  }
 
   if (
     code === "CREDITS_TEST_DISABLED" ||
@@ -552,6 +610,7 @@ export const generateImage = action({
           model: modelId,
           nodeId: verifiedNodeId,
           canvasId: verifiedCanvasId,
+          provider: "openrouter",
         })
       : null;
 
@@ -624,6 +683,556 @@ export const generateImage = action({
           userId,
         });
       }
+    }
+  },
+});
+
+function isVideoModelAllowedForTier(modelTier: "free" | "starter" | "pro", userTier: "free" | "starter" | "pro" | "max") {
+  const tierOrder = { free: 0, starter: 1, pro: 2, max: 3 } as const;
+  return tierOrder[userTier] >= tierOrder[modelTier];
+}
+
+export const setVideoTaskInfo = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    taskId: v.string(),
+  },
+  handler: async (ctx, { nodeId, taskId }) => {
+    const node = await ctx.db.get(nodeId);
+    if (!node) {
+      throw new Error("Node not found");
+    }
+
+    const prev =
+      node.data && typeof node.data === "object"
+        ? (node.data as Record<string, unknown>)
+        : {};
+
+    await ctx.db.patch(nodeId, {
+      data: {
+        ...prev,
+        taskId,
+      },
+    });
+  },
+});
+
+export const markVideoPollingRetry = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    failureMessage: v.string(),
+  },
+  handler: async (ctx, { nodeId, attempt, maxAttempts, failureMessage }) => {
+    await ctx.db.patch(nodeId, {
+      status: "executing",
+      retryCount: attempt,
+      statusMessage: `Retry ${attempt}/${maxAttempts} - ${failureMessage}`,
+    });
+  },
+});
+
+export const finalizeVideoSuccess = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    durationSeconds: v.union(v.literal(5), v.literal(10)),
+    storageId: v.id("_storage"),
+    retryCount: v.number(),
+    creditCost: v.number(),
+  },
+  handler: async (
+    ctx,
+    { nodeId, prompt, modelId, durationSeconds, storageId, retryCount, creditCost }
+  ) => {
+    const model = getVideoModel(modelId);
+    if (!model) {
+      throw new Error(`Unknown video model: ${modelId}`);
+    }
+
+    const existing = await ctx.db.get(nodeId);
+    if (!existing) {
+      throw new Error("Node not found");
+    }
+
+    const prev =
+      existing.data && typeof existing.data === "object"
+        ? (existing.data as Record<string, unknown>)
+        : {};
+
+    await ctx.db.patch(nodeId, {
+      status: "done",
+      retryCount,
+      statusMessage: undefined,
+      data: {
+        ...prev,
+        taskId: undefined,
+        storageId,
+        prompt,
+        model: modelId,
+        modelLabel: model.label,
+        durationSeconds,
+        generatedAt: Date.now(),
+        creditCost,
+      },
+    });
+  },
+});
+
+export const finalizeVideoFailure = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    retryCount: v.number(),
+    statusMessage: v.string(),
+  },
+  handler: async (ctx, { nodeId, retryCount, statusMessage }) => {
+    const existing = await ctx.db.get(nodeId);
+    if (!existing) {
+      throw new Error("Node not found");
+    }
+    const prev =
+      existing.data && typeof existing.data === "object"
+        ? (existing.data as Record<string, unknown>)
+        : {};
+
+    await ctx.db.patch(nodeId, {
+      status: "error",
+      retryCount,
+      statusMessage,
+      data: {
+        ...prev,
+        taskId: undefined,
+      },
+    });
+  },
+});
+
+export const processVideoGeneration = internalAction({
+  args: {
+    outputNodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    durationSeconds: v.union(v.literal(5), v.literal(10)),
+    creditCost: v.number(),
+    reservationId: v.optional(v.id("creditTransactions")),
+    shouldDecrementConcurrency: v.boolean(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const model = getVideoModel(args.modelId);
+    if (!model) {
+      throw new Error(`Unknown video model: ${args.modelId}`);
+    }
+
+    console.info("[processVideoGeneration] start", {
+      outputNodeId: args.outputNodeId,
+      modelId: args.modelId,
+      endpoint: model.freepikEndpoint,
+      durationSeconds: args.durationSeconds,
+      promptLength: args.prompt.length,
+      hasReservation: Boolean(args.reservationId),
+      shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+    });
+
+    try {
+      const { task_id } = await createVideoTask({
+        endpoint: model.freepikEndpoint,
+        prompt: args.prompt,
+        durationSeconds: args.durationSeconds,
+      });
+
+      console.info("[processVideoGeneration] task created", {
+        outputNodeId: args.outputNodeId,
+        taskId: task_id,
+        modelId: args.modelId,
+      });
+
+      await ctx.runMutation(internal.ai.setVideoTaskInfo, {
+        nodeId: args.outputNodeId,
+        taskId: task_id,
+      });
+
+      await ctx.scheduler.runAfter(5000, internal.ai.pollVideoTask, {
+        taskId: task_id,
+        outputNodeId: args.outputNodeId,
+        prompt: args.prompt,
+        modelId: args.modelId,
+        durationSeconds: args.durationSeconds,
+        creditCost: args.creditCost,
+        reservationId: args.reservationId,
+        shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+        userId: args.userId,
+        attempt: 1,
+        startedAtMs: Date.now(),
+      });
+    } catch (error) {
+      console.warn("[processVideoGeneration] failed before polling", {
+        outputNodeId: args.outputNodeId,
+        modelId: args.modelId,
+        errorMessage: errorMessage(error),
+        errorCode: getErrorCode(error) ?? null,
+        source: getErrorSource(error) ?? null,
+        providerStatus: getProviderStatus(error),
+        freepikBody: error instanceof FreepikApiError ? error.body : undefined,
+      });
+
+      if (args.reservationId) {
+        try {
+          await ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId: args.reservationId,
+          });
+        } catch {
+          // Keep node failure updates best-effort even if release fails.
+        }
+      }
+
+      await ctx.runMutation(internal.ai.finalizeVideoFailure, {
+        nodeId: args.outputNodeId,
+        retryCount: 0,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+
+      if (args.shouldDecrementConcurrency) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId: args.userId,
+        });
+      }
+    }
+  },
+});
+
+export const pollVideoTask = internalAction({
+  args: {
+    taskId: v.string(),
+    outputNodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    durationSeconds: v.union(v.literal(5), v.literal(10)),
+    creditCost: v.number(),
+    reservationId: v.optional(v.id("creditTransactions")),
+    shouldDecrementConcurrency: v.boolean(),
+    userId: v.string(),
+    attempt: v.number(),
+    startedAtMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const elapsedMs = Date.now() - args.startedAtMs;
+    if (args.attempt > MAX_VIDEO_POLL_ATTEMPTS || elapsedMs > MAX_VIDEO_POLL_TOTAL_MS) {
+      if (args.reservationId) {
+        try {
+          await ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId: args.reservationId,
+          });
+        } catch {
+          // Keep node status updates best-effort.
+        }
+      }
+
+      await ctx.runMutation(internal.ai.finalizeVideoFailure, {
+        nodeId: args.outputNodeId,
+        retryCount: args.attempt,
+        statusMessage: "Timeout: Video generation exceeded maximum polling time",
+      });
+
+      if (args.shouldDecrementConcurrency) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId: args.userId,
+        });
+      }
+      return;
+    }
+
+    try {
+      if (shouldLogVideoPollAttempt(args.attempt)) {
+        console.info("[pollVideoTask] poll start", {
+          outputNodeId: args.outputNodeId,
+          taskId: args.taskId,
+          attempt: args.attempt,
+          elapsedMs,
+        });
+      }
+
+      const model = getVideoModel(args.modelId);
+      if (!model) {
+        throw new Error(`Unknown video model: ${args.modelId}`);
+      }
+
+      const status = await getVideoTaskStatus({
+        taskId: args.taskId,
+        statusEndpointPath: model.statusEndpointPath,
+        attempt: args.attempt,
+      });
+
+      if (shouldLogVideoPollResult(args.attempt, status.status as VideoPollStatus)) {
+        console.info("[pollVideoTask] poll result", {
+          outputNodeId: args.outputNodeId,
+          taskId: args.taskId,
+          attempt: args.attempt,
+          status: status.status,
+          generatedCount: status.generated?.length ?? 0,
+          hasError: Boolean(status.error),
+          statusError: status.error ?? null,
+        });
+      }
+
+      if (status.status === "FAILED") {
+        if (args.reservationId) {
+          try {
+            await ctx.runMutation(internal.credits.releaseInternal, {
+              transactionId: args.reservationId,
+            });
+          } catch {
+            // Keep node status updates best-effort.
+          }
+        }
+
+        await ctx.runMutation(internal.ai.finalizeVideoFailure, {
+          nodeId: args.outputNodeId,
+          retryCount: args.attempt,
+          statusMessage: status.error?.trim() || "Provider: Video generation failed",
+        });
+
+        if (args.shouldDecrementConcurrency) {
+          await ctx.runMutation(internal.credits.decrementConcurrency, {
+            userId: args.userId,
+          });
+        }
+        return;
+      }
+
+      if (status.status === "COMPLETED") {
+        const generatedUrl = status.generated?.[0]?.url;
+        if (!generatedUrl) {
+          throw new Error("Freepik completed without generated video URL");
+        }
+
+        const blob = await downloadVideoAsBlob(generatedUrl);
+        const storageId = await ctx.storage.store(blob);
+
+        await ctx.runMutation(internal.ai.finalizeVideoSuccess, {
+          nodeId: args.outputNodeId,
+          prompt: args.prompt,
+          modelId: args.modelId,
+          durationSeconds: args.durationSeconds,
+          storageId: storageId as Id<"_storage">,
+          retryCount: args.attempt,
+          creditCost: args.creditCost,
+        });
+
+        if (args.reservationId) {
+          await ctx.runMutation(internal.credits.commitInternal, {
+            transactionId: args.reservationId,
+            actualCost: args.creditCost,
+          });
+        }
+
+        if (args.shouldDecrementConcurrency) {
+          await ctx.runMutation(internal.credits.decrementConcurrency, {
+            userId: args.userId,
+          });
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("[pollVideoTask] poll failed", {
+        outputNodeId: args.outputNodeId,
+        taskId: args.taskId,
+        attempt: args.attempt,
+        elapsedMs,
+        errorMessage: errorMessage(error),
+        errorCode: getErrorCode(error) ?? null,
+        source: getErrorSource(error) ?? null,
+        providerStatus: getProviderStatus(error),
+        retryable: categorizeError(error).retryable,
+        freepikBody: error instanceof FreepikApiError ? error.body : undefined,
+      });
+
+      const { retryable } = categorizeError(error);
+      if (retryable && args.attempt < MAX_VIDEO_POLL_ATTEMPTS) {
+        await ctx.runMutation(internal.ai.markVideoPollingRetry, {
+          nodeId: args.outputNodeId,
+          attempt: args.attempt,
+          maxAttempts: MAX_VIDEO_POLL_ATTEMPTS,
+          failureMessage: errorMessage(error),
+        });
+
+        const retryDelayMs =
+          args.attempt <= 5 ? 5000 : args.attempt <= 15 ? 10000 : 20000;
+        await ctx.scheduler.runAfter(retryDelayMs, internal.ai.pollVideoTask, {
+          ...args,
+          attempt: args.attempt + 1,
+        });
+        return;
+      }
+
+      if (args.reservationId) {
+        try {
+          await ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId: args.reservationId,
+          });
+        } catch {
+          // Keep node status updates best-effort.
+        }
+      }
+
+      await ctx.runMutation(internal.ai.finalizeVideoFailure, {
+        nodeId: args.outputNodeId,
+        retryCount: args.attempt,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+
+      if (args.shouldDecrementConcurrency) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId: args.userId,
+        });
+      }
+      return;
+    }
+
+    const delayMs = args.attempt <= 5 ? 5000 : args.attempt <= 15 ? 10000 : 20000;
+    await ctx.scheduler.runAfter(delayMs, internal.ai.pollVideoTask, {
+      ...args,
+      attempt: args.attempt + 1,
+    });
+  },
+});
+
+export const generateVideo = action({
+  args: {
+    canvasId: v.id("canvases"),
+    sourceNodeId: v.id("nodes"),
+    outputNodeId: v.id("nodes"),
+    prompt: v.string(),
+    modelId: v.string(),
+    durationSeconds: v.union(v.literal(5), v.literal(10)),
+  },
+  handler: async (ctx, args): Promise<{ queued: true; outputNodeId: Id<"nodes"> }> => {
+    const canvas = await ctx.runQuery(api.canvases.get, {
+      canvasId: args.canvasId,
+    });
+    if (!canvas) {
+      throw new Error("Canvas not found");
+    }
+
+    const sourceNode = await ctx.runQuery(
+      api.nodes.get as FunctionReference<"query", "public">,
+      {
+        nodeId: args.sourceNodeId,
+        includeStorageUrl: false,
+      }
+    );
+    if (!sourceNode) {
+      throw new Error("Source node not found");
+    }
+    assertNodeBelongsToCanvasOrThrow(sourceNode, args.canvasId);
+
+    const outputNode = await ctx.runQuery(
+      api.nodes.get as FunctionReference<"query", "public">,
+      {
+        nodeId: args.outputNodeId,
+        includeStorageUrl: false,
+      }
+    );
+    if (!outputNode) {
+      throw new Error("Output node not found");
+    }
+    assertNodeBelongsToCanvasOrThrow(outputNode, args.canvasId);
+
+    if (outputNode.type !== "ai-video") {
+      throw new Error("Output node must be ai-video");
+    }
+
+    if (!isVideoModelId(args.modelId)) {
+      throw new Error(`Unknown video model: ${args.modelId}`);
+    }
+
+    const model = getVideoModel(args.modelId);
+    if (!model) {
+      throw new Error(`Unknown video model: ${args.modelId}`);
+    }
+
+    const subscription = await ctx.runQuery(api.credits.getSubscription, {});
+    const userTier = normalizePublicTier(subscription?.tier);
+    if (!isVideoModelAllowedForTier(model.tier, userTier)) {
+      throw new Error(`Model ${args.modelId} requires ${model.tier} tier`);
+    }
+
+    const prompt = args.prompt.trim();
+    if (!prompt) {
+      throw new Error("Prompt is required");
+    }
+
+    const userId = canvas.ownerId;
+    const creditCost = model.creditCost[args.durationSeconds];
+    const internalCreditsEnabled = process.env.INTERNAL_CREDITS_ENABLED === "true";
+
+    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
+
+    let usageIncremented = false;
+    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
+      ? await ctx.runMutation(api.credits.reserve, {
+          estimatedCost: creditCost,
+          description: `Videogenerierung - ${model.label} (${args.durationSeconds}s)`,
+          model: args.modelId,
+          nodeId: args.outputNodeId,
+          canvasId: args.canvasId,
+          provider: "freepik",
+          videoMeta: {
+            model: args.modelId,
+            durationSeconds: args.durationSeconds,
+            hasAudio: false,
+          },
+        })
+      : null;
+
+    if (!internalCreditsEnabled) {
+      await ctx.runMutation(internal.credits.incrementUsage, {});
+      usageIncremented = true;
+    }
+
+    try {
+      await ctx.runMutation(internal.ai.markNodeExecuting, {
+        nodeId: args.outputNodeId,
+      });
+
+      await ctx.scheduler.runAfter(0, internal.ai.processVideoGeneration, {
+        outputNodeId: args.outputNodeId,
+        prompt,
+        modelId: args.modelId,
+        durationSeconds: args.durationSeconds,
+        creditCost,
+        reservationId: reservationId ?? undefined,
+        shouldDecrementConcurrency: usageIncremented,
+        userId,
+      });
+
+      return { queued: true, outputNodeId: args.outputNodeId };
+    } catch (error) {
+      if (reservationId) {
+        try {
+          await ctx.runMutation(api.credits.release, {
+            transactionId: reservationId,
+          });
+        } catch {
+          // Prefer returning a clear node error over masking with cleanup failures.
+        }
+      }
+
+      await ctx.runMutation(internal.ai.finalizeVideoFailure, {
+        nodeId: args.outputNodeId,
+        retryCount: 0,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+
+      if (usageIncremented) {
+        await ctx.runMutation(internal.credits.decrementConcurrency, {
+          userId,
+        });
+      }
+
+      throw error;
     }
   },
 });

@@ -740,4 +740,33 @@ describe("useCanvasEdgeInsertions", () => {
     expect(templateTypes).not.toContain("text");
     expect(templateTypes).not.toContain("ai-image");
   });
+
+  it("offers video-prompt as valid split for text to ai-video", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            createNode({ id: "source", type: "text", position: { x: 0, y: 0 } }),
+            createNode({ id: "target", type: "ai-video", position: { x: 360, y: 0 } }),
+          ]}
+          edges={[createEdge({ id: "edge-1", source: "source", target: "target" })]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.openEdgeInsertMenu({ edgeId: "edge-1", screenX: 20, screenY: 20 });
+    });
+
+    const templateTypes = (latestHandlersRef.current?.edgeInsertTemplates ?? []).map(
+      (template) => template.type,
+    );
+
+    expect(templateTypes).toContain("video-prompt");
+    expect(templateTypes).not.toContain("prompt");
+  });
 });

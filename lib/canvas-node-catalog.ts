@@ -99,6 +99,12 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     phase: 1,
   }),
   entry({
+    type: "video-prompt",
+    label: "KI-Video",
+    category: "ai-output",
+    phase: 1,
+  }),
+  entry({
     type: "ai-text",
     label: "KI-Text",
     category: "ai-output",
@@ -108,7 +114,7 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
   }),
   entry({
     type: "ai-video",
-    label: "KI-Video",
+    label: "KI-Video-Ausgabe",
     category: "ai-output",
     phase: 2,
     systemOutput: true,

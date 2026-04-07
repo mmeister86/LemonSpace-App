@@ -125,6 +125,29 @@
       "failed": "Failed"
     }
   },
+  "videoPromptNode": {
+    "label": "AI video",
+    "promptPlaceholder": "Describe your video...",
+    "promptFromTextNode": "Prompt from text node",
+    "modelLabel": "Model",
+    "durationLabel": "Length",
+    "duration5s": "5 sec",
+    "duration10s": "10 sec",
+    "generateButton": "Generate video",
+    "insufficientCredits": "Not enough credits",
+    "noPromptHint": "Enter a prompt or connect a text node"
+  },
+  "aiVideoNode": {
+    "label": "AI video output",
+    "idleHint": "Connect an AI video node and start generation there.",
+    "generating": "Generating video...",
+    "retryButton": "Try again",
+    "downloadButton": "Download video",
+    "modelMeta": "Model: {model}",
+    "durationMeta": "{duration} sec",
+    "creditMeta": "{credits} credits",
+    "errorFallback": "Video generation failed"
+  },
   "credits": {
     "balance": "Balance",
     "available": "Available",
@@ -205,6 +228,8 @@
       "contentPolicyDesc": "Try rephrasing your prompt.",
       "timeoutTitle": "Generation timed out",
       "timeoutDesc": "Credits were not charged.",
+      "providerIssuesTitle": "AI providers may be experiencing issues",
+      "providerIssuesDesc": "Several image or video generations have failed.",
       "openrouterIssuesTitle": "OpenRouter may be experiencing issues",
       "openrouterIssuesDesc": "Several generations have failed.",
       "concurrentLimitReachedTitle": "Generation already active",

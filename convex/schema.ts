@@ -222,6 +222,12 @@ export default defineSchema({
     canvasId: v.optional(v.id("canvases")),        // Zugehöriger Canvas
     openRouterCost: v.optional(v.number()),        // Tatsächliche API-Kosten (Cent)
     model: v.optional(v.string()),                 // OpenRouter Model ID
+    provider: v.optional(v.union(v.literal("openrouter"), v.literal("freepik"))),
+    videoMeta: v.optional(v.object({
+      model: v.string(),
+      durationSeconds: v.number(),
+      hasAudio: v.boolean(),
+    })),
   })
     .index("by_user", ["userId"])
     .index("by_user_type", ["userId", "type"])

@@ -26,7 +26,7 @@ export function useGenerationFailureWarnings(
     for (const node of convexNodes) {
       nextNodeStatusMap.set(node._id, node.status);
 
-      if (node.type !== "ai-image") {
+      if (node.type !== "ai-image" && node.type !== "ai-video") {
         continue;
       }
 
@@ -61,7 +61,7 @@ export function useGenerationFailureWarnings(
     }
 
     if (recentFailures.length >= GENERATION_FAILURE_THRESHOLD) {
-      toast.warning(t('ai.openrouterIssuesTitle'), t('ai.openrouterIssuesDesc'));
+      toast.warning(t('ai.providerIssuesTitle'), t('ai.providerIssuesDesc'));
       recentGenerationFailureTimestampsRef.current = [];
       return;
     }
