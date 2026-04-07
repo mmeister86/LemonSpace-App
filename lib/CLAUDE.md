@@ -13,7 +13,10 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `canvas-node-types.ts` | TypeScript-Typen und Union-Typen für Canvas-Nodes |
 | `canvas-node-templates.ts` | Default-Daten für neue Nodes (beim Einfügen aus Palette) |
 | `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
-| `ai-models.ts` | Client-seitige Modell-Definitionen (muss mit `convex/openrouter.ts` in sync bleiben) |
+| `ai-models.ts` | Client-seitige Bild-Modell-Definitionen (muss mit `convex/openrouter.ts` in sync bleiben) |
+| `ai-video-models.ts` | Video-Modell-Registry: 5 MVP-Modelle mit Endpunkten, Credit-Kosten, Tier-Zugang |
+| `video-poll-logging.ts` | Log-Volumen-Steuerung für Video-Polling (vermeidet excessive Konsolenausgabe) |
+| `tier-credits.ts` | Tier-Normalisierung (`normalizePublicTier`) für Video-Modell-Tier-Checks |
 | `image-formats.ts` | Aspect-Ratio-Strings, Node-Chrome-Höhen (`AI_IMAGE_NODE_HEADER_PX` etc.) |
 | `auth.ts` | Better Auth Server-Instanz |
 | `auth-server.ts` | Server-Helper: `getAuthUser()`, `getToken()` |
@@ -40,8 +43,9 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 **Kritische Exports:**
 - `convexNodeToRF`, `convexEdgeToRF`, `convexEdgeToRFWithSourceGlow`
 - `convexNodeDocWithMergedStorageUrl` — URL-Injection für Storage-Bilder aus serverseitig aufgelöster URL-Map oder gecachtem Vorgängerzustand
-- `NODE_DEFAULTS` — Default-Größen und Daten per Node-Typ
-- `NODE_HANDLE_MAP` — Handle-IDs pro Node-Typ
+- `NODE_DEFAULTS` — Default-Größen und Daten per Node-Typ (inkl. `video-prompt` und `ai-video`)
+- `NODE_HANDLE_MAP` — Handle-IDs pro Node-Typ (inkl. `video-prompt-out/in` und `video-out/in`)
+- `SOURCE_NODE_GLOW_RGB` — Edge-Glow-Farben pro Source-Node-Typ (inkl. `video-prompt` und `ai-video`)
 - `computeBridgeCreatesForDeletedNodes` — Kanten-Reconnect nach Node-Löschung
 - `computeMediaNodeSize` — Dynamische Node-Größe basierend auf Bild-Dimensionen
 
@@ -62,6 +66,8 @@ ADJUSTMENT_PRESET_NODE_TYPES // Spezifische Adjustment-Presets
 
 **Wichtig:** Dieser Datei und `convex/node_type_validator.ts` müssen immer synchron gehalten werden. Neue Nodes → Validator anpassen.
 
+**Video-Typen:** `video-prompt` ist in `PHASE1_CANVAS_NODE_TYPES` und `CANVAS_NODE_TYPES` enthalten. `ai-video` ist in `CANVAS_NODE_TYPES` (Phase 2).
+
 ---
 
 ## `canvas-node-catalog.ts` — Node-Taxonomie
@@ -78,7 +84,7 @@ isNodePaletteEnabled  // true wenn: implementiert + kein systemOutput + Template
 
 **Kategorien:**
 - `source` — Quelle (image, text, video, asset, color)
-- `ai-output` — KI-Ausgabe (prompt, ai-text, ai-video, agent-output)
+- `ai-output` — KI-Ausgabe (prompt, video-prompt, ai-text, ai-video, agent-output)
 - `transform` — Transformation (crop, bg-remove, upscale)
 - `image-edit` — Bildbearbeitung (adjustments)
 - `control` — Steuerung & Flow
@@ -103,6 +109,7 @@ Default-Initial-Daten für neue Nodes beim Einfügen aus Palette.
 
 - Erstellt durch die Node-Katalog-Einträge
 - Enthält default-Werte für `data`-Felder
+- `video-prompt` hat Default-Daten: `{ modelId: "wan-2-2-720p", durationSeconds: 5 }`
 - Wird von `canvas.tsx` verwendet beim Node-Create
 
 ---
@@ -120,7 +127,11 @@ Regeln für erlaubte Verbindungen zwischen Node-Typen.
 - Source-Typ muss Output-Ports haben, Target-Typ muss Input-Ports haben
 - Keine self-loops (Edge von Node zu sich selbst)
 - Quelle: `image`, `text`, `note`, `group`, `compare`, `frame` → Source-Ports
-- Ziel: `ai-image`, `compare` → Target-Ports
+- Ziel: `ai-image`, `ai-video`, `compare` → Target-Ports
+- **Video-Flow:** `video-prompt → ai-video` ✅ (einzige gültige Kombination)
+  - `ai-video` als Target akzeptiert nur `video-prompt` als Source (`ai-video-source-invalid`)
+  - `video-prompt` als Source akzeptiert nur `ai-video` als Target (`video-prompt-target-invalid`)
+  - `text → video-prompt` ✅ (Prompt-Quelle, über default-Handles)
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---
@@ -134,6 +145,56 @@ export const DEFAULT_MODEL_ID: string
 ```
 
 **Achtung:** Diese Datei und `convex/openrouter.ts` müssen immer synchron gehalten werden. Bei neuen Modellen beide Dateien gleichzeitig aktualisieren. `creditCost` muss übereinstimmen — sonst stimmt die angezeigte Kostenvorschau nicht mit dem tatsächlichen Abzug überein.
+
+---
+
+## `ai-video-models.ts` — Video-Modell-Registry
+
+Zentrale Definition aller KI-Video-Modelle mit Freepik-Endpunkten, Credit-Kosten und Tier-Zugang.
+
+```typescript
+export type VideoModelId = "wan-2-2-480p" | "wan-2-2-720p" | "kling-std-2-1" | "seedance-pro-1080p" | "kling-pro-2-6"
+export type VideoModelTier = "free" | "starter" | "pro"
+export type VideoModelDurationSeconds = 5 | 10
+
+export const VIDEO_MODELS: Record<VideoModelId, VideoModel>
+export const DEFAULT_VIDEO_MODEL_ID: VideoModelId  // "wan-2-2-720p"
+```
+
+**MVP-Modelle:**
+
+| ID | Label | Tier | Endpunkt | 5s (Cr) | 10s (Cr) |
+|---|---|---|---|---|---|
+| `wan-2-2-480p` | WAN 2.2 480p | free | `/v1/ai/text-to-video/wan-2-5-t2v-720p` | 28 | 56 |
+| `wan-2-2-720p` | WAN 2.2 720p | free | `/v1/ai/text-to-video/wan-2-5-t2v-720p` | 52 | 104 |
+| `kling-std-2-1` | Kling Standard 2.1 | starter | `/v1/ai/image-to-video/kling-v2-1-std` | 50 | 100 |
+| `seedance-pro-1080p` | Seedance Pro 1080p | starter | `/v1/ai/video/seedance-1-5-pro-1080p` | 33 | 66 |
+| `kling-pro-2-6` | Kling Pro 2.6 | pro | `/v1/ai/image-to-video/kling-v2-6-pro` | 59 | 118 |
+
+**Wichtig:** Jedes Modell hat einen `statusEndpointPath` (z. B. `/v1/ai/text-to-video/wan-2-5-t2v-720p/{task-id}`), der für das Polling des Task-Status verwendet wird. Freepik hat **keinen** generischen Task-Status-Endpunkt.
+
+**Sync-Pflicht:** Diese Datei und `convex/freepik.ts` / `convex/ai.ts` müssen synchron gehalten werden. `creditCost` muss mit dem Credit-System übereinstimmen.
+
+**Hilfsfunktionen:**
+- `isVideoModelId(value)` — Type-Guard für VideoModelId
+- `getVideoModel(id)` — Holt Modell-Definition, gibt `undefined` bei ungültiger ID
+- `getAvailableVideoModels(tier)` — Filtert Modelle nach User-Tier
+
+---
+
+## `video-poll-logging.ts` — Log-Volumen-Steuerung
+
+Reduziert Konsolenausgabe beim Video-Polling (bis zu 30 Versuche pro Video).
+
+```typescript
+export function shouldLogVideoPollAttempt(attempt: number): boolean
+  // true bei Versuch 1 und jedem 5. Versuch (5, 10, 15, ...)
+
+export function shouldLogVideoPollResult(attempt: number, status: VideoPollStatus): boolean
+  // true bei jedem nicht-IN_PROGRESS Status oder wenn shouldLogVideoPollAttempt true ist
+```
+
+Verwendet in `convex/ai.ts` (`pollVideoTask`) und `convex/freepik.ts` (`getVideoTaskStatus`).
 
 ---
 
@@ -191,3 +252,4 @@ authClient     // Better Auth Client-Instanz für signIn, signUp, signOut etc.
 - Keine React-Imports in `lib/` — reines TypeScript
 - `utils.ts` für generische Helpers (`cn`, `clamp`, etc.)
 - Typen, die sowohl Frontend als auch Convex betreffen, gehören in `lib/`, nicht in `convex/`
+- Modell-Registrys (`ai-models.ts`, `ai-video-models.ts`) müssen immer mit den Backend-Äquivalenten synchron gehalten werden

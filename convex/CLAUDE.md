@@ -10,7 +10,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 |-------|-------|
 | `schema.ts` | Einzige Wahrheitsquelle für alle Tabellen und Typen |
 | `node_type_validator.ts` | Node-Typen Validator (Phase 1, Phase 2, Phase 3, Adjustment Presets) |
-| `ai.ts` | KI-Bildgenerierungs-Pipeline |
+| `ai.ts` | KI-Bild- und KI-Video-Generierungs-Pipeline |
 | `credits.ts` | Credit-System: Balance, Reservation+Commit, Tier-Config |
 | `nodes.ts` | CRUD für Canvas-Nodes |
 | `edges.ts` | CRUD für Canvas-Edges |
@@ -22,7 +22,8 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `canvas-connection-policy.ts` | Verbindungspolitiken zwischen Nodes (Validierung) |
 | `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
 | `pexels.ts` | Pexels Stock-Bilder API |
-| `freepik.ts` | Freepik Asset-Browser API |
+| `freepik.ts` | Freepik Asset-Browser API + Video-Generierungs-Client |
+| `ai_utils.ts` | Gemeinsame Helpers für AI-Pipeline (z. B. `assertNodeBelongsToCanvasOrThrow`) |
 | `storage.ts` | Convex File Storage Helpers + gebündelte Canvas-URL-Auflösung |
 | `export.ts` | Canvas-Export-Logik |
 | `http.ts` | HTTP-Endpunkte (Webhooks) |
@@ -48,6 +49,8 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 | `prompt` | `content`, `model`, `modelTier` | KI-Generierungsanweisung |
 | `ai-image` | `storageId`, `prompt`, `model`, `modelTier`, `parameters`, `generationTimeMs`, `creditCost` | Generiertes KI-Bild |
 | `text-node` | `content` | Generierter KI-Text |
+| `video-prompt` | `content`, `modelId`, `durationSeconds` | KI-Video-Steuer-Node (Eingabe) |
+| `ai-video` | `storageId`, `prompt`, `model`, `modelLabel`, `durationSeconds`, `creditCost`, `generatedAt`, `taskId` (transient) | Generiertes KI-Video (System-Output) |
 | `compare` | `leftNodeId`, `rightNodeId`, `sliderPosition` | Vergleichs-Node |
 | `frame` | `label`, `exportWidth`, `exportHeight`, `backgroundColor` | Artboard |
 | `group` | `label`, `collapsed` | Container-Node |
@@ -73,7 +76,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 
 **`creditBalances`** — Pro User: `balance`, `reserved`, `monthlyAllocation`. `available = balance - reserved` (computed, nicht gespeichert).
 
-**`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`.
+**`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`. Optionale Felder: `provider` (`openrouter` | `freepik`), `videoMeta` (`model`, `durationSeconds`, `hasAudio`).
 
 **`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`.
 
@@ -81,7 +84,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 
 ---
 
-## AI-Pipeline (`ai.ts`)
+## AI-Bild-Pipeline (`ai.ts`)
 
 ```
 generateImage (action, public)
@@ -112,6 +115,67 @@ processImageGeneration (internalAction)
 
 ---
 
+## KI-Video-Pipeline (`ai.ts`)
+
+Analog zur Bild-Pipeline, aber mit Freepik als Provider und asynchronem Polling statt direktem API-Call.
+
+```
+generateVideo (action, public)
+  → checkAbuseLimits (internalMutation)
+  → reserve (mutation, provider: "freepik", videoMeta: {...})
+  → markNodeExecuting (internalMutation)
+  → scheduler.runAfter(0, processVideoGeneration)   ← Background-Job
+
+processVideoGeneration (internalAction)
+  → createVideoTask (freepik.ts)   ← POST an Freepik API
+  → setVideoTaskInfo (internalMutation)   ← taskId am Node speichern
+  → scheduler.runAfter(5s, pollVideoTask) ← Polling starten
+
+pollVideoTask (internalAction, max 30 Versuche / 10 Min)
+  → getVideoTaskStatus (freepik.ts)  ← GET an modellspezifischen Endpunkt
+  [COMPLETED] → downloadVideoAsBlob → ctx.storage.store(blob)
+              → finalizeVideoSuccess (internalMutation)
+              → commitInternal (credits)
+  [FAILED]   → releaseInternal (credits)
+              → finalizeVideoFailure (internalMutation)
+              → decrementConcurrency
+  [CREATED|IN_PROGRESS] → scheduler.runAfter(delay, pollVideoTask, attempt+1)
+  [retryable Fehler]    → markVideoPollingRetry → scheduler.runAfter(delay, pollVideoTask, attempt+1)
+  [nicht-retryable]     → releaseInternal → finalizeVideoFailure → decrementConcurrency
+  [Timeout/Max-Versuche] → releaseInternal → finalizeVideoFailure → decrementConcurrency
+```
+
+**Wichtig:** `generateVideo` gibt `{ queued: true, outputNodeId }` zurück. Der Node wechselt sofort auf `status: "executing"`. Freepik erstellt einen Async-Task, der via Polling überwacht wird.
+
+**Polling-Strategie:** Exponential Backoff in 3 Stufen:
+- Versuch 1–5: 5s Wartezeit
+- Versuch 6–15: 10s Wartezeit
+- Versuch 16–30: 20s Wartezeit
+- Max. 30 Versuche oder 10 Minuten Gesamt-Timeout → `FAILED`
+
+**Modellspezifische Endpunkte:** Jedes Video-Modell hat einen eigenen Status-Endpunkt (`statusEndpointPath` in `lib/ai-video-models.ts`). Freepik hat **keinen** generischen `/v1/ai/tasks/{taskId}`-Endpunkt — der richtige Pfad ist z. B. `/v1/ai/text-to-video/wan-2-5-t2v-720p/{task-id}`.
+
+**Freepik Response-Formate:** Endpunkte liefern unterschiedliche Formate:
+- `task_id` kann auf Root-Ebene oder unter `data.task_id` stehen
+- `generated`-Array kann Strings oder `{ url: string }`-Objekte enthalten
+- Beide Formate werden in `freepik.ts` defensiv geparsed
+
+**Error-Klassen:**
+- `FreepikApiError` — Eigene Error-Klasse mit `source: "freepik"`, `status`, `code`, `retryable`
+- HTTP 404 während Polling → `transient` / `retryable: true` (Freepik eventual consistency)
+- HTTP 503 → `model_unavailable` / `retryable: true`
+- HTTP 401 → `model_unavailable` / `retryable: false`
+
+**Log-Volumen-Steuerung:** Poll-Logs werden über `lib/video-poll-logging.ts` (`shouldLogVideoPollAttempt`, `shouldLogVideoPollResult`) auf Versuch 1, jeden 5. Versuch und Terminalzustände reduziert.
+
+**env-Flags:**
+- `FREEPIK_API_KEY` — Freepik API-Key (Header: `x-freepik-api-key`)
+- `INTERNAL_CREDITS_ENABLED=true` — Credit-Reservation aktiviert
+
+**Video-Modell-Registry:** Siehe `lib/ai-video-models.ts` — 5 MVP-Modelle, Tier-basierte Freigabe, Credit-Kosten pro Clip-Länge (5s/10s).
+
+---
+
 ## Credit-System (`credits.ts`)
 
 ### Tier-Konfiguration (`TIER_CONFIG`)
@@ -133,6 +197,22 @@ processImageGeneration (internalAction)
 4. Bei Fehler: `releaseInternal()` — Gibt `estimatedCost` aus `reserved` frei. `generationCount` bleibt erhöht (Versuch zählt).
 
 **env-Flag:** `ALLOW_TEST_CREDIT_GRANT=true` — Aktiviert `grantTestCredits` Mutation (nur Dev/Staging).
+
+---
+
+## Freepik Video-Client (`freepik.ts`)
+
+`freepik.ts` enthält sowohl die bestehende Asset-Suche als auch den Video-Generierungs-Client.
+
+### Video-Funktionen
+
+- `createVideoTask({ endpoint, prompt, durationSeconds })` — POST an Freepik-Endpunkt, liefert `{ task_id }`
+- `getVideoTaskStatus({ taskId, statusEndpointPath, attempt })` — GET an modellspezifischen Status-Endpunkt, liefert `{ status, generated?, error? }`
+- `downloadVideoAsBlob(url)` — Lädt Video von Freepik CDN als Blob (zeitbegrenzte Signed URL!)
+- `mapFreepikError(status, body)` — Mappt HTTP-Status auf strukturierte `FreepikMappedError`-Objekte
+- `FreepikApiError` — Eigene Error-Klasse mit `source`, `status`, `code`, `retryable`, `body`
+
+**Wichtig:** Freepik CDN-URLs sind zeitbegrenzt. `downloadVideoAsBlob` muss sofort nach `COMPLETED` aufgerufen werden. Das Video wird dauerhaft in Convex Storage gesichert.
 
 ---
 
@@ -205,11 +285,12 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `getCanvasConnectionValidationMessage()` — Fehlermeldung bei ungültigen Verbindungen
 
 **Validierungsregeln (aus `canvas-connection-policy.ts`):**
-- Source-Typ muss Output-Ports haben
-- Target-Typ muss Input-Ports haben
+- Source-Typ muss Output-Ports haben, Target-Typ muss Input-Ports haben
 - Keine self-loops (Edge von Node zu sich selbst)
 - Quelle: `image`, `text`, `note`, `group`, `compare`, `frame` → Source-Ports
-- Ziel: `ai-image`, `compare` → Target-Ports
+- Ziel: `ai-image`, `ai-video`, `compare` → Target-Ports
+- `video-prompt` → `ai-video` ✅ (einzige gültige Kombination für Video-Flow)
+- `ai-video` als Source für andere Nodes → ❌ (nur Compare)
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---

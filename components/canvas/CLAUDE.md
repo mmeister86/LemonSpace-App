@@ -31,7 +31,7 @@ app/(app)/canvas/[canvasId]/page.tsx
 | `canvas-helpers.ts` | Shared Utility-Layer (Optimistic IDs, Node-Merge, Compare-Resolution, Edge/Hit-Helpers, Konstante Defaults) |
 | `canvas-presets-context.tsx` | Shared Preset-Provider für Adjustment-Nodes; bündelt `presets.list` zu einer einzigen Query |
 | `canvas-node-change-helpers.ts` | Dimensions-/Resize-Transformationen für `asset` und `ai-image` Nodes |
-| `canvas-generation-failures.ts` | Hook für AI-Generation-Error-Tracking mit Schwellenwert-Toast |
+| `canvas-generation-failures.ts` | Hook für AI-Generation-Error-Tracking mit Schwellenwert-Toast (unterstützt `ai-image` und `ai-video`) |
 | `canvas-scissors.ts` | Hook für Scherenmodus (K/Esc Toggle, Click-Cut, Stroke-Cut) |
 | `canvas-delete-handlers.ts` | Hook für `onBeforeDelete`, `onNodesDelete`, `onEdgesDelete` inkl. Bridge-Edges |
 | `canvas-reconnect.ts` | Hook für Edge-Reconnect (`onReconnectStart`, `onReconnect`, `onReconnectEnd`) |
@@ -48,7 +48,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | Kategorie | Nodes | Beschreibung |
 |-----------|-------|-------------|
 | **source** (Quelle) | `image`, `text`, `video`, `asset`, `color` | Input-Quellen für den Workflow |
-| **ai-output** (KI-Ausgabe) | `prompt`, `ai-text`, `ai-video`, `agent-output` | KI-generierte Inhalte |
+| **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text`, `ai-video`, `agent-output` | KI-generierte Inhalte |
 | **transform** (Transformation) | `crop`, `bg-remove`, `upscale` | Bildbearbeitung-Transformationen |
 | **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust` | Preset-basierte Adjustments |
 | **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch` | Kontrollfluss-Elemente |
@@ -63,8 +63,9 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `video` | 1 | ✅ | source | source (default), target (default) |
 | `asset` | 1 | ✅ | source | source (default), target (default) |
 | `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
+| `video-prompt` | 2 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
 | `ai-text` | 2 | 🔲 | ai-output | source: `text-out`, target: `text-in` |
-| `ai-video` | 2 | 🔲 | ai-output | source: `video-out`, target: `video-in` |
+| `ai-video` | 2 | ✅ (systemOutput) | ai-output | source: `video-out`, target: `video-in` |
 | `agent-output` | 3 | 🔲 | ai-output | systemOutput: true |
 | `crop` | 2 | 🔲 | transform | 🔲 |
 | `bg-remove` | 2 | 🔲 | transform | 🔲 |
@@ -80,17 +81,40 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 
 > `implemented: false` (🔲) bedeutet Phase-2/3 Node, der noch nicht implementiert ist. **Hinweis:** Phase-2/3 Nodes müssen im Schema (`convex/node_type_validator.ts`) vordeklariert werden, damit das System nicht bei jeder Phasenübergang neu migriert werden muss. Die UI filtert Nodes nach Phase.
 
-**SystemOutput Nodes** (`ai-text`, `ai-video`, `agent-output`): Wird typischerweise vom KI-System erzeugt — nicht aus Palette/DnD anlegbar.
+**SystemOutput Nodes** (`ai-video`, `ai-text`, `agent-output`): Wird typischerweise vom KI-System erzeugt — nicht aus Palette/DnD anlegbar. `ai-video` wird automatisch durch `createNodeConnectedFromSource` beim Klick auf "Video generieren" erzeugt.
+
+---
+
+## KI-Video-Node-Flow
+
+Zweistufiger Node-Flow analog `prompt → ai-image`:
+
+1. **`video-prompt`** (Steuernode, Palette-sichtbar): Prompt-Textarea, Modell-Selector, Dauer-Selector (5s/10s), Credit-Kosten-Anzeige, "Video generieren"-Button
+2. **`ai-video`** (Output-Node, systemOutput): Wird automatisch rechts vom video-prompt erzeugt. Zeigt Status (executing/done/error), fertiges Video als `<video>`-Player, Metadaten und Retry-Button.
+
+**Frontend-Flow:**
+1. User fügt `video-prompt` aus Sidebar/Command Palette ein
+2. User gibt Prompt ein, wählt Modell + Dauer
+3. Klick auf "Video generieren" → `createNodeConnectedFromSource` erzeugt `ai-video`-Node
+4. `useAction(api.ai.generateVideo)` startet Backend-Job
+5. Node zeigt `executing`-Status mit Shimmer
+6. Bei `done`: Video aus Convex Storage wird abgespielt
+7. Bei `error`: Retry-Button → findet verbundenen `video-prompt`-Source → `generateVideo` erneut
+
+**Node-Komponenten:**
+- `components/canvas/nodes/video-prompt-node.tsx` — Steuernode mit Generate-Button
+- `components/canvas/nodes/ai-video-node.tsx` — Output-Node mit Player, Metadaten, Retry
 
 ---
 
 ## Default-Größen (`lib/canvas-utils.ts → NODE_DEFAULTS`)
 
 ```
-image:    280 × 200    prompt:   288 × 220
-text:     256 × 120    ai-image: 320 × 408
-group:    400 × 300    frame:    400 × 300
-note:     208 × 100    compare:  500 × 380
+image:       280 × 200    prompt:       288 × 220
+text:        256 × 120    ai-image:     320 × 408
+video-prompt: 288 × 220   ai-video:     360 × 280
+group:       400 × 300    frame:        400 × 300
+note:        208 × 100    compare:      500 × 380
 ```
 
 ---
@@ -111,6 +135,7 @@ Status + `statusMessage` werden direkt am Node angezeigt. Kein globales Loading-
 Jede Edge bekommt einen `drop-shadow`-Filter entsprechend dem Quell-Node-Typ. Farben in `lib/canvas-utils.ts → SOURCE_NODE_GLOW_RGB`:
 
 - `prompt`, `ai-image` → Violett (139, 92, 246)
+- `video-prompt`, `ai-video` → Violett (124, 58, 237)
 - `image`, `text`, `note` → Teal (13, 148, 136)
 - `frame` → Orange (249, 115, 22)
 - `group`, `compare` → Grau (100, 116, 139)
@@ -178,6 +203,15 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `adjustment-preview.tsx` | Vorschau für Adjustment-Presets |
 | `adjustment-controls.tsx` | UI-Controls für Adjustments |
 
+### Node-Komponenten (`nodes/`)
+
+| Datei | Zweck |
+|-------|-------|
+| `prompt-node.tsx` | KI-Bild-Steuer-Node mit Modell-Selector und Generate-Button |
+| `ai-image-node.tsx` | KI-Bild-Output-Node mit Bildvorschau, Metadaten, Retry |
+| `video-prompt-node.tsx` | KI-Video-Steuer-Node mit Modell-/Dauer-Selector, Credit-Anzeige, Generate-Button |
+| `ai-video-node.tsx` | KI-Video-Output-Node mit Video-Player, Metadaten, Retry-Button |
+
 ---
 
 ## Sidebar Resizing & Rail-Mode
@@ -185,7 +219,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 - Resizing läuft über `react-resizable-panels` via `components/ui/resizable.tsx` in `canvas-shell.tsx`.
 - Wichtige Größen werden als **Strings mit Einheit** gesetzt (z. B. `"18%"`, `"40%"`, `"64px"`). In der verwendeten Library-Version werden numerische Werte als Pixel interpretiert.
 - Sidebar ist `collapsible`; bei Unterschreiten von `minSize` wird auf `collapsedSize` reduziert.
-- Eingeklappt bedeutet nicht „unsichtbar“: `collapsedSize` ist absichtlich > 0 (`64px`), damit ein sichtbarer Rail bleibt.
+- Eingeklappt bedeutet nicht „unsichtbar": `collapsedSize` ist absichtlich > 0 (`64px`), damit ein sichtbarer Rail bleibt.
 - `canvas-shell.tsx` schaltet per `onResize` abhängig von der tatsächlichen Pixelbreite zwischen Full-Mode und Rail-Mode um (`railMode` Prop an `CanvasSidebar`).
 - Im Full-Mode zeigt die Sidebar **nicht** mehr den Canvas-Namen, sondern das LemonSpace-Wordmark aus `public/logos/`:
   - Light Mode → `lemonspace-logo-v2-black-rgb.svg`
@@ -200,6 +234,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 ## Wichtige Gotchas
 
 - **`data.url` vs `storageId`:** Node-Komponenten erhalten `data.url` (aufgelöste HTTP-URL), nicht `storageId` direkt. Die URL wird von `convexNodeDocWithMergedStorageUrl` injiziert. Bei neuen Node-Typen mit Bild immer diesen Flow prüfen.
+- **Video-Node `data.url`:** Gleiches Prinzip wie bei `ai-image` — Convex Storage URL wird über `batchGetUrlsForCanvas` aufgelöst. Video wird mit `<video src={data.url}>` abgespielt.
 - **Adjustment-Presets:** `curves`, `color-adjust`, `light-adjust` und `detail-adjust` dürfen keine eigene `presets.list`-Query feuern. Immer `CanvasPresetsProvider` + `useCanvasAdjustmentPresets(...)` verwenden.
 - **Min-Zoom:** `CANVAS_MIN_ZOOM = 0.5 / 3` — dreimal weiter raus als React-Flow-Default.
 - **Parent-Nodes:** `parentId` zeigt auf einen Group- oder Frame-Node. React Flow erwartet, dass Parent-Nodes vor Child-Nodes in der `nodes`-Array stehen.
@@ -207,3 +242,5 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 - **`"null"`-Handles:** Convex kann `"null"` als String speichern. `convexEdgeToRF` sanitized Handles: `"null"` → `undefined`.
 - **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
+- **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
+- **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
