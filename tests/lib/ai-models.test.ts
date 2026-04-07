@@ -6,6 +6,7 @@ import {
   getAvailableImageModels,
   getModel,
 } from "@/lib/ai-models";
+import { IMAGE_MODELS as OPENROUTER_MODELS } from "@/convex/openrouter";
 
 describe("ai image models registry", () => {
   it("contains all 9 PRD models in stable order", () => {
@@ -31,5 +32,13 @@ describe("ai image models registry", () => {
 
   it("resolves model lookup", () => {
     expect(getModel(DEFAULT_MODEL_ID)?.creditCost).toBeGreaterThan(0);
+  });
+
+  it("keeps frontend and backend image model ids and credit costs in sync", () => {
+    expect(Object.keys(OPENROUTER_MODELS)).toEqual(IMAGE_MODELS.map((model) => model.id));
+
+    for (const model of IMAGE_MODELS) {
+      expect(OPENROUTER_MODELS[model.id]?.creditCost).toBe(model.creditCost);
+    }
   });
 });

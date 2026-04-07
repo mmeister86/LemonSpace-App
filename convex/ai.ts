@@ -416,6 +416,12 @@ export const generateImage = action({
       throw new Error(`Unknown model: ${modelId}`);
     }
 
+    const subscription = await ctx.runQuery(api.credits.getSubscription, {});
+    const userTier = normalizePublicTier(subscription?.tier);
+    if (!isImageModelAllowedForTier(modelConfig.minTier, userTier)) {
+      throw new Error(`Model ${modelId} requires ${modelConfig.minTier} tier`);
+    }
+
     await ctx.runMutation(internal.credits.checkAbuseLimits, {});
 
     let usageIncremented = false;
@@ -504,6 +510,14 @@ export const generateImage = action({
 function isVideoModelAllowedForTier(modelTier: "free" | "starter" | "pro", userTier: "free" | "starter" | "pro" | "max") {
   const tierOrder = { free: 0, starter: 1, pro: 2, max: 3 } as const;
   return tierOrder[userTier] >= tierOrder[modelTier];
+}
+
+function isImageModelAllowedForTier(
+  minTier: "free" | "starter" | "pro" | "max",
+  userTier: "free" | "starter" | "pro" | "max"
+) {
+  const tierOrder = { free: 0, starter: 1, pro: 2, max: 3 } as const;
+  return tierOrder[userTier] >= tierOrder[minTier];
 }
 
 export const setVideoTaskInfo = internalMutation({
