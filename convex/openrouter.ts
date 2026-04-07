@@ -9,10 +9,9 @@ export interface OpenRouterModel {
   estimatedCostPerImage: number; // in Euro-Cent (for credit reservation)
   /** Gleiche Einheit wie UI „Cr“ / lib/ai-models creditCost */
   creditCost: number;
+  minTier: "free" | "starter" | "pro" | "max";
 }
 
-// Phase 1: Gemini 2.5 Flash Image only.
-// Add more models here in Phase 2 when the model selector UI is built.
 export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
   "google/gemini-2.5-flash-image": {
     id: "google/gemini-2.5-flash-image",
@@ -20,6 +19,71 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     tier: "standard",
     estimatedCostPerImage: 4, // ~€0.04 in Euro-Cent
     creditCost: 4,
+    minTier: "free",
+  },
+  "black-forest-labs/flux.2-klein-4b": {
+    id: "black-forest-labs/flux.2-klein-4b",
+    name: "FLUX.2 Klein 4B",
+    tier: "budget",
+    estimatedCostPerImage: 2,
+    creditCost: 2,
+    minTier: "free",
+  },
+  "bytedance-seed/seedream-4.5": {
+    id: "bytedance-seed/seedream-4.5",
+    name: "Seedream 4.5",
+    tier: "standard",
+    estimatedCostPerImage: 5,
+    creditCost: 5,
+    minTier: "free",
+  },
+  "google/gemini-3.1-flash-image-preview": {
+    id: "google/gemini-3.1-flash-image-preview",
+    name: "Gemini 3.1 Flash Image",
+    tier: "standard",
+    estimatedCostPerImage: 6,
+    creditCost: 6,
+    minTier: "free",
+  },
+  "openai/gpt-5-image-mini": {
+    id: "openai/gpt-5-image-mini",
+    name: "GPT-5 Image Mini",
+    tier: "premium",
+    estimatedCostPerImage: 8,
+    creditCost: 8,
+    minTier: "starter",
+  },
+  "sourceful/riverflow-v2-fast": {
+    id: "sourceful/riverflow-v2-fast",
+    name: "Riverflow V2 Fast",
+    tier: "premium",
+    estimatedCostPerImage: 9,
+    creditCost: 9,
+    minTier: "starter",
+  },
+  "sourceful/riverflow-v2-pro": {
+    id: "sourceful/riverflow-v2-pro",
+    name: "Riverflow V2 Pro",
+    tier: "premium",
+    estimatedCostPerImage: 12,
+    creditCost: 12,
+    minTier: "starter",
+  },
+  "google/gemini-3-pro-image-preview": {
+    id: "google/gemini-3-pro-image-preview",
+    name: "Gemini 3 Pro Image",
+    tier: "premium",
+    estimatedCostPerImage: 13,
+    creditCost: 13,
+    minTier: "starter",
+  },
+  "openai/gpt-5-image": {
+    id: "openai/gpt-5-image",
+    name: "GPT-5 Image",
+    tier: "premium",
+    estimatedCostPerImage: 15,
+    creditCost: 15,
+    minTier: "starter",
   },
 };
 
