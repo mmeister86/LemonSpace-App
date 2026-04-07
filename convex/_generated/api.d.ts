@@ -9,6 +9,9 @@
  */
 
 import type * as ai from "../ai.js";
+import type * as ai_errors from "../ai_errors.js";
+import type * as ai_node_data from "../ai_node_data.js";
+import type * as ai_retry from "../ai_retry.js";
 import type * as ai_utils from "../ai_utils.js";
 import type * as auth from "../auth.js";
 import type * as batch_validation_utils from "../batch_validation_utils.js";
@@ -37,6 +40,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   ai: typeof ai;
+  ai_errors: typeof ai_errors;
+  ai_node_data: typeof ai_node_data;
+  ai_retry: typeof ai_retry;
   ai_utils: typeof ai_utils;
   auth: typeof auth;
   batch_validation_utils: typeof batch_validation_utils;
