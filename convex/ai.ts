@@ -1,4 +1,4 @@
-import { v, ConvexError } from "convex/values";
+import { v } from "convex/values";
 import {
   action,
   internalAction,
@@ -19,6 +19,18 @@ import {
   FreepikApiError,
   getVideoTaskStatus,
 } from "./freepik";
+import {
+  categorizeError,
+  errorMessage,
+  formatTerminalStatusMessage,
+  getErrorCode,
+  getErrorSource,
+  getProviderStatus,
+  getVideoPollDelayMs,
+  isVideoPollTimedOut,
+} from "./ai_errors";
+import { getNodeDataRecord } from "./ai_node_data";
+import { generateImageWithAutoRetry } from "./ai_retry";
 import { getVideoModel, isVideoModelId } from "../lib/ai-video-models";
 import {
   shouldLogVideoPollAttempt,
@@ -31,234 +43,42 @@ const MAX_IMAGE_RETRIES = 2;
 const MAX_VIDEO_POLL_ATTEMPTS = 30;
 const MAX_VIDEO_POLL_TOTAL_MS = 10 * 60 * 1000;
 
-type ErrorCategory =
-  | "credits"
-  | "policy"
-  | "timeout"
-  | "transient"
-  | "provider"
-  | "unknown";
-
-interface ErrorData {
-  code?: string;
-  [key: string]: unknown;
-}
-
-function getErrorCode(error: unknown): string | undefined {
-  if (error instanceof ConvexError) {
-    const data = error.data as ErrorData;
-    return data?.code;
-  }
-  if (error instanceof FreepikApiError) {
-    return error.code;
-  }
-  return undefined;
-}
-
-function getErrorSource(error: unknown): string | undefined {
-  if (error instanceof FreepikApiError) {
-    return error.source;
-  }
-  if (error && typeof error === "object") {
-    const source = (error as { source?: unknown }).source;
-    return typeof source === "string" ? source : undefined;
-  }
-  return undefined;
-}
-
-function getProviderStatus(error: unknown): number | null {
-  if (error instanceof FreepikApiError) {
-    return typeof error.status === "number" ? error.status : null;
-  }
-  if (error && typeof error === "object") {
-    const status = (error as { status?: unknown }).status;
-    if (typeof status === "number" && Number.isFinite(status)) {
-      return status;
-    }
-  }
-  return null;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error ?? "Generation failed");
-}
-
-function parseOpenRouterStatus(message: string): number | null {
-  const match = message.match(/OpenRouter API error\s+(\d+)/i);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function categorizeError(error: unknown): {
-  category: ErrorCategory;
-  retryable: boolean;
-} {
-  const code = getErrorCode(error);
-  const source = getErrorSource(error);
-  const message = errorMessage(error);
-  const lower = message.toLowerCase();
-  const status = getProviderStatus(error) ?? parseOpenRouterStatus(message);
-
-  if (source === "freepik") {
-    if (code === "model_unavailable") {
-      return {
-        category: "provider",
-        retryable: status === 503,
-      };
-    }
-    if (code === "timeout") {
-      return { category: "timeout", retryable: true };
-    }
-    if (code === "transient") {
-      return { category: "transient", retryable: true };
-    }
-  }
-
-  if (
-    code === "CREDITS_TEST_DISABLED" ||
-    code === "CREDITS_INVALID_AMOUNT" ||
-    code === "CREDITS_BALANCE_NOT_FOUND" ||
-    code === "CREDITS_DAILY_CAP_REACHED" ||
-    code === "CREDITS_CONCURRENCY_LIMIT"
-  ) {
-    return { category: "credits", retryable: false };
-  }
-
-  if (
-    code === "OPENROUTER_MODEL_REFUSAL" ||
-    lower.includes("content policy") ||
-    lower.includes("policy") ||
-    lower.includes("moderation") ||
-    lower.includes("safety") ||
-    lower.includes("refusal") ||
-    lower.includes("policy_violation")
-  ) {
-    return { category: "policy", retryable: false };
-  }
-
-  if (status !== null) {
-    if (status >= 500 || status === 408 || status === 429 || status === 499) {
-      return { category: "provider", retryable: true };
-    }
-    if (status >= 400 && status < 500) {
-      return { category: "provider", retryable: false };
-    }
-  }
-
-  if (
-    lower.includes("timeout") ||
-    lower.includes("timed out") ||
-    lower.includes("deadline") ||
-    lower.includes("abort") ||
-    lower.includes("etimedout")
-  ) {
-    return { category: "timeout", retryable: true };
-  }
-
-  if (
-    lower.includes("fetch failed") ||
-    lower.includes("network") ||
-    lower.includes("connection") ||
-    lower.includes("econnreset") ||
-    lower.includes("temporarily unavailable") ||
-    lower.includes("service unavailable") ||
-    lower.includes("rate limit") ||
-    lower.includes("overloaded")
-  ) {
-    return { category: "transient", retryable: true };
-  }
-
-  return { category: "unknown", retryable: false };
-}
-
-function formatTerminalStatusMessage(error: unknown): string {
-  const code = getErrorCode(error);
-  if (code) {
-    return code;
-  }
-
-  const message = errorMessage(error).trim() || "Generation failed";
-  const { category } = categorizeError(error);
-
-  const prefixByCategory: Record<Exclude<ErrorCategory, "unknown">, string> = {
-    credits: "Credits",
-    policy: "Policy",
-    timeout: "Timeout",
-    transient: "Netzwerk",
-    provider: "Provider",
-  };
-
-  if (category === "unknown") {
-    return message;
-  }
-
-  const prefix = prefixByCategory[category];
-  if (message.toLowerCase().startsWith(prefix.toLowerCase())) {
-    return message;
-  }
-
-  return `${prefix}: ${message}`;
-}
-
-function wait(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function generateImageWithAutoRetry(
-  operation: () => Promise<Awaited<ReturnType<typeof generateImageViaOpenRouter>>>,
-  onRetry: (
-    retryCount: number,
-    maxRetries: number,
-    failure: { message: string; category: ErrorCategory }
-  ) => Promise<void>
+async function releaseInternalReservationBestEffort(
+  reservationId: Id<"creditTransactions"> | null | undefined,
+  releaseFn: (transactionId: Id<"creditTransactions">) => Promise<unknown>
 ) {
-  let lastError: unknown = null;
-  const startedAt = Date.now();
-
-  for (let attempt = 0; attempt <= MAX_IMAGE_RETRIES; attempt++) {
-    const attemptStartedAt = Date.now();
-    try {
-      const result = await operation();
-      console.info("[generateImageWithAutoRetry] success", {
-        attempts: attempt + 1,
-        totalDurationMs: Date.now() - startedAt,
-        lastAttemptDurationMs: Date.now() - attemptStartedAt,
-      });
-      return result;
-    } catch (error) {
-      lastError = error;
-      const { retryable, category } = categorizeError(error);
-      const retryCount = attempt + 1;
-      const hasRemainingRetry = retryCount <= MAX_IMAGE_RETRIES;
-
-      console.warn("[generateImageWithAutoRetry] attempt failed", {
-        attempt: retryCount,
-        maxAttempts: MAX_IMAGE_RETRIES + 1,
-        retryable,
-        hasRemainingRetry,
-        category,
-        attemptDurationMs: Date.now() - attemptStartedAt,
-        totalDurationMs: Date.now() - startedAt,
-        message: errorMessage(error),
-      });
-
-      if (!retryable || !hasRemainingRetry) {
-        throw error;
-      }
-
-      await onRetry(retryCount, MAX_IMAGE_RETRIES, {
-        message: errorMessage(error),
-        category,
-      });
-      await wait(Math.min(1500, 400 * retryCount));
-    }
+  if (!reservationId) {
+    return;
   }
+  try {
+    await releaseFn(reservationId);
+  } catch {
+    // Keep node status updates best-effort even if credit release fails.
+  }
+}
 
-  throw lastError ?? new Error("Generation failed");
+async function releasePublicReservationBestEffort(
+  reservationId: Id<"creditTransactions"> | null | undefined,
+  releaseFn: (transactionId: Id<"creditTransactions">) => Promise<unknown>
+) {
+  if (!reservationId) {
+    return;
+  }
+  try {
+    await releaseFn(reservationId);
+  } catch {
+    // Prefer returning a clear node error over masking with cleanup failures.
+  }
+}
+
+async function decrementConcurrencyIfNeeded(
+  shouldDecrement: boolean,
+  decrementFn: () => Promise<unknown>
+) {
+  if (!shouldDecrement) {
+    return;
+  }
+  await decrementFn();
 }
 
 export const markNodeExecuting = internalMutation({
@@ -317,10 +137,7 @@ export const finalizeImageSuccess = internalMutation({
       throw new Error("Node not found");
     }
 
-    const prev =
-      existing.data && typeof existing.data === "object"
-        ? (existing.data as Record<string, unknown>)
-        : {};
+    const prev = getNodeDataRecord(existing.data);
     const creditCost = modelConfig.creditCost;
     const resolvedAspectRatio =
       aspectRatio?.trim() ||
@@ -411,7 +228,8 @@ export const generateAndStoreImage = internalAction({
             maxRetries,
             failureMessage: failure.message,
           });
-        }
+        },
+        MAX_IMAGE_RETRIES
       );
 
       const decodeStartedAt = Date.now();
@@ -521,15 +339,13 @@ export const processImageGeneration = internalAction({
         message: errorMessage(error),
       });
 
-      if (args.reservationId) {
-        try {
-          await ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId: args.reservationId,
-          });
-        } catch {
-          // Keep node status updates best-effort even if credit release fails.
-        }
-      }
+      await releaseInternalReservationBestEffort(
+        args.reservationId,
+        (transactionId) =>
+          ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId,
+          })
+      );
 
       await ctx.runMutation(internal.ai.finalizeImageFailure, {
         nodeId: args.nodeId,
@@ -537,11 +353,11 @@ export const processImageGeneration = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
     } finally {
-      if (args.shouldDecrementConcurrency) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
+      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+        ctx.runMutation(internal.credits.decrementConcurrency, {
           userId: args.userId,
-        });
-      }
+        })
+      );
 
       console.info("[processImageGeneration] finished", {
         nodeId: args.nodeId,
@@ -660,15 +476,11 @@ export const generateImage = action({
         message: errorMessage(error),
       });
 
-      if (reservationId) {
-        try {
-          await ctx.runMutation(api.credits.release, {
-            transactionId: reservationId,
-          });
-        } catch {
-          // Prefer returning a clear node error over masking with cleanup failures.
-        }
-      }
+      await releasePublicReservationBestEffort(reservationId, (transactionId) =>
+        ctx.runMutation(api.credits.release, {
+          transactionId,
+        })
+      );
 
       await ctx.runMutation(internal.ai.finalizeImageFailure, {
         nodeId: verifiedNodeId,
@@ -678,11 +490,13 @@ export const generateImage = action({
 
       throw error;
     } finally {
-      if (usageIncremented && !backgroundJobScheduled) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId,
-        });
-      }
+      await decrementConcurrencyIfNeeded(
+        usageIncremented && !backgroundJobScheduled,
+        () =>
+          ctx.runMutation(internal.credits.decrementConcurrency, {
+            userId,
+          })
+      );
     }
   },
 });
@@ -703,10 +517,7 @@ export const setVideoTaskInfo = internalMutation({
       throw new Error("Node not found");
     }
 
-    const prev =
-      node.data && typeof node.data === "object"
-        ? (node.data as Record<string, unknown>)
-        : {};
+    const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(nodeId, {
       data: {
@@ -757,10 +568,7 @@ export const finalizeVideoSuccess = internalMutation({
       throw new Error("Node not found");
     }
 
-    const prev =
-      existing.data && typeof existing.data === "object"
-        ? (existing.data as Record<string, unknown>)
-        : {};
+    const prev = getNodeDataRecord(existing.data);
 
     await ctx.db.patch(nodeId, {
       status: "done",
@@ -792,10 +600,7 @@ export const finalizeVideoFailure = internalMutation({
     if (!existing) {
       throw new Error("Node not found");
     }
-    const prev =
-      existing.data && typeof existing.data === "object"
-        ? (existing.data as Record<string, unknown>)
-        : {};
+    const prev = getNodeDataRecord(existing.data);
 
     await ctx.db.patch(nodeId, {
       status: "error",
@@ -854,7 +659,7 @@ export const processVideoGeneration = internalAction({
         taskId: task_id,
       });
 
-      await ctx.scheduler.runAfter(5000, internal.ai.pollVideoTask, {
+      await ctx.scheduler.runAfter(getVideoPollDelayMs(1), internal.ai.pollVideoTask, {
         taskId: task_id,
         outputNodeId: args.outputNodeId,
         prompt: args.prompt,
@@ -878,15 +683,13 @@ export const processVideoGeneration = internalAction({
         freepikBody: error instanceof FreepikApiError ? error.body : undefined,
       });
 
-      if (args.reservationId) {
-        try {
-          await ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId: args.reservationId,
-          });
-        } catch {
-          // Keep node failure updates best-effort even if release fails.
-        }
-      }
+      await releaseInternalReservationBestEffort(
+        args.reservationId,
+        (transactionId) =>
+          ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId,
+          })
+      );
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -894,11 +697,11 @@ export const processVideoGeneration = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      if (args.shouldDecrementConcurrency) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
+      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+        ctx.runMutation(internal.credits.decrementConcurrency, {
           userId: args.userId,
-        });
-      }
+        })
+      );
     }
   },
 });
@@ -919,16 +722,21 @@ export const pollVideoTask = internalAction({
   },
   handler: async (ctx, args) => {
     const elapsedMs = Date.now() - args.startedAtMs;
-    if (args.attempt > MAX_VIDEO_POLL_ATTEMPTS || elapsedMs > MAX_VIDEO_POLL_TOTAL_MS) {
-      if (args.reservationId) {
-        try {
-          await ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId: args.reservationId,
-          });
-        } catch {
-          // Keep node status updates best-effort.
-        }
-      }
+    if (
+      isVideoPollTimedOut({
+        attempt: args.attempt,
+        maxAttempts: MAX_VIDEO_POLL_ATTEMPTS,
+        elapsedMs,
+        maxTotalMs: MAX_VIDEO_POLL_TOTAL_MS,
+      })
+    ) {
+      await releaseInternalReservationBestEffort(
+        args.reservationId,
+        (transactionId) =>
+          ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId,
+          })
+      );
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -936,11 +744,11 @@ export const pollVideoTask = internalAction({
         statusMessage: "Timeout: Video generation exceeded maximum polling time",
       });
 
-      if (args.shouldDecrementConcurrency) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
+      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+        ctx.runMutation(internal.credits.decrementConcurrency, {
           userId: args.userId,
-        });
-      }
+        })
+      );
       return;
     }
 
@@ -978,15 +786,13 @@ export const pollVideoTask = internalAction({
       }
 
       if (status.status === "FAILED") {
-        if (args.reservationId) {
-          try {
-            await ctx.runMutation(internal.credits.releaseInternal, {
-              transactionId: args.reservationId,
-            });
-          } catch {
-            // Keep node status updates best-effort.
-          }
-        }
+        await releaseInternalReservationBestEffort(
+          args.reservationId,
+          (transactionId) =>
+            ctx.runMutation(internal.credits.releaseInternal, {
+              transactionId,
+            })
+        );
 
         await ctx.runMutation(internal.ai.finalizeVideoFailure, {
           nodeId: args.outputNodeId,
@@ -994,11 +800,11 @@ export const pollVideoTask = internalAction({
           statusMessage: status.error?.trim() || "Provider: Video generation failed",
         });
 
-        if (args.shouldDecrementConcurrency) {
-          await ctx.runMutation(internal.credits.decrementConcurrency, {
+        await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+          ctx.runMutation(internal.credits.decrementConcurrency, {
             userId: args.userId,
-          });
-        }
+          })
+        );
         return;
       }
 
@@ -1028,11 +834,11 @@ export const pollVideoTask = internalAction({
           });
         }
 
-        if (args.shouldDecrementConcurrency) {
-          await ctx.runMutation(internal.credits.decrementConcurrency, {
+        await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+          ctx.runMutation(internal.credits.decrementConcurrency, {
             userId: args.userId,
-          });
-        }
+          })
+        );
         return;
       }
     } catch (error) {
@@ -1058,8 +864,7 @@ export const pollVideoTask = internalAction({
           failureMessage: errorMessage(error),
         });
 
-        const retryDelayMs =
-          args.attempt <= 5 ? 5000 : args.attempt <= 15 ? 10000 : 20000;
+        const retryDelayMs = getVideoPollDelayMs(args.attempt);
         await ctx.scheduler.runAfter(retryDelayMs, internal.ai.pollVideoTask, {
           ...args,
           attempt: args.attempt + 1,
@@ -1067,15 +872,13 @@ export const pollVideoTask = internalAction({
         return;
       }
 
-      if (args.reservationId) {
-        try {
-          await ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId: args.reservationId,
-          });
-        } catch {
-          // Keep node status updates best-effort.
-        }
-      }
+      await releaseInternalReservationBestEffort(
+        args.reservationId,
+        (transactionId) =>
+          ctx.runMutation(internal.credits.releaseInternal, {
+            transactionId,
+          })
+      );
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1083,15 +886,15 @@ export const pollVideoTask = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      if (args.shouldDecrementConcurrency) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
+      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
+        ctx.runMutation(internal.credits.decrementConcurrency, {
           userId: args.userId,
-        });
-      }
+        })
+      );
       return;
     }
 
-    const delayMs = args.attempt <= 5 ? 5000 : args.attempt <= 15 ? 10000 : 20000;
+    const delayMs = getVideoPollDelayMs(args.attempt);
     await ctx.scheduler.runAfter(delayMs, internal.ai.pollVideoTask, {
       ...args,
       attempt: args.attempt + 1,
@@ -1210,15 +1013,11 @@ export const generateVideo = action({
 
       return { queued: true, outputNodeId: args.outputNodeId };
     } catch (error) {
-      if (reservationId) {
-        try {
-          await ctx.runMutation(api.credits.release, {
-            transactionId: reservationId,
-          });
-        } catch {
-          // Prefer returning a clear node error over masking with cleanup failures.
-        }
-      }
+      await releasePublicReservationBestEffort(reservationId, (transactionId) =>
+        ctx.runMutation(api.credits.release, {
+          transactionId,
+        })
+      );
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1226,11 +1025,11 @@ export const generateVideo = action({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      if (usageIncremented) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
+      await decrementConcurrencyIfNeeded(usageIncremented, () =>
+        ctx.runMutation(internal.credits.decrementConcurrency, {
           userId,
-        });
-      }
+        })
+      );
 
       throw error;
     }
