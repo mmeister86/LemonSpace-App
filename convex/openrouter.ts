@@ -10,7 +10,11 @@ export interface OpenRouterModel {
   /** Gleiche Einheit wie UI „Cr“ / lib/ai-models creditCost */
   creditCost: number;
   minTier: "free" | "starter" | "pro" | "max";
+  requestModalities?: readonly ("image" | "text")[];
 }
+
+const IMAGE_AND_TEXT_MODALITIES = ["image", "text"] as const;
+const IMAGE_ONLY_MODALITIES = ["image"] as const;
 
 export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
   "google/gemini-2.5-flash-image": {
@@ -28,6 +32,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 2,
     creditCost: 2,
     minTier: "free",
+    requestModalities: IMAGE_ONLY_MODALITIES,
   },
   "bytedance-seed/seedream-4.5": {
     id: "bytedance-seed/seedream-4.5",
@@ -36,6 +41,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 5,
     creditCost: 5,
     minTier: "free",
+    requestModalities: IMAGE_ONLY_MODALITIES,
   },
   "google/gemini-3.1-flash-image-preview": {
     id: "google/gemini-3.1-flash-image-preview",
@@ -60,6 +66,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 9,
     creditCost: 9,
     minTier: "starter",
+    requestModalities: IMAGE_ONLY_MODALITIES,
   },
   "sourceful/riverflow-v2-pro": {
     id: "sourceful/riverflow-v2-pro",
@@ -68,6 +75,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 12,
     creditCost: 12,
     minTier: "starter",
+    requestModalities: IMAGE_ONLY_MODALITIES,
   },
   "google/gemini-3-pro-image-preview": {
     id: "google/gemini-3-pro-image-preview",
@@ -156,6 +164,8 @@ export async function generateImageViaOpenRouter(
   params: GenerateImageParams
 ): Promise<OpenRouterImageResponse> {
   const modelId = params.model ?? DEFAULT_IMAGE_MODEL;
+  const model = IMAGE_MODELS[modelId];
+  const requestModalities = model?.requestModalities ?? IMAGE_AND_TEXT_MODALITIES;
   const requestStartedAt = Date.now();
 
   console.info("[openrouter] request start", {
@@ -188,7 +198,7 @@ export async function generateImageViaOpenRouter(
 
   const body: Record<string, unknown> = {
     model: modelId,
-    modalities: ["image", "text"],
+    modalities: [...requestModalities],
     messages: [userMessage],
   };
 
