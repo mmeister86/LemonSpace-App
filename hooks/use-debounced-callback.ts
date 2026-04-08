@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useMemo } from "react";
 
 type DebouncedCallback<Args extends unknown[]> = ((...args: Args) => void) & {
   flush: () => void;
@@ -53,8 +53,8 @@ export function useDebouncedCallback<Args extends unknown[]>(
     }
   }, []);
 
-  const debouncedFn = useCallback(
-    (...args: Args) => {
+  return useMemo(() => {
+    const debouncedCallback = ((...args: Args) => {
       argsRef.current = args;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
@@ -65,13 +65,11 @@ export function useDebouncedCallback<Args extends unknown[]>(
           callbackRef.current(...nextArgs);
         }
       }, delay);
-    },
-    [delay],
-  );
+    }) as DebouncedCallback<Args>;
 
-  const debouncedCallback = debouncedFn as DebouncedCallback<Args>;
-  debouncedCallback.flush = flush;
-  debouncedCallback.cancel = cancel;
+    debouncedCallback.flush = flush;
+    debouncedCallback.cancel = cancel;
 
-  return debouncedCallback;
+    return debouncedCallback;
+  }, [cancel, delay, flush]);
 }
