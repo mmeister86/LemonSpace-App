@@ -35,6 +35,7 @@ vi.mock("lucide-react", () => ({
 
 vi.mock("@/components/canvas/canvas-presets-context", () => ({
   useCanvasAdjustmentPresets: () => [],
+  useSaveCanvasAdjustmentPreset: () => vi.fn(async () => undefined),
 }));
 
 vi.mock("@/components/canvas/canvas-sync-context", () => ({

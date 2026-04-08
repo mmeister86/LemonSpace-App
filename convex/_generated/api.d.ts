@@ -15,6 +15,7 @@ import type * as ai_retry from "../ai_retry.js";
 import type * as ai_utils from "../ai_utils.js";
 import type * as auth from "../auth.js";
 import type * as batch_validation_utils from "../batch_validation_utils.js";
+import type * as canvasGraph from "../canvasGraph.js";
 import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
 import type * as edges from "../edges.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   ai_utils: typeof ai_utils;
   auth: typeof auth;
   batch_validation_utils: typeof batch_validation_utils;
+  canvasGraph: typeof canvasGraph;
   canvases: typeof canvases;
   credits: typeof credits;
   edges: typeof edges;

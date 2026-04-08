@@ -45,6 +45,12 @@ import {
   OPTIMISTIC_NODE_PREFIX,
   type PendingEdgeSplit,
 } from "./canvas-helpers";
+import {
+  getCanvasGraphEdgesFromQuery,
+  getCanvasGraphNodesFromQuery,
+  setCanvasGraphEdgesInQuery,
+  setCanvasGraphNodesInQuery,
+} from "./canvas-graph-query-cache";
 
 type QueueSyncMutation = <TType extends keyof CanvasSyncOpPayloadByType>(
   type: TType,
@@ -588,7 +594,7 @@ export function useCanvasSyncEngine({
 
   const createNode = useMutation(api.nodes.create).withOptimisticUpdate(
     (localStore, args) => {
-      const current = localStore.getQuery(api.nodes.list, {
+      const current = getCanvasGraphNodesFromQuery(localStore, {
         canvasId: args.canvasId,
       });
       if (current === undefined) return;
@@ -615,20 +621,20 @@ export function useCanvasSyncEngine({
         zIndex: args.zIndex,
       };
 
-      localStore.setQuery(api.nodes.list, { canvasId: args.canvasId }, [
-        ...current,
-        synthetic,
-      ]);
+      setCanvasGraphNodesInQuery(localStore, {
+        canvasId: args.canvasId,
+        nodes: [...current, synthetic],
+      });
     },
   );
 
   const createNodeWithEdgeFromSource = useMutation(
     api.nodes.createWithEdgeFromSource,
   ).withOptimisticUpdate((localStore, args) => {
-    const nodeList = localStore.getQuery(api.nodes.list, {
+    const nodeList = getCanvasGraphNodesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
-    const edgeList = localStore.getQuery(api.edges.list, {
+    const edgeList = getCanvasGraphEdgesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
     if (nodeList === undefined || edgeList === undefined) return;
@@ -674,23 +680,23 @@ export function useCanvasSyncEngine({
       targetHandle: args.targetHandle,
     };
 
-    localStore.setQuery(api.nodes.list, { canvasId: args.canvasId }, [
-      ...nodeList,
-      syntheticNode,
-    ]);
-    localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, [
-      ...edgeList,
-      syntheticEdge,
-    ]);
+    setCanvasGraphNodesInQuery(localStore, {
+      canvasId: args.canvasId,
+      nodes: [...nodeList, syntheticNode],
+    });
+    setCanvasGraphEdgesInQuery(localStore, {
+      canvasId: args.canvasId,
+      edges: [...edgeList, syntheticEdge],
+    });
   });
 
   const createNodeWithEdgeToTarget = useMutation(
     api.nodes.createWithEdgeToTarget,
   ).withOptimisticUpdate((localStore, args) => {
-    const nodeList = localStore.getQuery(api.nodes.list, {
+    const nodeList = getCanvasGraphNodesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
-    const edgeList = localStore.getQuery(api.edges.list, {
+    const edgeList = getCanvasGraphEdgesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
     if (nodeList === undefined || edgeList === undefined) return;
@@ -736,24 +742,24 @@ export function useCanvasSyncEngine({
       targetHandle: args.targetHandle,
     };
 
-    localStore.setQuery(api.nodes.list, { canvasId: args.canvasId }, [
-      ...nodeList,
-      syntheticNode,
-    ]);
-    localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, [
-      ...edgeList,
-      syntheticEdge,
-    ]);
+    setCanvasGraphNodesInQuery(localStore, {
+      canvasId: args.canvasId,
+      nodes: [...nodeList, syntheticNode],
+    });
+    setCanvasGraphEdgesInQuery(localStore, {
+      canvasId: args.canvasId,
+      edges: [...edgeList, syntheticEdge],
+    });
   });
 
   const createNodeWithEdgeSplitMut = useMutation(api.nodes.createWithEdgeSplit);
 
   const createEdge = useMutation(api.edges.create).withOptimisticUpdate(
     (localStore, args) => {
-      const edgeList = localStore.getQuery(api.edges.list, {
+      const edgeList = getCanvasGraphEdgesFromQuery(localStore, {
         canvasId: args.canvasId,
       });
-      const nodeList = localStore.getQuery(api.nodes.list, {
+      const nodeList = getCanvasGraphNodesFromQuery(localStore, {
         canvasId: args.canvasId,
       });
       if (edgeList === undefined || nodeList === undefined) return;
@@ -776,10 +782,10 @@ export function useCanvasSyncEngine({
         sourceHandle: args.sourceHandle,
         targetHandle: args.targetHandle,
       };
-      localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, [
-        ...edgeList,
-        synthetic,
-      ]);
+      setCanvasGraphEdgesInQuery(localStore, {
+        canvasId: args.canvasId,
+        edges: [...edgeList, synthetic],
+      });
     },
   );
 
@@ -1167,10 +1173,10 @@ export function useCanvasSyncEngine({
   const splitEdgeAtExistingNodeMut = useMutation(
     api.nodes.splitEdgeAtExistingNode,
   ).withOptimisticUpdate((localStore, args) => {
-    const edgeList = localStore.getQuery(api.edges.list, {
+    const edgeList = getCanvasGraphEdgesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
-    const nodeList = localStore.getQuery(api.nodes.list, {
+    const nodeList = getCanvasGraphNodesFromQuery(localStore, {
       canvasId: args.canvasId,
     });
     if (edgeList === undefined || nodeList === undefined) return;
@@ -1205,15 +1211,17 @@ export function useCanvasSyncEngine({
         targetHandle: args.splitTargetHandle,
       },
     );
-    localStore.setQuery(api.edges.list, { canvasId: args.canvasId }, nextEdges);
+    setCanvasGraphEdgesInQuery(localStore, {
+      canvasId: args.canvasId,
+      edges: nextEdges,
+    });
 
     if (args.positionX !== undefined && args.positionY !== undefined) {
       const px = args.positionX;
       const py = args.positionY;
-      localStore.setQuery(
-        api.nodes.list,
-        { canvasId: args.canvasId },
-        nodeList.map((n: Doc<"nodes">) =>
+      setCanvasGraphNodesInQuery(localStore, {
+        canvasId: args.canvasId,
+        nodes: nodeList.map((n: Doc<"nodes">) =>
           n._id === args.middleNodeId
             ? {
                 ...n,
@@ -1222,7 +1230,7 @@ export function useCanvasSyncEngine({
               }
             : n,
         ),
-      );
+      });
     }
   });
 

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
+
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
+import { canvasGraphQuery } from "./canvas-graph-query-cache";
 
 type UseCanvasDataParams = {
   canvasId: Id<"canvases">;
@@ -45,14 +47,12 @@ export function useCanvasData({ canvasId }: UseCanvasDataParams) {
     shouldSkipCanvasQueries,
   ]);
 
-  const convexNodes = useQuery(
-    api.nodes.list,
+  const graph = useQuery(
+    canvasGraphQuery,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
-  const convexEdges = useQuery(
-    api.edges.list,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
-  );
+  const convexNodes = graph?.nodes;
+  const convexEdges = graph?.edges;
   const canvas = useQuery(
     api.canvases.get,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
