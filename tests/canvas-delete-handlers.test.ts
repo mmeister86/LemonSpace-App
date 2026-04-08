@@ -38,8 +38,10 @@ function HookHarness(props: HarnessProps) {
   const nodesRef = useRef<RFNode[]>(props.liveNodes ?? props.nodes);
   const edgesRef = useRef<RFEdge[]>(props.liveEdges ?? props.edges);
 
-  nodesRef.current = props.liveNodes ?? props.nodes;
-  edgesRef.current = props.liveEdges ?? props.edges;
+  useEffect(() => {
+    nodesRef.current = props.liveNodes ?? props.nodes;
+    edgesRef.current = props.liveEdges ?? props.edges;
+  }, [props.liveEdges, props.liveNodes, props.edges, props.nodes]);
 
   const handlers = useCanvasDeleteHandlers({
     t: ((key: string, values?: Record<string, unknown>) =>

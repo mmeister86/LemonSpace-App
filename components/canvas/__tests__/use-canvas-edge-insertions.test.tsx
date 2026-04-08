@@ -223,7 +223,7 @@ describe("useCanvasEdgeInsertions", () => {
         label: "Prompt",
         width: 320,
         height: 220,
-        defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
+        defaultData: { prompt: "", aspectRatio: "1:1" },
       } as CanvasNodeTemplate);
     });
 
@@ -268,7 +268,7 @@ describe("useCanvasEdgeInsertions", () => {
         label: "Prompt",
         width: 320,
         height: 220,
-        defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
+        defaultData: { prompt: "", aspectRatio: "1:1" },
       } as CanvasNodeTemplate);
     });
 
@@ -319,7 +319,7 @@ describe("useCanvasEdgeInsertions", () => {
         label: "Prompt",
         width: 320,
         height: 220,
-        defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
+        defaultData: { prompt: "", aspectRatio: "1:1" },
       } as CanvasNodeTemplate);
     });
 
@@ -332,7 +332,7 @@ describe("useCanvasEdgeInsertions", () => {
       height: 220,
       data: {
         prompt: "",
-        model: "",
+        model: "google/gemini-2.5-flash-image",
         aspectRatio: "1:1",
         canvasId: "canvas-1",
       },
@@ -650,7 +650,7 @@ describe("useCanvasEdgeInsertions", () => {
         label: "Prompt",
         width: 320,
         height: 220,
-        defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
+        defaultData: { prompt: "", model: "google/gemini-2.5-flash-image", aspectRatio: "1:1" },
       } as CanvasNodeTemplate);
     });
 

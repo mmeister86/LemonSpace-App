@@ -18,7 +18,7 @@ export const CANVAS_NODE_TEMPLATES = [
     label: "Prompt",
     width: 320,
     height: 220,
-    defaultData: { prompt: "", model: "", aspectRatio: "1:1" },
+    defaultData: { prompt: "", model: "google/gemini-2.5-flash-image", aspectRatio: "1:1" },
   },
   {
     type: "video-prompt",

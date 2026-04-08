@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -83,12 +82,6 @@ export function CanvasGraphProvider({
     () => pruneCanvasGraphNodeDataOverrides(nodes, previewNodeDataOverrides),
     [nodes, previewNodeDataOverrides],
   );
-
-  useEffect(() => {
-    if (prunedPreviewNodeDataOverrides !== previewNodeDataOverrides) {
-      setPreviewNodeDataOverrides(prunedPreviewNodeDataOverrides);
-    }
-  }, [previewNodeDataOverrides, prunedPreviewNodeDataOverrides]);
 
   const graph = useMemo(
     () =>

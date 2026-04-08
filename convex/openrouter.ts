@@ -15,7 +15,6 @@ export interface OpenRouterModel {
 
 const IMAGE_AND_TEXT_MODALITIES = ["image", "text"] as const;
 const IMAGE_ONLY_MODALITIES = ["image"] as const;
-
 export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
   "google/gemini-2.5-flash-image": {
     id: "google/gemini-2.5-flash-image",

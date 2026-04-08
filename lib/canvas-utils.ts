@@ -235,7 +235,11 @@ export const NODE_DEFAULTS: Record<
 > = {
   image: { width: 280, height: 200, data: {} },
   text: { width: 256, height: 120, data: { content: "" } },
-  prompt: { width: 288, height: 220, data: { prompt: "", aspectRatio: "1:1" } },
+  prompt: {
+    width: 288,
+    height: 220,
+    data: { prompt: "", model: "google/gemini-2.5-flash-image", aspectRatio: "1:1" },
+  },
   "video-prompt": {
     width: 288,
     height: 220,
