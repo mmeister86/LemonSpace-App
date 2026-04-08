@@ -87,6 +87,30 @@ const { isOnline, pendingOps, syncStatus } = useCanvasSyncStatus()
 
 ---
 
+### `use-dashboard-snapshot.ts`
+
+Hook für gebündeltes Dashboard-Datenladen mit localStorage-Cache. Ersetzt separate Queries für Balance, Subscription, UsageStats, Transactions und Canvases.
+
+**Features:**
+- Gebündelte Convex-Query (`api.dashboard.getSnapshot`) in einem Call
+- Automatisches Caching im localStorage (12h TTL)
+- Sofortige Anzeige aus Cache während Live-Query lädt
+- Cache-Invalidierung bei Logout (via sessionStorage Tracking)
+- Source-Tracking: `{ snapshot, source: "live" | "cache" | "none" }`
+
+**Verwendung:**
+```typescript
+const { snapshot, source } = useDashboardSnapshot(userId)
+// source="cache" → sofortige Anzeige aus Cache
+// source="live" → aktuelle Daten vom Server
+// source="none" → weder Cache noch Query vorhanden
+```
+
+**Typen:**
+- `DashboardSnapshot` — Vollständiger Rückgabewert von `api.dashboard.getSnapshot`
+
+---
+
 ## Konventionen
 
 - Hooks immer mit `use-` Prefix im Dateinamen

@@ -36,6 +36,8 @@ app/(app)/canvas/[canvasId]/page.tsx
 | `canvas-delete-handlers.ts` | Hook für `onBeforeDelete`, `onNodesDelete`, `onEdgesDelete` inkl. Bridge-Edges |
 | `canvas-reconnect.ts` | Hook für Edge-Reconnect (`onReconnectStart`, `onReconnect`, `onReconnectEnd`) |
 | `canvas-media-utils.ts` | Media-Helfer wie `getImageDimensions(file)` |
+| `use-canvas-data.ts` | Hook: Bündelt Canvas-Graph-Query, Storage-URL-Auflösung und Auth-State in einer einzigen Abstraktion |
+| `canvas-graph-query-cache.ts` | Optimistic Store Helper für `canvasGraph.get` (getNodes, getEdges, setNodes, setEdges) |
 
 ---
 
@@ -231,6 +233,39 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 
 ---
 
+## Canvas Graph Query Cache
+
+Performance-Optimierung: Statt separater Queries für Nodes und Edges nutzt der Canvas eine einzige gebündelte Query (`canvasGraph.get`), die über einen Optimistic Store Layer läuft.
+
+**Architektur:**
+```
+useCanvasData (use-canvas-data.ts)
+  ├── canvasGraphQuery (canvasGraph.get) ← Einzelne gebündelte Query
+  ├── canvasGraphQueryCache (Optimistic Store Helper)
+  │     ├── getCanvasGraphNodesFromQuery()
+  │     ├── getCanvasGraphEdgesFromQuery()
+  │     ├── setCanvasGraphNodesInQuery()
+  │     └── setCanvasGraphEdgesInQuery()
+  ├── Storage URL Resolution (batchGetUrlsForCanvas)
+  └── Auth State (authClient.useSession + useConvexAuth)
+```
+
+**Vorteil:** Optimistic Updates (Node-Erstellung, Edge-Erstellung etc.) aktualisieren den Optimistic Store direkt, ohne auf die Server-Bestätigung warten zu müssen. Die separaten Node/Edge-Queries wurden durch diesen Ansatz abgelöst.
+
+**`use-canvas-data.ts`:**
+- Kapselt den gesamten Canvas-Datenfluss: Graph-Query → Storage-URLs → fertige Daten
+- `shouldSkipCanvasQueries` verhindert API-Calls vor Auth-Ready
+- `storageIdsForCanvas` extrahiert Storage-IDs aus Nodes und löst sie via `batchGetUrlsForCanvas` auf
+- Development-Logging für Auth-State-Debugging
+
+**`canvas-graph-query-cache.ts`:**
+- Typisierter Zugriff auf den Convex Optimistic Local Store
+- `canvasGraphQuery` — Typ-safe Reference auf `api.canvasGraph.get`
+- `getCanvasGraphNodesFromQuery/EdgesFromQuery` — Lesen
+- `setCanvasGraphNodesInQuery/EdgesInQuery` — Schreiben (für Optimistic Updates)
+
+---
+
 ## Wichtige Gotchas
 
 - **`data.url` vs `storageId`:** Node-Komponenten erhalten `data.url` (aufgelöste HTTP-URL), nicht `storageId` direkt. Die URL wird von `convexNodeDocWithMergedStorageUrl` injiziert. Bei neuen Node-Typen mit Bild immer diesen Flow prüfen.
@@ -244,3 +279,4 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
+- **Canvas Graph Query:** Der Canvas nutzt `canvasGraph.get` (aus `convex/canvasGraph.ts`) statt separater `nodes.list`/`edges.list` Queries. Optimistic Updates laufen über `canvas-graph-query-cache.ts`.

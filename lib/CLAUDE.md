@@ -33,6 +33,8 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `topup-calculator.ts` | Bonus-Staffel-Berechnung für Credit-Top-Ups |
 | `format-time.ts` | Zeitformatierung (relative Zeitangaben) |
 | `utils.ts` | `cn()` (clsx + tailwind-merge), allgemeine Utilities |
+| `credits-activity.ts` | Credits-Aktivitäts-Analytics: Transaktions-Priorisierung, Activity-Series, Usage-Domain-Berechnung |
+| `dashboard-snapshot-cache.ts` | localStorage-Cache für Dashboard-Snapshots (12h TTL, versioniert) |
 
 ---
 
@@ -195,6 +197,51 @@ export function shouldLogVideoPollResult(attempt: number, status: VideoPollStatu
 ```
 
 Verwendet in `convex/ai.ts` (`pollVideoTask`) und `convex/freepik.ts` (`getVideoTaskStatus`).
+
+---
+
+## `credits-activity.ts` — Credits Analytics
+
+Analytics-Helpers für die Dashboard Credits-Aktivitäts-Anzeige. Wird von `components/dashboard/credits-activity-chart.tsx` und `convex/dashboard.ts` verwendet.
+
+**Kernfunktionen:**
+
+```typescript
+// Transaktions-Priorisierung (Usage → Reservation → Refund → Topup → Subscription)
+prioritizeRecentCreditTransactions(transactions, limit)
+
+// Tages-aggregierte Activity-Series für Recharts (max. 7 Tage)
+buildCreditsActivitySeries(transactions, availableCredits, locale, maxPoints?)
+
+// Y-Achsen-Domain mit Headroom (mind. 8, +20% Headroom)
+calculateUsageActivityDomain(points)
+
+// Credit-Formatierung ("1.234 Cr")
+formatCredits(value, locale)
+```
+
+**Typen:**
+- `CreditTransactionLike` — Minimales Transaction-Interface für Analytics
+- `CreditActivityPoint` — Tages-Datenpunkt (`{ day, usage, activity, available }`)
+
+---
+
+## `dashboard-snapshot-cache.ts` — Dashboard Snapshot Cache
+
+localStorage-basierter Cache für Dashboard-Snapshot-Daten.
+
+```typescript
+readDashboardSnapshotCache<T>(userId, options?)  // Cached Snapshot lesen (mit TTL-Prüfung)
+writeDashboardSnapshotCache<T>(userId, snapshot) // Snapshot schreiben
+clearDashboardSnapshotCache(userId)              // Cache invalidieren
+```
+
+**Konfiguration:**
+- Namespace: `lemonspace.dashboard`
+- Key: `lemonspace.dashboard:snapshot:v1:<userId>`
+- TTL: 12 Stunden (`DEFAULT_TTL_MS = 12 * 60 * 60 * 1000`)
+- Version: `CACHE_VERSION = 1` — Bumps invalidieren bestehende Caches
+- Alle Storage-Zugriffe defensiv (try-catch, quota handling)
 
 ---
 

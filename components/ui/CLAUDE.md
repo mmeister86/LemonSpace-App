@@ -62,6 +62,7 @@ transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1); /* expo-out */
 | `badge` | `components/ui/badge.tsx` | Status-Tags, Badges |
 | `tooltip` | `components/ui/tooltip.tsx` | Explainer-Texte |
 | `separator` | `components/ui/separator.tsx` | Trennungen |
+| `chart` | `components/ui/chart.tsx` | ShadCN Chart-Wrapper für Recharts (ChartContainer, ChartTooltip, ChartLegend) |
 
 ---
 
@@ -77,3 +78,18 @@ npx shadcn@latest add input
 ```
 
 Komponenten werden direkt in `components/ui/` abgelegt. Lokale Anpassungen erfolgen durch Überladen von Props oder direkt in der Komponentendatei.
+
+---
+
+## Chart-Komponente (`chart.tsx`)
+
+ShadCN-Wrapper für Recharts v3.8. Bietet konsistentes Styling für Chart-Elemente:
+
+- `ChartContainer` — Root-Wrapper mit CSS-Variablen-basierten Farben
+- `ChartTooltip` / `ChartTooltipContent` — Tooltip mit Design-Token-Support
+- `ChartLegend` / `ChartLegendContent` — Legende mit konsistentem Styling
+- `ChartConfig` — Typ für Chart-Farbkonfiguration
+
+**Verwendung:** Dashboard Credits Activity Chart. Farben über CSS-Variablen (`hsl(var(--primary))` etc.).
+
+**Abhängigkeit:** `recharts` v3.8.0 (in `package.json`).

@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — Produkt-Manifest
 
-**v2.0 — April 2026**
+**v2.1 — April 2026**
 
 *Self-Hosted, Source-Available Creative Workspace*
 
@@ -129,7 +129,7 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 |-------|-------------|--------|
 | Backend | Convex (self-hosted). Bewusster Lock-in für Realtime, Storage, Jobs. Migrations-Pfad: Convex Cloud EU. | ✅ |
 | Auth | Better Auth + Magic Link (via polar-sh/better-auth plugin) | ✅ |
-| AI Layer | OpenRouter als primäre AI-Schicht. 9 Image-Modelle, Phase 1: nur Gemini 2.5 Flash aktiv. | ✅ |
+| AI Layer | OpenRouter als primäre AI-Schicht. Alle 9 Image-Modelle aktiv, serverseitiges Tier-Enforcement, tier-aware Model Selector. | ✅ |
 | Self-hosted KI | rembg, Real-ESRGAN, GFPGAN — kostenlos, separate Repos | ✅ |
 | Payment | Polar.sh (MoR, VAT, Better Auth Plugin @polar-sh/better-auth) | ✅ |
 | Credits | Reservation + Commit. Credit-Abstraktion (1 Cr = €0,01 OR intern). Markup: 2× Bild, 2,5–3× Agent. | ✅ |
@@ -160,7 +160,7 @@ Fokus heißt Nein sagen. Diese Features sind bewusst ausgeklammert, nicht verges
 | Team-Features | Workspaces, Rollen, Rechte, Seat-Management — erst wenn Business-Tier validiert. |
 | docker-compose.yml | Self-Hosting dokumentieren, aber nicht den Hosted-MVP verzögern. |
 | E2E-Testing | Neubewertung bei Skalierung. |
-| Modellauswahl-UI | Phase 1 nur ein Modell (Gemini 2.5 Flash). Auswahl-UI folgt in Phase 2. |
+
 
 ---
 
@@ -235,10 +235,11 @@ Priorisiert nach Abhängigkeiten. Jeder Schritt hat ein klares Artefakt.
 | 6 | Better Auth + Polar + Credit-System | Login, Checkout, Balance-Tracking, Reservation+Commit | ✅ |
 | 7 | Polar Webhook-Handling | Subscription-Events, automatische Credit-Zuweisung | ✅ |
 | 8 | WebGL Image Pipeline | Adjustment-Nodes mit GLSL-Shadern | ✅ |
-| 9 | Vollständige OpenRouter Integration | Alle 9 Modelle + Modellauswahl-UI | ☐ |
+| 9 | Vollständige OpenRouter Integration | Alle 9 Modelle + Modellauswahl-UI | ✅ |
 | 10 | Agent Node | Analyse, Clarification, Execution, Output | ☐ |
 | 11 | Self-hosted KI-Services | rembg, Real-ESRGAN, GFPGAN | ☐ |
 | 12 | docker-compose.yml + Setup-README | Self-Hosting-Anleitung | ☐ |
+| 13 | Dashboard Snapshot + Analytics | Gebündelte Query, localStorage-Cache, Credits-Activity-Chart | ✅ |
 
 ---
 
@@ -257,4 +258,4 @@ Folgende Themen werden in eigenen Dokumenten vertieft. Das Manifest bleibt schla
 
 ---
 
-*LemonSpace Manifest v2.0 — April 2026*
+*LemonSpace Manifest v2.1 — April 2026*

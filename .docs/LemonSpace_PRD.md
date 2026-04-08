@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v2.0 | Draft | April 2026 | lemonspace.app |
+| v2.1 | Draft | April 2026 | lemonspace.app |
 
 ---
 
@@ -27,6 +27,7 @@
 | v1.4 | Bildbearbeitung: Neue Kategorie 4 „Bildbearbeitung" mit non-destruktivem Adjustment-Stack (zwischen Transformation und Steuerung). 4 Adjustment-Nodes (Kurven, Farbe, Licht, Detail) + Render-Node. Alle Operationen credit-frei (client-seitig via Canvas API / WebGL). Steuerung → Kat. 5, Canvas & Layout → Kat. 6. Phase 2. |
 | v1.5 | Stage 3 Offline Sync: Local-First Canvas mit IndexedDB Queue, Optimistic Updates, ID-Remapping. Magic Link Auth via Better Auth Plugin. react-resizable-panels für Sidebar Resizing. Canvas Modularisierung, Dashboard Dialoge, Auth Race-Härtung.|
 | v2.0 | **Phase-1-Umfang erweitert:** Video- und Asset-Nodes vorgezogen (Phase 2→1). Bildbearbeitungs-Nodes (Kurven, Farbe, Licht, Detail, Render) vorgezogen (Phase 2→1). Vollständige WebGL-basierte Image-Pipeline implementiert (`lib/image-pipeline/`). Node-Taxonomie hat 6 Kategorien mit 27 Node-Typen. Phase-1-Status-Tabelle aktualisiert. |
+| v2.1 | **Alle 9 Image-Modelle aktiviert (Phase 2→1):** Vollständige OpenRouter Image Gen Integration mit serverseitigem Tier-Enforcement und modellspezifischen Request-Modalities. Tier-aware Model Selector im Prompt-Node. AI-Modularisierung: `ai_errors.ts`, `ai_node_data.ts`, `ai_retry.ts` aus `ai.ts` extrahiert. Dashboard Snapshot Cache (`convex/dashboard.ts`): Gebündelte Query mit localStorage-Cache (`lib/dashboard-snapshot-cache.ts`). Credits Activity Analytics: `lib/credits-activity.ts` + `CreditsActivityChart` (Recharts). Canvas Graph Query Cache (`convex/canvasGraph.ts` + `canvas-graph-query-cache.ts`): Performance-Optimierung durch separaten Graph-Endpunkt mit Optimistic Store. Neuer Hook `use-dashboard-snapshot.ts`. ShadCN Chart-Komponente (`components/ui/chart.tsx`) + Recharts 3.8. |
 
 ---
 
@@ -238,6 +239,7 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Image Pipeline | WebGL + GLSL Shaders | Hardware-beschleunigte Bildverarbeitung im Browser |
 | Offline Sync | IndexedDB + localStorage | Canvas-Sync-Queue, Snapshot-Persistenz, Optimistic Updates |
 | Package Manager | pnpm | Je Repo |
+| Charts / Visualization | Recharts + ShadCN Chart | v3.8.0 — Dashboard Credits Activity Chart |
 
 ### Zwei-Repo-Strategie
 
@@ -295,13 +297,23 @@ Dokumentierter Migrationspfad bei Skalierung: Convex Cloud mit EU-Standort. Conv
 | Gemini 3 Pro Image | google/gemini-3-pro-image-preview | Multi-Image, 4K, bestes Text-Rendering | ~€0,08–0,15 |
 | GPT-5 Image | openai/gpt-5-image | Instruction Following, Text in Bild | ~€0,10–0,20 |
 
-### Aktuell aktiviertes Modell (Phase 1)
+### Aktuell aktivierte Modelle (Phase 1)
 
-| Modell | ID | Credits | Tier-Zugang |
-|--------|-----|---------|-------------|
-| Gemini 2.5 Flash Image | google/gemini-2.5-flash-image | 4 Cr | Alle Tiers |
+Alle 9 Image-Modelle sind aktiviert. Server-seitiges Tier-Enforcement prüft `minTier` pro Modell. Der Prompt-Node bietet einen tier-aware Model Selector.
 
-> Weitere Modelle werden in Phase 2 freigeschaltet (Modellauswahl-UI im Canvas).
+| Modell | ID | Credits | Tier-Zugang | Modalities |
+|--------|-----|---------|-------------|------------|
+| Gemini 2.5 Flash | google/gemini-2.5-flash-image | 4 Cr | Alle Tiers | image + text |
+| FLUX.2 Klein 4B | black-forest-labs/flux.2-klein-4b | 2 Cr | Alle Tiers | image only |
+| Seedream 4.5 | bytedance-seed/seedream-4.5 | 5 Cr | Alle Tiers | image only |
+| Gemini 3.1 Flash Image | google/gemini-3.1-flash-image-preview | 6 Cr | Alle Tiers | image + text |
+| GPT-5 Image Mini | openai/gpt-5-image-mini | 8 Cr | Ab Starter | image + text |
+| Riverflow V2 Fast | sourceful/riverflow-v2-fast | 9 Cr | Ab Starter | image only |
+| Riverflow V2 Pro | sourceful/riverflow-v2-pro | 12 Cr | Ab Starter | image only |
+| Gemini 3 Pro Image | google/gemini-3-pro-image-preview | 13 Cr | Ab Starter | image + text |
+| GPT-5 Image | openai/gpt-5-image | 15 Cr | Ab Starter | image + text |
+
+> **Request Modalities:** Modelle mit `image only` senden `modalities: ["image"]`, alle anderen `modalities: ["image", "text"]`. Dies wird in `convex/openrouter.ts` über das `requestModalities`-Feld gesteuert.
 
 ### Self-hosted Services
 
@@ -466,12 +478,15 @@ Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup
 
 | Operation | Modell | API-Kosten | Markup | Credits | Tier-Zugang |
 |-----------|--------|------------|--------|---------|-------------|
-| Bildgenerierung (Standard) | Gemini 2.5 Flash Image | ~€0,04 | 2× | 4 Cr | Alle Tiers |
-| Bildgenerierung (Budget) | FLUX.2 Klein 4B | ~€0,02 | 2× | 4 Cr | Alle Tiers |
-| Bildgenerierung (Standard+) | Gemini 3.1 Flash Image | ~€0,06 | 2× | 12 Cr | Alle Tiers |
-| Bildgenerierung (Premium) | GPT-5 Image Mini | ~€0,08 | 2× | 16 Cr | Ab Starter |
-| Bildgenerierung (Ultra) | GPT-5 Image | ~€0,18 | 2× | 36 Cr | Ab Starter |
-| Bildgen. (Pro Text/4K) | Riverflow V2 Pro | ~€0,33 | 1,5× | 50 Cr | Ab Starter |
+| Bildgenerierung (Standard) | Gemini 2.5 Flash | ~€0,04 | 1× | 4 Cr | Alle Tiers |
+| Bildgenerierung (Budget) | FLUX.2 Klein 4B | ~€0,02 | 1× | 2 Cr | Alle Tiers |
+| Bildgenerierung (Standard) | Seedream 4.5 | ~€0,05 | 1× | 5 Cr | Alle Tiers |
+| Bildgenerierung (Standard+) | Gemini 3.1 Flash Image | ~€0,06 | 1× | 6 Cr | Alle Tiers |
+| Bildgenerierung (Premium) | GPT-5 Image Mini | ~€0,08 | 1× | 8 Cr | Ab Starter |
+| Bildgenerierung (Premium) | Riverflow V2 Fast | ~€0,09 | 1× | 9 Cr | Ab Starter |
+| Bildgenerierung (Premium) | Riverflow V2 Pro | ~€0,12 | 1× | 12 Cr | Ab Starter |
+| Bildgenerierung (Premium) | Gemini 3 Pro Image | ~€0,13 | 1× | 13 Cr | Ab Starter |
+| Bildgenerierung (Ultra) | GPT-5 Image | ~€0,15 | 1× | 15 Cr | Ab Starter |
 | Agent Reasoning (leicht) | Claude Sonnet | ~€0,03 | 3× | 9 Cr | Ab Starter |
 | Agent Reasoning (mittel) | Claude Sonnet | ~€0,06 | 2,5× | 15 Cr | Ab Starter |
 | Agent-Run (komplex) | Multi-Step Workflow | ~€0,15 | 2,5× | 38 Cr | Ab Starter |
@@ -590,6 +605,12 @@ Agent Status: analyzing
 | Video Browser | ✅ Erledigt |
 | Connection Policy (Edge-Validierung) | ✅ Erledigt |
 | Adjustment Presets (Built-in + User-defined) | ✅ Erledigt |
+| Vollständige OpenRouter Image Gen (alle 9 Modelle + Tier-Enforcement) | ✅ Erledigt |
+| Tier-aware Model Selector im Prompt-Node | ✅ Erledigt |
+| Dashboard Snapshot Cache (gebündelte Query + localStorage) | ✅ Erledigt |
+| Credits Activity Analytics (Recharts Chart) | ✅ Erledigt |
+| Canvas Graph Query Cache (Performance-Optimierung) | ✅ Erledigt |
+| AI Modularisierung (`ai_errors.ts`, `ai_retry.ts`, `ai_node_data.ts`) | ✅ Erledigt |
 | docker-compose.yml + .env.example + Setup-README | ☐ Offen |
 
 ### Phase 2 — KI-Features
@@ -605,8 +626,6 @@ Agent Status: analyzing
 
 | Task | Status |
 |------|--------|
-| Vollständige OpenRouter Image Gen Integration (alle 9 Modelle) | ☐ Offen |
-| Experten-Modus: Modellauswahl-UI im Canvas AI Panel | ☐ Offen |
 | OpenRouter Text/Reasoning Integration (Claude 3.5 Sonnet) | ☐ Offen |
 | Agent Node: Analyse, Clarification, Execution, Output | ☐ Offen |
 | Skeleton-Nodes: Platzierung nach Plan-Erstellung | ☐ Offen |
@@ -632,7 +651,7 @@ Agent Status: analyzing
 | Versions-History | ☐ Offen |
 | Weitere Agent Templates | ☐ Offen |
 | Export-Funktionen (PNG, PDF, ZIP) | ☐ Offen |
-| Performance-Optimierung für große Canvases | ☐ Offen |
+| Performance-Optimierung für große Canvases | ✅ Erledigt |
 
 ---
 
@@ -646,7 +665,7 @@ Agent Status: analyzing
 | Payment Provider | ✅ Polar (Merchant of Record, VAT-Handling) |
 | Self-Hosting-Strategie | ✅ docker-compose.yml + .env.example + README |
 | Convex Lock-in | ✅ Bewusst akzeptiert; Migrations-Pfad: Convex Cloud EU |
-| OpenRouter Image-Modelle | ✅ 9 Modelle definiert, Phase 1: nur Gemini 2.5 Flash aktiv |
+| OpenRouter Image-Modelle | ✅ Alle 9 Modelle aktiv mit serverseitigem Tier-Enforcement |
 | Lizenz | ✅ BSL 1.1, 3 Jahre Change Date, Apache 2.0 |
 | Repo-Strategie | ✅ Zwei unabhängige Repos, Auth-Cookie-Sharing |
 | Job Queue | ✅ Convex native (Phase 1), externe Lösung bei Bedarf |
@@ -721,4 +740,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v2.0 — April 2026*
+*LemonSpace PRD v2.1 — April 2026*

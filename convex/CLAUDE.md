@@ -27,6 +27,11 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `storage.ts` | Convex File Storage Helpers + gebündelte Canvas-URL-Auflösung |
 | `export.ts` | Canvas-Export-Logik |
 | `http.ts` | HTTP-Endpunkte (Webhooks) |
+| `dashboard.ts` | Gebündelte Dashboard-Snapshot-Query (Balance, Subscription, Usage, Transactions, Canvases in einem Call) |
+| `canvasGraph.ts` | Canvas Graph Query — Performance-optimierte Query für Nodes+Edges in einem Call |
+| `ai_errors.ts` | Error-Kategorisierung und User-facing Fehlermeldungen (aus `ai.ts` extrahiert) |
+| `ai_node_data.ts` | Node-Data-Helpers (z. B. `getNodeDataRecord`) |
+| `ai_retry.ts` | Retry-Logik für AI-Generierung (`generateImageWithAutoRetry`, aus `ai.ts` extrahiert) |
 
 ---
 
@@ -247,6 +252,7 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `credits.getSubscription` fällt bei fehlender Session auf Free/Active zurück (statt Throw), damit Tier-UI stabil bleibt.
 - `credits.getRecentTransactions` gibt bei fehlender Session `[]` zurück (statt Throw), damit Aktivitätslisten beim Logout sauber leeren.
 - `credits.getUsageStats` gibt bei fehlender Session `0`-Statistiken zurück (statt Throw), damit Verbrauchsanzeigen ohne Fehler ausrendern.
+- `dashboard.getSnapshot` gibt bei fehlender Session einen vollständigen Default-Snapshot zurück (Balance 0, Free-Tier, leere Listen)
 
 ### Idempotente Canvas-Mutations
 
@@ -302,6 +308,37 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - Eingabe: `canvasId` + client-seitig ermittelte `storageIds`.
 - Server-seitig werden die angefragten IDs gegen die aktuellen Nodes des Canvas verifiziert, bevor `ctx.storage.getUrl(...)` aufgerufen wird.
 - Ziel der Änderung: weniger Query-Fanout und weniger Canvas-weite Requery-Last bei jedem Node-/Edge-Update.
+
+---
+
+## Dashboard Snapshot (`dashboard.ts`)
+
+Gebündelte Query, die alle Dashboard-relevanten Daten in einem einzigen Convex-Call lädt. Ersetzt separate Queries für Balance, Subscription, UsageStats, Transactions und Canvases.
+
+**`getSnapshot` (query, public):**
+- Nutzt `optionalAuth` — gibt bei fehlender Session Default-Werte zurück (kein Throw)
+- Lädt parallel: `creditBalances`, `subscriptions`, `creditTransactions` (usage-type), `creditTransactions` (recent, max 80), `canvases`
+- Berechnet `monthlyUsage` und `totalGenerations` aus usage-Transactions des aktuellen Monats
+- Nutzt `prioritizeRecentCreditTransactions` aus `lib/credits-activity.ts` für sortierte Transaktionsliste
+- Gibt strukturiertes Snapshot-Objekt zurück: `{ balance, subscription, usageStats, recentTransactions, canvases, generatedAt }`
+
+---
+
+## Canvas Graph Query (`canvasGraph.ts`)
+
+Performance-optimierte Query, die Nodes und Edges für einen Canvas in einem einzigen Call lädt. Wird vom Frontend über den Canvas Graph Query Cache verwendet.
+
+**`loadCanvasGraph(ctx, { canvasId, userId })` (internal):**
+- Prüft Canvas-Existenz und Ownership
+- Lädt Nodes und Edges parallel via `Promise.all`
+- Performance-Logging bei Queries > 250ms
+
+**`get` (query, public):**
+- Nutzt `requireAuth`
+- Delegiert an `loadCanvasGraph`
+- Loggt bei langsamer Ausführung (`PERFORMANCE_LOG_THRESHOLD_MS = 250`)
+
+**Frontend-Integration:** Der Canvas nutzt diese Query über `canvas-graph-query-cache.ts` (Optimistic Store Helper).
 
 ---
 
