@@ -17,6 +17,7 @@ import type * as auth from "../auth.js";
 import type * as batch_validation_utils from "../batch_validation_utils.js";
 import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
+import type * as dashboard from "../dashboard.js";
 import type * as edges from "../edges.js";
 import type * as export_ from "../export.js";
 import type * as freepik from "../freepik.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   batch_validation_utils: typeof batch_validation_utils;
   canvases: typeof canvases;
   credits: typeof credits;
+  dashboard: typeof dashboard;
   edges: typeof edges;
   export: typeof export_;
   freepik: typeof freepik;

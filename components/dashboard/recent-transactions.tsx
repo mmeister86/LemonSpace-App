@@ -1,12 +1,12 @@
 "use client";
 
-import { useAuthQuery } from "@/hooks/use-auth-query";
-import { useFormatter } from "next-intl";
+import { useFormatter, useLocale } from "next-intl";
 import { Activity, Coins } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/convex/_generated/api";
+import type { DashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
+import { formatCredits } from "@/lib/credits-activity";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -45,12 +45,14 @@ function truncatedDescription(text: string, maxLen = 40) {
 // Component
 // ---------------------------------------------------------------------------
 
-export function RecentTransactions() {
+type RecentTransactionsProps = {
+  recentTransactions?: DashboardSnapshot["recentTransactions"];
+};
+
+export function RecentTransactions({ recentTransactions }: RecentTransactionsProps) {
   const format = useFormatter();
+  const locale = useLocale();
   const [now, setNow] = useState<number | null>(null);
-  const transactions = useAuthQuery(api.credits.getRecentTransactions, {
-    limit: 10,
-  });
 
   useEffect(() => {
     const updateNow = () => {
@@ -67,8 +69,7 @@ export function RecentTransactions() {
     };
   }, []);
 
-  const formatEurFromCents = (cents: number) =>
-    format.number(cents / 100, { style: "currency", currency: "EUR" });
+  const transactions = recentTransactions ?? [];
 
   const formatRelativeTime = (timestamp: number) => {
     const referenceNow = now ?? timestamp;
@@ -85,7 +86,7 @@ export function RecentTransactions() {
   };
 
   // ── Loading State ──────────────────────────────────────────────────────
-  if (transactions === undefined) {
+  if (recentTransactions === undefined) {
     return (
       <div className="rounded-xl border bg-card p-6 shadow-sm shadow-foreground/3">
           <div className="mb-4 flex items-center gap-2 text-sm font-medium">
@@ -173,7 +174,7 @@ export function RecentTransactions() {
                   )}
                 >
                   {isCredit ? "+" : "−"}
-                  {formatEurFromCents(Math.abs(t.amount))}
+                  {formatCredits(Math.abs(t.amount), locale)}
                 </span>
               </div>
             </div>

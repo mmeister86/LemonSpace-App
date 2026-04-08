@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useAuthQuery } from "@/hooks/use-auth-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,8 +9,9 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { api } from "@/convex/_generated/api";
-import { normalizeTier, TIER_MONTHLY_CREDITS } from "@/lib/polar-products";
+import type { DashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
+import { normalizeTier } from "@/lib/polar-products";
+import { formatCredits } from "@/lib/credits-activity";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
@@ -28,16 +28,16 @@ const TIER_BADGE_STYLES: Record<string, string> = {
 
 const LOW_CREDITS_THRESHOLD = 20;
 
-export function CreditOverview() {
+type CreditOverviewProps = {
+  balance?: DashboardSnapshot["balance"];
+  subscription?: DashboardSnapshot["subscription"];
+  usageStats?: DashboardSnapshot["usageStats"];
+};
+
+export function CreditOverview({ balance, subscription, usageStats }: CreditOverviewProps) {
   const t = useTranslations('toasts');
   const router = useRouter();
-  const format = useFormatter();
-
-  const formatEurFromCents = (cents: number) =>
-    format.number(cents / 100, { style: "currency", currency: "EUR" });
-  const balance = useAuthQuery(api.credits.getBalance);
-  const subscription = useAuthQuery(api.credits.getSubscription);
-  const usageStats = useAuthQuery(api.credits.getUsageStats);
+  const locale = useLocale();
 
   useEffect(() => {
     if (balance === undefined) return;
@@ -79,7 +79,7 @@ export function CreditOverview() {
 
   // ── Computed Values ────────────────────────────────────────────────────
   const tier = normalizeTier(subscription.tier);
-  const monthlyCredits = TIER_MONTHLY_CREDITS[tier];
+  const monthlyCredits = usageStats.monthlyCredits;
   const usagePercent = monthlyCredits > 0
     ? Math.min(100, Math.round((usageStats.monthlyUsage / monthlyCredits) * 100))
     : 0;
@@ -98,9 +98,9 @@ export function CreditOverview() {
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Verfügbare Credits</p>
           <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-semibold tabular-nums tracking-tight">
-              {formatEurFromCents(balance.available)}
-            </span>
+              <span className="text-3xl font-semibold tabular-nums tracking-tight">
+              {formatCredits(balance.available, locale)}
+              </span>
             <Badge
               variant="secondary"
               className={cn(
@@ -113,7 +113,7 @@ export function CreditOverview() {
           </div>
           {balance.reserved > 0 && (
             <p className="text-xs text-muted-foreground">
-              ({formatEurFromCents(balance.reserved)} reserviert)
+              ({formatCredits(balance.reserved, locale)} reserviert)
             </p>
           )}
         </div>
@@ -132,8 +132,8 @@ export function CreditOverview() {
           />
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              {formatEurFromCents(usageStats.monthlyUsage)} von{" "}
-              {formatEurFromCents(monthlyCredits)} verwendet
+              {formatCredits(usageStats.monthlyUsage, locale)} von{" "}
+              {formatCredits(monthlyCredits, locale)} verwendet
             </span>
             <span className="tabular-nums">
               {usageStats.totalGenerations} Generierungen
