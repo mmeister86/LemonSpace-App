@@ -33,10 +33,11 @@ import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import { CreditOverview } from "@/components/dashboard/credit-overview";
+import { CreditsActivityChart } from "@/components/dashboard/credits-activity-chart";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import CanvasCard from "@/components/dashboard/canvas-card";
+import { useDashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
 import { toast } from "@/lib/toast";
-import { useAuthQuery } from "@/hooks/use-auth-query";
 
 function getInitials(nameOrEmail: string) {
   const normalized = nameOrEmail.trim();
@@ -56,10 +57,7 @@ export function DashboardPageClient() {
   const welcomeToastSentRef = useRef(false);
   const { theme = "system", setTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
-  const canvases = useAuthQuery(
-    api.canvases.list,
-    session?.user && !isSessionPending ? {} : "skip",
-  );
+  const { snapshot: dashboardSnapshot } = useDashboardSnapshot(session?.user?.id);
   const createCanvas = useMutation(api.canvases.create);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [hasClientMounted, setHasClientMounted] = useState(false);
@@ -70,6 +68,7 @@ export function DashboardPageClient() {
 
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
+  const canvases = dashboardSnapshot?.canvases;
 
   useEffect(() => {
     if (!session?.user || welcomeToastSentRef.current) return;
@@ -190,7 +189,11 @@ export function DashboardPageClient() {
             <Coins className="size-3.5 text-muted-foreground" />
             Credit-Übersicht
           </div>
-          <CreditOverview />
+          <CreditOverview
+            balance={dashboardSnapshot?.balance}
+            subscription={dashboardSnapshot?.subscription}
+            usageStats={dashboardSnapshot?.usageStats}
+          />
         </section>
 
         <section className="mb-12">
@@ -238,8 +241,12 @@ export function DashboardPageClient() {
           )}
         </section>
 
-        <section className="mb-12">
-          <RecentTransactions />
+        <section className="mb-12 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] [&>*]:min-w-0">
+          <CreditsActivityChart
+            balance={dashboardSnapshot?.balance}
+            recentTransactions={dashboardSnapshot?.recentTransactions}
+          />
+          <RecentTransactions recentTransactions={dashboardSnapshot?.recentTransactions} />
         </section>
       </main>
     </div>

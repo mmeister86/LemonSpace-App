@@ -3,6 +3,7 @@ import { v, ConvexError } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
 import { internal } from "./_generated/api";
 import { MONTHLY_TIER_CREDITS, normalizeBillingTier } from "../lib/tier-credits";
+import { prioritizeRecentCreditTransactions } from "../lib/credits-activity";
 
 // ============================================================================
 // Tier-Konfiguration
@@ -239,12 +240,15 @@ export const getRecentTransactions = query({
       return [];
     }
     const limit = args.limit ?? 10;
+    const readLimit = Math.min(Math.max(limit * 4, 20), 100);
 
-    return await ctx.db
+    const transactions = await ctx.db
       .query("creditTransactions")
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .order("desc")
-      .take(limit);
+      .take(readLimit);
+
+    return prioritizeRecentCreditTransactions(transactions, limit);
   },
 });
 
