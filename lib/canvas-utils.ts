@@ -12,6 +12,7 @@ import {
   DEFAULT_DETAIL_ADJUST_DATA,
   DEFAULT_LIGHT_ADJUST_DATA,
 } from "@/lib/image-pipeline/adjustment-types";
+import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
 
 /**
  * Convex Node → React Flow Node
@@ -117,6 +118,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   "color-adjust": [6, 182, 212],
   "light-adjust": [245, 158, 11],
   "detail-adjust": [99, 102, 241],
+  crop: [139, 92, 246],
   render: [14, 165, 233],
 };
 
@@ -223,6 +225,7 @@ export const NODE_HANDLE_MAP: Record<
   "color-adjust": { source: undefined, target: undefined },
   "light-adjust": { source: undefined, target: undefined },
   "detail-adjust": { source: undefined, target: undefined },
+  crop: { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
 };
 
@@ -267,6 +270,7 @@ export const NODE_DEFAULTS: Record<
   "color-adjust": { width: 320, height: 800, data: DEFAULT_COLOR_ADJUST_DATA },
   "light-adjust": { width: 320, height: 920, data: DEFAULT_LIGHT_ADJUST_DATA },
   "detail-adjust": { width: 320, height: 880, data: DEFAULT_DETAIL_ADJUST_DATA },
+  crop: { width: 340, height: 620, data: DEFAULT_CROP_NODE_DATA },
   render: {
     width: 300,
     height: 420,

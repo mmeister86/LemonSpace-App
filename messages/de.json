@@ -106,6 +106,34 @@
           "denoiseColor": "Entrauschen Farbe",
           "grain": "Körnung"
         }
+      },
+      "crop": {
+        "title": "Crop / Resize",
+        "previewHint": "Verbinde eine Bild-, Asset-, KI-Bild- oder Video-Quelle fuer die Live-Vorschau.",
+        "previewRendering": "Rendering...",
+        "fields": {
+          "x": "X",
+          "y": "Y",
+          "width": "Breite",
+          "height": "Hoehe",
+          "outputWidth": "Ausgabe-Breite",
+          "outputHeight": "Ausgabe-Hoehe"
+        },
+        "resizeMode": "Ausgabe",
+        "resizeModes": {
+          "source": "Quelle",
+          "custom": "Benutzerdefiniert"
+        },
+        "fitMode": "Einpassung",
+        "fitModes": {
+          "cover": "Cover",
+          "contain": "Contain",
+          "fill": "Fill"
+        },
+        "keepAspect": "Seitenverhaeltnis beibehalten",
+        "sourceResolution": "Quell-Frame",
+        "outputResolutionLabel": "Ausgabeaufloesung",
+        "cropSummary": "Crop-Bereich: x {x}, y {y}, b {width}, h {height}"
       }
     },
     "prompts": {

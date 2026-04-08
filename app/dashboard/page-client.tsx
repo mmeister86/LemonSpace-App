@@ -2,14 +2,16 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
 import {
   ChevronDown,
   Coins,
+  ImageIcon,
   LayoutTemplate,
+  Loader2,
   Monitor,
   Moon,
   Search,
@@ -36,6 +38,11 @@ import { CreditOverview } from "@/components/dashboard/credit-overview";
 import { CreditsActivityChart } from "@/components/dashboard/credits-activity-chart";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import CanvasCard from "@/components/dashboard/canvas-card";
+import { MediaLibraryDialog } from "@/components/media/media-library-dialog";
+import {
+  collectMediaStorageIdsForResolution,
+  resolveMediaPreviewUrl,
+} from "@/components/media/media-preview-utils";
 import { useDashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
 import { toast } from "@/lib/toast";
 
@@ -51,6 +58,14 @@ function getInitials(nameOrEmail: string) {
   return normalized.slice(0, 2).toUpperCase();
 }
 
+function formatDimensions(width: number | undefined, height: number | undefined): string {
+  if (typeof width === "number" && typeof height === "number") {
+    return `${width} x ${height}px`;
+  }
+
+  return "Größe unbekannt";
+}
+
 export function DashboardPageClient() {
   const t = useTranslations("toasts");
   const router = useRouter();
@@ -59,7 +74,12 @@ export function DashboardPageClient() {
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { snapshot: dashboardSnapshot } = useDashboardSnapshot(session?.user?.id);
   const createCanvas = useMutation(api.canvases.create);
+  const resolveMediaPreviewUrls = useMutation(api.storage.batchGetUrlsForUserMedia);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [isMediaLibraryDialogOpen, setIsMediaLibraryDialogOpen] = useState(false);
+  const [mediaPreviewUrlMap, setMediaPreviewUrlMap] = useState<Record<string, string | undefined>>({});
+  const [isResolvingMediaPreview, setIsResolvingMediaPreview] = useState(false);
+  const [mediaPreviewError, setMediaPreviewError] = useState<string | null>(null);
   const [hasClientMounted, setHasClientMounted] = useState(false);
 
   useEffect(() => {
@@ -69,6 +89,11 @@ export function DashboardPageClient() {
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
   const canvases = dashboardSnapshot?.canvases;
+  const mediaPreview = dashboardSnapshot?.mediaPreview;
+  const mediaPreviewStorageIds = useMemo(() => {
+    const previewItems = mediaPreview ?? [];
+    return collectMediaStorageIdsForResolution(previewItems);
+  }, [mediaPreview]);
 
   useEffect(() => {
     if (!session?.user || welcomeToastSentRef.current) return;
@@ -78,6 +103,55 @@ export function DashboardPageClient() {
     sessionStorage.setItem(key, "1");
     toast.success(t("auth.welcomeOnDashboard"));
   }, [t, session?.user]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function run() {
+      if (dashboardSnapshot === undefined) {
+        setMediaPreviewUrlMap({});
+        setMediaPreviewError(null);
+        setIsResolvingMediaPreview(false);
+        return;
+      }
+
+      if (mediaPreviewStorageIds.length === 0) {
+        setMediaPreviewUrlMap({});
+        setMediaPreviewError(null);
+        setIsResolvingMediaPreview(false);
+        return;
+      }
+
+      setIsResolvingMediaPreview(true);
+      setMediaPreviewError(null);
+
+      try {
+        const resolved = await resolveMediaPreviewUrls({ storageIds: mediaPreviewStorageIds });
+        if (isCancelled) {
+          return;
+        }
+        setMediaPreviewUrlMap(resolved);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+        setMediaPreviewUrlMap({});
+        setMediaPreviewError(
+          error instanceof Error ? error.message : "Vorschau konnte nicht geladen werden.",
+        );
+      } finally {
+        if (!isCancelled) {
+          setIsResolvingMediaPreview(false);
+        }
+      }
+    }
+
+    void run();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [dashboardSnapshot, mediaPreviewStorageIds, resolveMediaPreviewUrls]);
 
   const handleSignOut = async () => {
     toast.info(t("auth.signedOut"));
@@ -248,7 +322,86 @@ export function DashboardPageClient() {
           />
           <RecentTransactions recentTransactions={dashboardSnapshot?.recentTransactions} />
         </section>
+
+        <section className="mb-12">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ImageIcon className="size-3.5 text-muted-foreground" />
+              Mediathek
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="cursor-pointer text-muted-foreground"
+              type="button"
+              onClick={() => setIsMediaLibraryDialogOpen(true)}
+              disabled={!hasClientMounted || isSessionPending || !session?.user}
+            >
+              Ganze Mediathek öffnen
+            </Button>
+          </div>
+
+          {dashboardSnapshot === undefined ? (
+            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
+              Mediathek wird geladen...
+            </div>
+          ) : mediaPreviewError ? (
+            <div className="rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
+              Mediathek-Vorschau konnte nicht geladen werden. {mediaPreviewError}
+            </div>
+          ) : !mediaPreview || mediaPreview.length === 0 ? (
+            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
+              Noch keine Medien vorhanden. Sobald du Bilder hochlädst oder generierst, werden
+              sie hier angezeigt.
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-4">
+              {(mediaPreview ?? []).map((item) => {
+                const previewUrl = resolveMediaPreviewUrl(item, mediaPreviewUrlMap);
+
+                return (
+                  <article key={item.storageId} className="overflow-hidden rounded-xl border bg-card">
+                    <div className="relative aspect-square bg-muted/50">
+                      {previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={previewUrl}
+                          alt={item.filename ?? "Mediathek-Bild"}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : isResolvingMediaPreview ? (
+                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <Loader2 className="size-4 animate-spin" />
+                        </div>
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <ImageIcon className="size-5" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1 p-2">
+                      <p className="truncate text-xs font-medium" title={item.filename}>
+                        {item.filename ?? "Unbenanntes Bild"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatDimensions(item.width, item.height)}
+                      </p>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </main>
+
+      <MediaLibraryDialog
+        open={isMediaLibraryDialogOpen}
+        onOpenChange={setIsMediaLibraryDialogOpen}
+        title="Mediathek"
+        description="Alle deine Bilder aus LemonSpace in einer zentralen Vorschau."
+      />
     </div>
   );
 }

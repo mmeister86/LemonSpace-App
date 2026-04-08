@@ -43,6 +43,7 @@ const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   "color-adjust": { minWidth: 300, minHeight: 760 },
   "light-adjust": { minWidth: 300, minHeight: 860 },
   "detail-adjust": { minWidth: 300, minHeight: 820 },
+  crop: { minWidth: 320, minHeight: 520 },
   render: { minWidth: 260, minHeight: 300, keepAspectRatio: true },
   text: { minWidth: 220, minHeight: 90 },
   note: { minWidth: 200, minHeight: 90 },

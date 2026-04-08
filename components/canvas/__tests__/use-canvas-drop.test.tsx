@@ -10,6 +10,7 @@ import { CANVAS_NODE_DND_MIME } from "@/lib/canvas-connection-policy";
 import { NODE_DEFAULTS } from "@/lib/canvas-utils";
 import { toast } from "@/lib/toast";
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
+import { createCompressedImagePreview } from "@/components/canvas/canvas-media-utils";
 
 vi.mock("@/lib/toast", () => ({
   toast: {
@@ -20,6 +21,11 @@ vi.mock("@/lib/toast", () => ({
 
 vi.mock("@/components/canvas/canvas-media-utils", () => ({
   getImageDimensions: vi.fn(async () => ({ width: 1600, height: 900 })),
+  createCompressedImagePreview: vi.fn(async () => ({
+    blob: new Blob(["preview"], { type: "image/webp" }),
+    width: 640,
+    height: 360,
+  })),
 }));
 
 const latestHandlersRef: {
@@ -33,6 +39,7 @@ const asCanvasId = (id: string): Id<"canvases"> => id as Id<"canvases">;
 type HookHarnessProps = {
   isSyncOnline?: boolean;
   generateUploadUrl?: ReturnType<typeof vi.fn>;
+  registerUploadedImageMedia?: ReturnType<typeof vi.fn>;
   runCreateNodeOnlineOnly?: ReturnType<typeof vi.fn>;
   runCreateNodeWithEdgeSplitOnlineOnly?: ReturnType<typeof vi.fn>;
   notifyOfflineUnsupported?: ReturnType<typeof vi.fn>;
@@ -44,6 +51,7 @@ type HookHarnessProps = {
 function HookHarness({
   isSyncOnline = true,
   generateUploadUrl = vi.fn(async () => "https://upload.test"),
+  registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const })),
   runCreateNodeOnlineOnly = vi.fn(async () => "node-1"),
   runCreateNodeWithEdgeSplitOnlineOnly = vi.fn(async () => "node-1"),
   notifyOfflineUnsupported = vi.fn(),
@@ -58,6 +66,7 @@ function HookHarness({
     edges,
     screenToFlowPosition,
     generateUploadUrl,
+    registerUploadedImageMedia,
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
@@ -78,10 +87,19 @@ describe("useCanvasDrop", () => {
 
   beforeEach(() => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ storageId: "storage-1" }),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ storageId: "storage-1" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ storageId: "preview-storage-1" }),
+        }),
+    );
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn(() => "req-1"),
     });
@@ -151,6 +169,7 @@ describe("useCanvasDrop", () => {
 
   it("creates an image node from a dropped image file", async () => {
     const generateUploadUrl = vi.fn(async () => "https://upload.test");
+    const registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const }));
     const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
     const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
     const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
@@ -163,6 +182,7 @@ describe("useCanvasDrop", () => {
       root?.render(
         <HookHarness
           generateUploadUrl={generateUploadUrl}
+          registerUploadedImageMedia={registerUploadedImageMedia}
           runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
           syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
         />,
@@ -181,11 +201,16 @@ describe("useCanvasDrop", () => {
       } as unknown as React.DragEvent);
     });
 
-    expect(generateUploadUrl).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledWith("https://upload.test", {
+    expect(generateUploadUrl).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(1, "https://upload.test", {
       method: "POST",
       headers: { "Content-Type": "image/png" },
       body: file,
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "https://upload.test", {
+      method: "POST",
+      headers: { "Content-Type": "image/webp" },
+      body: expect.any(Blob),
     });
     expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith({
       canvasId: "canvas-1",
@@ -196,10 +221,13 @@ describe("useCanvasDrop", () => {
       height: NODE_DEFAULTS.image.height,
       data: {
         storageId: "storage-1",
+        previewStorageId: "preview-storage-1",
         filename: "photo.png",
         mimeType: "image/png",
         width: 1600,
         height: 900,
+        previewWidth: 640,
+        previewHeight: 360,
         canvasId: "canvas-1",
       },
       clientRequestId: "req-1",
@@ -208,6 +236,15 @@ describe("useCanvasDrop", () => {
       "req-1",
       "node-image",
     );
+    expect(registerUploadedImageMedia).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      nodeId: "node-image",
+      storageId: "storage-1",
+      filename: "photo.png",
+      mimeType: "image/png",
+      width: 1600,
+      height: 900,
+    });
   });
 
   it("creates a node from a JSON payload drop", async () => {
@@ -265,6 +302,58 @@ describe("useCanvasDrop", () => {
       clientRequestId: "req-1",
     });
     expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-video");
+  });
+
+  it("continues with original upload when preview generation fails", async () => {
+    vi.mocked(createCompressedImagePreview).mockRejectedValueOnce(
+      new Error("preview failed"),
+    );
+
+    const generateUploadUrl = vi.fn(async () => "https://upload.test");
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          generateUploadUrl={generateUploadUrl}
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 20,
+        clientY: 10,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(generateUploadUrl).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          storageId: "storage-1",
+        }),
+      }),
+    );
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.not.objectContaining({
+          previewStorageId: expect.anything(),
+        }),
+      }),
+    );
   });
 
   it("splits an intersected persisted edge for sidebar node drops", async () => {

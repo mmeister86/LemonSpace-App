@@ -99,6 +99,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   });
 
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
+  const registerUploadedImageMedia = useMutation(api.storage.registerUploadedImageMedia);
   const convexNodeIdsSnapshotForEdgeCarryRef = useRef(new Set<string>());
   const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
     string | null
@@ -516,6 +517,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     edges,
     screenToFlowPosition,
     generateUploadUrl,
+    registerUploadedImageMedia,
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,

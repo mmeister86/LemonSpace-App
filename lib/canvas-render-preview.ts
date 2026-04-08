@@ -119,9 +119,10 @@ function sanitizeDimension(value: unknown): number | undefined {
   return rounded;
 }
 
-const SOURCE_NODE_TYPES = new Set(["image", "ai-image", "asset"]);
+const SOURCE_NODE_TYPES = new Set(["image", "ai-image", "asset", "video", "ai-video"]);
 
 export const RENDER_PREVIEW_PIPELINE_TYPES = new Set([
+  "crop",
   "curves",
   "color-adjust",
   "light-adjust",
@@ -189,6 +190,26 @@ export function resolveNodeImageUrl(data: unknown): string | null {
   }
 
   return null;
+}
+
+function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+
+  if (node.type === "video") {
+    const mp4Url = typeof data.mp4Url === "string" ? data.mp4Url : null;
+    if (mp4Url && mp4Url.length > 0) {
+      return `/api/pexels-video?u=${encodeURIComponent(mp4Url)}`;
+    }
+  }
+
+  if (node.type === "ai-video") {
+    const directUrl = typeof data.url === "string" ? data.url : null;
+    if (directUrl && directUrl.length > 0) {
+      return directUrl;
+    }
+  }
+
+  return resolveNodeImageUrl(node.data);
 }
 
 export function buildGraphSnapshot(
@@ -367,7 +388,7 @@ export function resolveRenderPreviewInputFromGraph(args: {
   const sourceUrl = getSourceImageFromGraph(args.graph, {
     nodeId: args.nodeId,
     isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
-    getSourceImageFromNode: (node) => resolveNodeImageUrl(node.data),
+    getSourceImageFromNode: (node) => resolveSourceNodeUrl(node),
   });
 
   const steps = collectPipelineFromGraph(args.graph, {

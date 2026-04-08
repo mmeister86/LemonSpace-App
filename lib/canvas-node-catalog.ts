@@ -134,8 +134,6 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     label: "Crop / Resize",
     category: "transform",
     phase: 2,
-    implemented: false,
-    disabledHint: "Folgt in Phase 2",
   }),
   entry({
     type: "bg-remove",

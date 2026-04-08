@@ -6,6 +6,10 @@ import {
   type RenderFullOptions,
   type RenderFullResult,
 } from "@/lib/image-pipeline/render-types";
+import {
+  applyGeometryStepsToSource,
+  partitionPipelineSteps,
+} from "@/lib/image-pipeline/geometry-transform";
 import { loadSourceBitmap } from "@/lib/image-pipeline/source-loader";
 
 type SupportedCanvas = HTMLCanvasElement | OffscreenCanvas;
@@ -96,21 +100,30 @@ export async function renderFull(options: RenderFullOptions): Promise<RenderFull
   const { signal } = options;
 
   const bitmap = await loadSourceBitmap(options.sourceUrl, { signal });
-  const resolvedSize = resolveRenderSize({
+  const { geometrySteps, tonalSteps } = partitionPipelineSteps(options.steps);
+  const geometryResult = applyGeometryStepsToSource({
+    source: bitmap,
     sourceWidth: bitmap.width,
     sourceHeight: bitmap.height,
+    steps: geometrySteps,
+    signal,
+  });
+
+  const resolvedSize = resolveRenderSize({
+    sourceWidth: geometryResult.width,
+    sourceHeight: geometryResult.height,
     render: options.render,
     limits: options.limits,
   });
 
   const { canvas, context } = createCanvasContext(resolvedSize.width, resolvedSize.height);
 
-  context.drawImage(bitmap, 0, 0, resolvedSize.width, resolvedSize.height);
+  context.drawImage(geometryResult.canvas, 0, 0, resolvedSize.width, resolvedSize.height);
 
   const imageData = context.getImageData(0, 0, resolvedSize.width, resolvedSize.height);
   runFullPipelineWithBackendRouter({
     pixels: imageData.data,
-    steps: options.steps,
+    steps: tonalSteps,
     width: resolvedSize.width,
     height: resolvedSize.height,
     executionOptions: {

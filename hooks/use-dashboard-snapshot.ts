@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import {
   clearDashboardSnapshotCache,
+  getDashboardSnapshotCacheInvalidationSignalKey,
   readDashboardSnapshotCache,
   writeDashboardSnapshotCache,
 } from "@/lib/dashboard-snapshot-cache";
@@ -17,12 +18,12 @@ export function useDashboardSnapshot(userId?: string | null): {
   snapshot: DashboardSnapshot | undefined;
   source: "live" | "cache" | "none";
 } {
+  const [cacheEpoch, setCacheEpoch] = useState(0);
   const liveSnapshot = useAuthQuery(api.dashboard.getSnapshot, userId ? {} : "skip");
-  const cachedSnapshot = useMemo(() => {
-    if (!userId) return null;
-    const cached = readDashboardSnapshotCache<DashboardSnapshot>(userId);
-    return cached?.snapshot ?? null;
-  }, [userId]);
+  const cachedSnapshot =
+    userId && cacheEpoch >= 0
+      ? readDashboardSnapshotCache<DashboardSnapshot>(userId)?.snapshot ?? null
+      : null;
 
   useEffect(() => {
     if (!userId || !liveSnapshot) return;
@@ -44,6 +45,25 @@ export function useDashboardSnapshot(userId?: string | null): {
     if (!userId) return;
     if (typeof window === "undefined") return;
     window.sessionStorage.setItem("ls-last-dashboard-user", userId);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (typeof window === "undefined") return;
+
+    const signalKey = getDashboardSnapshotCacheInvalidationSignalKey();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== signalKey) {
+        return;
+      }
+      clearDashboardSnapshotCache(userId);
+      setCacheEpoch((value) => value + 1);
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
   }, [userId]);
 
   return useMemo(() => {

@@ -1,6 +1,8 @@
 const STORAGE_NAMESPACE = "lemonspace.dashboard";
 const CACHE_VERSION = 1;
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
+const LAST_DASHBOARD_USER_KEY = "ls-last-dashboard-user";
+const INVALIDATION_SIGNAL_KEY = `${STORAGE_NAMESPACE}:snapshot:invalidate:v${CACHE_VERSION}`;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -14,6 +16,15 @@ function getLocalStorage(): Storage | null {
   if (typeof window === "undefined") return null;
   try {
     return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
   } catch {
     return null;
   }
@@ -119,4 +130,23 @@ export function clearDashboardSnapshotCache(userId: string): void {
   const storage = getLocalStorage();
   if (!storage) return;
   safeRemove(storage, cacheKey(userId));
+}
+
+export function invalidateDashboardSnapshotForLastSignedInUser(): void {
+  const sessionStorage = getSessionStorage();
+  if (!sessionStorage) return;
+
+  const userId = safeGet(sessionStorage, LAST_DASHBOARD_USER_KEY);
+  if (!userId) return;
+  clearDashboardSnapshotCache(userId);
+}
+
+export function emitDashboardSnapshotCacheInvalidationSignal(): void {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  safeSet(storage, INVALIDATION_SIGNAL_KEY, String(Date.now()));
+}
+
+export function getDashboardSnapshotCacheInvalidationSignalKey(): string {
+  return INVALIDATION_SIGNAL_KEY;
 }

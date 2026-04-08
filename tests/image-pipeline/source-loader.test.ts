@@ -298,4 +298,61 @@ describe("loadSourceBitmap", () => {
     await expect(loadSourceBitmap(sourceUrl)).resolves.toBe(secondBitmap);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("extracts the first decodable frame for video sources", async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn().mockReturnValue("video/mp4"),
+      },
+      blob: vi.fn().mockResolvedValue(blob),
+    };
+
+    const fakeVideo: Partial<HTMLVideoElement> & {
+      onloadeddata: ((event: Event) => void) | null;
+      onerror: ((event: Event) => void) | null;
+      load: () => void;
+    } = {
+      muted: false,
+      playsInline: false,
+      preload: "none",
+      onloadeddata: null,
+      onerror: null,
+      load() {
+        this.onloadeddata?.(new Event("loadeddata"));
+      },
+      pause: vi.fn(),
+      removeAttribute: vi.fn(),
+    };
+
+    const createObjectUrl = vi.fn().mockReturnValue("blob:video-source");
+    const revokeObjectUrl = vi.fn();
+    const nativeCreateElement = document.createElement.bind(document);
+
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL: createObjectUrl,
+        revokeObjectURL: revokeObjectUrl,
+      }),
+    );
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      if (tagName.toLowerCase() === "video") {
+        return fakeVideo as HTMLVideoElement;
+      }
+
+      return nativeCreateElement(tagName);
+    });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const { loadSourceBitmap } = await importSubject();
+    await expect(loadSourceBitmap("https://cdn.example.com/video.mp4")).resolves.toBe(bitmap);
+
+    expect(response.headers.get).toHaveBeenCalledWith("content-type");
+    expect(createObjectUrl).toHaveBeenCalledWith(blob);
+    expect(createImageBitmap).toHaveBeenCalledWith(fakeVideo);
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:video-source");
+  });
 });

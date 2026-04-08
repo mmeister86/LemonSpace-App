@@ -1,4 +1,6 @@
 import { query } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { v } from "convex/values";
 
 import { optionalAuth } from "./helpers";
 import { prioritizeRecentCreditTransactions } from "../lib/credits-activity";
@@ -6,6 +8,102 @@ import { MONTHLY_TIER_CREDITS, normalizeBillingTier } from "../lib/tier-credits"
 
 const DEFAULT_TIER = "free" as const;
 const DEFAULT_SUBSCRIPTION_STATUS = "active" as const;
+const DASHBOARD_MEDIA_PREVIEW_LIMIT = 8;
+const MEDIA_LIBRARY_DEFAULT_LIMIT = 200;
+const MEDIA_LIBRARY_MIN_LIMIT = 1;
+const MEDIA_LIBRARY_MAX_LIMIT = 500;
+
+type MediaPreviewItem = {
+  storageId: Id<"_storage">;
+  previewStorageId?: Id<"_storage">;
+  filename?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  previewWidth?: number;
+  previewHeight?: number;
+  sourceCanvasId: Id<"canvases">;
+  sourceNodeId: Id<"nodes">;
+  createdAt: number;
+};
+
+function readImageMediaPreview(node: Doc<"nodes">): MediaPreviewItem | null {
+  if (node.type !== "image") {
+    return null;
+  }
+
+  const data = (node.data as Record<string, unknown> | undefined) ?? {};
+  const storageId = data.storageId;
+  if (typeof storageId !== "string" || storageId.length === 0) {
+    return null;
+  }
+  const previewStorageId =
+    typeof data.previewStorageId === "string" && data.previewStorageId.length > 0
+      ? (data.previewStorageId as Id<"_storage">)
+      : undefined;
+
+  const filename =
+    typeof data.filename === "string"
+      ? data.filename
+      : typeof data.originalFilename === "string"
+        ? data.originalFilename
+        : undefined;
+  const mimeType = typeof data.mimeType === "string" ? data.mimeType : undefined;
+  const width = typeof data.width === "number" && Number.isFinite(data.width) ? data.width : undefined;
+  const height =
+    typeof data.height === "number" && Number.isFinite(data.height) ? data.height : undefined;
+  const previewWidth =
+    typeof data.previewWidth === "number" && Number.isFinite(data.previewWidth)
+      ? data.previewWidth
+      : undefined;
+  const previewHeight =
+    typeof data.previewHeight === "number" && Number.isFinite(data.previewHeight)
+      ? data.previewHeight
+      : undefined;
+
+  return {
+    storageId: storageId as Id<"_storage">,
+    previewStorageId,
+    filename,
+    mimeType,
+    width,
+    height,
+    previewWidth,
+    previewHeight,
+    sourceCanvasId: node.canvasId,
+    sourceNodeId: node._id,
+    createdAt: node._creationTime,
+  };
+}
+
+function buildMediaPreview(nodes: Array<Doc<"nodes">>, limit: number): MediaPreviewItem[] {
+  const candidates = nodes
+    .map(readImageMediaPreview)
+    .filter((item): item is MediaPreviewItem => item !== null)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const deduped = new Map<Id<"_storage">, MediaPreviewItem>();
+  for (const item of candidates) {
+    if (deduped.has(item.storageId)) {
+      continue;
+    }
+
+    deduped.set(item.storageId, item);
+    if (deduped.size >= limit) {
+      break;
+    }
+  }
+
+  return [...deduped.values()];
+}
+
+function normalizeMediaLibraryLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return MEDIA_LIBRARY_DEFAULT_LIMIT;
+  }
+
+  return Math.min(MEDIA_LIBRARY_MAX_LIMIT, Math.max(MEDIA_LIBRARY_MIN_LIMIT, Math.floor(limit)));
+}
 
 export const getSnapshot = query({
   args: {},
@@ -27,6 +125,7 @@ export const getSnapshot = query({
         },
         recentTransactions: [],
         canvases: [],
+        mediaPreview: [],
         generatedAt: Date.now(),
       };
     }
@@ -58,6 +157,17 @@ export const getSnapshot = query({
           .order("desc")
           .collect(),
       ]);
+
+    const imageNodesByCanvas = await Promise.all(
+      canvases.map((canvas) =>
+        ctx.db
+          .query("nodes")
+          .withIndex("by_canvas_type", (q) => q.eq("canvasId", canvas._id).eq("type", "image"))
+          .order("desc")
+          .collect(),
+      ),
+    );
+    const mediaPreview = buildMediaPreview(imageNodesByCanvas.flat(), DASHBOARD_MEDIA_PREVIEW_LIMIT);
 
     const tier = normalizeBillingTier(subscriptionRow?.tier);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
@@ -96,7 +206,43 @@ export const getSnapshot = query({
       },
       recentTransactions: prioritizeRecentCreditTransactions(recentTransactionsRaw, 20),
       canvases,
+      mediaPreview,
       generatedAt: Date.now(),
     };
+  },
+});
+
+export const listMediaLibrary = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { limit }) => {
+    const user = await optionalAuth(ctx);
+    if (!user) {
+      return [];
+    }
+
+    const normalizedLimit = normalizeMediaLibraryLimit(limit);
+    const canvases = await ctx.db
+      .query("canvases")
+      .withIndex("by_owner_updated", (q) => q.eq("ownerId", user.userId))
+      .order("desc")
+      .collect();
+
+    if (canvases.length === 0) {
+      return [];
+    }
+
+    const imageNodesByCanvas = await Promise.all(
+      canvases.map((canvas) =>
+        ctx.db
+          .query("nodes")
+          .withIndex("by_canvas_type", (q) => q.eq("canvasId", canvas._id).eq("type", "image"))
+          .order("desc")
+          .collect(),
+      ),
+    );
+
+    return buildMediaPreview(imageNodesByCanvas.flat(), normalizedLimit);
   },
 });

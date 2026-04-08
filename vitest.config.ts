@@ -23,9 +23,12 @@ export default defineConfig({
       "components/canvas/__tests__/use-canvas-edge-insertions.test.tsx",
       "components/canvas/__tests__/use-canvas-edge-types.test.tsx",
       "components/canvas/__tests__/use-canvas-node-interactions.test.tsx",
+      "components/canvas/__tests__/canvas-delete-handlers.test.tsx",
+      "components/canvas/__tests__/canvas-media-utils.test.ts",
       "components/canvas/__tests__/use-node-local-data.test.tsx",
       "components/canvas/__tests__/use-canvas-sync-engine.test.ts",
       "components/canvas/__tests__/use-canvas-sync-engine-hook.test.tsx",
+      "components/media/__tests__/media-preview-utils.test.ts",
     ],
   },
 });

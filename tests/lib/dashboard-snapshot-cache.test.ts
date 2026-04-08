@@ -4,15 +4,20 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearDashboardSnapshotCache,
+  emitDashboardSnapshotCacheInvalidationSignal,
+  invalidateDashboardSnapshotForLastSignedInUser,
   readDashboardSnapshotCache,
   writeDashboardSnapshotCache,
 } from "@/lib/dashboard-snapshot-cache";
 
 const USER_ID = "user-cache-test";
+const LAST_DASHBOARD_USER_KEY = "ls-last-dashboard-user";
+const INVALIDATION_SIGNAL_KEY = "lemonspace.dashboard:snapshot:invalidate:v1";
 
 describe("dashboard snapshot cache", () => {
   beforeEach(() => {
     const data = new Map<string, string>();
+    const sessionData = new Map<string, string>();
     const localStorageMock = {
       getItem: (key: string) => data.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -22,9 +27,22 @@ describe("dashboard snapshot cache", () => {
         data.delete(key);
       },
     };
+    const sessionStorageMock = {
+      getItem: (key: string) => sessionData.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        sessionData.set(key, value);
+      },
+      removeItem: (key: string) => {
+        sessionData.delete(key);
+      },
+    };
 
     Object.defineProperty(window, "localStorage", {
       value: localStorageMock,
+      configurable: true,
+    });
+    Object.defineProperty(window, "sessionStorage", {
+      value: sessionStorageMock,
       configurable: true,
     });
 
@@ -69,5 +87,27 @@ describe("dashboard snapshot cache", () => {
     clearDashboardSnapshotCache(USER_ID);
 
     expect(readDashboardSnapshotCache(USER_ID)).toBeNull();
+  });
+
+  it("invalidates cache for the last signed-in user", () => {
+    writeDashboardSnapshotCache(USER_ID, { generatedAt: 1 });
+    window.sessionStorage.setItem(LAST_DASHBOARD_USER_KEY, USER_ID);
+
+    invalidateDashboardSnapshotForLastSignedInUser();
+
+    expect(readDashboardSnapshotCache(USER_ID)).toBeNull();
+    expect(window.sessionStorage.getItem(LAST_DASHBOARD_USER_KEY)).toBe(USER_ID);
+  });
+
+  it("does not fail if no last dashboard user exists", () => {
+    expect(() => invalidateDashboardSnapshotForLastSignedInUser()).not.toThrow();
+  });
+
+  it("emits a localStorage invalidation signal", () => {
+    emitDashboardSnapshotCacheInvalidationSignal();
+
+    const signal = window.localStorage.getItem(INVALIDATION_SIGNAL_KEY);
+    expect(typeof signal).toBe("string");
+    expect(Number(signal)).toBeGreaterThan(0);
   });
 });

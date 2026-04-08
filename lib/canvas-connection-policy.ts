@@ -6,6 +6,20 @@ const ADJUSTMENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "crop",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
+
+const CROP_ALLOWED_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "ai-image",
+  "video",
+  "ai-video",
+  "crop",
   "curves",
   "color-adjust",
   "light-adjust",
@@ -16,6 +30,7 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "crop",
   "curves",
   "color-adjust",
   "light-adjust",
@@ -32,6 +47,8 @@ export type CanvasConnectionValidationReason =
   | "video-prompt-target-invalid"
   | "adjustment-source-invalid"
   | "adjustment-incoming-limit"
+  | "crop-source-invalid"
+  | "crop-incoming-limit"
   | "compare-incoming-limit"
   | "adjustment-target-forbidden"
   | "render-source-invalid";
@@ -53,6 +70,15 @@ export function validateCanvasConnectionPolicy(args: {
 
   if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
     return "render-source-invalid";
+  }
+
+  if (targetType === "crop") {
+    if (!CROP_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "crop-source-invalid";
+    }
+    if (targetIncomingCount >= 1) {
+      return "crop-incoming-limit";
+    }
   }
 
   if (isAdjustmentNodeType(targetType) && targetType !== "render") {
@@ -92,8 +118,12 @@ export function getCanvasConnectionValidationMessage(
       return "KI-Video-Ausgabe akzeptiert nur Eingaben von KI-Video.";
     case "video-prompt-target-invalid":
       return "KI-Video kann nur mit KI-Video-Ausgabe verbunden werden.";
+    case "crop-source-invalid":
+      return "Crop akzeptiert nur Bild-, Asset-, KI-Bild-, Video-, KI-Video-, Crop- oder Adjustment-Input.";
+    case "crop-incoming-limit":
+      return "Crop-Nodes erlauben genau eine eingehende Verbindung.";
     case "adjustment-source-invalid":
-      return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
+      return "Adjustment-Nodes akzeptieren nur Bild-, Asset-, KI-Bild-, Crop- oder Adjustment-Input.";
     case "adjustment-incoming-limit":
       return "Adjustment-Nodes erlauben genau eine eingehende Verbindung.";
     case "compare-incoming-limit":
@@ -101,7 +131,7 @@ export function getCanvasConnectionValidationMessage(
     case "adjustment-target-forbidden":
       return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
     case "render-source-invalid":
-      return "Render akzeptiert nur Bild-, Asset-, KI-Bild- oder Adjustment-Input.";
+      return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Crop- oder Adjustment-Input.";
     default:
       return "Verbindung ist fuer diese Node-Typen nicht erlaubt.";
   }

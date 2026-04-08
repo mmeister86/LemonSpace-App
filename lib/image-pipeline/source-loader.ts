@@ -54,6 +54,62 @@ function evictIfNeeded(excludeSourceUrl?: string): void {
   }
 }
 
+function isLikelyVideoUrl(sourceUrl: string): boolean {
+  try {
+    const url = new URL(sourceUrl, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    const pathname = url.pathname.toLowerCase();
+
+    if (pathname.includes("/api/pexels-video")) {
+      return true;
+    }
+
+    return /\.(mp4|webm|ogg|ogv|mov|m4v)$/.test(pathname);
+  } catch {
+    return /\.(mp4|webm|ogg|ogv|mov|m4v)(?:\?|$)/i.test(sourceUrl);
+  }
+}
+
+async function decodeVideoFrameBitmap(blob: Blob): Promise<ImageBitmap> {
+  if (typeof document === "undefined") {
+    return await createImageBitmap(blob);
+  }
+
+  const video = document.createElement("video");
+  video.preload = "auto";
+  video.muted = true;
+  video.playsInline = true;
+
+  const objectUrl = URL.createObjectURL(blob);
+  video.src = objectUrl;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.onloadeddata = () => resolve();
+      video.onerror = () => reject(new Error("Render source video decode failed."));
+      video.load();
+    });
+
+    return await createImageBitmap(video);
+  } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function decodeBitmapFromResponse(sourceUrl: string, response: Response): Promise<ImageBitmap> {
+  const contentType = response.headers?.get("content-type")?.toLowerCase() ?? "";
+  const blob = await response.blob();
+  const isVideo = contentType.startsWith("video/") || blob.type.startsWith("video/") || isLikelyVideoUrl(sourceUrl);
+
+  if (isVideo) {
+    return await decodeVideoFrameBitmap(blob);
+  }
+
+  return await createImageBitmap(blob);
+}
+
 export function clearSourceBitmapCache(): void {
   for (const sourceUrl of [...imageBitmapCache.keys()]) {
     deleteCacheEntry(sourceUrl);
@@ -77,8 +133,7 @@ function getOrCreateSourceBitmapPromise(sourceUrl: string): Promise<ImageBitmap>
       throw new Error(`Render source failed: ${response.status}`);
     }
 
-    const blob = await response.blob();
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await decodeBitmapFromResponse(sourceUrl, response);
 
     if (entry.released || imageBitmapCache.get(sourceUrl) !== entry) {
       closeBitmap(bitmap);

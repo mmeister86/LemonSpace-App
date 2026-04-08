@@ -9,6 +9,7 @@ import {
   validateCanvasConnectionPolicy,
 } from "../lib/canvas-connection-policy";
 import { nodeTypeValidator } from "./node_type_validator";
+import { normalizeCropNodeData } from "../lib/image-pipeline/crop-node-data";
 
 // ============================================================================
 // Interne Helpers
@@ -391,6 +392,12 @@ function normalizeNodeDataForWrite(
   nodeType: Doc<"nodes">["type"],
   data: unknown,
 ): unknown {
+  if (nodeType === "crop") {
+    return normalizeCropNodeData(data, {
+      rejectDisallowedPayloadFields: true,
+    });
+  }
+
   if (!isAdjustmentNodeType(nodeType)) {
     return data;
   }

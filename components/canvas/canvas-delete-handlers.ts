@@ -18,6 +18,50 @@ import { validateCanvasConnection } from "./canvas-connection-validation";
 
 type ToastTranslations = ReturnType<typeof useTranslations<'toasts'>>;
 
+const BRIDGE_CREATE_MAX_ATTEMPTS = 4;
+const BRIDGE_CREATE_INITIAL_BACKOFF_MS = 40;
+
+function waitFor(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function isRetryableBridgeCreateError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  if (
+    message.includes("unauthorized") ||
+    message.includes("forbidden") ||
+    message.includes("not authenticated")
+  ) {
+    return false;
+  }
+
+  if (
+    message.includes("limit") ||
+    message.includes("duplicate") ||
+    message.includes("already exists") ||
+    message.includes("conflict") ||
+    message.includes("concurrent") ||
+    message.includes("tempor") ||
+    message.includes("timeout") ||
+    message.includes("try again") ||
+    message.includes("retry") ||
+    message.includes("stale")
+  ) {
+    return true;
+  }
+
+  return true;
+}
+
 type UseCanvasDeleteHandlersParams = {
   t: ToastTranslations;
   canvasId: Id<"canvases">;
@@ -136,13 +180,37 @@ export function useCanvasDeleteHandlers({
         liveNodes,
         liveEdges,
       );
-      const connectedDeletedEdges = getConnectedEdges(deletedNodes, liveEdges);
-      const remainingNodes = liveNodes.filter(
-        (node) => !removedTargetSet.has(node.id),
-      );
-      let remainingEdges = liveEdges.filter(
-        (edge) => !connectedDeletedEdges.includes(edge) && edge.className !== "temp",
-      );
+      const bridgeEdgesCreatedInThisRun: RFEdge[] = [];
+
+      const getRemainingNodes = () =>
+        nodesRef.current.filter((node) => !removedTargetSet.has(node.id));
+
+      const getRemainingEdges = () => {
+        const fromRefs = edgesRef.current.filter((edge) => {
+          if (edge.className === "temp") {
+            return false;
+          }
+
+          if (removedTargetSet.has(edge.source) || removedTargetSet.has(edge.target)) {
+            return false;
+          }
+
+          return true;
+        });
+
+        const deduped = [...fromRefs];
+        const dedupedKeys = new Set(fromRefs.map((edge) => edgeKey(edge)));
+        for (const createdEdge of bridgeEdgesCreatedInThisRun) {
+          const key = edgeKey(createdEdge);
+          if (dedupedKeys.has(key)) {
+            continue;
+          }
+          deduped.push(createdEdge);
+          dedupedKeys.add(key);
+        }
+
+        return deduped;
+      };
 
       if (bridgeCreates.length > 0) {
         console.info("[Canvas] computed bridge edges for delete", {
@@ -168,70 +236,111 @@ export function useCanvasDeleteHandlers({
             sourceHandle: bridgeCreate.sourceHandle,
             targetHandle: bridgeCreate.targetHandle,
           });
-          if (remainingEdges.some((edge) => edgeKey(edge) === bridgeKey)) {
-            console.info("[Canvas] skipped duplicate bridge edge after delete", {
-              canvasId,
-              deletedNodeIds: idsToDelete,
-              bridgeCreate,
-            });
-            continue;
-          }
 
-          const validationError = validateCanvasConnection(
-            {
-              source: bridgeCreate.sourceNodeId,
-              target: bridgeCreate.targetNodeId,
-              sourceHandle: bridgeCreate.sourceHandle ?? null,
-              targetHandle: bridgeCreate.targetHandle ?? null,
-            },
-            remainingNodes,
-            remainingEdges,
-            undefined,
-            { includeOptimisticEdges: true },
-          );
+          let created = false;
 
-          if (validationError) {
-            console.info("[Canvas] skipped invalid bridge edge after delete", {
-              canvasId,
-              deletedNodeIds: idsToDelete,
-              bridgeCreate,
-              validationError,
-            });
-            continue;
-          }
+          for (
+            let attempt = 1;
+            attempt <= BRIDGE_CREATE_MAX_ATTEMPTS;
+            attempt += 1
+          ) {
+            const remainingNodes = getRemainingNodes();
+            const remainingEdges = getRemainingEdges();
 
-          try {
-            console.info("[Canvas] creating bridge edge after delete", {
-              canvasId,
-              deletedNodeIds: idsToDelete,
-              bridgeCreate,
-            });
+            if (remainingEdges.some((edge) => edgeKey(edge) === bridgeKey)) {
+              console.info("[Canvas] skipped duplicate bridge edge after delete", {
+                canvasId,
+                deletedNodeIds: idsToDelete,
+                bridgeCreate,
+              });
+              break;
+            }
 
-            await runCreateEdgeMutation({
-              canvasId,
-              sourceNodeId: bridgeCreate.sourceNodeId,
-              targetNodeId: bridgeCreate.targetNodeId,
-              sourceHandle: bridgeCreate.sourceHandle,
-              targetHandle: bridgeCreate.targetHandle,
-            });
-            remainingEdges = [
-              ...remainingEdges,
+            const validationError = validateCanvasConnection(
               {
-                id: `bridge-${bridgeCreate.sourceNodeId}-${bridgeCreate.targetNodeId}-${remainingEdges.length}`,
+                source: bridgeCreate.sourceNodeId,
+                target: bridgeCreate.targetNodeId,
+                sourceHandle: bridgeCreate.sourceHandle ?? null,
+                targetHandle: bridgeCreate.targetHandle ?? null,
+              },
+              remainingNodes,
+              remainingEdges,
+              undefined,
+              { includeOptimisticEdges: true },
+            );
+
+            if (validationError) {
+              console.info("[Canvas] skipped invalid bridge edge after delete", {
+                canvasId,
+                deletedNodeIds: idsToDelete,
+                bridgeCreate,
+                validationError,
+              });
+              break;
+            }
+
+            try {
+              console.info("[Canvas] creating bridge edge after delete", {
+                canvasId,
+                deletedNodeIds: idsToDelete,
+                bridgeCreate,
+                attempt,
+              });
+
+              await runCreateEdgeMutation({
+                canvasId,
+                sourceNodeId: bridgeCreate.sourceNodeId,
+                targetNodeId: bridgeCreate.targetNodeId,
+                sourceHandle: bridgeCreate.sourceHandle,
+                targetHandle: bridgeCreate.targetHandle,
+              });
+
+              bridgeEdgesCreatedInThisRun.push({
+                id: `bridge-${bridgeCreate.sourceNodeId}-${bridgeCreate.targetNodeId}-${bridgeEdgesCreatedInThisRun.length}`,
                 source: bridgeCreate.sourceNodeId,
                 target: bridgeCreate.targetNodeId,
                 sourceHandle: bridgeCreate.sourceHandle,
                 targetHandle: bridgeCreate.targetHandle,
-              },
-            ];
-          } catch (error: unknown) {
-            console.error("[Canvas] bridge edge create failed", {
-              canvasId,
-              deletedNodeIds: idsToDelete,
-              bridgeCreate,
-              error,
-            });
-            throw error;
+              });
+              created = true;
+              break;
+            } catch (error: unknown) {
+              const errorMessage = getErrorMessage(error);
+              const retryable = isRetryableBridgeCreateError(error);
+              const isLastAttempt = attempt >= BRIDGE_CREATE_MAX_ATTEMPTS;
+
+              if (!retryable || isLastAttempt) {
+                console.error("[Canvas] bridge edge create failed", {
+                  canvasId,
+                  deletedNodeIds: idsToDelete,
+                  bridgeCreate,
+                  attempt,
+                  maxAttempts: BRIDGE_CREATE_MAX_ATTEMPTS,
+                  retryable,
+                  error: errorMessage,
+                });
+                break;
+              }
+
+              const backoffMs =
+                BRIDGE_CREATE_INITIAL_BACKOFF_MS * 2 ** (attempt - 1);
+
+              console.warn("[Canvas] bridge edge create retry scheduled", {
+                canvasId,
+                deletedNodeIds: idsToDelete,
+                bridgeCreate,
+                attempt,
+                nextAttempt: attempt + 1,
+                backoffMs,
+                error: errorMessage,
+              });
+
+              await waitFor(backoffMs);
+            }
+          }
+
+          if (!created) {
+            continue;
           }
         }
       })()
@@ -240,7 +349,11 @@ export function useCanvasDeleteHandlers({
           // Den Delete-Lock erst lösen, wenn Convex-Snapshot die Node wirklich nicht mehr enthält.
         })
         .catch((error: unknown) => {
-          console.error("[Canvas] batch remove failed", error);
+          console.error("[Canvas] batch remove failed", {
+            canvasId,
+            deletedNodeIds: idsToDelete,
+            error: getErrorMessage(error),
+          });
           for (const id of idsToDelete) {
             deletingNodeIds.current.delete(id);
           }

@@ -106,6 +106,34 @@
           "denoiseColor": "Denoise Color",
           "grain": "Grain"
         }
+      },
+      "crop": {
+        "title": "Crop / Resize",
+        "previewHint": "Connect an image, asset, AI image, or video source for live preview.",
+        "previewRendering": "Rendering...",
+        "fields": {
+          "x": "X",
+          "y": "Y",
+          "width": "Width",
+          "height": "Height",
+          "outputWidth": "Output Width",
+          "outputHeight": "Output Height"
+        },
+        "resizeMode": "Output",
+        "resizeModes": {
+          "source": "Source",
+          "custom": "Custom"
+        },
+        "fitMode": "Fit",
+        "fitModes": {
+          "cover": "Cover",
+          "contain": "Contain",
+          "fill": "Fill"
+        },
+        "keepAspect": "Keep aspect ratio",
+        "sourceResolution": "Source frame",
+        "outputResolutionLabel": "Output resolution",
+        "cropSummary": "Crop area: x {x}, y {y}, w {width}, h {height}"
       }
     },
     "prompts": {

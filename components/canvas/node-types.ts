@@ -15,6 +15,7 @@ import ColorAdjustNode from "./nodes/color-adjust-node";
 import LightAdjustNode from "./nodes/light-adjust-node";
 import DetailAdjustNode from "./nodes/detail-adjust-node";
 import RenderNode from "./nodes/render-node";
+import CropNode from "./nodes/crop-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -40,5 +41,6 @@ export const nodeTypes = {
   "color-adjust": ColorAdjustNode,
   "light-adjust": LightAdjustNode,
   "detail-adjust": DetailAdjustNode,
+  crop: CropNode,
   render: RenderNode,
 } as const;

@@ -67,6 +67,23 @@ export type DetailAdjustData = {
   preset: string | null;
 };
 
+export type NormalizedCropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type CropResizeOptions = {
+  width: number | null;
+  height: number | null;
+};
+
+export type CropResizeStepParams = {
+  cropRect: NormalizedCropRect;
+  resize: CropResizeOptions | null;
+};
+
 export const DEFAULT_CURVES_DATA: CurvesData = {
   channelMode: "rgb",
   points: {
@@ -141,6 +158,16 @@ export const DEFAULT_DETAIL_ADJUST_DATA: DetailAdjustData = {
   preset: null,
 };
 
+export const DEFAULT_CROP_RESIZE_STEP_PARAMS: CropResizeStepParams = {
+  cropRect: {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  },
+  resize: null,
+};
+
 export function cloneAdjustmentData<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -151,6 +178,54 @@ function clamp(value: number, min: number, max: number): number {
 
 function safeNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizePositiveIntOrNull(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.max(1, Math.round(value));
+}
+
+function normalizeCropRect(value: unknown): NormalizedCropRect {
+  const input = (value ?? {}) as Record<string, unknown>;
+
+  const normalizedX = clamp(safeNumber(input.x, 0), 0, 1);
+  const normalizedY = clamp(safeNumber(input.y, 0), 0, 1);
+  const maxWidth = Math.max(0.0001, 1 - normalizedX);
+  const maxHeight = Math.max(0.0001, 1 - normalizedY);
+
+  return {
+    x: normalizedX,
+    y: normalizedY,
+    width: clamp(safeNumber(input.width, 1), 0.0001, maxWidth),
+    height: clamp(safeNumber(input.height, 1), 0.0001, maxHeight),
+  };
+}
+
+export function normalizeCropResizeStepParams(value: unknown): CropResizeStepParams {
+  const input = (value ?? {}) as Record<string, unknown>;
+  const cropRectCandidate =
+    (input.cropRect as Record<string, unknown> | undefined) ??
+    (input.crop as Record<string, unknown> | undefined) ??
+    (input.rect as Record<string, unknown> | undefined) ??
+    input;
+  const resizeCandidate = (input.resize ?? {}) as Record<string, unknown>;
+
+  const resizeWidth = normalizePositiveIntOrNull(resizeCandidate.width ?? resizeCandidate.targetWidth);
+  const resizeHeight = normalizePositiveIntOrNull(resizeCandidate.height ?? resizeCandidate.targetHeight);
+
+  return {
+    cropRect: normalizeCropRect(cropRectCandidate),
+    resize:
+      resizeWidth === null && resizeHeight === null
+        ? null
+        : {
+            width: resizeWidth,
+            height: resizeHeight,
+          },
+  };
 }
 
 function normalizeCurvePoints(points: unknown): CurvePoint[] {

@@ -6,6 +6,10 @@ import {
 } from "@/lib/canvas-connection-policy";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import {
+  emitDashboardSnapshotCacheInvalidationSignal,
+  invalidateDashboardSnapshotForLastSignedInUser,
+} from "@/lib/dashboard-snapshot-cache";
+import {
   isCanvasNodeType,
   type CanvasNodeType,
 } from "@/lib/canvas-node-types";
@@ -18,7 +22,10 @@ import {
   logCanvasConnectionDebug,
   normalizeHandle,
 } from "./canvas-helpers";
-import { getImageDimensions } from "./canvas-media-utils";
+import {
+  createCompressedImagePreview,
+  getImageDimensions,
+} from "./canvas-media-utils";
 
 type UseCanvasDropParams = {
   canvasId: Id<"canvases">;
@@ -34,6 +41,15 @@ type UseCanvasDropParams = {
   }>;
   screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number };
   generateUploadUrl: () => Promise<string>;
+  registerUploadedImageMedia?: (args: {
+    canvasId: Id<"canvases">;
+    nodeId?: Id<"nodes">;
+    storageId: Id<"_storage">;
+    filename?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+  }) => Promise<{ ok: true }>;
   runCreateNodeOnlineOnly: (args: {
     canvasId: Id<"canvases">;
     type: CanvasNodeType;
@@ -99,6 +115,7 @@ export function useCanvasDrop({
   edges,
   screenToFlowPosition,
   generateUploadUrl,
+  registerUploadedImageMedia,
   runCreateNodeOnlineOnly,
   runCreateNodeWithEdgeSplitOnlineOnly,
   notifyOfflineUnsupported,
@@ -127,6 +144,13 @@ export function useCanvasDrop({
           if (file.type.startsWith("image/")) {
             try {
               let dimensions: { width: number; height: number } | undefined;
+              let previewUpload:
+                | {
+                    previewStorageId: string;
+                    previewWidth: number;
+                    previewHeight: number;
+                  }
+                | undefined;
               try {
                 dimensions = await getImageDimensions(file);
               } catch {
@@ -145,13 +169,38 @@ export function useCanvasDrop({
               }
 
               const { storageId } = (await result.json()) as { storageId: string };
+
+              try {
+                const preview = await createCompressedImagePreview(file);
+                const previewUploadUrl = await generateUploadUrl();
+                const previewUploadResult = await fetch(previewUploadUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": preview.blob.type || "image/webp" },
+                  body: preview.blob,
+                });
+
+                if (!previewUploadResult.ok) {
+                  throw new Error("Preview upload failed");
+                }
+
+                const { storageId: previewStorageId } =
+                  (await previewUploadResult.json()) as { storageId: string };
+                previewUpload = {
+                  previewStorageId,
+                  previewWidth: preview.width,
+                  previewHeight: preview.height,
+                };
+              } catch (previewError) {
+                console.warn("[Canvas] dropped image preview generation/upload failed", previewError);
+              }
+
               const position = screenToFlowPosition({
                 x: event.clientX,
                 y: event.clientY,
               });
               const clientRequestId = crypto.randomUUID();
 
-              void runCreateNodeOnlineOnly({
+              const createNodePromise = runCreateNodeOnlineOnly({
                 canvasId,
                 type: "image",
                 positionX: position.x,
@@ -160,18 +209,60 @@ export function useCanvasDrop({
                 height: NODE_DEFAULTS.image.height,
                 data: {
                   storageId,
+                  ...(previewUpload ?? {}),
                   filename: file.name,
                   mimeType: file.type,
                   ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
                   canvasId,
                 },
                 clientRequestId,
-              }).then((realId) => {
+              });
+
+              void createNodePromise.then((realId) => {
                 void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
                   (error: unknown) => {
                     console.error("[Canvas] drop createNode syncPendingMove failed", error);
                   },
                 );
+
+                invalidateDashboardSnapshotForLastSignedInUser();
+                emitDashboardSnapshotCacheInvalidationSignal();
+
+                if (!registerUploadedImageMedia) {
+                  return;
+                }
+
+                void registerUploadedImageMedia({
+                  canvasId,
+                  nodeId: realId,
+                  storageId: storageId as Id<"_storage">,
+                  filename: file.name,
+                  mimeType: file.type,
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                }).catch((error: unknown) => {
+                  console.warn("[Canvas] dropped image media registration failed", error);
+                });
+              }, () => {
+                if (!registerUploadedImageMedia) {
+                  return;
+                }
+
+                void registerUploadedImageMedia({
+                  canvasId,
+                  storageId: storageId as Id<"_storage">,
+                  filename: file.name,
+                  mimeType: file.type,
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                })
+                  .then(() => {
+                    invalidateDashboardSnapshotForLastSignedInUser();
+                    emitDashboardSnapshotCacheInvalidationSignal();
+                  })
+                  .catch((error: unknown) => {
+                    console.warn("[Canvas] dropped image media registration failed", error);
+                  });
               });
             } catch (error) {
               console.error("Failed to upload dropped file:", error);
@@ -298,6 +389,7 @@ export function useCanvasDrop({
       canvasId,
       edges,
       generateUploadUrl,
+      registerUploadedImageMedia,
       isSyncOnline,
       notifyOfflineUnsupported,
       runCreateNodeWithEdgeSplitOnlineOnly,

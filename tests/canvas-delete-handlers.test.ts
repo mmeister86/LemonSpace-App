@@ -73,6 +73,7 @@ describe("useCanvasDeleteHandlers", () => {
 
   afterEach(async () => {
     latestHandlersRef.current = null;
+    vi.useRealTimers();
     vi.clearAllMocks();
     consoleErrorSpy?.mockRestore();
     consoleInfoSpy?.mockRestore();
@@ -148,7 +149,8 @@ describe("useCanvasDeleteHandlers", () => {
     });
   });
 
-  it("logs bridge payload details when bridge edge creation fails", async () => {
+  it("logs bridge payload details when bridge edge creation retries are exhausted", async () => {
+    vi.useFakeTimers();
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
@@ -200,8 +202,11 @@ describe("useCanvasDeleteHandlers", () => {
     await act(async () => {
       resolveBatchRemove?.();
       await Promise.resolve();
+      await vi.runAllTimersAsync();
       await Promise.resolve();
     });
+
+    expect(runCreateEdgeMutation).toHaveBeenCalledTimes(4);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "[Canvas] bridge edge create failed",
@@ -214,7 +219,9 @@ describe("useCanvasDeleteHandlers", () => {
           sourceHandle: undefined,
           targetHandle: undefined,
         },
-        error: bridgeError,
+        attempt: 4,
+        maxAttempts: 4,
+        error: bridgeError.message,
       }),
     );
   });

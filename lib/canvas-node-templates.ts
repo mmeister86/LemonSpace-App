@@ -1,3 +1,5 @@
+import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
+
 export const CANVAS_NODE_TEMPLATES = [
   {
     type: "image",
@@ -73,6 +75,13 @@ export const CANVAS_NODE_TEMPLATES = [
     width: 320,
     height: 180,
     defaultData: {},
+  },
+  {
+    type: "crop",
+    label: "Crop / Resize",
+    width: 340,
+    height: 620,
+    defaultData: DEFAULT_CROP_NODE_DATA,
   },
   {
     type: "curves",
