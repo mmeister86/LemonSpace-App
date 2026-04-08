@@ -2,13 +2,14 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
 import { Focus } from "lucide-react";
 
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCanvasAdjustmentPresets } from "@/components/canvas/canvas-presets-context";
+import {
+  useCanvasAdjustmentPresets,
+  useSaveCanvasAdjustmentPreset,
+} from "@/components/canvas/canvas-presets-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
@@ -46,7 +47,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
   const tNodes = useTranslations("nodes");
   const tToasts = useTranslations("toasts");
   const { queueNodeDataUpdate } = useCanvasSync();
-  const savePreset = useMutation(api.presets.save);
+  const savePreset = useSaveCanvasAdjustmentPreset();
   const userPresets = useCanvasAdjustmentPresets("detail-adjust") as PresetDoc[];
 
   const [presetSelection, setPresetSelection] = useState("custom");

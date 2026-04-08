@@ -31,6 +31,9 @@ vi.mock("@/convex/_generated/api", () => ({
       create: "edges.create",
       remove: "edges.remove",
     },
+    canvasGraph: {
+      get: "canvasGraph.get",
+    },
   },
 }));
 
