@@ -65,7 +65,8 @@ export type CanvasConnectionValidationReason =
   | "compare-incoming-limit"
   | "adjustment-target-forbidden"
   | "render-source-invalid"
-  | "agent-source-invalid";
+  | "agent-source-invalid"
+  | "agent-output-source-invalid";
 
 export function validateCanvasConnectionPolicy(args: {
   sourceType: string;
@@ -73,6 +74,10 @@ export function validateCanvasConnectionPolicy(args: {
   targetIncomingCount: number;
 }): CanvasConnectionValidationReason | null {
   const { sourceType, targetType, targetIncomingCount } = args;
+
+  if (targetType === "agent-output" && sourceType !== "agent") {
+    return "agent-output-source-invalid";
+  }
 
   if (targetType === "ai-video" && sourceType !== "video-prompt") {
     return "ai-video-source-invalid";
@@ -152,6 +157,8 @@ export function getCanvasConnectionValidationMessage(
       return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Crop- oder Adjustment-Input.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
+    case "agent-output-source-invalid":
+      return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
     default:
       return "Verbindung ist fuer diese Node-Typen nicht erlaubt.";
   }

@@ -12,6 +12,7 @@ import {
   DEFAULT_DETAIL_ADJUST_DATA,
   DEFAULT_LIGHT_ADJUST_DATA,
 } from "@/lib/image-pipeline/adjustment-types";
+import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
 
 /**
@@ -121,6 +122,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   crop: [139, 92, 246],
   render: [14, 165, 233],
   agent: [245, 158, 11],
+  "agent-output": [245, 158, 11],
 };
 
 /** Compare: Ziel-Handles blau/smaragd, Quelle compare-out grau (wie in compare-node.tsx). */
@@ -229,6 +231,7 @@ export const NODE_HANDLE_MAP: Record<
   crop: { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
+  "agent-output": { target: "agent-output-in" },
 };
 
 /**
@@ -281,7 +284,23 @@ export const NODE_DEFAULTS: Record<
   agent: {
     width: 360,
     height: 320,
-    data: { templateId: "campaign-distributor" },
+    data: {
+      templateId: "campaign-distributor",
+      modelId: DEFAULT_AGENT_MODEL_ID,
+      clarificationQuestions: [],
+      clarificationAnswers: {},
+      outputNodeIds: [],
+    },
+  },
+  "agent-output": {
+    width: 360,
+    height: 260,
+    data: {
+      title: "",
+      channel: "",
+      outputType: "",
+      body: "",
+    },
   },
 };
 

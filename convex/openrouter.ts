@@ -2,6 +2,67 @@ import { ConvexError } from "convex/values";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+export async function generateStructuredObjectViaOpenRouter<T>(
+  apiKey: string,
+  args: {
+    model: string;
+    messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }>;
+    schemaName: string;
+    schema: Record<string, unknown>;
+  },
+): Promise<T> {
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://app.lemonspace.io",
+      "X-Title": "LemonSpace",
+    },
+    body: JSON.stringify({
+      model: args.model,
+      messages: args.messages,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: args.schemaName,
+          strict: true,
+          schema: args.schema,
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new ConvexError({
+      code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
+      status: response.status,
+      message: errorText,
+    });
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+
+  if (typeof content !== "string" || content.trim() === "") {
+    throw new ConvexError({
+      code: "OPENROUTER_STRUCTURED_OUTPUT_MISSING_CONTENT",
+    });
+  }
+
+  try {
+    return JSON.parse(content) as T;
+  } catch {
+    throw new ConvexError({
+      code: "OPENROUTER_STRUCTURED_OUTPUT_INVALID_JSON",
+    });
+  }
+}
+
 export interface OpenRouterModel {
   id: string;
   name: string;

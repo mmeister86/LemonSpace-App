@@ -180,6 +180,26 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows agent to agent-output", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "agent",
+        targetType: "agent-output",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("blocks non-agent sources to agent-output", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "agent-output",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("agent-output-source-invalid");
+  });
+
   it("blocks prompt to agent", () => {
     expect(
       validateCanvasConnectionPolicy({
@@ -196,5 +216,11 @@ describe("canvas connection policy", () => {
     ).toBe(
       "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.",
     );
+  });
+
+  it("describes invalid agent-output source message", () => {
+    expect(
+      getCanvasConnectionValidationMessage("agent-output-source-invalid"),
+    ).toBe("Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.");
   });
 });

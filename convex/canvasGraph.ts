@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import type { Id } from "./_generated/dataModel";
-import { query, type QueryCtx } from "./_generated/server";
+import { internalQuery, query, type QueryCtx } from "./_generated/server";
 import { requireAuth } from "./helpers";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
@@ -62,5 +62,18 @@ export const get = query({
     }
 
     return { nodes, edges };
+  },
+});
+
+export const getInternal = internalQuery({
+  args: {
+    canvasId: v.id("canvases"),
+    userId: v.string(),
+  },
+  handler: async (ctx, { canvasId, userId }) => {
+    return loadCanvasGraph(ctx, {
+      canvasId,
+      userId,
+    });
   },
 });
