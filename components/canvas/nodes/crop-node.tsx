@@ -21,6 +21,7 @@ import {
   type CropNodeData,
   type CropResizeMode,
 } from "@/lib/image-pipeline/crop-node-data";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -188,7 +189,11 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
   const { queueNodeDataUpdate } = useCanvasSync();
   const graph = useCanvasGraph();
 
-  const normalizeData = useCallback((value: unknown) => normalizeCropNodeData(value), []);
+  const normalizeData = useCallback(
+    (value: unknown) =>
+      preserveNodeFavorite(normalizeCropNodeData(value), value) as CropNodeData,
+    [],
+  );
   const previewAreaRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<CropInteractionState | null>(null);
   const { localData, updateLocalData } = useNodeLocalData<CropNodeData>({
@@ -199,7 +204,7 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
     onSave: (next) =>
       queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
-        data: next,
+        data: preserveNodeFavorite(next, data),
       }),
     debugLabel: "crop",
   });

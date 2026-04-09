@@ -25,6 +25,7 @@ import {
   normalizeCurvesData,
   type CurvesData,
 } from "@/lib/image-pipeline/adjustment-types";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { CURVE_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
@@ -53,10 +54,13 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
   const [presetSelection, setPresetSelection] = useState("custom");
   const normalizeData = useCallback(
     (value: unknown) =>
-      normalizeCurvesData({
-        ...cloneAdjustmentData(DEFAULT_CURVES_DATA),
-        ...(value as Record<string, unknown>),
-      }),
+      preserveNodeFavorite(
+        normalizeCurvesData({
+          ...cloneAdjustmentData(DEFAULT_CURVES_DATA),
+          ...(value as Record<string, unknown>),
+        }),
+        value,
+      ) as CurvesData,
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<CurvesData>({
@@ -67,7 +71,7 @@ export default function CurvesNode({ id, data, selected, width }: NodeProps<Curv
     onSave: (next) =>
       queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
-        data: next,
+        data: preserveNodeFavorite(next, data),
       }),
     debugLabel: "curves",
   });

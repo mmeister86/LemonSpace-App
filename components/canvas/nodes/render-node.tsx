@@ -26,6 +26,7 @@ import {
   isPipelineAbortError,
   renderFullWithWorkerFallback,
 } from "@/lib/image-pipeline/worker-client";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
@@ -105,6 +106,7 @@ type PersistedRenderData = {
   lastUploadFilename?: string;
   lastUploadError?: string;
   lastUploadErrorHash?: string;
+  isFavorite?: true;
 };
 
 const DEFAULT_OUTPUT_RESOLUTION: RenderResolutionOption = "original";
@@ -348,7 +350,7 @@ function sanitizeRenderData(data: RenderNodeData): PersistedRenderData {
     next.lastUploadErrorHash = data.lastUploadErrorHash;
   }
 
-  return next;
+  return preserveNodeFavorite(next, data) as PersistedRenderData;
 }
 
 function formatBytes(bytes: number | undefined): string {
@@ -496,6 +498,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   );
 
   const steps = renderPreviewInput.steps;
+  const hasCropStep = useMemo(() => steps.some((step) => step.type === "crop"), [steps]);
   const previewDebounceMs = shouldFastPathPreviewPipeline(
     steps,
     graph.previewNodeDataOverrides,
@@ -592,6 +595,15 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   });
 
   const targetAspectRatio = useMemo(() => {
+    if (
+      hasCropStep &&
+      typeof previewAspectRatio === "number" &&
+      Number.isFinite(previewAspectRatio) &&
+      previewAspectRatio > 0
+    ) {
+      return previewAspectRatio;
+    }
+
     const sourceAspectRatio = resolveSourceAspectRatio(sourceNode);
     if (sourceAspectRatio && Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0) {
       return sourceAspectRatio;
@@ -606,7 +618,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     }
 
     return null;
-  }, [previewAspectRatio, sourceNode]);
+  }, [hasCropStep, previewAspectRatio, sourceNode]);
 
   useEffect(() => {
     if (!hasSource || targetAspectRatio === null) {

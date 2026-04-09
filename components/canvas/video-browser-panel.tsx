@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useAction } from "convex/react";
+import { useReactFlow } from "@xyflow/react";
 import { X, Search, Loader2, AlertCircle, Play, Pause } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { PexelsVideo, PexelsVideoFile } from "@/lib/pexels-types";
 import { pickPreviewVideoFile, pickVideoFile } from "@/lib/pexels-types";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { toast } from "@/lib/toast";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
@@ -83,6 +85,7 @@ export function VideoBrowserPanel({
 
   const searchVideos = useAction(api.pexels.searchVideos);
   const popularVideos = useAction(api.pexels.popularVideos);
+  const { getNode } = useReactFlow();
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(
     Boolean(initialState?.results?.length),
@@ -216,22 +219,26 @@ export function VideoBrowserPanel({
         return;
       }
       try {
+        const currentNode = getNode(nodeId);
         await queueNodeDataUpdate({
           nodeId: nodeId as Id<"nodes">,
-          data: {
-            pexelsId: video.id,
-            mp4Url: file.link,
-            thumbnailUrl: video.image,
-            width: video.width,
-            height: video.height,
-            duration: video.duration,
-            attribution: {
-              userName: video.user.name,
-              userUrl: video.user.url,
-              videoUrl: video.url,
+          data: preserveNodeFavorite(
+            {
+              pexelsId: video.id,
+              mp4Url: file.link,
+              thumbnailUrl: video.image,
+              width: video.width,
+              height: video.height,
+              duration: video.duration,
+              attribution: {
+                userName: video.user.name,
+                userUrl: video.user.url,
+                videoUrl: video.url,
+              },
+              canvasId,
             },
-            canvasId,
-          },
+            currentNode?.data,
+          ),
         });
 
         // Auto-resize to match aspect ratio
@@ -253,7 +260,7 @@ export function VideoBrowserPanel({
         setSelectingVideoId(null);
       }
     },
-    [canvasId, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
+    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
   );
 
   const handlePreviousPage = useCallback(() => {

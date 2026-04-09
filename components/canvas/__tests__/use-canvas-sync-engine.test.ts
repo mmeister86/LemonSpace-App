@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { createCanvasSyncEngineController } from "@/components/canvas/use-canvas-sync-engine";
@@ -73,6 +75,67 @@ describe("useCanvasSyncEngine", () => {
     ]);
     expect(controller.pendingResizeAfterCreateRef.current.has("req-2")).toBe(false);
     expect(controller.pendingDataAfterCreateRef.current.has("req-2")).toBe(false);
+  });
+
+  it("keeps favorite fields in pinned and deferred optimistic data updates", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+
+    const controller = createCanvasSyncEngineController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+    });
+
+    const favoritePayload = {
+      storageId: "storage-next",
+      filename: "hero.png",
+      isFavorite: true,
+    };
+
+    await controller.queueNodeDataUpdate({
+      nodeId: asNodeId("optimistic_req-favorite"),
+      data: favoritePayload,
+    });
+
+    expect(
+      controller.pendingLocalNodeDataUntilConvexMatchesRef.current.get(
+        "optimistic_req-favorite",
+      ),
+    ).toEqual(favoritePayload);
+
+    await controller.syncPendingMoveForClientRequest(
+      "req-favorite",
+      asNodeId("node-favorite"),
+    );
+
+    expect(enqueueSyncMutation).toHaveBeenCalledWith("updateData", {
+      nodeId: asNodeId("node-favorite"),
+      data: favoritePayload,
+    });
+    expect(
+      controller.pendingLocalNodeDataUntilConvexMatchesRef.current.get("node-favorite"),
+    ).toEqual(favoritePayload);
+  });
+
+  it("uses favorite-preserving payloads in media replacement write paths", () => {
+    const imageNodeSource = readFileSync(
+      resolve(process.cwd(), "components/canvas/nodes/image-node.tsx"),
+      "utf8",
+    );
+    const assetBrowserSource = readFileSync(
+      resolve(process.cwd(), "components/canvas/asset-browser-panel.tsx"),
+      "utf8",
+    );
+    const videoBrowserSource = readFileSync(
+      resolve(process.cwd(), "components/canvas/video-browser-panel.tsx"),
+      "utf8",
+    );
+
+    expect(imageNodeSource).toContain("preserveNodeFavorite(");
+    expect(assetBrowserSource).toContain("preserveNodeFavorite(");
+    expect(videoBrowserSource).toContain("preserveNodeFavorite(");
   });
 
 

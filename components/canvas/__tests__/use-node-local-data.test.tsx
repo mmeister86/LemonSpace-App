@@ -2,6 +2,7 @@
 
 import React, { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,6 +11,7 @@ import {
   useCanvasGraphPreviewOverrides,
 } from "@/components/canvas/canvas-graph-context";
 import { useNodeLocalData } from "@/components/canvas/nodes/use-node-local-data";
+import { readNodeFavorite } from "@/lib/canvas-node-favorite";
 
 type AdjustmentData = {
   exposure: number;
@@ -580,5 +582,161 @@ describe("useNodeLocalData preview overrides", () => {
     expect(latestOverridesRef.current).toEqual(new Map());
 
     vi.useRealTimers();
+  });
+});
+
+describe("favorite retention in strict local node flows", () => {
+  type LocalDataConfig = {
+    normalize: (value: unknown) => unknown;
+    onSave: (value: unknown) => Promise<void> | void;
+    data: unknown;
+  };
+
+  const createNodeProps = (data: Record<string, unknown>) =>
+    ({
+      id: "node-1",
+      data,
+      selected: false,
+      width: 320,
+      height: 240,
+      dragging: false,
+      zIndex: 0,
+      isConnectable: true,
+      type: "curves",
+      xPos: 0,
+      yPos: 0,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    }) as const;
+
+  const setupNodeHarness = async (modulePath: string) => {
+    vi.resetModules();
+
+    let capturedConfig: LocalDataConfig | null = null;
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+
+    vi.doMock("@/components/canvas/canvas-sync-context", () => ({
+      useCanvasSync: () => ({
+        queueNodeDataUpdate,
+        queueNodeResize: vi.fn(async () => undefined),
+        status: { isOffline: false },
+      }),
+    }));
+
+    vi.doMock("@/components/canvas/canvas-graph-context", () => ({
+      useCanvasGraph: () => ({ nodes: [], edges: [], previewNodeDataOverrides: new Map() }),
+    }));
+
+    vi.doMock("@/components/canvas/canvas-presets-context", () => ({
+      useCanvasAdjustmentPresets: () => [],
+      useSaveCanvasAdjustmentPreset: () => vi.fn(async () => undefined),
+    }));
+
+    vi.doMock("@/components/canvas/nodes/base-node-wrapper", () => ({
+      default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    }));
+
+    vi.doMock("@/components/canvas/nodes/adjustment-preview", () => ({
+      default: () => null,
+    }));
+
+    vi.doMock("@/components/ui/select", () => ({
+      Select: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      SelectItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      SelectTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      SelectValue: () => null,
+    }));
+
+    vi.doMock("@/src/components/tool-ui/parameter-slider", () => ({
+      ParameterSlider: () => null,
+    }));
+
+    vi.doMock("@/hooks/use-pipeline-preview", () => ({
+      usePipelinePreview: () => ({
+        canvasRef: { current: null },
+        hasSource: false,
+        isRendering: false,
+        previewAspectRatio: 1,
+        histogram: null,
+        error: null,
+      }),
+    }));
+
+    vi.doMock("@/lib/canvas-render-preview", () => ({
+      collectPipelineFromGraph: () => [],
+      getSourceImageFromGraph: () => null,
+      shouldFastPathPreviewPipeline: () => false,
+      findSourceNodeFromGraph: () => null,
+      resolveRenderPreviewInputFromGraph: () => ({ sourceUrl: null, steps: [] }),
+    }));
+
+    vi.doMock("@/components/ui/dialog", () => ({
+      Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      DialogContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      DialogTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    }));
+
+    vi.doMock("@/components/canvas/nodes/use-node-local-data", () => ({
+      useNodeLocalData: (config: LocalDataConfig) => {
+        capturedConfig = config;
+        return {
+          localData: config.normalize(config.data),
+          applyLocalData: vi.fn(),
+          updateLocalData: vi.fn(),
+        };
+      },
+    }));
+
+    vi.doMock("next-intl", () => ({
+      useTranslations: () => () => "",
+    }));
+
+    vi.doMock("@/lib/toast", () => ({
+      toast: { success: vi.fn() },
+    }));
+
+    vi.doMock("@xyflow/react", () => ({
+      Handle: () => null,
+      Position: { Left: "left", Right: "right" },
+    }));
+
+    const importedModule = (await import(modulePath)) as {
+      default: React.ComponentType<Record<string, unknown>>;
+    };
+    renderToStaticMarkup(React.createElement(importedModule.default, createNodeProps({ isFavorite: true })));
+
+    if (capturedConfig === null) {
+      throw new Error("useNodeLocalData config was not captured");
+    }
+
+    const resolvedConfig = capturedConfig as LocalDataConfig;
+    return { capturedConfig: resolvedConfig, queueNodeDataUpdate };
+  };
+
+  it("preserves isFavorite in normalized local data and saved payloads", async () => {
+    const targets = [
+      "@/components/canvas/nodes/crop-node",
+      "@/components/canvas/nodes/curves-node",
+      "@/components/canvas/nodes/color-adjust-node",
+      "@/components/canvas/nodes/light-adjust-node",
+      "@/components/canvas/nodes/detail-adjust-node",
+    ];
+
+    for (const modulePath of targets) {
+      const { capturedConfig, queueNodeDataUpdate } = await setupNodeHarness(modulePath);
+
+      const normalizedWithFavorite = capturedConfig.normalize({ isFavorite: true });
+      expect(readNodeFavorite(normalizedWithFavorite)).toBe(true);
+
+      const strictNextData = capturedConfig.normalize({});
+      expect(readNodeFavorite(strictNextData)).toBe(false);
+
+      await capturedConfig.onSave(strictNextData);
+      const queueCalls = (queueNodeDataUpdate as unknown as { mock: { calls: Array<Array<unknown>> } })
+        .mock.calls;
+      const queuedPayload = queueCalls[0]?.[0] as { data?: unknown } | undefined;
+      expect(readNodeFavorite(queuedPayload?.data)).toBe(true);
+    }
   });
 });

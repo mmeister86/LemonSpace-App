@@ -25,6 +25,7 @@ import {
   normalizeDetailAdjustData,
   type DetailAdjustData,
 } from "@/lib/image-pipeline/adjustment-types";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { DETAIL_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
@@ -53,10 +54,13 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
   const [presetSelection, setPresetSelection] = useState("custom");
   const normalizeData = useCallback(
     (value: unknown) =>
-      normalizeDetailAdjustData({
-        ...cloneAdjustmentData(DEFAULT_DETAIL_ADJUST_DATA),
-        ...(value as Record<string, unknown>),
-      }),
+      preserveNodeFavorite(
+        normalizeDetailAdjustData({
+          ...cloneAdjustmentData(DEFAULT_DETAIL_ADJUST_DATA),
+          ...(value as Record<string, unknown>),
+        }),
+        value,
+      ) as DetailAdjustData,
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<DetailAdjustData>({
@@ -67,7 +71,7 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
     onSave: (next) =>
       queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
-        data: next,
+        data: preserveNodeFavorite(next, data),
       }),
     debugLabel: "detail-adjust",
   });

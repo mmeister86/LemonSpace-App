@@ -10,6 +10,7 @@ import {
 } from "../lib/canvas-connection-policy";
 import { nodeTypeValidator } from "./node_type_validator";
 import { normalizeCropNodeData } from "../lib/image-pipeline/crop-node-data";
+import { preserveNodeFavorite } from "../lib/canvas-node-favorite";
 
 // ============================================================================
 // Interne Helpers
@@ -393,9 +394,12 @@ function normalizeNodeDataForWrite(
   data: unknown,
 ): unknown {
   if (nodeType === "crop") {
-    return normalizeCropNodeData(data, {
-      rejectDisallowedPayloadFields: true,
-    });
+    return preserveNodeFavorite(
+      normalizeCropNodeData(data, {
+        rejectDisallowedPayloadFields: true,
+      }),
+      data,
+    );
   }
 
   if (!isAdjustmentNodeType(nodeType)) {
@@ -407,11 +411,11 @@ function normalizeNodeDataForWrite(
   }
 
   if (nodeType === "render") {
-    return normalizeRenderData(data);
+    return preserveNodeFavorite(normalizeRenderData(data), data);
   }
 
   assertNoAdjustmentImagePayload(nodeType, data);
-  return data;
+  return preserveNodeFavorite(data, data);
 }
 
 async function countIncomingEdges(

@@ -25,6 +25,7 @@ import {
   normalizeColorAdjustData,
   type ColorAdjustData,
 } from "@/lib/image-pipeline/adjustment-types";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { COLOR_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
@@ -53,10 +54,13 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
   const [presetSelection, setPresetSelection] = useState("custom");
   const normalizeData = useCallback(
     (value: unknown) =>
-      normalizeColorAdjustData({
-        ...cloneAdjustmentData(DEFAULT_COLOR_ADJUST_DATA),
-        ...(value as Record<string, unknown>),
-      }),
+      preserveNodeFavorite(
+        normalizeColorAdjustData({
+          ...cloneAdjustmentData(DEFAULT_COLOR_ADJUST_DATA),
+          ...(value as Record<string, unknown>),
+        }),
+        value,
+      ) as ColorAdjustData,
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<ColorAdjustData>({
@@ -67,7 +71,7 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
     onSave: (next) =>
       queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
-        data: next,
+        data: preserveNodeFavorite(next, data),
       }),
     debugLabel: "color-adjust",
   });

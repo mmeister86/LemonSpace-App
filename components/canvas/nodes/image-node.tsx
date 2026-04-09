@@ -36,6 +36,7 @@ import {
   createCompressedImagePreview,
   getImageDimensions,
 } from "@/components/canvas/canvas-media-utils";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -302,13 +303,16 @@ export default function ImageNode({
 
         await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
-          data: {
-            storageId,
-            ...(previewUpload ?? {}),
-            filename: file.name,
-            mimeType: file.type,
-            ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
-          },
+          data: preserveNodeFavorite(
+            {
+              storageId,
+              ...(previewUpload ?? {}),
+              filename: file.name,
+              mimeType: file.type,
+              ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
+            },
+            data,
+          ),
         });
 
         if (dimensions) {
@@ -354,6 +358,7 @@ export default function ImageNode({
       }
     },
     [
+      data,
       generateUploadUrl,
       id,
       isUploading,
@@ -377,16 +382,19 @@ export default function ImageNode({
       try {
         await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
-          data: {
-            storageId: item.storageId,
-            previewStorageId: item.previewStorageId,
-            filename: item.filename,
-            mimeType: item.mimeType,
-            width: item.width,
-            height: item.height,
-            previewWidth: item.previewWidth,
-            previewHeight: item.previewHeight,
-          },
+          data: preserveNodeFavorite(
+            {
+              storageId: item.storageId,
+              previewStorageId: item.previewStorageId,
+              filename: item.filename,
+              mimeType: item.mimeType,
+              width: item.width,
+              height: item.height,
+              previewWidth: item.previewWidth,
+              previewHeight: item.previewHeight,
+            },
+            data,
+          ),
         });
         setMediaLibraryPhase("syncing");
 
@@ -414,7 +422,7 @@ export default function ImageNode({
         );
       }
     },
-    [id, isNodeLoading, queueNodeDataUpdate, queueNodeResize, t],
+    [data, id, isNodeLoading, queueNodeDataUpdate, queueNodeResize, t],
   );
 
   const handleClick = useCallback(() => {

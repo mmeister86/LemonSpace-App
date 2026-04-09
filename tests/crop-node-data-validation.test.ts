@@ -4,6 +4,7 @@ import {
   DEFAULT_CROP_NODE_DATA,
   normalizeCropNodeData,
 } from "@/lib/image-pipeline/crop-node-data";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 
 describe("crop node data validation", () => {
   it("normalizes and clamps crop rectangle data", () => {
@@ -80,5 +81,25 @@ describe("crop node data validation", () => {
         { rejectDisallowedPayloadFields: true },
       ),
     ).toThrow("Crop node accepts parameter data only. 'imageData' is not allowed in data.");
+  });
+
+  it("preserves favorite after strict crop normalization", () => {
+    const normalized = normalizeCropNodeData(
+      {
+        ...DEFAULT_CROP_NODE_DATA,
+        isFavorite: true,
+      },
+      { rejectDisallowedPayloadFields: true },
+    );
+
+    expect(
+      preserveNodeFavorite(normalized, {
+        ...DEFAULT_CROP_NODE_DATA,
+        isFavorite: true,
+      }),
+    ).toEqual({
+      ...DEFAULT_CROP_NODE_DATA,
+      isFavorite: true,
+    });
   });
 });

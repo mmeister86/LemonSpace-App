@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useAction } from "convex/react";
+import { useReactFlow } from "@xyflow/react";
 import { X, Search, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { toast } from "@/lib/toast";
 
@@ -90,6 +92,7 @@ export function AssetBrowserPanel({
   const [selectingAssetKey, setSelectingAssetKey] = useState<string | null>(null);
 
   const searchFreepik = useAction(api.freepik.search);
+  const { getNode } = useReactFlow();
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(Boolean(initialState?.results?.length));
   const requestSequenceRef = useRef(0);
@@ -198,22 +201,26 @@ export function AssetBrowserPanel({
       const assetKey = `${asset.assetType}-${asset.id}`;
       setSelectingAssetKey(assetKey);
       try {
+        const currentNode = getNode(nodeId);
         await queueNodeDataUpdate({
           nodeId: nodeId as Id<"nodes">,
-          data: {
-            assetId: asset.id,
-            assetType: asset.assetType,
-            title: asset.title,
-            previewUrl: asset.previewUrl,
-            intrinsicWidth: asset.intrinsicWidth,
-            intrinsicHeight: asset.intrinsicHeight,
-            url: asset.previewUrl,
-            sourceUrl: asset.sourceUrl,
-            license: asset.license,
-            authorName: asset.authorName,
-            orientation: asset.orientation,
-            canvasId,
-          },
+          data: preserveNodeFavorite(
+            {
+              assetId: asset.id,
+              assetType: asset.assetType,
+              title: asset.title,
+              previewUrl: asset.previewUrl,
+              intrinsicWidth: asset.intrinsicWidth,
+              intrinsicHeight: asset.intrinsicHeight,
+              url: asset.previewUrl,
+              sourceUrl: asset.sourceUrl,
+              license: asset.license,
+              authorName: asset.authorName,
+              orientation: asset.orientation,
+              canvasId,
+            },
+            currentNode?.data,
+          ),
         });
 
         const targetSize = computeMediaNodeSize("asset", {
@@ -234,7 +241,7 @@ export function AssetBrowserPanel({
         setSelectingAssetKey(null);
       }
     },
-    [canvasId, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
+    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
   );
 
   const handlePreviousPage = useCallback(() => {

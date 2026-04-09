@@ -25,6 +25,7 @@ import {
   normalizeLightAdjustData,
   type LightAdjustData,
 } from "@/lib/image-pipeline/adjustment-types";
+import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { LIGHT_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
@@ -53,10 +54,13 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
   const [presetSelection, setPresetSelection] = useState("custom");
   const normalizeData = useCallback(
     (value: unknown) =>
-      normalizeLightAdjustData({
-        ...cloneAdjustmentData(DEFAULT_LIGHT_ADJUST_DATA),
-        ...(value as Record<string, unknown>),
-      }),
+      preserveNodeFavorite(
+        normalizeLightAdjustData({
+          ...cloneAdjustmentData(DEFAULT_LIGHT_ADJUST_DATA),
+          ...(value as Record<string, unknown>),
+        }),
+        value,
+      ) as LightAdjustData,
     [],
   );
   const { localData, applyLocalData, updateLocalData } = useNodeLocalData<LightAdjustData>({
@@ -67,7 +71,7 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
     onSave: (next) =>
       queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
-        data: next,
+        data: preserveNodeFavorite(next, data),
       }),
     debugLabel: "light-adjust",
   });
