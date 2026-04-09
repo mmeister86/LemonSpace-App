@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   areClarificationAnswersComplete,
+  normalizeAgentExecutionPlan,
   normalizeAgentOutputDraft,
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
+  type AgentExecutionPlan,
 } from "@/lib/agent-run-contract";
 
 describe("agent run contract helpers", () => {
@@ -91,6 +93,89 @@ describe("agent run contract helpers", () => {
       });
 
       expect(normalized.body).toBe("");
+    });
+  });
+
+  describe("normalizeAgentExecutionPlan", () => {
+    it("trims summary and step metadata while preserving valid values", () => {
+      const normalized = normalizeAgentExecutionPlan({
+        summary: "  Ship a launch kit  ",
+        steps: [
+          {
+            id: "  STEP-1  ",
+            title: "  Instagram captions  ",
+            channel: "  Instagram  ",
+            outputType: "  caption-pack  ",
+          },
+        ],
+      });
+
+      expect(normalized).toEqual<AgentExecutionPlan>({
+        summary: "Ship a launch kit",
+        steps: [
+          {
+            id: "step-1",
+            title: "Instagram captions",
+            channel: "Instagram",
+            outputType: "caption-pack",
+          },
+        ],
+      });
+    });
+
+    it("falls back to safe defaults for invalid payloads", () => {
+      const normalized = normalizeAgentExecutionPlan({
+        summary: null,
+        steps: [
+          {
+            id: "",
+            title: "",
+            channel: "   ",
+            outputType: undefined,
+          },
+          null,
+        ],
+      });
+
+      expect(normalized).toEqual<AgentExecutionPlan>({
+        summary: "",
+        steps: [
+          {
+            id: "step-1",
+            title: "Untitled",
+            channel: "general",
+            outputType: "text",
+          },
+        ],
+      });
+    });
+
+    it("deduplicates step ids and creates deterministic fallback ids", () => {
+      const normalized = normalizeAgentExecutionPlan({
+        summary: "ready",
+        steps: [
+          {
+            id: "step",
+            title: "One",
+            channel: "email",
+            outputType: "copy",
+          },
+          {
+            id: "step",
+            title: "Two",
+            channel: "x",
+            outputType: "thread",
+          },
+          {
+            id: "",
+            title: "Three",
+            channel: "linkedin",
+            outputType: "post",
+          },
+        ],
+      });
+
+      expect(normalized.steps.map((step) => step.id)).toEqual(["step", "step-2", "step-3"]);
     });
   });
 });

@@ -45,7 +45,7 @@ describe("AgentNode", () => {
     root = null;
   });
 
-  it("renders campaign distributor metadata and input-only handle", async () => {
+  it("renders campaign distributor metadata and source/target handles", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -76,7 +76,7 @@ describe("AgentNode", () => {
     expect(container.textContent).toContain("Instagram Feed");
     expect(container.textContent).toContain("Caption-Pakete");
     expect(handleCalls.filter((call) => call.type === "target")).toHaveLength(1);
-    expect(handleCalls.filter((call) => call.type === "source")).toHaveLength(0);
+    expect(handleCalls.filter((call) => call.type === "source")).toHaveLength(1);
   });
 
   it("falls back to the default template when templateId is missing", async () => {

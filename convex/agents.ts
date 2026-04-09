@@ -14,9 +14,11 @@ import { getNodeDataRecord } from "./ai_node_data";
 import { formatTerminalStatusMessage } from "./ai_errors";
 import {
   areClarificationAnswersComplete,
+  normalizeAgentExecutionPlan,
   normalizeAgentOutputDraft,
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
+  type AgentExecutionStep,
   type AgentOutputDraft,
 } from "../lib/agent-run-contract";
 import {
@@ -31,7 +33,7 @@ import { normalizePublicTier } from "../lib/tier-credits";
 const ANALYZE_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["analysisSummary", "clarificationQuestions"],
+  required: ["analysisSummary", "clarificationQuestions", "executionPlan"],
   properties: {
     analysisSummary: { type: "string" },
     clarificationQuestions: {
@@ -48,33 +50,64 @@ const ANALYZE_SCHEMA: Record<string, unknown> = {
         },
       },
     },
-  },
-};
-
-const EXECUTE_SCHEMA: Record<string, unknown> = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary", "outputs"],
-  properties: {
-    summary: { type: "string" },
-    outputs: {
-      type: "array",
-      minItems: 1,
-      maxItems: 6,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["title", "channel", "outputType", "body"],
-        properties: {
-          title: { type: "string" },
-          channel: { type: "string" },
-          outputType: { type: "string" },
-          body: { type: "string" },
+    executionPlan: {
+      type: "object",
+      additionalProperties: false,
+      required: ["summary", "steps"],
+      properties: {
+        summary: { type: "string" },
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "title", "channel", "outputType"],
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" },
+              channel: { type: "string" },
+              outputType: { type: "string" },
+            },
+          },
         },
       },
     },
   },
 };
+
+function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
+  const stepOutputProperties: Record<string, unknown> = {};
+  for (const stepId of stepIds) {
+    stepOutputProperties[stepId] = {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "channel", "outputType", "body"],
+      properties: {
+        title: { type: "string" },
+        channel: { type: "string" },
+        outputType: { type: "string" },
+        body: { type: "string" },
+      },
+    };
+  }
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary", "stepOutputs"],
+    properties: {
+      summary: { type: "string" },
+      stepOutputs: {
+        type: "object",
+        additionalProperties: false,
+        required: stepIds,
+        properties: stepOutputProperties,
+      },
+    },
+  };
+}
 
 type InternalApiShape = {
   canvasGraph: {
@@ -111,7 +144,6 @@ type InternalApiShape = {
         nodeId: Id<"nodes">;
         modelId: string;
         userId: string;
-        analysisSummary: string;
         reservationId?: Id<"creditTransactions">;
         shouldDecrementConcurrency: boolean;
       },
@@ -161,13 +193,37 @@ type InternalApiShape = {
       { nodeId: Id<"nodes">; statusMessage?: string },
       unknown
     >;
-    finalizeAgentSuccessWithOutputs: FunctionReference<
+    createExecutionSkeletonOutputs: FunctionReference<
       "mutation",
       "internal",
       {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
-        outputs: AgentOutputDraft[];
+        executionPlan: { summary: string; steps: AgentExecutionStep[] };
+      },
+      { outputNodeIds: Id<"nodes">[] }
+    >;
+    completeExecutionStepOutput: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        nodeId: Id<"nodes">;
+        outputNodeId: Id<"nodes">;
+        stepId: string;
+        stepIndex: number;
+        stepTotal: number;
+        title: string;
+        channel: string;
+        outputType: string;
+        body: string;
+      },
+      unknown
+    >;
+    finalizeAgentSuccessWithOutputs: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        nodeId: Id<"nodes">;
         summary: string;
       },
       { outputNodeIds: Id<"nodes">[] }
@@ -256,6 +312,57 @@ function normalizeClarificationQuestions(raw: unknown): AgentClarificationQuesti
   }
 
   return questions;
+}
+
+type AgentExecutionStepRuntime = AgentExecutionStep & {
+  nodeId: Id<"nodes">;
+  stepIndex: number;
+  stepTotal: number;
+};
+
+function normalizeExecutionSteps(raw: unknown): AgentExecutionStepRuntime[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const steps: AgentExecutionStepRuntime[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const itemRecord = item as Record<string, unknown>;
+    const nodeId = trimText(itemRecord.nodeId);
+    const stepId = trimText(itemRecord.stepId);
+    const title = trimText(itemRecord.title);
+    const channel = trimText(itemRecord.channel);
+    const outputType = trimText(itemRecord.outputType);
+    const rawStepIndex = itemRecord.stepIndex;
+    const rawStepTotal = itemRecord.stepTotal;
+    const stepIndex =
+      typeof rawStepIndex === "number" && Number.isFinite(rawStepIndex)
+        ? Math.max(0, Math.floor(rawStepIndex))
+        : -1;
+    const stepTotal =
+      typeof rawStepTotal === "number" && Number.isFinite(rawStepTotal)
+        ? Math.max(0, Math.floor(rawStepTotal))
+        : 0;
+
+    if (!nodeId || !stepId || !title || !channel || !outputType || stepIndex < 0 || stepTotal <= 0) {
+      continue;
+    }
+
+    steps.push({
+      id: stepId,
+      title,
+      channel,
+      outputType,
+      nodeId: nodeId as Id<"nodes">,
+      stepIndex,
+      stepTotal,
+    });
+  }
+
+  return steps.sort((a, b) => a.stepIndex - b.stepIndex);
 }
 
 function serializeNodeDataForPrompt(data: unknown): string {
@@ -395,6 +502,8 @@ export const setAgentAnalyzing = internalMutation({
         modelId: args.modelId,
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+        executionPlanSummary: undefined,
+        executionSteps: [],
       },
     });
   },
@@ -450,6 +559,165 @@ export const setAgentExecuting = internalMutation({
       data: {
         ...prev,
         clarificationQuestions: [],
+      },
+    });
+  },
+});
+
+export const createExecutionSkeletonOutputs = internalMutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    executionPlan: v.object({
+      summary: v.string(),
+      steps: v.array(
+        v.object({
+          id: v.string(),
+          title: v.string(),
+          channel: v.string(),
+          outputType: v.string(),
+        }),
+      ),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const node = await ctx.db.get(args.nodeId);
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    if (node.type !== "agent") {
+      throw new Error("Node must be an agent node");
+    }
+    if (node.canvasId !== args.canvasId) {
+      throw new Error("Agent node does not belong to canvas");
+    }
+
+    const prev = getNodeDataRecord(node.data);
+    const existingOutputNodeIds = Array.isArray(prev.outputNodeIds)
+      ? prev.outputNodeIds.filter((value): value is Id<"nodes"> => typeof value === "string")
+      : [];
+
+    const baseX = node.positionX + node.width + 120;
+    const baseY = node.positionY;
+    const stepTotal = args.executionPlan.steps.length;
+    const outputNodeIds: Id<"nodes">[] = [];
+    const runtimeSteps: Array<{
+      stepId: string;
+      nodeId: Id<"nodes">;
+      stepIndex: number;
+      stepTotal: number;
+      title: string;
+      channel: string;
+      outputType: string;
+    }> = [];
+
+    for (let index = 0; index < args.executionPlan.steps.length; index += 1) {
+      const step = args.executionPlan.steps[index];
+      const outputNodeId = await ctx.db.insert("nodes", {
+        canvasId: args.canvasId,
+        type: "agent-output",
+        positionX: baseX,
+        positionY: baseY + index * 220,
+        width: 360,
+        height: 260,
+        status: "executing",
+        retryCount: 0,
+        data: {
+          isSkeleton: true,
+          stepId: step.id,
+          stepIndex: index,
+          stepTotal,
+          title: step.title,
+          channel: step.channel,
+          outputType: step.outputType,
+          body: "",
+        },
+      });
+
+      outputNodeIds.push(outputNodeId);
+      runtimeSteps.push({
+        stepId: step.id,
+        nodeId: outputNodeId,
+        stepIndex: index,
+        stepTotal,
+        title: step.title,
+        channel: step.channel,
+        outputType: step.outputType,
+      });
+
+      await ctx.db.insert("edges", {
+        canvasId: args.canvasId,
+        sourceNodeId: args.nodeId,
+        targetNodeId: outputNodeId,
+        sourceHandle: undefined,
+        targetHandle: "agent-output-in",
+      });
+    }
+
+    await ctx.db.patch(args.nodeId, {
+      data: {
+        ...prev,
+        executionPlanSummary: trimText(args.executionPlan.summary),
+        executionSteps: runtimeSteps,
+        outputNodeIds: [...existingOutputNodeIds, ...outputNodeIds],
+      },
+    });
+
+    await ctx.db.patch(args.canvasId, {
+      updatedAt: Date.now(),
+    });
+
+    return {
+      outputNodeIds,
+    };
+  },
+});
+
+export const completeExecutionStepOutput = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    outputNodeId: v.id("nodes"),
+    stepId: v.string(),
+    stepIndex: v.number(),
+    stepTotal: v.number(),
+    title: v.string(),
+    channel: v.string(),
+    outputType: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const node = await ctx.db.get(args.nodeId);
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    if (node.type !== "agent") {
+      throw new Error("Node must be an agent node");
+    }
+
+    const outputNode = await ctx.db.get(args.outputNodeId);
+    if (!outputNode) {
+      throw new Error("Output node not found");
+    }
+    if (outputNode.type !== "agent-output") {
+      throw new Error("Node must be an agent-output node");
+    }
+    if (outputNode.canvasId !== node.canvasId) {
+      throw new Error("Output node does not belong to the same canvas");
+    }
+
+    await ctx.db.patch(args.outputNodeId, {
+      status: "done",
+      statusMessage: undefined,
+      retryCount: 0,
+      data: {
+        isSkeleton: false,
+        stepId: trimText(args.stepId),
+        stepIndex: Math.max(0, Math.floor(args.stepIndex)),
+        stepTotal: Math.max(1, Math.floor(args.stepTotal)),
+        title: trimText(args.title),
+        channel: trimText(args.channel),
+        outputType: trimText(args.outputType),
+        body: trimText(args.body),
       },
     });
   },
@@ -517,16 +785,7 @@ export const upsertClarificationAnswers = internalMutation({
 
 export const finalizeAgentSuccessWithOutputs = internalMutation({
   args: {
-    canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
-    outputs: v.array(
-      v.object({
-        title: v.optional(v.string()),
-        channel: v.optional(v.string()),
-        outputType: v.optional(v.string()),
-        body: v.optional(v.string()),
-      }),
-    ),
     summary: v.string(),
   },
   handler: async (ctx, args) => {
@@ -537,47 +796,11 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Agent node does not belong to canvas");
-    }
 
     const prev = getNodeDataRecord(node.data);
     const existingOutputNodeIds = Array.isArray(prev.outputNodeIds)
       ? prev.outputNodeIds.filter((value): value is Id<"nodes"> => typeof value === "string")
       : [];
-
-    const baseX = node.positionX + node.width + 120;
-    const baseY = node.positionY;
-    const outputNodeIds: Id<"nodes">[] = [];
-
-    for (let index = 0; index < args.outputs.length; index += 1) {
-      const normalized = normalizeAgentOutputDraft(args.outputs[index] ?? {});
-      const outputNodeId = await ctx.db.insert("nodes", {
-        canvasId: args.canvasId,
-        type: "agent-output",
-        positionX: baseX,
-        positionY: baseY + index * 220,
-        width: 360,
-        height: 260,
-        status: "done",
-        retryCount: 0,
-        data: {
-          title: normalized.title,
-          channel: normalized.channel,
-          outputType: normalized.outputType,
-          body: normalized.body,
-        },
-      });
-      outputNodeIds.push(outputNodeId);
-
-      await ctx.db.insert("edges", {
-        canvasId: args.canvasId,
-        sourceNodeId: args.nodeId,
-        targetNodeId: outputNodeId,
-        sourceHandle: undefined,
-        targetHandle: "agent-output-in",
-      });
-    }
 
     await ctx.db.patch(args.nodeId, {
       status: "done",
@@ -586,19 +809,19 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
       data: {
         ...prev,
         clarificationQuestions: [],
-        outputNodeIds: [...existingOutputNodeIds, ...outputNodeIds],
+        outputNodeIds: existingOutputNodeIds,
         lastRunSummary: trimText(args.summary),
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
       },
     });
 
-    await ctx.db.patch(args.canvasId, {
+    await ctx.db.patch(node.canvasId, {
       updatedAt: Date.now(),
     });
 
     return {
-      outputNodeIds,
+      outputNodeIds: existingOutputNodeIds,
     };
   },
 });
@@ -632,6 +855,7 @@ export const analyzeAgent = internalAction({
       const analysis = await generateStructuredObjectViaOpenRouter<{
         analysisSummary: string;
         clarificationQuestions: AgentClarificationQuestion[];
+        executionPlan: unknown;
       }>(apiKey, {
         model: args.modelId,
         schemaName: "agent_analyze_result",
@@ -659,6 +883,10 @@ export const analyzeAgent = internalAction({
       const clarificationQuestions = normalizeClarificationQuestions(
         analysis.clarificationQuestions,
       );
+      const executionPlan = normalizeAgentExecutionPlan(analysis.executionPlan);
+      if (executionPlan.steps.length === 0) {
+        throw new Error("Agent analyze returned an empty execution plan");
+      }
       const hasRequiredGaps = !areClarificationAnswersComplete(
         clarificationQuestions,
         existingAnswers,
@@ -672,6 +900,12 @@ export const analyzeAgent = internalAction({
         return;
       }
 
+      await ctx.runMutation(internalApi.agents.createExecutionSkeletonOutputs, {
+        canvasId: args.canvasId,
+        nodeId: args.nodeId,
+        executionPlan,
+      });
+
       await ctx.runMutation(internalApi.agents.setAgentExecuting, {
         nodeId: args.nodeId,
       });
@@ -681,7 +915,6 @@ export const analyzeAgent = internalAction({
         nodeId: args.nodeId,
         modelId: args.modelId,
         userId: args.userId,
-        analysisSummary: trimText(analysis.analysisSummary),
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
       });
@@ -702,7 +935,6 @@ export const executeAgent = internalAction({
     nodeId: v.id("nodes"),
     modelId: v.string(),
     userId: v.string(),
-    analysisSummary: v.string(),
     reservationId: v.optional(v.id("creditTransactions")),
     shouldDecrementConcurrency: v.boolean(),
   },
@@ -723,27 +955,43 @@ export const executeAgent = internalAction({
       const template = getAgentTemplate(trimText(agentData.templateId) || "campaign-distributor");
       const clarificationAnswers = normalizeAnswerMap(agentData.clarificationAnswers);
       const incomingContext = collectIncomingContext(graph, args.nodeId);
+      const executionPlanSummary = trimText(agentData.executionPlanSummary);
+      const executionSteps = normalizeExecutionSteps(agentData.executionSteps);
+
+      if (executionSteps.length === 0) {
+        throw new Error("Agent execute is missing execution steps");
+      }
+
+      const executeSchema = buildExecuteSchema(executionSteps.map((step) => step.id));
 
       const execution = await generateStructuredObjectViaOpenRouter<{
         summary: string;
-        outputs: AgentOutputDraft[];
+        stepOutputs: Record<string, AgentOutputDraft>;
       }>(apiKey, {
         model: args.modelId,
         schemaName: "agent_execute_result",
-        schema: EXECUTE_SCHEMA,
+        schema: executeSchema,
         messages: [
           {
             role: "system",
             content:
-              "You are the LemonSpace Agent Executor. Produce concrete channel outputs from context and clarification answers. Output concise, actionable drafts.",
+              "You are the LemonSpace Agent Executor. Produce concrete channel outputs from context and clarification answers. Return one output per step, keyed by stepId.",
           },
           {
             role: "user",
             content: [
               `Template: ${template?.name ?? "Unknown template"}`,
               `Template description: ${template?.description ?? ""}`,
-              `Analyze summary: ${trimText(args.analysisSummary)}`,
+              `Analyze summary: ${executionPlanSummary}`,
               `Clarification answers: ${JSON.stringify(clarificationAnswers)}`,
+              `Execution steps: ${JSON.stringify(
+                executionSteps.map((step) => ({
+                  id: step.id,
+                  title: step.title,
+                  channel: step.channel,
+                  outputType: step.outputType,
+                })),
+              )}`,
               "Incoming node context:",
               incomingContext,
               "Return structured JSON matching the schema.",
@@ -752,15 +1000,45 @@ export const executeAgent = internalAction({
         ],
       });
 
-      const outputs = Array.isArray(execution.outputs) ? execution.outputs : [];
-      if (outputs.length === 0) {
-        throw new Error("Agent execution returned no outputs");
+      const stepOutputs =
+        execution.stepOutputs && typeof execution.stepOutputs === "object"
+          ? execution.stepOutputs
+          : {};
+
+      for (let index = 0; index < executionSteps.length; index += 1) {
+        const step = executionSteps[index];
+        await ctx.runMutation(internalApi.agents.setAgentExecuting, {
+          nodeId: args.nodeId,
+          statusMessage: `Generating ${step.title} ${step.stepIndex + 1}/${step.stepTotal}`,
+        });
+
+        const rawOutput = stepOutputs[step.id];
+        if (!rawOutput || typeof rawOutput !== "object") {
+          throw new Error(`Missing execution output for step ${step.id}`);
+        }
+
+        const normalized = normalizeAgentOutputDraft({
+          ...rawOutput,
+          title: trimText(rawOutput.title) || step.title,
+          channel: trimText(rawOutput.channel) || step.channel,
+          outputType: trimText(rawOutput.outputType) || step.outputType,
+        });
+
+        await ctx.runMutation(internalApi.agents.completeExecutionStepOutput, {
+          nodeId: args.nodeId,
+          outputNodeId: step.nodeId,
+          stepId: step.id,
+          stepIndex: step.stepIndex,
+          stepTotal: step.stepTotal,
+          title: normalized.title,
+          channel: normalized.channel,
+          outputType: normalized.outputType,
+          body: normalized.body,
+        });
       }
 
       await ctx.runMutation(internalApi.agents.finalizeAgentSuccessWithOutputs, {
-        canvasId: args.canvasId,
         nodeId: args.nodeId,
-        outputs,
         summary: execution.summary,
       });
 

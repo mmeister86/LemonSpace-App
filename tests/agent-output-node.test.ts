@@ -112,4 +112,41 @@ describe("AgentOutputNode", () => {
 
     expect(handleCalls).toEqual([{ type: "target", id: "agent-output-in" }]);
   });
+
+  it("renders skeleton mode with counter and placeholder", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-3",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Planned headline",
+            channel: "linkedin",
+            outputType: "post",
+            isSkeleton: true,
+            stepIndex: 1,
+            stepTotal: 4,
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Skeleton");
+    expect(container.textContent).toContain("2/4");
+    expect(container.querySelector('[data-testid="agent-output-skeleton-body"]')).not.toBeNull();
+    expect(handleCalls).toEqual([{ type: "target", id: "agent-output-in" }]);
+  });
 });

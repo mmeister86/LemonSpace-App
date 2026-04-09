@@ -293,4 +293,51 @@ describe("AgentNode runtime", () => {
     expect(mocks.runAgent).not.toHaveBeenCalled();
     expect(mocks.resumeAgent).not.toHaveBeenCalled();
   });
+
+  it("disables run button and shows progress while executing", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentNode, {
+          id: "agent-3",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent",
+          data: {
+            canvasId: "canvas-1",
+            templateId: "campaign-distributor",
+            modelId: "openai/gpt-5.4-mini",
+            _status: "executing",
+            _statusMessage: "Executing step 2/4",
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const runButton = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Run agent"),
+    );
+    if (!(runButton instanceof HTMLButtonElement)) {
+      throw new Error("Run button not found");
+    }
+
+    expect(runButton.disabled).toBe(true);
+    expect(container.textContent).toContain("Executing step 2/4");
+
+    await act(async () => {
+      runButton.click();
+    });
+
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
 });

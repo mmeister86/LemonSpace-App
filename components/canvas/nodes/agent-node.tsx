@@ -37,6 +37,11 @@ type AgentNodeData = {
   templateId?: string;
   canvasId?: string;
   modelId?: string;
+  executionSteps?: Array<{ stepIndex?: number; stepTotal?: number }>;
+  executionStepIndex?: number;
+  executionStepTotal?: number;
+  _executionStepIndex?: number;
+  _executionStepTotal?: number;
   clarificationQuestions?: AgentClarificationQuestion[];
   clarificationAnswers?: AgentClarificationAnswerMap | Array<{ id: string; value: string }>;
   _status?: string;
@@ -197,6 +202,51 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const resolvedModelId = selectedModel?.id ?? DEFAULT_AGENT_MODEL_ID;
   const creditCost = selectedModel?.creditCost ?? 0;
   const clarificationQuestions = nodeData.clarificationQuestions ?? [];
+  const isExecutionActive = nodeData._status === "analyzing" || nodeData._status === "executing";
+  const executionProgressLine = useMemo(() => {
+    if (nodeData._status !== "executing") {
+      return null;
+    }
+
+    const statusMessage = typeof nodeData._statusMessage === "string" ? nodeData._statusMessage.trim() : "";
+    if (statusMessage.length > 0) {
+      return statusMessage;
+    }
+
+    const totalFromSteps = Array.isArray(nodeData.executionSteps) ? nodeData.executionSteps.length : 0;
+    const stepIndexCandidate =
+      typeof nodeData.executionStepIndex === "number"
+        ? nodeData.executionStepIndex
+        : nodeData._executionStepIndex;
+    const stepTotalCandidate =
+      typeof nodeData.executionStepTotal === "number"
+        ? nodeData.executionStepTotal
+        : nodeData._executionStepTotal;
+    const hasExecutionNumbers =
+      typeof stepIndexCandidate === "number" &&
+      Number.isFinite(stepIndexCandidate) &&
+      typeof stepTotalCandidate === "number" &&
+      Number.isFinite(stepTotalCandidate) &&
+      stepTotalCandidate > 0;
+
+    if (hasExecutionNumbers) {
+      return `Executing step ${Math.max(0, Math.floor(stepIndexCandidate)) + 1}/${Math.floor(stepTotalCandidate)}`;
+    }
+
+    if (totalFromSteps > 0) {
+      return `Executing planned outputs (${totalFromSteps} total)`;
+    }
+
+    return "Executing planned outputs";
+  }, [
+    nodeData._executionStepIndex,
+    nodeData._executionStepTotal,
+    nodeData._status,
+    nodeData._statusMessage,
+    nodeData.executionStepIndex,
+    nodeData.executionStepTotal,
+    nodeData.executionSteps,
+  ]);
 
   const persistNodeData = useCallback(
     (patch: Partial<AgentNodeData>) => {
@@ -239,6 +289,10 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   );
 
   const handleRunAgent = useCallback(async () => {
+    if (isExecutionActive) {
+      return;
+    }
+
     if (status.isOffline) {
       toast.warning(
         "Offline aktuell nicht unterstuetzt",
@@ -257,7 +311,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       nodeId: id as Id<"nodes">,
       modelId: resolvedModelId,
     });
-  }, [nodeData.canvasId, id, resolvedModelId, runAgent, status.isOffline]);
+  }, [isExecutionActive, nodeData.canvasId, id, resolvedModelId, runAgent, status.isOffline]);
 
   const handleSubmitClarification = useCallback(async () => {
     if (status.isOffline) {
@@ -298,6 +352,11 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
         id="agent-in"
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
       />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
+      />
 
       <div className="flex h-full flex-col gap-3 p-3">
         <header className="space-y-1">
@@ -334,10 +393,15 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           <button
             type="button"
             onClick={() => void handleRunAgent()}
-            className="nodrag w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+            disabled={isExecutionActive}
+            aria-busy={isExecutionActive}
+            className="nodrag w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Run agent
           </button>
+          {executionProgressLine ? (
+            <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90">{executionProgressLine}</p>
+          ) : null}
         </section>
 
         {clarificationQuestions.length > 0 ? (
