@@ -9,8 +9,11 @@ import {
   useNodeId,
   useReactFlow,
 } from "@xyflow/react";
-import { Trash2, Copy } from "lucide-react";
+import { Trash2, Copy, Star } from "lucide-react";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import type { Id } from "@/convex/_generated/dataModel";
+import { readNodeFavorite, setNodeFavorite } from "@/lib/canvas-node-favorite";
 import { isCanvasNodeType } from "@/lib/canvas-node-types";
 import { NodeErrorBoundary } from "./node-error-boundary";
 
@@ -89,6 +92,19 @@ function NodeToolbarActions({
   const nodeId = useNodeId();
   const { deleteElements, getNode, getNodes, getEdges, setNodes } = useReactFlow();
   const { createNodeWithIntersection } = useCanvasPlacement();
+  const { queueNodeDataUpdate } = useCanvasSync();
+  const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
+
+  const handleFavoriteToggle = () => {
+    if (!nodeId) return;
+    const currentData = getNode(nodeId)?.data;
+    const nextData = setNodeFavorite(!readNodeFavorite(currentData), currentData);
+    void queueNodeDataUpdate({
+      nodeId: nodeId as Id<"nodes">,
+      data: nextData,
+    });
+  };
+
   const handleDelete = () => {
     if (!nodeId) return;
     const node = getNode(nodeId);
@@ -190,6 +206,22 @@ function NodeToolbarActions({
         ))}
         <button
           type="button"
+          onClick={(e) => {
+            stopPropagation(e);
+            handleFavoriteToggle();
+          }}
+          onPointerDown={stopPropagation}
+          title="Favorite"
+          className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+            isFavorite
+              ? "bg-(--node-favorite-fill) text-(--node-favorite-ring) hover:bg-(--node-favorite-fill)"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          <Star size={14} className={isFavorite ? "fill-current" : ""} />
+        </button>
+        <button
+          type="button"
           onClick={(e) => { stopPropagation(e); handleDuplicate(); }}
           onPointerDown={stopPropagation}
           title="Duplicate"
@@ -231,6 +263,9 @@ export default function BaseNodeWrapper({
   className = "",
 }: BaseNodeWrapperProps) {
   const config = RESIZE_CONFIGS[nodeType] ?? DEFAULT_CONFIG;
+  const nodeId = useNodeId();
+  const { getNode } = useReactFlow();
+  const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
 
   const statusStyles: Record<string, string> = {
     idle: "",
@@ -245,8 +280,9 @@ export default function BaseNodeWrapper({
   return (
     <div
       className={`
-        h-full w-full rounded-xl border bg-card shadow-sm transition-shadow
+        h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
+        ${isFavorite ? "node-favorite-chrome" : ""}
         ${statusStyles[status] ?? ""}
         ${className}
       `}
