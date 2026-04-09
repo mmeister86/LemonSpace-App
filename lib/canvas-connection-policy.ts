@@ -37,6 +37,19 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "detail-adjust",
 ]);
 
+const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "video",
+  "text",
+  "note",
+  "frame",
+  "compare",
+  "render",
+  "ai-image",
+  "ai-video",
+]);
+
 const ADJUSTMENT_DISALLOWED_TARGET_TYPES = new Set<string>(["prompt", "ai-image"]);
 
 export type CanvasConnectionValidationReason =
@@ -51,7 +64,8 @@ export type CanvasConnectionValidationReason =
   | "crop-incoming-limit"
   | "compare-incoming-limit"
   | "adjustment-target-forbidden"
-  | "render-source-invalid";
+  | "render-source-invalid"
+  | "agent-source-invalid";
 
 export function validateCanvasConnectionPolicy(args: {
   sourceType: string;
@@ -79,6 +93,10 @@ export function validateCanvasConnectionPolicy(args: {
     if (targetIncomingCount >= 1) {
       return "crop-incoming-limit";
     }
+  }
+
+  if (targetType === "agent" && !AGENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+    return "agent-source-invalid";
   }
 
   if (isAdjustmentNodeType(targetType) && targetType !== "render") {
@@ -132,6 +150,8 @@ export function getCanvasConnectionValidationMessage(
       return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
     case "render-source-invalid":
       return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Crop- oder Adjustment-Input.";
+    case "agent-source-invalid":
+      return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
     default:
       return "Verbindung ist fuer diese Node-Typen nicht erlaubt.";
   }

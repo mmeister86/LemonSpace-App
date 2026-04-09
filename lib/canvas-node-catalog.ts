@@ -220,8 +220,6 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     label: "Agent",
     category: "control",
     phase: 2,
-    implemented: false,
-    disabledHint: "Folgt in Phase 2",
   }),
   entry({
     type: "mixer",

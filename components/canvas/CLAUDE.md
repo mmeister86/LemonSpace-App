@@ -53,7 +53,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text`, `ai-video`, `agent-output` | KI-generierte Inhalte |
 | **transform** (Transformation) | `crop`, `bg-remove`, `upscale` | Bildbearbeitung-Transformationen |
 | **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust` | Preset-basierte Adjustments |
-| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch` | Kontrollfluss-Elemente |
+| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch`, `agent` | Kontrollfluss-Elemente |
 | **layout** (Canvas & Layout) | `group`, `frame`, `note`, `compare` | Layout-Elemente |
 
 ### Node-Typen im Detail
@@ -68,6 +68,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `video-prompt` | 2 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
 | `ai-text` | 2 | 🔲 | ai-output | source: `text-out`, target: `text-in` |
 | `ai-video` | 2 | ✅ (systemOutput) | ai-output | source: `video-out`, target: `video-in` |
+| `agent` | 2 | ✅ | control | target: `agent-in` (input-only MVP) |
 | `agent-output` | 3 | 🔲 | ai-output | systemOutput: true |
 | `crop` | 2 | 🔲 | transform | 🔲 |
 | `bg-remove` | 2 | 🔲 | transform | 🔲 |
@@ -115,6 +116,7 @@ Zweistufiger Node-Flow analog `prompt → ai-image`:
 image:       280 × 200    prompt:       288 × 220
 text:        256 × 120    ai-image:     320 × 408
 video-prompt: 288 × 220   ai-video:     360 × 280
+agent:       360 × 320
 group:       400 × 300    frame:        400 × 300
 note:        208 × 100    compare:      500 × 380
 ```
@@ -213,6 +215,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `ai-image-node.tsx` | KI-Bild-Output-Node mit Bildvorschau, Metadaten, Retry |
 | `video-prompt-node.tsx` | KI-Video-Steuer-Node mit Modell-/Dauer-Selector, Credit-Anzeige, Generate-Button |
 | `ai-video-node.tsx` | KI-Video-Output-Node mit Video-Player, Metadaten, Retry-Button |
+| `agent-node.tsx` | Statischer Agent-Input-Node (Campaign Distributor) mit Kanal-/Input-/Output-Metadaten |
 
 ---
 
@@ -278,5 +281,6 @@ useCanvasData (use-canvas-data.ts)
 - **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
+- **Agent-MVP:** `agent` ist aktuell input-only (`agent-in`), ohne ausgehenden Handle. Er akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`), keine Prompt-Steuerknoten.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
 - **Canvas Graph Query:** Der Canvas nutzt `canvasGraph.get` (aus `convex/canvasGraph.ts`) statt separater `nodes.list`/`edges.list` Queries. Optimistic Updates laufen über `canvas-graph-query-cache.ts`.

@@ -13,6 +13,7 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `canvas-node-types.ts` | TypeScript-Typen und Union-Typen für Canvas-Nodes |
 | `canvas-node-templates.ts` | Default-Daten für neue Nodes (beim Einfügen aus Palette) |
 | `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
+| `agent-templates.ts` | Typsichere Agent-Registry für statische Agent-Node-Metadaten |
 | `ai-models.ts` | Client-seitige Bild-Modell-Definitionen (muss mit `convex/openrouter.ts` in sync bleiben) |
 | `ai-video-models.ts` | Video-Modell-Registry: 5 MVP-Modelle mit Endpunkten, Credit-Kosten, Tier-Zugang |
 | `video-poll-logging.ts` | Log-Volumen-Steuerung für Video-Polling (vermeidet excessive Konsolenausgabe) |
@@ -48,6 +49,7 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 - `NODE_DEFAULTS` — Default-Größen und Daten per Node-Typ (inkl. `video-prompt` und `ai-video`)
 - `NODE_HANDLE_MAP` — Handle-IDs pro Node-Typ (inkl. `video-prompt-out/in` und `video-out/in`)
 - `SOURCE_NODE_GLOW_RGB` — Edge-Glow-Farben pro Source-Node-Typ (inkl. `video-prompt` und `ai-video`)
+- `agent` ist als input-only Node enthalten (`NODE_HANDLE_MAP.agent = { target: "agent-in" }`)
 - `computeBridgeCreatesForDeletedNodes` — Kanten-Reconnect nach Node-Löschung
 - `computeMediaNodeSize` — Dynamische Node-Größe basierend auf Bild-Dimensionen
 
@@ -112,6 +114,7 @@ Default-Initial-Daten für neue Nodes beim Einfügen aus Palette.
 - Erstellt durch die Node-Katalog-Einträge
 - Enthält default-Werte für `data`-Felder
 - `video-prompt` hat Default-Daten: `{ modelId: "wan-2-2-720p", durationSeconds: 5 }`
+- `agent` hat aktuell ein statisches Template-Default: `{ templateId: "campaign-distributor" }`
 - Wird von `canvas.tsx` verwendet beim Node-Create
 
 ---
@@ -134,6 +137,7 @@ Regeln für erlaubte Verbindungen zwischen Node-Typen.
   - `ai-video` als Target akzeptiert nur `video-prompt` als Source (`ai-video-source-invalid`)
   - `video-prompt` als Source akzeptiert nur `ai-video` als Target (`video-prompt-target-invalid`)
   - `text → video-prompt` ✅ (Prompt-Quelle, über default-Handles)
+- **Agent-MVP:** `agent` akzeptiert nur Content-/Kontext-Quellen (`agent-source-invalid` bei Prompt/Steuerknoten), ohne eingehendes Kantenlimit
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---

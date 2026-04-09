@@ -120,6 +120,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   "detail-adjust": [99, 102, 241],
   crop: [139, 92, 246],
   render: [14, 165, 233],
+  agent: [245, 158, 11],
 };
 
 /** Compare: Ziel-Handles blau/smaragd, Quelle compare-out grau (wie in compare-node.tsx). */
@@ -227,6 +228,7 @@ export const NODE_HANDLE_MAP: Record<
   "detail-adjust": { source: undefined, target: undefined },
   crop: { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
+  agent: { target: "agent-in" },
 };
 
 /**
@@ -275,6 +277,11 @@ export const NODE_DEFAULTS: Record<
     width: 300,
     height: 420,
     data: { outputResolution: "original", format: "png", jpegQuality: 90 },
+  },
+  agent: {
+    width: 360,
+    height: 320,
+    data: { templateId: "campaign-distributor" },
   },
 };
 

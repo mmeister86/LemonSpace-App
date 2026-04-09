@@ -12,7 +12,7 @@ import {
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import { buildHistogramPlot } from "@/lib/image-pipeline/histogram-plot";
 
-const PREVIEW_PIPELINE_TYPES = new Set(["curves", "color-adjust", "light-adjust", "detail-adjust"]);
+const PREVIEW_PIPELINE_TYPES = new Set(["crop", "curves", "color-adjust", "light-adjust", "detail-adjust"]);
 
 export default function AdjustmentPreview({
   nodeId,

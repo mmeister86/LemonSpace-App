@@ -35,6 +35,15 @@ export const CANVAS_NODE_TEMPLATES = [
     },
   },
   {
+    type: "agent",
+    label: "Campaign Distributor",
+    width: 360,
+    height: 320,
+    defaultData: {
+      templateId: "campaign-distributor",
+    },
+  },
+  {
     type: "note",
     label: "Notiz",
     width: 220,

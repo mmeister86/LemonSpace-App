@@ -159,4 +159,42 @@ describe("canvas connection policy", () => {
       getCanvasConnectionValidationMessage("ai-video-source-invalid"),
     ).toBe("KI-Video-Ausgabe akzeptiert nur Eingaben von KI-Video.");
   });
+
+  it("allows render to agent", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "render",
+        targetType: "agent",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows compare to agent", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "compare",
+        targetType: "agent",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("blocks prompt to agent", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "prompt",
+        targetType: "agent",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("agent-source-invalid");
+  });
+
+  it("describes invalid agent source message", () => {
+    expect(
+      getCanvasConnectionValidationMessage("agent-source-invalid"),
+    ).toBe(
+      "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.",
+    );
+  });
 });
