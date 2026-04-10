@@ -346,6 +346,96 @@ describe("canvas flow reconciliation helpers", () => {
     expect(result.nextPendingLocalNodeDataPins.size).toBe(0);
   });
 
+  it("keeps pinned local node size until convex catches up", () => {
+    const pinnedSize = { width: 419, height: 466 };
+
+    const result = reconcileCanvasFlowNodes({
+      previousNodes: [
+        {
+          id: "node-1",
+          type: "render",
+          position: { x: 120, y: 80 },
+          data: {},
+          style: pinnedSize,
+        },
+      ],
+      incomingNodes: [
+        {
+          id: "node-1",
+          type: "render",
+          position: { x: 120, y: 80 },
+          data: {},
+          style: { width: 640, height: 360 },
+        },
+      ],
+      convexNodes: [{ _id: asNodeId("node-1"), type: "render" }],
+      deletingNodeIds: new Set(),
+      resolvedRealIdByClientRequest: new Map(),
+      pendingConnectionCreateIds: new Set(),
+      preferLocalPositionNodeIds: new Set(),
+      pendingLocalPositionPins: new Map(),
+      pendingLocalNodeSizePins: new Map([["node-1", pinnedSize]]),
+      pendingMovePins: new Map(),
+    });
+
+    expect(result.nodes).toEqual([
+      {
+        id: "node-1",
+        type: "render",
+        position: { x: 120, y: 80 },
+        data: {},
+        style: pinnedSize,
+      },
+    ]);
+    expect(result.nextPendingLocalNodeSizePins).toEqual(
+      new Map([["node-1", pinnedSize]]),
+    );
+  });
+
+  it("clears pinned local node size once convex matches the persisted size", () => {
+    const pinnedSize = { width: 419, height: 466 };
+
+    const result = reconcileCanvasFlowNodes({
+      previousNodes: [
+        {
+          id: "node-1",
+          type: "render",
+          position: { x: 120, y: 80 },
+          data: {},
+          style: pinnedSize,
+        },
+      ],
+      incomingNodes: [
+        {
+          id: "node-1",
+          type: "render",
+          position: { x: 120, y: 80 },
+          data: {},
+          style: pinnedSize,
+        },
+      ],
+      convexNodes: [{ _id: asNodeId("node-1"), type: "render" }],
+      deletingNodeIds: new Set(),
+      resolvedRealIdByClientRequest: new Map(),
+      pendingConnectionCreateIds: new Set(),
+      preferLocalPositionNodeIds: new Set(),
+      pendingLocalPositionPins: new Map(),
+      pendingLocalNodeSizePins: new Map([["node-1", pinnedSize]]),
+      pendingMovePins: new Map(),
+    });
+
+    expect(result.nodes).toEqual([
+      {
+        id: "node-1",
+        type: "render",
+        position: { x: 120, y: 80 },
+        data: {},
+        style: pinnedSize,
+      },
+    ]);
+    expect(result.nextPendingLocalNodeSizePins.size).toBe(0);
+  });
+
   it("filters deleting nodes from incoming reconciliation results", () => {
     const result = reconcileCanvasFlowNodes({
       previousNodes: [

@@ -39,6 +39,7 @@ type HarnessProps = {
   previousConvexNodeIdsSnapshot: Set<string>;
   pendingLocalPositionPins?: Map<string, { x: number; y: number }>;
   pendingLocalNodeDataPins?: Map<string, unknown>;
+  pendingLocalNodeSizePins?: Map<string, { width: number; height: number }>;
   preferLocalPositionNodeIds?: Set<string>;
   isResizingRefOverride?: { current: boolean };
 };
@@ -82,6 +83,9 @@ function HookHarness(props: HarnessProps) {
   const pendingLocalNodeDataUntilConvexMatchesRef = useRef(
     props.pendingLocalNodeDataPins ?? new Map<string, unknown>(),
   );
+  const pendingLocalNodeSizeUntilConvexMatchesRef = useRef(
+    props.pendingLocalNodeSizePins ?? new Map<string, { width: number; height: number }>(),
+  );
   const preferLocalPositionNodeIdsRef = useRef(
     props.preferLocalPositionNodeIds ?? new Set<string>(),
   );
@@ -120,6 +124,7 @@ function HookHarness(props: HarnessProps) {
       pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef,
+      pendingLocalNodeSizeUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
       isDragging: isDraggingRef,
       isResizing: isResizingRef,

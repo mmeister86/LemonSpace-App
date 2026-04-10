@@ -145,12 +145,40 @@ export function categorizeError(error: unknown): {
 
 export function formatTerminalStatusMessage(error: unknown): string {
   const code = getErrorCode(error);
-  if (code) {
+  if (code === "OPENROUTER_STRUCTURED_OUTPUT_INVALID_JSON") {
+    return "Provider: Strukturierte Antwort konnte nicht gelesen werden";
+  }
+
+  if (code === "OPENROUTER_STRUCTURED_OUTPUT_MISSING_CONTENT") {
+    return "Provider: Strukturierte Antwort fehlt";
+  }
+
+  if (code && code !== "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR") {
     return code;
   }
 
-  const message = errorMessage(error).trim() || "Generation failed";
-  const { category } = categorizeError(error);
+  const convexData =
+    error instanceof ConvexError ? (error.data as ErrorData | undefined) : undefined;
+
+  const convexDataMessage =
+    typeof convexData?.message === "string" ? convexData.message.trim() : "";
+  const convexDataStatus =
+    typeof convexData?.status === "number" && Number.isFinite(convexData.status)
+      ? convexData.status
+      : null;
+
+  const message =
+    code === "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR"
+      ? convexDataMessage ||
+        (convexDataStatus !== null
+          ? `HTTP ${convexDataStatus}`
+          : "Anfrage fehlgeschlagen")
+      : errorMessage(error).trim() || "Generation failed";
+
+  const { category } =
+    code === "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR"
+      ? { category: "provider" as const }
+      : categorizeError(error);
 
   const prefixByCategory: Record<Exclude<ErrorCategory, "unknown">, string> = {
     credits: "Credits",

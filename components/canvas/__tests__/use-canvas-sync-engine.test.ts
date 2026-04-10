@@ -160,7 +160,7 @@ describe("useCanvasSyncEngine", () => {
       getEnqueueSyncMutation: () => enqueueSyncMutation,
       getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
       getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
-      getSetNodes: () => setNodes,
+      getSetNodes: () => setNodes as never,
     });
 
     await controller.queueNodeDataUpdate({
@@ -175,6 +175,48 @@ describe("useCanvasSyncEngine", () => {
     expect(enqueueSyncMutation).toHaveBeenCalledWith("updateData", {
       nodeId: asNodeId("node-1"),
       data: { blackPoint: 209 },
+    });
+  });
+
+  it("pins local node size immediately when queueing a resize", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+    let nodes = [
+      {
+        id: "node-1",
+        type: "render",
+        position: { x: 0, y: 0 },
+        data: {},
+        style: { width: 640, height: 360 },
+      },
+    ];
+    const setNodes = (updater: (current: typeof nodes) => typeof nodes) => {
+      nodes = updater(nodes);
+      return nodes;
+    };
+
+    const controller = createCanvasSyncEngineController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+      getSetNodes: () => setNodes as never,
+    });
+
+    await controller.queueNodeResize({
+      nodeId: asNodeId("node-1"),
+      width: 419,
+      height: 466,
+    });
+
+    expect(nodes[0]?.style).toEqual({ width: 419, height: 466 });
+    expect(controller.pendingLocalNodeSizeUntilConvexMatchesRef.current).toEqual(
+      new Map([["node-1", { width: 419, height: 466 }]]),
+    );
+    expect(enqueueSyncMutation).toHaveBeenCalledWith("resizeNode", {
+      nodeId: asNodeId("node-1"),
+      width: 419,
+      height: 466,
     });
   });
 });

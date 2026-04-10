@@ -104,7 +104,106 @@ describe("generateStructuredObjectViaOpenRouter", () => {
           schema,
         },
       },
+      plugins: [{ id: "response-healing" }],
     });
+  });
+
+  it("parses content when provider returns array text parts", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          choices: [
+            {
+              message: {
+                content: [
+                  { type: "text", text: '{"title": "Lemon"' },
+                  { type: "text", text: ', "confidence": 0.75}' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await generateStructuredObjectViaOpenRouter<{
+      title: string;
+      confidence: number;
+    }>("test-api-key", {
+      model: "openai/gpt-5-mini",
+      messages: [{ role: "user", content: "hello" }],
+      schemaName: "test_schema",
+      schema: { type: "object" },
+    });
+
+    expect(result).toEqual({ title: "Lemon", confidence: 0.75 });
+  });
+
+  it("parses fenced json content", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          choices: [
+            {
+              message: {
+                content:
+                  "Here is the result:\n```json\n{\n  \"title\": \"LemonSpace\",\n  \"confidence\": 0.88\n}\n```\nThanks.",
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await generateStructuredObjectViaOpenRouter<{
+      title: string;
+      confidence: number;
+    }>("test-api-key", {
+      model: "openai/gpt-5-mini",
+      messages: [{ role: "user", content: "hello" }],
+      schemaName: "test_schema",
+      schema: { type: "object" },
+    });
+
+    expect(result).toEqual({ title: "LemonSpace", confidence: 0.88 });
+  });
+
+  it("returns message.parsed directly when provided", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          choices: [
+            {
+              message: {
+                parsed: {
+                  title: "Parsed Result",
+                  confidence: 0.99,
+                },
+                content: "not valid json",
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await generateStructuredObjectViaOpenRouter<{
+      title: string;
+      confidence: number;
+    }>("test-api-key", {
+      model: "openai/gpt-5-mini",
+      messages: [{ role: "user", content: "hello" }],
+      schemaName: "test_schema",
+      schema: { type: "object" },
+    });
+
+    expect(result).toEqual({ title: "Parsed Result", confidence: 0.99 });
   });
 
   it("throws ConvexError code when response content is missing", async () => {

@@ -119,6 +119,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef,
+      pendingLocalNodeSizeUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
     },
     actions: {
@@ -454,6 +455,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       pendingConnectionCreatesRef,
       pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef,
+      pendingLocalNodeSizeUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
       isDragging,
       isResizing,

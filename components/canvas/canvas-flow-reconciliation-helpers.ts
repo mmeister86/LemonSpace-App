@@ -354,6 +354,49 @@ function applyLocalNodeDataPins(args: {
   };
 }
 
+function nodeStyleIncludesSizePin(
+  style: RFNode["style"] | undefined,
+  pin: { width: number; height: number },
+): boolean {
+  return style?.width === pin.width && style?.height === pin.height;
+}
+
+function applyLocalNodeSizePins(args: {
+  nodes: RFNode[];
+  pendingLocalNodeSizePins: ReadonlyMap<string, { width: number; height: number }>;
+}): {
+  nodes: RFNode[];
+  nextPendingLocalNodeSizePins: Map<string, { width: number; height: number }>;
+} {
+  const nodeIds = new Set(args.nodes.map((node) => node.id));
+  const nextPendingLocalNodeSizePins = new Map(
+    [...args.pendingLocalNodeSizePins].filter(([nodeId]) => nodeIds.has(nodeId)),
+  );
+  const nodes = args.nodes.map((node) => {
+    const pin = nextPendingLocalNodeSizePins.get(node.id);
+    if (!pin) return node;
+
+    if (nodeStyleIncludesSizePin(node.style, pin)) {
+      nextPendingLocalNodeSizePins.delete(node.id);
+      return node;
+    }
+
+    return {
+      ...node,
+      style: {
+        ...(node.style ?? {}),
+        width: pin.width,
+        height: pin.height,
+      },
+    };
+  });
+
+  return {
+    nodes,
+    nextPendingLocalNodeSizePins,
+  };
+}
+
 export function reconcileCanvasFlowNodes(args: {
   previousNodes: RFNode[];
   incomingNodes: RFNode[];
@@ -364,12 +407,14 @@ export function reconcileCanvasFlowNodes(args: {
   preferLocalPositionNodeIds: ReadonlySet<string>;
   pendingLocalPositionPins: ReadonlyMap<string, { x: number; y: number }>;
   pendingLocalNodeDataPins?: ReadonlyMap<string, unknown>;
+  pendingLocalNodeSizePins?: ReadonlyMap<string, { width: number; height: number }>;
   pendingMovePins: ReadonlyMap<string, { x: number; y: number }>;
 }): {
   nodes: RFNode[];
   inferredRealIdByClientRequest: Map<string, Id<"nodes">>;
   nextPendingLocalPositionPins: Map<string, { x: number; y: number }>;
   nextPendingLocalNodeDataPins: Map<string, unknown>;
+  nextPendingLocalNodeSizePins: Map<string, { width: number; height: number }>;
   clearedPreferLocalPositionNodeIds: string[];
 } {
   const inferredRealIdByClientRequest = inferPendingConnectionNodeHandoff({
@@ -392,8 +437,12 @@ export function reconcileCanvasFlowNodes(args: {
     nodes: mergedNodes,
     pendingLocalNodeDataPins: args.pendingLocalNodeDataPins ?? new Map(),
   });
-  const pinnedNodes = applyLocalPositionPins({
+  const sizePinnedNodes = applyLocalNodeSizePins({
     nodes: dataPinnedNodes.nodes,
+    pendingLocalNodeSizePins: args.pendingLocalNodeSizePins ?? new Map(),
+  });
+  const pinnedNodes = applyLocalPositionPins({
+    nodes: sizePinnedNodes.nodes,
     pendingLocalPositionPins: args.pendingLocalPositionPins,
   });
   const nodes = applyPinnedNodePositionsReadOnly(
@@ -419,6 +468,7 @@ export function reconcileCanvasFlowNodes(args: {
     inferredRealIdByClientRequest,
     nextPendingLocalPositionPins: pinnedNodes.nextPendingLocalPositionPins,
     nextPendingLocalNodeDataPins: dataPinnedNodes.nextPendingLocalNodeDataPins,
+    nextPendingLocalNodeSizePins: sizePinnedNodes.nextPendingLocalNodeSizePins,
     clearedPreferLocalPositionNodeIds,
   };
 }

@@ -2,6 +2,155 @@ import { ConvexError } from "convex/values";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+function parseJsonSafely(text: string):
+  | { ok: true; value: unknown }
+  | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function extractTextFromStructuredContent(content: unknown): string | undefined {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const textParts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      textParts.push(part);
+      continue;
+    }
+    if (!part || typeof part !== "object") {
+      continue;
+    }
+
+    const partRecord = part as Record<string, unknown>;
+    if (typeof partRecord.text === "string") {
+      textParts.push(partRecord.text);
+    }
+  }
+
+  return textParts.length > 0 ? textParts.join("") : undefined;
+}
+
+function extractFencedJsonPayload(text: string): string | undefined {
+  const fencedBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = fencedBlockRegex.exec(text)) !== null) {
+    const payload = match[1];
+    if (typeof payload === "string" && payload.trim() !== "") {
+      return payload;
+    }
+  }
+  return undefined;
+}
+
+function extractBalancedJsonCandidate(text: string, startIndex: number): string | undefined {
+  const startChar = text[startIndex];
+  if (startChar !== "{" && startChar !== "[") {
+    return undefined;
+  }
+
+  const expectedClosings: string[] = [];
+  let inString = false;
+  let isEscaped = false;
+
+  for (let i = startIndex; i < text.length; i += 1) {
+    const ch = text[i]!;
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        isEscaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      expectedClosings.push("}");
+      continue;
+    }
+    if (ch === "[") {
+      expectedClosings.push("]");
+      continue;
+    }
+
+    if (ch === "}" || ch === "]") {
+      const expected = expectedClosings.pop();
+      if (expected !== ch) {
+        return undefined;
+      }
+      if (expectedClosings.length === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractFirstBalancedJson(text: string): string | undefined {
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (ch !== "{" && ch !== "[") {
+      continue;
+    }
+
+    const candidate = extractBalancedJsonCandidate(text, i);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function parseStructuredJsonFromMessageContent(contentText: string):
+  | { ok: true; value: unknown }
+  | { ok: false } {
+  const direct = parseJsonSafely(contentText);
+  if (direct.ok) {
+    return direct;
+  }
+
+  const fencedPayload = extractFencedJsonPayload(contentText);
+  if (fencedPayload) {
+    const fenced = parseJsonSafely(fencedPayload);
+    if (fenced.ok) {
+      return fenced;
+    }
+  }
+
+  const balancedPayload = extractFirstBalancedJson(contentText);
+  if (balancedPayload) {
+    const balanced = parseJsonSafely(balancedPayload);
+    if (balanced.ok) {
+      return balanced;
+    }
+  }
+
+  return { ok: false };
+}
+
 export async function generateStructuredObjectViaOpenRouter<T>(
   apiKey: string,
   args: {
@@ -33,6 +182,7 @@ export async function generateStructuredObjectViaOpenRouter<T>(
           schema: args.schema,
         },
       },
+      plugins: [{ id: "response-healing" }],
     }),
   });
 
@@ -46,21 +196,31 @@ export async function generateStructuredObjectViaOpenRouter<T>(
   }
 
   const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
+  const message = data?.choices?.[0]?.message as
+    | Record<string, unknown>
+    | undefined;
 
-  if (typeof content !== "string" || content.trim() === "") {
+  const parsed = message?.parsed;
+  if (parsed && typeof parsed === "object") {
+    return parsed as T;
+  }
+
+  const contentText = extractTextFromStructuredContent(message?.content);
+
+  if (typeof contentText !== "string" || contentText.trim() === "") {
     throw new ConvexError({
       code: "OPENROUTER_STRUCTURED_OUTPUT_MISSING_CONTENT",
     });
   }
 
-  try {
-    return JSON.parse(content) as T;
-  } catch {
+  const parsedContent = parseStructuredJsonFromMessageContent(contentText);
+  if (!parsedContent.ok) {
     throw new ConvexError({
       code: "OPENROUTER_STRUCTURED_OUTPUT_INVALID_JSON",
     });
   }
+
+  return parsedContent.value as T;
 }
 
 export interface OpenRouterModel {

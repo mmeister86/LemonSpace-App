@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ConvexError } from "convex/values";
 import { FreepikApiError } from "@/convex/freepik";
 import {
   categorizeError,
@@ -29,6 +30,42 @@ describe("ai error helpers", () => {
     expect(formatTerminalStatusMessage(new Error("network disconnected"))).toBe(
       "Netzwerk: network disconnected",
     );
+  });
+
+  it("formats structured-output invalid json with human-readable provider message", () => {
+    expect(
+      formatTerminalStatusMessage(
+        new ConvexError({ code: "OPENROUTER_STRUCTURED_OUTPUT_INVALID_JSON" }),
+      ),
+    ).toBe("Provider: Strukturierte Antwort konnte nicht gelesen werden");
+  });
+
+  it("formats structured-output missing content with human-readable provider message", () => {
+    expect(
+      formatTerminalStatusMessage(
+        new ConvexError({ code: "OPENROUTER_STRUCTURED_OUTPUT_MISSING_CONTENT" }),
+      ),
+    ).toBe("Provider: Strukturierte Antwort fehlt");
+  });
+
+  it("formats structured-output http error with provider prefix and server message", () => {
+    expect(
+      formatTerminalStatusMessage(
+        new ConvexError({
+          code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
+          status: 503,
+          message: "OpenRouter API error 503: Upstream timeout",
+        }),
+      ),
+    ).toBe("Provider: OpenRouter API error 503: Upstream timeout");
+  });
+
+  it("formats structured-output http error without falling back to raw code", () => {
+    expect(
+      formatTerminalStatusMessage(
+        new ConvexError({ code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR" }),
+      ),
+    ).toBe("Provider: Anfrage fehlgeschlagen");
   });
 
   it("uses staged poll delays", () => {

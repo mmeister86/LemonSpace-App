@@ -214,6 +214,9 @@ export function createCanvasSyncEngineController({
   const pendingLocalNodeDataUntilConvexMatchesRef = {
     current: new Map<string, unknown>(),
   };
+  const pendingLocalNodeSizeUntilConvexMatchesRef = {
+    current: new Map<string, { width: number; height: number }>(),
+  };
   const preferLocalPositionNodeIdsRef = { current: new Set<string>() };
 
   const flushPendingResizeForClientRequest = async (
@@ -223,6 +226,10 @@ export function createCanvasSyncEngineController({
     const pendingResize = pendingResizeAfterCreateRef.current.get(clientRequestId);
     if (!pendingResize) return;
     pendingResizeAfterCreateRef.current.delete(clientRequestId);
+    pendingLocalNodeSizeUntilConvexMatchesRef.current.delete(
+      `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}`,
+    );
+    pinNodeSizeLocally(realId as string, pendingResize);
     await getEnqueueSyncMutation()("resizeNode", {
       nodeId: realId,
       width: pendingResize.width,
@@ -239,6 +246,25 @@ export function createCanvasSyncEngineController({
           ? {
               ...node,
               data: data as Record<string, unknown>,
+            }
+          : node,
+      ),
+    );
+  };
+
+  const pinNodeSizeLocally = (nodeId: string, size: { width: number; height: number }): void => {
+    pendingLocalNodeSizeUntilConvexMatchesRef.current.set(nodeId, size);
+    const setNodes = getSetNodes?.();
+    setNodes?.((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              style: {
+                ...(node.style ?? {}),
+                width: size.width,
+                height: size.height,
+              },
             }
           : node,
       ),
@@ -265,6 +291,10 @@ export function createCanvasSyncEngineController({
     height: number;
   }): Promise<void> => {
     const rawNodeId = args.nodeId as string;
+    pinNodeSizeLocally(rawNodeId, {
+      width: args.width,
+      height: args.height,
+    });
     if (!isOptimisticNodeId(rawNodeId) || !getIsSyncOnline()) {
       await getEnqueueSyncMutation()("resizeNode", args);
       return;
@@ -276,6 +306,11 @@ export function createCanvasSyncEngineController({
       : undefined;
 
     if (resolvedRealId) {
+      pendingLocalNodeSizeUntilConvexMatchesRef.current.delete(rawNodeId);
+      pinNodeSizeLocally(resolvedRealId as string, {
+        width: args.width,
+        height: args.height,
+      });
       await getEnqueueSyncMutation()("resizeNode", {
         nodeId: resolvedRealId,
         width: args.width,
@@ -337,6 +372,7 @@ export function createCanvasSyncEngineController({
         pendingMoveAfterCreateRef.current.delete(clientRequestId);
         pendingResizeAfterCreateRef.current.delete(clientRequestId);
         pendingDataAfterCreateRef.current.delete(clientRequestId);
+        pendingLocalNodeSizeUntilConvexMatchesRef.current.delete(realId as string);
         pendingLocalNodeDataUntilConvexMatchesRef.current.delete(realId as string);
         pendingEdgeSplitByClientRequestRef.current.delete(clientRequestId);
         pendingConnectionCreatesRef.current.delete(clientRequestId);
@@ -487,6 +523,7 @@ export function createCanvasSyncEngineController({
     pendingConnectionCreatesRef,
     pendingLocalPositionUntilConvexMatchesRef,
     pendingLocalNodeDataUntilConvexMatchesRef,
+    pendingLocalNodeSizeUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     flushPendingResizeForClientRequest,
     flushPendingDataForClientRequest,
@@ -1858,6 +1895,8 @@ export function useCanvasSyncEngine({
         controller.pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef:
         controller.pendingLocalNodeDataUntilConvexMatchesRef,
+      pendingLocalNodeSizeUntilConvexMatchesRef:
+        controller.pendingLocalNodeSizeUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef: controller.preferLocalPositionNodeIdsRef,
       pendingCreatePromiseByClientRequestRef,
     },

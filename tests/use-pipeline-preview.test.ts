@@ -1046,4 +1046,144 @@ describe("preview histogram call sites", () => {
       }),
     );
   });
+
+  it("prefers preview aspect ratio for RenderNode resize when pipeline contains crop", async () => {
+    const queueNodeResize = vi.fn(async () => undefined);
+
+    vi.doMock("@/hooks/use-pipeline-preview", () => ({
+      usePipelinePreview: () => ({
+        canvasRef: { current: null },
+        histogram: emptyHistogram(),
+        isRendering: false,
+        hasSource: true,
+        previewAspectRatio: 1,
+        error: null,
+      }),
+    }));
+    vi.doMock("@xyflow/react", () => ({
+      Handle: () => null,
+      Position: { Left: "left", Right: "right" },
+    }));
+    vi.doMock("convex/react", () => ({
+      useMutation: () => vi.fn(async () => undefined),
+    }));
+    vi.doMock("lucide-react", () => ({
+      AlertCircle: () => null,
+      ArrowDown: () => null,
+      CheckCircle2: () => null,
+      CloudUpload: () => null,
+      Loader2: () => null,
+      Maximize2: () => null,
+      X: () => null,
+    }));
+    vi.doMock("@/components/canvas/nodes/base-node-wrapper", () => ({
+      default: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+    }));
+    vi.doMock("@/components/canvas/nodes/adjustment-controls", () => ({
+      SliderRow: () => null,
+    }));
+    vi.doMock("@/components/ui/select", () => ({
+      Select: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectContent: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectItem: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectTrigger: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      SelectValue: () => null,
+    }));
+    vi.doMock("@/components/canvas/canvas-sync-context", () => ({
+      useCanvasSync: () => ({
+        queueNodeDataUpdate: vi.fn(async () => undefined),
+        queueNodeResize,
+        status: { isOffline: false },
+      }),
+    }));
+    vi.doMock("@/hooks/use-debounced-callback", () => ({
+      useDebouncedCallback: (callback: () => void) => callback,
+    }));
+    vi.doMock("@/components/canvas/canvas-graph-context", () => ({
+      useCanvasGraph: () => ({
+        nodes: [],
+        edges: [],
+        previewNodeDataOverrides: new Map(),
+      }),
+    }));
+    vi.doMock("@/lib/canvas-render-preview", () => ({
+      resolveRenderPreviewInputFromGraph: () => ({
+        sourceUrl: "https://cdn.example.com/source.png",
+        steps: [
+          {
+            nodeId: "crop-1",
+            type: "crop",
+            params: { cropRect: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 } },
+          },
+        ],
+      }),
+      findSourceNodeFromGraph: () => ({
+        id: "image-1",
+        type: "image",
+        data: { width: 1200, height: 800 },
+      }),
+      shouldFastPathPreviewPipeline: () => false,
+    }));
+    vi.doMock("@/lib/canvas-utils", () => ({
+      resolveMediaAspectRatio: () => null,
+    }));
+    vi.doMock("@/lib/image-formats", () => ({
+      parseAspectRatioString: () => ({ w: 1, h: 1 }),
+    }));
+    vi.doMock("@/lib/image-pipeline/contracts", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/image-pipeline/contracts")>(
+        "@/lib/image-pipeline/contracts",
+      );
+      return {
+        ...actual,
+        hashPipeline: () => "pipeline-hash",
+      };
+    });
+    vi.doMock("@/lib/image-pipeline/worker-client", () => ({
+      isPipelineAbortError: () => false,
+      renderFullWithWorkerFallback: vi.fn(),
+    }));
+    vi.doMock("@/components/ui/dialog", () => ({
+      Dialog: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      DialogContent: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+      DialogTitle: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
+    }));
+
+    const renderNodeModule = await import("@/components/canvas/nodes/render-node");
+    const RenderNode = renderNodeModule.default;
+
+    await act(async () => {
+      root?.render(
+        createElement(RenderNode, {
+          id: "render-1",
+          data: {},
+          selected: false,
+          dragging: false,
+          zIndex: 0,
+          isConnectable: true,
+          type: "render",
+          xPos: 0,
+          yPos: 0,
+          width: 450,
+          height: 300,
+          sourcePosition: undefined,
+          targetPosition: undefined,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        } as never),
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(queueNodeResize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "render-1",
+        width: 450,
+        height: 450,
+      }),
+    );
+  });
 });
