@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   areClarificationAnswersComplete,
+  buildPreflightClarificationQuestions,
+  normalizeAgentLocale,
   normalizeAgentExecutionPlan,
+  normalizeAgentBriefConstraints,
   normalizeAgentOutputDraft,
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
+  type AgentBriefConstraints,
   type AgentExecutionPlan,
 } from "@/lib/agent-run-contract";
 
@@ -176,6 +180,110 @@ describe("agent run contract helpers", () => {
       });
 
       expect(normalized.steps.map((step) => step.id)).toEqual(["step", "step-2", "step-3"]);
+    });
+  });
+
+  describe("normalizeAgentBriefConstraints", () => {
+    it("trims fields and normalizes target channels", () => {
+      const normalized = normalizeAgentBriefConstraints({
+        briefing: "  Build a launch sequence  ",
+        audience: "  SaaS founders  ",
+        tone: "  concise  ",
+        targetChannels: ["  Email  ", "", "LinkedIn", "email", "   "],
+        hardConstraints: [
+          "  Do not mention pricing  ",
+          "",
+          "Keep under 120 words",
+          "Keep under 120 words",
+        ],
+      });
+
+      expect(normalized).toEqual<AgentBriefConstraints>({
+        briefing: "Build a launch sequence",
+        audience: "SaaS founders",
+        tone: "concise",
+        targetChannels: ["email", "linkedin"],
+        hardConstraints: ["Do not mention pricing", "Keep under 120 words"],
+      });
+    });
+
+    it("falls back to safe empty values for invalid payloads", () => {
+      const normalized = normalizeAgentBriefConstraints({
+        briefing: null,
+        audience: undefined,
+        tone: 3,
+        targetChannels: ["   ", null, 1],
+        hardConstraints: "must be array",
+      });
+
+      expect(normalized).toEqual<AgentBriefConstraints>({
+        briefing: "",
+        audience: "",
+        tone: "",
+        targetChannels: [],
+        hardConstraints: [],
+      });
+    });
+  });
+
+  describe("buildPreflightClarificationQuestions", () => {
+    it("builds deterministic required questions for missing preflight requirements", () => {
+      const questions = buildPreflightClarificationQuestions({
+        briefConstraints: {
+          briefing: "",
+          audience: "Founders",
+          tone: "confident",
+          targetChannels: [],
+          hardConstraints: [],
+        },
+        incomingContextCount: 0,
+      });
+
+      expect(questions).toEqual<AgentClarificationQuestion[]>([
+        {
+          id: "briefing",
+          prompt: "What should the agent produce? Provide the brief in one or two sentences.",
+          required: true,
+        },
+        {
+          id: "target-channels",
+          prompt: "Which channels should this run target? List at least one channel.",
+          required: true,
+        },
+        {
+          id: "incoming-context",
+          prompt: "No context was provided. What source context should the agent use?",
+          required: true,
+        },
+      ]);
+    });
+
+    it("returns an empty list when all preflight requirements are satisfied", () => {
+      const questions = buildPreflightClarificationQuestions({
+        briefConstraints: {
+          briefing: "Create 3 posts",
+          audience: "Marketers",
+          tone: "friendly",
+          targetChannels: ["x"],
+          hardConstraints: ["No emojis"],
+        },
+        incomingContextCount: 2,
+      });
+
+      expect(questions).toEqual([]);
+    });
+  });
+
+  describe("normalizeAgentLocale", () => {
+    it("returns supported locale values", () => {
+      expect(normalizeAgentLocale("de")).toBe("de");
+      expect(normalizeAgentLocale("en")).toBe("en");
+    });
+
+    it("falls back to de for unsupported values", () => {
+      expect(normalizeAgentLocale("fr")).toBe("de");
+      expect(normalizeAgentLocale(undefined)).toBe("de");
+      expect(normalizeAgentLocale(null)).toBe("de");
     });
   });
 });

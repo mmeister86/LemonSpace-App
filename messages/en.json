@@ -176,6 +176,52 @@
     "creditMeta": "{credits} credits",
     "errorFallback": "Video generation failed"
   },
+  "agentNode": {
+    "templates": {
+      "campaignDistributor": {
+        "name": "Campaign Distributor",
+        "description": "Develops and distributes LemonSpace campaign content across social media and messenger channels."
+      }
+    },
+    "modelLabel": "Model",
+    "modelCreditMeta": "{model} - {credits} Cr",
+    "briefingLabel": "Briefing",
+    "briefingPlaceholder": "Describe the core task and desired output.",
+    "constraintsLabel": "Constraints",
+    "audienceLabel": "Audience",
+    "toneLabel": "Tone",
+    "targetChannelsLabel": "Target channels",
+    "targetChannelsPlaceholder": "LinkedIn, Instagram Feed",
+    "hardConstraintsLabel": "Hard constraints",
+    "hardConstraintsPlaceholder": "No emojis\nMax 120 words",
+    "runAgentButton": "Run agent",
+    "clarificationsLabel": "Clarifications",
+    "submitClarificationButton": "Submit clarification",
+    "templateReferenceLabel": "Template reference",
+    "templateReferenceChannelsLabel": "Channels",
+    "templateReferenceInputsLabel": "Inputs",
+    "templateReferenceOutputsLabel": "Outputs",
+    "executingStepFallback": "Executing step {current}/{total}",
+    "executingPlannedTotalFallback": "Executing planned outputs ({total} total)",
+    "executingPlannedFallback": "Executing planned outputs",
+    "offlineTitle": "Offline currently not supported",
+    "offlineDescription": "Agent run requires an active connection.",
+    "clarificationPrompts": {
+      "briefing": "What should the agent produce? Provide the brief in one or two sentences.",
+      "targetChannels": "Which channels should this run target? List at least one channel.",
+      "incomingContext": "No context was provided. What source context should the agent use?"
+    }
+  },
+  "agentOutputNode": {
+    "defaultTitle": "Agent output",
+    "plannedOutputDefaultTitle": "Planned output",
+    "skeletonBadge": "Skeleton",
+    "plannedOutputLabel": "Planned output",
+    "channelLabel": "Channel",
+    "typeLabel": "Type",
+    "bodyLabel": "Body",
+    "plannedContent": "Planned content"
+  },
   "credits": {
     "balance": "Balance",
     "available": "Available",

@@ -14,8 +14,12 @@ import { getNodeDataRecord } from "./ai_node_data";
 import { formatTerminalStatusMessage } from "./ai_errors";
 import {
   areClarificationAnswersComplete,
+  buildPreflightClarificationQuestions,
+  normalizeAgentBriefConstraints,
   normalizeAgentExecutionPlan,
+  normalizeAgentLocale,
   normalizeAgentOutputDraft,
+  type AgentLocale,
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
   type AgentExecutionStep,
@@ -109,6 +113,14 @@ function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
   };
 }
 
+function getOutputLanguageInstruction(locale: AgentLocale): string {
+  if (locale === "de") {
+    return "Write all generated fields in German (de-DE), including step titles, channel labels, output types, clarification prompts, and body content.";
+  }
+
+  return "Write all generated fields in English (en-US), including step titles, channel labels, output types, clarification prompts, and body content.";
+}
+
 type InternalApiShape = {
   canvasGraph: {
     getInternal: FunctionReference<
@@ -130,6 +142,7 @@ type InternalApiShape = {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
         modelId: string;
+        locale: AgentLocale;
         userId: string;
         reservationId?: Id<"creditTransactions">;
         shouldDecrementConcurrency: boolean;
@@ -143,6 +156,7 @@ type InternalApiShape = {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
         modelId: string;
+        locale: AgentLocale;
         userId: string;
         reservationId?: Id<"creditTransactions">;
         shouldDecrementConcurrency: boolean;
@@ -399,6 +413,13 @@ function collectIncomingContext(
   }
 
   return lines.length > 0 ? lines.join("\n") : "No incoming nodes connected to this agent.";
+}
+
+function countIncomingContext(
+  graph: { edges: Doc<"edges">[] },
+  agentNodeId: Id<"nodes">,
+): number {
+  return graph.edges.filter((edge) => edge.targetNodeId === agentNodeId).length;
 }
 
 function getAgentNodeFromGraph(
@@ -831,6 +852,7 @@ export const analyzeAgent = internalAction({
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
     modelId: v.string(),
+    locale: v.union(v.literal("de"), v.literal("en")),
     userId: v.string(),
     reservationId: v.optional(v.id("creditTransactions")),
     shouldDecrementConcurrency: v.boolean(),
@@ -850,7 +872,27 @@ export const analyzeAgent = internalAction({
       const agentData = getNodeDataRecord(agentNode.data);
       const template = getAgentTemplate(trimText(agentData.templateId) || "campaign-distributor");
       const existingAnswers = normalizeAnswerMap(agentData.clarificationAnswers);
+      const locale = normalizeAgentLocale(args.locale);
+      const briefConstraints = normalizeAgentBriefConstraints(agentData.briefConstraints);
       const incomingContext = collectIncomingContext(graph, args.nodeId);
+      const incomingContextCount = countIncomingContext(graph, args.nodeId);
+
+      const preflightClarificationQuestions = buildPreflightClarificationQuestions({
+        briefConstraints,
+        incomingContextCount,
+      });
+      const hasPreflightRequiredGaps = !areClarificationAnswersComplete(
+        preflightClarificationQuestions,
+        existingAnswers,
+      );
+
+      if (preflightClarificationQuestions.length > 0 && hasPreflightRequiredGaps) {
+        await ctx.runMutation(internalApi.agents.setAgentClarifying, {
+          nodeId: args.nodeId,
+          clarificationQuestions: preflightClarificationQuestions,
+        });
+        return;
+      }
 
       const analysis = await generateStructuredObjectViaOpenRouter<{
         analysisSummary: string;
@@ -864,20 +906,25 @@ export const analyzeAgent = internalAction({
           {
             role: "system",
             content:
-              "You are the LemonSpace Agent Analyzer. Inspect incoming canvas context and decide if clarification is required before execution. Ask only necessary short questions.",
+              [
+                "You are the LemonSpace Agent Analyzer. Inspect incoming canvas context and decide if clarification is required before execution. Ask only necessary short questions.",
+                getOutputLanguageInstruction(locale),
+              ].join(" "),
           },
           {
             role: "user",
             content: [
-              `Template: ${template?.name ?? "Unknown template"}`,
-              `Template description: ${template?.description ?? ""}`,
-              "Incoming node context:",
-              incomingContext,
-              `Current clarification answers: ${JSON.stringify(existingAnswers)}`,
-              "Return structured JSON matching the schema.",
-            ].join("\n\n"),
-          },
-        ],
+                `Template: ${template?.name ?? "Unknown template"}`,
+                `Template description: ${template?.description ?? ""}`,
+                `Brief + constraints: ${JSON.stringify(briefConstraints)}`,
+                "Incoming node context:",
+                incomingContext,
+                `Incoming context node count: ${incomingContextCount}`,
+                `Current clarification answers: ${JSON.stringify(existingAnswers)}`,
+                "Return structured JSON matching the schema.",
+              ].join("\n\n"),
+            },
+          ],
       });
 
       const clarificationQuestions = normalizeClarificationQuestions(
@@ -914,6 +961,7 @@ export const analyzeAgent = internalAction({
         canvasId: args.canvasId,
         nodeId: args.nodeId,
         modelId: args.modelId,
+        locale,
         userId: args.userId,
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
@@ -934,6 +982,7 @@ export const executeAgent = internalAction({
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
     modelId: v.string(),
+    locale: v.union(v.literal("de"), v.literal("en")),
     userId: v.string(),
     reservationId: v.optional(v.id("creditTransactions")),
     shouldDecrementConcurrency: v.boolean(),
@@ -954,6 +1003,8 @@ export const executeAgent = internalAction({
       const agentData = getNodeDataRecord(agentNode.data);
       const template = getAgentTemplate(trimText(agentData.templateId) || "campaign-distributor");
       const clarificationAnswers = normalizeAnswerMap(agentData.clarificationAnswers);
+      const locale = normalizeAgentLocale(args.locale);
+      const briefConstraints = normalizeAgentBriefConstraints(agentData.briefConstraints);
       const incomingContext = collectIncomingContext(graph, args.nodeId);
       const executionPlanSummary = trimText(agentData.executionPlanSummary);
       const executionSteps = normalizeExecutionSteps(agentData.executionSteps);
@@ -975,13 +1026,17 @@ export const executeAgent = internalAction({
           {
             role: "system",
             content:
-              "You are the LemonSpace Agent Executor. Produce concrete channel outputs from context and clarification answers. Return one output per step, keyed by stepId.",
+              [
+                "You are the LemonSpace Agent Executor. Produce concrete channel outputs from context and clarification answers. Return one output per step, keyed by stepId.",
+                getOutputLanguageInstruction(locale),
+              ].join(" "),
           },
           {
             role: "user",
             content: [
               `Template: ${template?.name ?? "Unknown template"}`,
               `Template description: ${template?.description ?? ""}`,
+              `Brief + constraints: ${JSON.stringify(briefConstraints)}`,
               `Analyze summary: ${executionPlanSummary}`,
               `Clarification answers: ${JSON.stringify(clarificationAnswers)}`,
               `Execution steps: ${JSON.stringify(
@@ -1066,6 +1121,7 @@ export const runAgent = action({
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
     modelId: v.string(),
+    locale: v.union(v.literal("de"), v.literal("en")),
   },
   handler: async (ctx, args): Promise<{ queued: true; nodeId: Id<"nodes"> }> => {
     const canvas = await ctx.runQuery(api.canvases.get, {
@@ -1126,6 +1182,7 @@ export const runAgent = action({
         canvasId: args.canvasId,
         nodeId: args.nodeId,
         modelId: selectedModel.id,
+        locale: normalizeAgentLocale(args.locale),
         userId: canvas.ownerId,
         reservationId: reservationId ?? undefined,
         shouldDecrementConcurrency: usageIncremented,
@@ -1155,6 +1212,7 @@ export const resumeAgent = action({
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
     clarificationAnswers: v.record(v.string(), v.string()),
+    locale: v.union(v.literal("de"), v.literal("en")),
   },
   handler: async (ctx, args): Promise<{ queued: true; nodeId: Id<"nodes"> }> => {
     const canvas = await ctx.runQuery(api.canvases.get, {
@@ -1211,6 +1269,7 @@ export const resumeAgent = action({
         canvasId: args.canvasId,
         nodeId: args.nodeId,
         modelId,
+        locale: normalizeAgentLocale(args.locale),
         userId: canvas.ownerId,
         reservationId,
         shouldDecrementConcurrency,

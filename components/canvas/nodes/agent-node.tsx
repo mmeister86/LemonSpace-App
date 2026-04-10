@@ -5,6 +5,8 @@ import { Bot } from "lucide-react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import { useTranslations } from "next-intl";
+import { useLocale } from "next-intl";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -37,6 +39,13 @@ type AgentNodeData = {
   templateId?: string;
   canvasId?: string;
   modelId?: string;
+  briefConstraints?: {
+    briefing?: string;
+    audience?: string;
+    tone?: string;
+    targetChannels?: string[];
+    hardConstraints?: string[];
+  };
   executionSteps?: Array<{ stepIndex?: number; stepTotal?: number }>;
   executionStepIndex?: number;
   executionStepTotal?: number;
@@ -46,6 +55,14 @@ type AgentNodeData = {
   clarificationAnswers?: AgentClarificationAnswerMap | Array<{ id: string; value: string }>;
   _status?: string;
   _statusMessage?: string;
+};
+
+type AgentBriefConstraints = {
+  briefing: string;
+  audience: string;
+  tone: string;
+  targetChannels: string[];
+  hardConstraints: string[];
 };
 
 type AgentNodeType = Node<AgentNodeData, "agent">;
@@ -114,6 +131,46 @@ function areAnswerMapsEqual(
   return true;
 }
 
+function normalizeDelimitedList(value: string, allowNewLines = false): string[] {
+  const separator = allowNewLines ? /[\n,]/ : /,/;
+  return value
+    .split(separator)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function normalizeBriefConstraints(raw: AgentNodeData["briefConstraints"]): AgentBriefConstraints {
+  return {
+    briefing: typeof raw?.briefing === "string" ? raw.briefing : "",
+    audience: typeof raw?.audience === "string" ? raw.audience : "",
+    tone: typeof raw?.tone === "string" ? raw.tone : "",
+    targetChannels: Array.isArray(raw?.targetChannels)
+      ? raw.targetChannels.filter((item): item is string => typeof item === "string")
+      : [],
+    hardConstraints: Array.isArray(raw?.hardConstraints)
+      ? raw.hardConstraints.filter((item): item is string => typeof item === "string")
+      : [],
+  };
+}
+
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function areBriefConstraintsEqual(left: AgentBriefConstraints, right: AgentBriefConstraints): boolean {
+  return (
+    left.briefing === right.briefing &&
+    left.audience === right.audience &&
+    left.tone === right.tone &&
+    areStringArraysEqual(left.targetChannels, right.targetChannels) &&
+    areStringArraysEqual(left.hardConstraints, right.hardConstraints)
+  );
+}
+
 function CompactList({ items }: { items: readonly string[] }) {
   return (
     <ul className="space-y-1">
@@ -127,6 +184,8 @@ function CompactList({ items }: { items: readonly string[] }) {
 }
 
 export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeType>) {
+  const t = useTranslations("agentNode");
+  const locale = useLocale();
   const nodeData = data as AgentNodeData;
   const template =
     getAgentTemplate(nodeData.templateId ?? DEFAULT_AGENT_TEMPLATE_ID) ??
@@ -140,6 +199,9 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const [clarificationAnswers, setClarificationAnswers] = useState<AgentClarificationAnswerMap>(
     normalizeClarificationAnswers(nodeData.clarificationAnswers),
   );
+  const [briefConstraints, setBriefConstraints] = useState<AgentBriefConstraints>(
+    normalizeBriefConstraints(nodeData.briefConstraints),
+  );
 
   const agentActionsApi = api as unknown as {
     agents: {
@@ -150,6 +212,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           canvasId: Id<"canvases">;
           nodeId: Id<"nodes">;
           modelId: string;
+          locale: "de" | "en";
         },
         unknown
       >;
@@ -160,6 +223,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           canvasId: Id<"canvases">;
           nodeId: Id<"nodes">;
           clarificationAnswers: AgentClarificationAnswerMap;
+          locale: "de" | "en";
         },
         unknown
       >;
@@ -168,6 +232,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
 
   const runAgent = useSafeAction(agentActionsApi.agents.runAgent);
   const resumeAgent = useSafeAction(agentActionsApi.agents.resumeAgent);
+  const normalizedLocale = locale === "en" ? "en" : "de";
 
   useEffect(() => {
     setModelId(nodeData.modelId ?? DEFAULT_AGENT_MODEL_ID);
@@ -182,6 +247,16 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       return normalized;
     });
   }, [nodeData.clarificationAnswers]);
+
+  useEffect(() => {
+    const normalized = normalizeBriefConstraints(nodeData.briefConstraints);
+    setBriefConstraints((current) => {
+      if (areBriefConstraintsEqual(current, normalized)) {
+        return current;
+      }
+      return normalized;
+    });
+  }, [nodeData.briefConstraints]);
 
   useEffect(() => {
     if (availableModels.length === 0) {
@@ -202,6 +277,14 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const resolvedModelId = selectedModel?.id ?? DEFAULT_AGENT_MODEL_ID;
   const creditCost = selectedModel?.creditCost ?? 0;
   const clarificationQuestions = nodeData.clarificationQuestions ?? [];
+  const templateName =
+    template?.id === "campaign-distributor"
+      ? t("templates.campaignDistributor.name")
+      : (template?.name ?? "");
+  const templateDescription =
+    template?.id === "campaign-distributor"
+      ? t("templates.campaignDistributor.description")
+      : (template?.description ?? "");
   const isExecutionActive = nodeData._status === "analyzing" || nodeData._status === "executing";
   const executionProgressLine = useMemo(() => {
     if (nodeData._status !== "executing") {
@@ -230,14 +313,19 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       stepTotalCandidate > 0;
 
     if (hasExecutionNumbers) {
-      return `Executing step ${Math.max(0, Math.floor(stepIndexCandidate)) + 1}/${Math.floor(stepTotalCandidate)}`;
+      return t("executingStepFallback", {
+        current: Math.max(0, Math.floor(stepIndexCandidate)) + 1,
+        total: Math.floor(stepTotalCandidate),
+      });
     }
 
     if (totalFromSteps > 0) {
-      return `Executing planned outputs (${totalFromSteps} total)`;
+      return t("executingPlannedTotalFallback", {
+        total: totalFromSteps,
+      });
     }
 
-    return "Executing planned outputs";
+    return t("executingPlannedFallback");
   }, [
     nodeData._executionStepIndex,
     nodeData._executionStepTotal,
@@ -246,7 +334,24 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     nodeData.executionStepIndex,
     nodeData.executionStepTotal,
     nodeData.executionSteps,
+    t,
   ]);
+
+  const resolveClarificationPrompt = useCallback(
+    (question: AgentClarificationQuestion) => {
+      if (question.id === "briefing") {
+        return t("clarificationPrompts.briefing");
+      }
+      if (question.id === "target-channels") {
+        return t("clarificationPrompts.targetChannels");
+      }
+      if (question.id === "incoming-context") {
+        return t("clarificationPrompts.incomingContext");
+      }
+      return question.prompt;
+    },
+    [t],
+  );
 
   const persistNodeData = useCallback(
     (patch: Partial<AgentNodeData>) => {
@@ -288,6 +393,20 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     [persistNodeData],
   );
 
+  const handleBriefConstraintsChange = useCallback(
+    (patch: Partial<AgentBriefConstraints>) => {
+      setBriefConstraints((prev) => {
+        const next = {
+          ...prev,
+          ...patch,
+        };
+        void persistNodeData({ briefConstraints: next });
+        return next;
+      });
+    },
+    [persistNodeData],
+  );
+
   const handleRunAgent = useCallback(async () => {
     if (isExecutionActive) {
       return;
@@ -295,8 +414,8 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
 
     if (status.isOffline) {
       toast.warning(
-        "Offline aktuell nicht unterstuetzt",
-        "Agent-Lauf benoetigt eine aktive Verbindung.",
+        t("offlineTitle"),
+        t("offlineDescription"),
       );
       return;
     }
@@ -310,14 +429,15 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       canvasId,
       nodeId: id as Id<"nodes">,
       modelId: resolvedModelId,
+      locale: normalizedLocale,
     });
-  }, [isExecutionActive, nodeData.canvasId, id, resolvedModelId, runAgent, status.isOffline]);
+  }, [isExecutionActive, nodeData.canvasId, id, normalizedLocale, resolvedModelId, runAgent, status.isOffline, t]);
 
   const handleSubmitClarification = useCallback(async () => {
     if (status.isOffline) {
       toast.warning(
-        "Offline aktuell nicht unterstuetzt",
-        "Agent-Lauf benoetigt eine aktive Verbindung.",
+        t("offlineTitle"),
+        t("offlineDescription"),
       );
       return;
     }
@@ -331,8 +451,9 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       canvasId,
       nodeId: id as Id<"nodes">,
       clarificationAnswers,
+      locale: normalizedLocale,
     });
-  }, [clarificationAnswers, nodeData.canvasId, id, resumeAgent, status.isOffline]);
+  }, [clarificationAnswers, nodeData.canvasId, id, normalizedLocale, resumeAgent, status.isOffline, t]);
 
   if (!template) {
     return null;
@@ -363,14 +484,14 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
             <Bot className="h-3.5 w-3.5" />
             <span>{template.emoji}</span>
-            <span>{template.name}</span>
+            <span>{templateName}</span>
           </div>
-          <p className="line-clamp-2 text-xs text-muted-foreground">{template.description}</p>
+          <p className="line-clamp-2 text-xs text-muted-foreground">{templateDescription}</p>
         </header>
 
         <section className="space-y-1.5">
           <Label htmlFor={`agent-model-${id}`} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Model
+            {t("modelLabel")}
           </Label>
           <Select value={resolvedModelId} onValueChange={handleModelChange}>
             <SelectTrigger id={`agent-model-${id}`} className="nodrag nowheel w-full" size="sm">
@@ -385,8 +506,96 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
             </SelectContent>
           </Select>
           <p className="text-[11px] text-muted-foreground">
-            {selectedModel?.label ?? resolvedModelId} - {creditCost} Cr
+            {t("modelCreditMeta", {
+              model: selectedModel?.label ?? resolvedModelId,
+              credits: creditCost,
+            })}
           </p>
+        </section>
+
+        <section className="space-y-1.5">
+          <Label htmlFor={`agent-${id}-briefing`} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("briefingLabel")}
+          </Label>
+          <textarea
+            id={`agent-${id}-briefing`}
+            name="agent-briefing"
+            value={briefConstraints.briefing}
+            onChange={(event) =>
+              handleBriefConstraintsChange({ briefing: event.target.value })
+            }
+            placeholder={t("briefingPlaceholder")}
+            className="nodrag nowheel min-h-20 w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          />
+        </section>
+
+        <section className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("constraintsLabel")}
+          </p>
+          <div className="space-y-1">
+            <label htmlFor={`agent-${id}-audience`} className="text-[11px] text-muted-foreground">
+              {t("audienceLabel")}
+            </label>
+            <input
+              id={`agent-${id}-audience`}
+              name="agent-audience"
+              type="text"
+              value={briefConstraints.audience}
+              onChange={(event) =>
+                handleBriefConstraintsChange({ audience: event.target.value })
+              }
+              className="nodrag nowheel w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={`agent-${id}-tone`} className="text-[11px] text-muted-foreground">
+              {t("toneLabel")}
+            </label>
+            <input
+              id={`agent-${id}-tone`}
+              name="agent-tone"
+              type="text"
+              value={briefConstraints.tone}
+              onChange={(event) => handleBriefConstraintsChange({ tone: event.target.value })}
+              className="nodrag nowheel w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={`agent-${id}-target-channels`} className="text-[11px] text-muted-foreground">
+              {t("targetChannelsLabel")}
+            </label>
+            <input
+              id={`agent-${id}-target-channels`}
+              name="agent-target-channels"
+              type="text"
+              value={briefConstraints.targetChannels.join(", ")}
+              onChange={(event) =>
+                handleBriefConstraintsChange({
+                  targetChannels: normalizeDelimitedList(event.target.value),
+                })
+              }
+              placeholder={t("targetChannelsPlaceholder")}
+              className="nodrag nowheel w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={`agent-${id}-hard-constraints`} className="text-[11px] text-muted-foreground">
+              {t("hardConstraintsLabel")}
+            </label>
+            <textarea
+              id={`agent-${id}-hard-constraints`}
+              name="agent-hard-constraints"
+              value={briefConstraints.hardConstraints.join("\n")}
+              onChange={(event) =>
+                handleBriefConstraintsChange({
+                  hardConstraints: normalizeDelimitedList(event.target.value, true),
+                })
+              }
+              placeholder={t("hardConstraintsPlaceholder")}
+              className="nodrag nowheel min-h-16 w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+          </div>
         </section>
 
         <section className="space-y-1.5">
@@ -397,7 +606,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
             aria-busy={isExecutionActive}
             className="nodrag w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Run agent
+            {t("runAgentButton")}
           </button>
           {executionProgressLine ? (
             <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90">{executionProgressLine}</p>
@@ -407,7 +616,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
         {clarificationQuestions.length > 0 ? (
           <section className="space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Clarifications
+              {t("clarificationsLabel")}
             </p>
             {clarificationQuestions.map((question) => (
               <div key={question.id} className="space-y-1">
@@ -415,7 +624,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
                   htmlFor={`agent-${id}-clarification-${question.id}`}
                   className="text-[11px] text-foreground/90"
                 >
-                  {question.prompt}
+                  {resolveClarificationPrompt(question)}
                   {question.required ? " *" : ""}
                 </label>
                 <input
@@ -435,31 +644,36 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
               onClick={() => void handleSubmitClarification()}
               className="nodrag w-full rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-500/20 dark:text-amber-200"
             >
-              Submit clarification
+              {t("submitClarificationButton")}
             </button>
           </section>
         ) : null}
 
-        <section className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Channels
-          </p>
-          <CompactList items={template.channels} />
-        </section>
-
-        <section className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Expected Inputs
-          </p>
-          <CompactList items={template.expectedInputs} />
-        </section>
-
-        <section className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Expected Outputs
-          </p>
-          <CompactList items={template.expectedOutputs} />
-        </section>
+        <details className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+          <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("templateReferenceLabel")}
+          </summary>
+          <div className="mt-2 space-y-2">
+            <section className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("templateReferenceChannelsLabel")} ({template.channels.length})
+              </p>
+              <CompactList items={template.channels} />
+            </section>
+            <section className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("templateReferenceInputsLabel")} ({template.expectedInputs.length})
+              </p>
+              <CompactList items={template.expectedInputs} />
+            </section>
+            <section className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("templateReferenceOutputsLabel")} ({template.expectedOutputs.length})
+              </p>
+              <CompactList items={template.expectedOutputs} />
+            </section>
+          </div>
+        </details>
       </div>
     </BaseNodeWrapper>
   );

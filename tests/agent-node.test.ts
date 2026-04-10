@@ -22,6 +22,45 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
 }));
 
+const translations: Record<string, string> = {
+  "agentNode.templates.campaignDistributor.name": "Campaign Distributor",
+  "agentNode.templates.campaignDistributor.description":
+    "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
+  "agentNode.modelLabel": "Model",
+  "agentNode.modelCreditMeta": "{model} - {credits} Cr",
+  "agentNode.briefingLabel": "Briefing",
+  "agentNode.briefingPlaceholder": "Describe the core task and desired output.",
+  "agentNode.constraintsLabel": "Constraints",
+  "agentNode.audienceLabel": "Audience",
+  "agentNode.toneLabel": "Tone",
+  "agentNode.targetChannelsLabel": "Target channels",
+  "agentNode.targetChannelsPlaceholder": "LinkedIn, Instagram Feed",
+  "agentNode.hardConstraintsLabel": "Hard constraints",
+  "agentNode.hardConstraintsPlaceholder": "No emojis\nMax 120 words",
+  "agentNode.runAgentButton": "Run agent",
+  "agentNode.clarificationsLabel": "Clarifications",
+  "agentNode.submitClarificationButton": "Submit clarification",
+  "agentNode.templateReferenceLabel": "Template reference",
+  "agentNode.templateReferenceChannelsLabel": "Channels",
+  "agentNode.templateReferenceInputsLabel": "Inputs",
+  "agentNode.templateReferenceOutputsLabel": "Outputs",
+};
+
+vi.mock("next-intl", () => ({
+  useLocale: () => "de",
+  useTranslations: (namespace?: string) =>
+    (key: string, values?: Record<string, unknown>) => {
+      const fullKey = namespace ? `${namespace}.${key}` : key;
+      let text = translations[fullKey] ?? key;
+      if (values) {
+        for (const [name, value] of Object.entries(values)) {
+          text = text.replaceAll(`{${name}}`, String(value));
+        }
+      }
+      return text;
+    },
+}));
+
 import AgentNode from "@/components/canvas/nodes/agent-node";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -73,8 +112,9 @@ describe("AgentNode", () => {
     });
 
     expect(container.textContent).toContain("Campaign Distributor");
-    expect(container.textContent).toContain("Instagram Feed");
-    expect(container.textContent).toContain("Caption-Pakete");
+    expect(container.textContent).toContain("Briefing");
+    expect(container.textContent).toContain("Constraints");
+    expect(container.textContent).toContain("Template reference");
     expect(handleCalls.filter((call) => call.type === "target")).toHaveLength(1);
     expect(handleCalls.filter((call) => call.type === "source")).toHaveLength(1);
   });

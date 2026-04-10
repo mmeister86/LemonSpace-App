@@ -176,6 +176,52 @@
     "creditMeta": "{credits} Credits",
     "errorFallback": "Video-Generierung fehlgeschlagen"
   },
+  "agentNode": {
+    "templates": {
+      "campaignDistributor": {
+        "name": "Campaign Distributor",
+        "description": "Entwickelt und verteilt LemonSpace-Kampagneninhalte kanal- und plattformgerecht."
+      }
+    },
+    "modelLabel": "Modell",
+    "modelCreditMeta": "{model} - {credits} Cr",
+    "briefingLabel": "Briefing",
+    "briefingPlaceholder": "Beschreibe Aufgabe und gewuenschtes Ergebnis kurz und konkret.",
+    "constraintsLabel": "Vorgaben",
+    "audienceLabel": "Zielgruppe",
+    "toneLabel": "Tonfall",
+    "targetChannelsLabel": "Zielkanaele",
+    "targetChannelsPlaceholder": "LinkedIn, Instagram Feed",
+    "hardConstraintsLabel": "Harte Constraints",
+    "hardConstraintsPlaceholder": "Keine Emojis\nMaximal 120 Woerter",
+    "runAgentButton": "Agent starten",
+    "clarificationsLabel": "Rueckfragen",
+    "submitClarificationButton": "Rueckfragen bestaetigen",
+    "templateReferenceLabel": "Template-Referenz",
+    "templateReferenceChannelsLabel": "Kanaele",
+    "templateReferenceInputsLabel": "Inputs",
+    "templateReferenceOutputsLabel": "Outputs",
+    "executingStepFallback": "Schritt {current}/{total} wird ausgefuehrt",
+    "executingPlannedTotalFallback": "Geplante Outputs werden erstellt ({total} gesamt)",
+    "executingPlannedFallback": "Geplante Outputs werden erstellt",
+    "offlineTitle": "Offline derzeit nicht verfuegbar",
+    "offlineDescription": "Ein Agent-Lauf benoetigt eine aktive Verbindung.",
+    "clarificationPrompts": {
+      "briefing": "Was soll der Agent liefern? Bitte formuliere das Briefing in ein bis zwei Saetzen.",
+      "targetChannels": "Welche Kanaele soll dieser Lauf bedienen? Bitte nenne mindestens einen Kanal.",
+      "incomingContext": "Es wurde kein Kontext verbunden. Welche Quelle soll der Agent verwenden?"
+    }
+  },
+  "agentOutputNode": {
+    "defaultTitle": "Agent-Output",
+    "plannedOutputDefaultTitle": "Geplanter Output",
+    "skeletonBadge": "SKELETON",
+    "plannedOutputLabel": "Geplanter Output",
+    "channelLabel": "Kanal",
+    "typeLabel": "Typ",
+    "bodyLabel": "Inhalt",
+    "plannedContent": "Geplanter Inhalt"
+  },
   "credits": {
     "balance": "Guthaben",
     "available": "Verfügbar",

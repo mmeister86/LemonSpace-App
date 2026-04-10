@@ -89,6 +89,56 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
 }));
 
+const translations: Record<string, string> = {
+  "agentNode.templates.campaignDistributor.name": "Campaign Distributor",
+  "agentNode.templates.campaignDistributor.description":
+    "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
+  "agentNode.modelLabel": "Model",
+  "agentNode.modelCreditMeta": "{model} - {credits} Cr",
+  "agentNode.briefingLabel": "Briefing",
+  "agentNode.briefingPlaceholder": "Describe the core task and desired output.",
+  "agentNode.constraintsLabel": "Constraints",
+  "agentNode.audienceLabel": "Audience",
+  "agentNode.toneLabel": "Tone",
+  "agentNode.targetChannelsLabel": "Target channels",
+  "agentNode.targetChannelsPlaceholder": "LinkedIn, Instagram Feed",
+  "agentNode.hardConstraintsLabel": "Hard constraints",
+  "agentNode.hardConstraintsPlaceholder": "No emojis\nMax 120 words",
+  "agentNode.runAgentButton": "Run agent",
+  "agentNode.clarificationsLabel": "Clarifications",
+  "agentNode.submitClarificationButton": "Submit clarification",
+  "agentNode.templateReferenceLabel": "Template reference",
+  "agentNode.templateReferenceChannelsLabel": "Channels",
+  "agentNode.templateReferenceInputsLabel": "Inputs",
+  "agentNode.templateReferenceOutputsLabel": "Outputs",
+  "agentNode.executingStepFallback": "Executing step {current}/{total}",
+  "agentNode.executingPlannedTotalFallback": "Executing planned outputs ({total} total)",
+  "agentNode.executingPlannedFallback": "Executing planned outputs",
+  "agentNode.offlineTitle": "Offline currently not supported",
+  "agentNode.offlineDescription": "Agent run requires an active connection.",
+  "agentNode.clarificationPrompts.briefing":
+    "What should the agent produce? Provide the brief in one or two sentences.",
+  "agentNode.clarificationPrompts.targetChannels":
+    "Which channels should this run target? List at least one channel.",
+  "agentNode.clarificationPrompts.incomingContext":
+    "No context was provided. What source context should the agent use?",
+};
+
+vi.mock("next-intl", () => ({
+  useLocale: () => "de",
+  useTranslations: (namespace?: string) =>
+    (key: string, values?: Record<string, unknown>) => {
+      const fullKey = namespace ? `${namespace}.${key}` : key;
+      let text = translations[fullKey] ?? key;
+      if (values) {
+        for (const [name, value] of Object.entries(values)) {
+          text = text.replaceAll(`{${name}}`, String(value));
+        }
+      }
+      return text;
+    },
+}));
+
 vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
@@ -143,8 +193,15 @@ describe("AgentNode runtime", () => {
             canvasId: "canvas-1",
             templateId: "campaign-distributor",
             modelId: "openai/gpt-5.4-mini",
+            briefConstraints: {
+              briefing: "Draft channel-ready campaign copy",
+              audience: "SaaS founders",
+              tone: "Confident and practical",
+              targetChannels: ["LinkedIn", "Instagram Feed"],
+              hardConstraints: ["No emojis", "Max 120 words"],
+            },
             clarificationQuestions: [
-              { id: "audience", prompt: "Target audience?", required: true },
+              { id: "briefing", prompt: "RAW_BRIEFING_PROMPT", required: true },
             ],
             clarificationAnswers: {},
           } as Record<string, unknown>,
@@ -167,9 +224,27 @@ describe("AgentNode runtime", () => {
 
     expect(container.textContent).toContain("GPT-5.4 Mini");
     expect(container.textContent).toContain("15 Cr");
-    expect(container.textContent).toContain("Channels");
-    expect(container.textContent).toContain("Expected Inputs");
-    expect(container.textContent).toContain("Expected Outputs");
+    expect(container.textContent).toContain("Briefing");
+    expect(container.textContent).toContain("Constraints");
+    expect(container.textContent).toContain("Template reference");
+
+    const briefingTextarea = container.querySelector('textarea[name="agent-briefing"]');
+    if (!(briefingTextarea instanceof HTMLTextAreaElement)) {
+      throw new Error("Briefing textarea not found");
+    }
+    expect(briefingTextarea.value).toBe("Draft channel-ready campaign copy");
+
+    const targetChannelsInput = container.querySelector('input[name="agent-target-channels"]');
+    if (!(targetChannelsInput instanceof HTMLInputElement)) {
+      throw new Error("Target channels input not found");
+    }
+    expect(targetChannelsInput.value).toBe("LinkedIn, Instagram Feed");
+
+    const hardConstraintsInput = container.querySelector('textarea[name="agent-hard-constraints"]');
+    if (!(hardConstraintsInput instanceof HTMLTextAreaElement)) {
+      throw new Error("Hard constraints textarea not found");
+    }
+    expect(hardConstraintsInput.value).toBe("No emojis\nMax 120 words");
 
     await act(async () => {
       modelSelect.value = "openai/gpt-5.4";
@@ -183,7 +258,71 @@ describe("AgentNode runtime", () => {
       }),
     );
 
-    const clarificationInput = container.querySelector('input[name="clarification-audience"]');
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(briefingTextarea, "Adapt this launch to each channel");
+      briefingTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "agent-1",
+        data: expect.objectContaining({
+          briefConstraints: expect.objectContaining({
+            briefing: "Adapt this launch to each channel",
+          }),
+        }),
+      }),
+    );
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(targetChannelsInput, "LinkedIn, X,  TikTok");
+      targetChannelsInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "agent-1",
+        data: expect.objectContaining({
+          briefConstraints: expect.objectContaining({
+            targetChannels: ["LinkedIn", "X", "TikTok"],
+          }),
+        }),
+      }),
+    );
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(hardConstraintsInput, "No emojis\nMax 80 words, include CTA");
+      hardConstraintsInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "agent-1",
+        data: expect.objectContaining({
+          briefConstraints: expect.objectContaining({
+            hardConstraints: ["No emojis", "Max 80 words", "include CTA"],
+          }),
+        }),
+      }),
+    );
+
+    expect(container.textContent).toContain(
+      "What should the agent produce? Provide the brief in one or two sentences.",
+    );
+
+    const clarificationInput = container.querySelector('input[name="clarification-briefing"]');
     if (!(clarificationInput instanceof HTMLInputElement)) {
       throw new Error("Clarification input not found");
     }
@@ -201,7 +340,7 @@ describe("AgentNode runtime", () => {
       expect.objectContaining({
         nodeId: "agent-1",
         data: expect.objectContaining({
-          clarificationAnswers: expect.objectContaining({ audience: "SaaS founders" }),
+          clarificationAnswers: expect.objectContaining({ briefing: "SaaS founders" }),
         }),
       }),
     );
@@ -221,6 +360,7 @@ describe("AgentNode runtime", () => {
       canvasId: "canvas-1",
       nodeId: "agent-1",
       modelId: "openai/gpt-5.4",
+      locale: "de",
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((element) =>
@@ -237,7 +377,8 @@ describe("AgentNode runtime", () => {
     expect(mocks.resumeAgent).toHaveBeenCalledWith({
       canvasId: "canvas-1",
       nodeId: "agent-1",
-      clarificationAnswers: { audience: "SaaS founders" },
+      clarificationAnswers: { briefing: "SaaS founders" },
+      locale: "de",
     });
   });
 
