@@ -13,11 +13,39 @@ export type AgentOutputDraft = {
   body?: string;
 };
 
+export type AgentOutputSection = {
+  id: string;
+  label: string;
+  content: string;
+};
+
+export type AgentStructuredOutput = {
+  title: string;
+  channel: string;
+  artifactType: string;
+  previewText: string;
+  sections: AgentOutputSection[];
+  metadata: Record<string, string | string[]>;
+  qualityChecks: string[];
+  body: string;
+};
+
+export type AgentStructuredOutputDraft = Partial<
+  AgentStructuredOutput & {
+    sections: Array<Partial<AgentOutputSection> | null>;
+    metadata: Record<string, unknown>;
+  }
+>;
+
 export type AgentExecutionStep = {
   id: string;
   title: string;
   channel: string;
   outputType: string;
+  artifactType: string;
+  goal: string;
+  requiredSections: string[];
+  qualityChecks: string[];
 };
 
 export type AgentExecutionPlan = {
@@ -44,6 +72,7 @@ export type AgentAnalyzeResult = {
 const SAFE_FALLBACK_TITLE = "Untitled";
 const SAFE_FALLBACK_CHANNEL = "general";
 const SAFE_FALLBACK_OUTPUT_TYPE = "text";
+const SAFE_FALLBACK_GOAL = "Deliver channel-ready output.";
 
 function trimString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -80,6 +109,91 @@ function normalizeStringArray(raw: unknown, options?: { lowerCase?: boolean }): 
   }
 
   return normalized;
+}
+
+function normalizeOutputSections(raw: unknown): AgentOutputSection[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const sections: AgentOutputSection[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const sectionRecord = item as Record<string, unknown>;
+    const label = trimString(sectionRecord.label);
+    const content = trimString(sectionRecord.content);
+    if (label === "" || content === "") {
+      continue;
+    }
+
+    const normalizedBaseId = normalizeStepId(sectionRecord.id) || normalizeStepId(label) || "section";
+    let sectionId = normalizedBaseId;
+    let suffix = 2;
+    while (seenIds.has(sectionId)) {
+      sectionId = `${normalizedBaseId}-${suffix}`;
+      suffix += 1;
+    }
+    seenIds.add(sectionId);
+
+    sections.push({
+      id: sectionId,
+      label,
+      content,
+    });
+  }
+
+  return sections;
+}
+
+function normalizeStructuredMetadata(raw: unknown): Record<string, string | string[]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+
+  const metadata: Record<string, string | string[]> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+    const key = trimString(rawKey);
+    if (key === "") {
+      continue;
+    }
+
+    const value = trimString(rawValue);
+    if (value !== "") {
+      metadata[key] = value;
+      continue;
+    }
+
+    const listValue = normalizeStringArray(rawValue);
+    if (listValue.length > 0) {
+      metadata[key] = listValue;
+    }
+  }
+
+  return metadata;
+}
+
+function derivePreviewTextFromSections(sections: AgentOutputSection[]): string {
+  return sections[0]?.content ?? "";
+}
+
+function deriveBodyFromStructuredOutput(input: {
+  sections: AgentOutputSection[];
+  previewText: string;
+  title: string;
+}): string {
+  if (input.sections.length > 0) {
+    return input.sections.map((section) => `${section.label}:\n${section.content}`).join("\n\n");
+  }
+  if (input.previewText !== "") {
+    return input.previewText;
+  }
+  return input.title;
 }
 
 export function normalizeAgentBriefConstraints(raw: unknown): AgentBriefConstraints {
@@ -183,6 +297,13 @@ export function normalizeAgentExecutionPlan(raw: unknown): AgentExecutionPlan {
       title: trimString(itemRecord.title) || SAFE_FALLBACK_TITLE,
       channel: trimString(itemRecord.channel) || SAFE_FALLBACK_CHANNEL,
       outputType: trimString(itemRecord.outputType) || SAFE_FALLBACK_OUTPUT_TYPE,
+      artifactType:
+        trimString(itemRecord.artifactType) ||
+        trimString(itemRecord.outputType) ||
+        SAFE_FALLBACK_OUTPUT_TYPE,
+      goal: trimString(itemRecord.goal) || SAFE_FALLBACK_GOAL,
+      requiredSections: normalizeStringArray(itemRecord.requiredSections),
+      qualityChecks: normalizeStringArray(itemRecord.qualityChecks),
     });
   }
 
@@ -227,5 +348,41 @@ export function normalizeAgentOutputDraft(
     channel,
     outputType,
     body: trimString(draft.body),
+  };
+}
+
+export function normalizeAgentStructuredOutput(
+  draft: AgentStructuredOutputDraft,
+  fallback: {
+    title: string;
+    channel: string;
+    artifactType: string;
+  },
+): AgentStructuredOutput {
+  const title = trimString(draft.title) || trimString(fallback.title) || SAFE_FALLBACK_TITLE;
+  const channel = trimString(draft.channel) || trimString(fallback.channel) || SAFE_FALLBACK_CHANNEL;
+  const artifactType =
+    trimString(draft.artifactType) || trimString(fallback.artifactType) || SAFE_FALLBACK_OUTPUT_TYPE;
+  const sections = normalizeOutputSections(draft.sections);
+  const previewText = trimString(draft.previewText) || derivePreviewTextFromSections(sections);
+  const metadata = normalizeStructuredMetadata(draft.metadata);
+  const qualityChecks = normalizeStringArray(draft.qualityChecks);
+  const body =
+    trimString(draft.body) ||
+    deriveBodyFromStructuredOutput({
+      sections,
+      previewText,
+      title,
+    });
+
+  return {
+    title,
+    channel,
+    artifactType,
+    previewText,
+    sections,
+    metadata,
+    qualityChecks,
+    body,
   };
 }

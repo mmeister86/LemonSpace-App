@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearDashboardSnapshotCache,
   emitDashboardSnapshotCacheInvalidationSignal,
+  getDashboardSnapshotCacheInvalidationSignalKey,
   invalidateDashboardSnapshotForLastSignedInUser,
   readDashboardSnapshotCache,
   writeDashboardSnapshotCache,
@@ -12,7 +13,7 @@ import {
 
 const USER_ID = "user-cache-test";
 const LAST_DASHBOARD_USER_KEY = "ls-last-dashboard-user";
-const INVALIDATION_SIGNAL_KEY = "lemonspace.dashboard:snapshot:invalidate:v1";
+const INVALIDATION_SIGNAL_KEY = getDashboardSnapshotCacheInvalidationSignalKey();
 
 describe("dashboard snapshot cache", () => {
   beforeEach(() => {

@@ -9,7 +9,7 @@ import { MONTHLY_TIER_CREDITS, normalizeBillingTier } from "../lib/tier-credits"
 const DEFAULT_TIER = "free" as const;
 const DEFAULT_SUBSCRIPTION_STATUS = "active" as const;
 const DASHBOARD_MEDIA_PREVIEW_LIMIT = 8;
-const MEDIA_LIBRARY_DEFAULT_LIMIT = 200;
+const MEDIA_LIBRARY_DEFAULT_LIMIT = 8;
 const MEDIA_LIBRARY_MIN_LIMIT = 1;
 const MEDIA_LIBRARY_MAX_LIMIT = 500;
 const MEDIA_ARCHIVE_FETCH_MULTIPLIER = 4;
@@ -167,6 +167,14 @@ function normalizeMediaLibraryLimit(limit: number | undefined): number {
   return Math.min(MEDIA_LIBRARY_MAX_LIMIT, Math.max(MEDIA_LIBRARY_MIN_LIMIT, Math.floor(limit)));
 }
 
+function normalizeMediaLibraryPage(page: number): number {
+  if (!Number.isFinite(page)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(page));
+}
+
 async function buildMediaPreviewFromNodeFallback(
   ctx: QueryCtx,
   canvases: Array<Doc<"canvases">>,
@@ -312,35 +320,59 @@ export const getSnapshot = query({
 
 export const listMediaLibrary = query({
   args: {
-    limit: v.optional(v.number()),
+    page: v.number(),
+    pageSize: v.optional(v.number()),
     kindFilter: v.optional(v.union(v.literal("image"), v.literal("video"), v.literal("asset"))),
   },
-  handler: async (ctx, { limit, kindFilter }) => {
+  handler: async (ctx, { page, pageSize, kindFilter }) => {
+    const normalizedPage = normalizeMediaLibraryPage(page);
+    const normalizedPageSize = normalizeMediaLibraryLimit(pageSize);
+
     const user = await optionalAuth(ctx);
     if (!user) {
-      return [];
+      return {
+        items: [],
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+        totalPages: 0,
+        totalCount: 0,
+      };
     }
 
-    const normalizedLimit = normalizeMediaLibraryLimit(limit);
-    const baseTake = Math.max(normalizedLimit * MEDIA_ARCHIVE_FETCH_MULTIPLIER, normalizedLimit);
     const mediaArchiveRows = kindFilter
       ? await ctx.db
           .query("mediaItems")
           .withIndex("by_owner_kind_updated", (q) => q.eq("ownerId", user.userId).eq("kind", kindFilter))
           .order("desc")
-          .take(baseTake)
+          .collect()
       : await ctx.db
           .query("mediaItems")
           .withIndex("by_owner_updated", (q) => q.eq("ownerId", user.userId))
           .order("desc")
-          .take(baseTake);
-    const mediaFromArchive = buildMediaPreviewFromArchive(mediaArchiveRows, normalizedLimit, kindFilter);
+          .collect();
+    const mediaFromArchive = buildMediaPreviewFromArchive(mediaArchiveRows, mediaArchiveRows.length, kindFilter);
     if (mediaFromArchive.length > 0 || mediaArchiveRows.length > 0) {
-      return mediaFromArchive;
+      const totalCount = mediaFromArchive.length;
+      const totalPages = totalCount > 0 ? Math.ceil(totalCount / normalizedPageSize) : 0;
+      const offset = (normalizedPage - 1) * normalizedPageSize;
+
+      return {
+        items: mediaFromArchive.slice(offset, offset + normalizedPageSize),
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+        totalPages,
+        totalCount,
+      };
     }
 
     if (kindFilter && kindFilter !== "image") {
-      return [];
+      return {
+        items: [],
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+        totalPages: 0,
+        totalCount: 0,
+      };
     }
 
     const canvases = await ctx.db
@@ -349,6 +381,21 @@ export const listMediaLibrary = query({
       .order("desc")
       .collect();
 
-    return await buildMediaPreviewFromNodeFallback(ctx, canvases, normalizedLimit);
+    const mediaFromNodeFallback = await buildMediaPreviewFromNodeFallback(
+      ctx,
+      canvases,
+      Math.max(normalizedPage * normalizedPageSize * MEDIA_ARCHIVE_FETCH_MULTIPLIER, normalizedPageSize),
+    );
+    const totalCount = mediaFromNodeFallback.length;
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / normalizedPageSize) : 0;
+    const offset = (normalizedPage - 1) * normalizedPageSize;
+
+    return {
+      items: mediaFromNodeFallback.slice(offset, offset + normalizedPageSize),
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalPages,
+      totalCount,
+    };
   },
 });

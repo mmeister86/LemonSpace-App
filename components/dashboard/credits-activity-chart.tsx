@@ -112,7 +112,7 @@ export function CreditsActivityChart({ balance, recentTransactions }: CreditsAct
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value: number) => formatCredits(Number(value), locale)}
+                formatter={(value) => formatCredits(Number(value), locale)}
               />
             }
           />

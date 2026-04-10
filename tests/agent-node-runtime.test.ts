@@ -481,4 +481,52 @@ describe("AgentNode runtime", () => {
 
     expect(mocks.runAgent).not.toHaveBeenCalled();
   });
+
+  it("keeps execution progress fallback compatible with richer runtime execution step data", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentNode, {
+          id: "agent-4",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent",
+          data: {
+            canvasId: "canvas-1",
+            templateId: "campaign-distributor",
+            modelId: "openai/gpt-5.4-mini",
+            _status: "executing",
+            executionSteps: [
+              {
+                stepIndex: 0,
+                stepTotal: 2,
+                artifactType: "social-post",
+                requiredSections: ["hook", "body", "cta"],
+                qualityChecks: ["channel-fit"],
+              },
+              {
+                stepIndex: 1,
+                stepTotal: 2,
+                artifactType: "social-post",
+                requiredSections: ["hook", "body", "cta"],
+                qualityChecks: ["channel-fit"],
+              },
+            ],
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Executing planned outputs (2 total)");
+  });
 });

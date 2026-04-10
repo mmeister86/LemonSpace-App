@@ -28,7 +28,13 @@ const translations: Record<string, string> = {
   "agentOutputNode.skeletonBadge": "Skeleton",
   "agentOutputNode.plannedOutputLabel": "Planned output",
   "agentOutputNode.channelLabel": "Channel",
-  "agentOutputNode.typeLabel": "Type",
+  "agentOutputNode.artifactTypeLabel": "Artifact type",
+  "agentOutputNode.sectionsLabel": "Sections",
+  "agentOutputNode.metadataLabel": "Metadata",
+  "agentOutputNode.qualityChecksLabel": "Quality checks",
+  "agentOutputNode.previewLabel": "Preview",
+  "agentOutputNode.previewFallback": "No preview available",
+  "agentOutputNode.emptyValue": "-",
   "agentOutputNode.bodyLabel": "Body",
   "agentOutputNode.plannedContent": "Planned content",
 };
@@ -70,7 +76,7 @@ describe("AgentOutputNode", () => {
     root = null;
   });
 
-  it("renders title, channel, output type, and body", async () => {
+  it("renders structured output with artifact meta, sections, metadata, quality checks, and preview fallback", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -90,8 +96,18 @@ describe("AgentOutputNode", () => {
           data: {
             title: "Instagram Caption",
             channel: "instagram-feed",
-            outputType: "caption",
-            body: "A short punchy caption with hashtags",
+            artifactType: "caption-pack",
+            previewText: "A short punchy caption with hashtags",
+            sections: [
+              { id: "hook", label: "Hook", content: "Launch day is here." },
+              { id: "body", label: "Body", content: "Built for modern teams." },
+            ],
+            metadata: {
+              objective: "Drive signups",
+              tags: ["launch", "product"],
+            },
+            qualityChecks: ["channel-fit", "cta-present"],
+            body: "Legacy body fallback",
             _status: "done",
           } as Record<string, unknown>,
           positionAbsoluteX: 0,
@@ -102,10 +118,22 @@ describe("AgentOutputNode", () => {
 
     expect(container.textContent).toContain("Instagram Caption");
     expect(container.textContent).toContain("instagram-feed");
-    expect(container.textContent).toContain("caption");
+    expect(container.textContent).toContain("caption-pack");
+    expect(container.textContent).toContain("Sections");
+    expect(container.textContent).toContain("Hook");
+    expect(container.textContent).toContain("Launch day is here.");
+    expect(container.textContent).toContain("Metadata");
+    expect(container.textContent).toContain("objective");
+    expect(container.textContent).toContain("Drive signups");
+    expect(container.textContent).toContain("Quality checks");
+    expect(container.textContent).toContain("channel-fit");
+    expect(container.textContent).toContain("Preview");
     expect(container.textContent).toContain("A short punchy caption with hashtags");
     expect(container.querySelector('[data-testid="agent-output-meta-strip"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="agent-output-text-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="agent-output-sections"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="agent-output-metadata"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="agent-output-quality-checks"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="agent-output-preview"]')).not.toBeNull();
   });
 
   it("renders parseable json body in a pretty-printed code block", async () => {
@@ -128,7 +156,7 @@ describe("AgentOutputNode", () => {
           data: {
             title: "JSON output",
             channel: "api",
-            outputType: "payload",
+            artifactType: "payload",
             body: '{"post":"Hello","tags":["launch","news"]}',
             _status: "done",
           } as Record<string, unknown>,
@@ -143,6 +171,40 @@ describe("AgentOutputNode", () => {
     expect(jsonBody?.textContent).toContain('"post": "Hello"');
     expect(jsonBody?.textContent).toContain('"tags": [');
     expect(container.querySelector('[data-testid="agent-output-text-body"]')).toBeNull();
+  });
+
+  it("falls back to legacy text body when structured fields are absent", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-legacy",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Legacy output",
+            channel: "linkedin",
+            artifactType: "post",
+            body: "Legacy body content",
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.querySelector('[data-testid="agent-output-text-body"]')).not.toBeNull();
+    expect(container.textContent).toContain("Legacy body content");
+    expect(container.querySelector('[data-testid="agent-output-sections"]')).toBeNull();
   });
 
   it("renders input-only handle agent-output-in", async () => {
@@ -165,7 +227,7 @@ describe("AgentOutputNode", () => {
           data: {
             title: "LinkedIn Post",
             channel: "linkedin",
-            outputType: "post",
+            artifactType: "post",
             body: "Body",
           } as Record<string, unknown>,
           positionAbsoluteX: 0,
@@ -197,7 +259,7 @@ describe("AgentOutputNode", () => {
           data: {
             title: "Planned headline",
             channel: "linkedin",
-            outputType: "post",
+            artifactType: "post",
             isSkeleton: true,
             stepIndex: 1,
             stepTotal: 4,

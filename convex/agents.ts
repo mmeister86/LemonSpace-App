@@ -18,20 +18,27 @@ import {
   normalizeAgentBriefConstraints,
   normalizeAgentExecutionPlan,
   normalizeAgentLocale,
-  normalizeAgentOutputDraft,
+  normalizeAgentStructuredOutput,
   type AgentLocale,
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
   type AgentExecutionStep,
-  type AgentOutputDraft,
+  type AgentOutputSection,
+  type AgentStructuredOutputDraft,
 } from "../lib/agent-run-contract";
+import {
+  buildAnalyzeMessages,
+  buildExecuteMessages,
+  summarizeIncomingContext,
+  type PromptContextNode,
+} from "../lib/agent-prompting";
 import {
   DEFAULT_AGENT_MODEL_ID,
   getAgentModel,
   isAgentModelAvailableForTier,
   type AgentModel,
 } from "../lib/agent-models";
-import { getAgentTemplate } from "../lib/agent-templates";
+import { getAgentDefinition } from "../lib/agent-definitions";
 import { normalizePublicTier } from "../lib/tier-credits";
 
 const ANALYZE_SCHEMA: Record<string, unknown> = {
@@ -64,35 +71,95 @@ const ANALYZE_SCHEMA: Record<string, unknown> = {
           type: "array",
           minItems: 1,
           maxItems: 6,
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["id", "title", "channel", "outputType"],
-            properties: {
-              id: { type: "string" },
-              title: { type: "string" },
-              channel: { type: "string" },
-              outputType: { type: "string" },
-            },
-          },
-        },
-      },
+           items: {
+             type: "object",
+             additionalProperties: false,
+             required: [
+               "id",
+               "title",
+               "channel",
+               "outputType",
+               "artifactType",
+               "goal",
+               "requiredSections",
+               "qualityChecks",
+             ],
+             properties: {
+               id: { type: "string" },
+               title: { type: "string" },
+               channel: { type: "string" },
+               outputType: { type: "string" },
+               artifactType: { type: "string" },
+               goal: { type: "string" },
+               requiredSections: {
+                 type: "array",
+                 items: { type: "string" },
+               },
+               qualityChecks: {
+                 type: "array",
+                 items: { type: "string" },
+               },
+             },
+           },
+         },
+       },
     },
   },
 };
 
 function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
+  const sectionSchema: Record<string, unknown> = {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "label", "content"],
+    properties: {
+      id: { type: "string" },
+      label: { type: "string" },
+      content: { type: "string" },
+    },
+  };
+
+  const metadataValueSchema: Record<string, unknown> = {
+    anyOf: [
+      { type: "string" },
+      {
+        type: "array",
+        items: { type: "string" },
+      },
+    ],
+  };
+
   const stepOutputProperties: Record<string, unknown> = {};
   for (const stepId of stepIds) {
     stepOutputProperties[stepId] = {
       type: "object",
       additionalProperties: false,
-      required: ["title", "channel", "outputType", "body"],
+      required: [
+        "title",
+        "channel",
+        "artifactType",
+        "previewText",
+        "sections",
+        "metadata",
+        "qualityChecks",
+      ],
       properties: {
         title: { type: "string" },
         channel: { type: "string" },
-        outputType: { type: "string" },
-        body: { type: "string" },
+        artifactType: { type: "string" },
+        previewText: { type: "string" },
+        sections: {
+          type: "array",
+          items: sectionSchema,
+        },
+        metadata: {
+          type: "object",
+          additionalProperties: metadataValueSchema,
+        },
+        qualityChecks: {
+          type: "array",
+          items: { type: "string" },
+        },
       },
     };
   }
@@ -111,14 +178,6 @@ function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
       },
     },
   };
-}
-
-function getOutputLanguageInstruction(locale: AgentLocale): string {
-  if (locale === "de") {
-    return "Write all generated fields in German (de-DE), including step titles, channel labels, output types, clarification prompts, and body content.";
-  }
-
-  return "Write all generated fields in English (en-US), including step titles, channel labels, output types, clarification prompts, and body content.";
 }
 
 type InternalApiShape = {
@@ -213,7 +272,9 @@ type InternalApiShape = {
       {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
+        analysisSummary: string;
         executionPlan: { summary: string; steps: AgentExecutionStep[] };
+        definitionVersion?: number;
       },
       { outputNodeIds: Id<"nodes">[] }
     >;
@@ -229,6 +290,13 @@ type InternalApiShape = {
         title: string;
         channel: string;
         outputType: string;
+        artifactType: string;
+        goal: string;
+        requiredSections: string[];
+        qualityChecks: string[];
+        previewText: string;
+        sections: AgentOutputSection[];
+        metadata: Record<string, string | string[]>;
         body: string;
       },
       unknown
@@ -256,8 +324,18 @@ type InternalApiShape = {
       { transactionId: Id<"creditTransactions"> },
       unknown
     >;
-    checkAbuseLimits: FunctionReference<"mutation", "internal", {}, unknown>;
-    incrementUsage: FunctionReference<"mutation", "internal", {}, unknown>;
+    checkAbuseLimits: FunctionReference<
+      "mutation",
+      "internal",
+      Record<string, never>,
+      unknown
+    >;
+    incrementUsage: FunctionReference<
+      "mutation",
+      "internal",
+      Record<string, never>,
+      unknown
+    >;
     decrementConcurrency: FunctionReference<
       "mutation",
       "internal",
@@ -328,6 +406,172 @@ function normalizeClarificationQuestions(raw: unknown): AgentClarificationQuesti
   return questions;
 }
 
+function normalizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const item of raw) {
+    const value = trimText(item);
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    normalized.push(value);
+  }
+
+  return normalized;
+}
+
+function normalizeOptionalVersion(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return undefined;
+  }
+  const normalized = Math.floor(raw);
+  return normalized > 0 ? normalized : undefined;
+}
+
+function buildSkeletonPreviewPlaceholder(title: string): string {
+  const normalizedTitle = trimText(title) || "this output";
+  return `Draft pending for ${normalizedTitle}.`;
+}
+
+function deriveLegacyBodyFallback(input: {
+  title: string;
+  previewText: string;
+  sections: AgentOutputSection[];
+  body: string;
+}): string {
+  const normalizedBody = trimText(input.body);
+  if (normalizedBody) {
+    return normalizedBody;
+  }
+
+  if (input.sections.length > 0) {
+    return input.sections.map((section) => `${section.label}:\n${section.content}`).join("\n\n");
+  }
+
+  const normalizedPreview = trimText(input.previewText);
+  if (normalizedPreview) {
+    return normalizedPreview;
+  }
+
+  return trimText(input.title);
+}
+
+function resolveExecutionPlanSummary(input: {
+  executionPlanSummary: unknown;
+  analysisSummary: unknown;
+}): string {
+  return trimText(input.executionPlanSummary) || trimText(input.analysisSummary);
+}
+
+function resolveFinalExecutionSummary(input: {
+  executionSummary: unknown;
+  modelSummary: unknown;
+  executionPlanSummary: unknown;
+  analysisSummary: unknown;
+}): string {
+  return (
+    trimText(input.executionSummary) ||
+    trimText(input.modelSummary) ||
+    trimText(input.executionPlanSummary) ||
+    trimText(input.analysisSummary)
+  );
+}
+
+function getAnalyzeExecutionStepRequiredFields(): string[] {
+  const executionPlan = (ANALYZE_SCHEMA.properties as Record<string, unknown>).executionPlan as
+    | Record<string, unknown>
+    | undefined;
+  const steps = (executionPlan?.properties as Record<string, unknown> | undefined)?.steps as
+    | Record<string, unknown>
+    | undefined;
+  const items = steps?.items as Record<string, unknown> | undefined;
+  const required = items?.required;
+  return Array.isArray(required)
+    ? required.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
+function buildSkeletonOutputData(input: {
+  step: AgentExecutionStep;
+  stepIndex: number;
+  stepTotal: number;
+  definitionVersion?: number;
+}) {
+  const definitionVersion = normalizeOptionalVersion(input.definitionVersion);
+  return {
+    isSkeleton: true,
+    stepId: input.step.id,
+    stepIndex: input.stepIndex,
+    stepTotal: input.stepTotal,
+    title: input.step.title,
+    channel: input.step.channel,
+    outputType: input.step.outputType,
+    artifactType: input.step.artifactType,
+    goal: input.step.goal,
+    requiredSections: input.step.requiredSections,
+    qualityChecks: input.step.qualityChecks,
+    previewText: buildSkeletonPreviewPlaceholder(input.step.title),
+    sections: [],
+    metadata: {},
+    body: "",
+    ...(definitionVersion ? { definitionVersion } : {}),
+  };
+}
+
+function buildCompletedOutputData(input: {
+  step: AgentExecutionStep;
+  stepIndex: number;
+  stepTotal: number;
+  output: {
+    title: string;
+    channel: string;
+    artifactType: string;
+    previewText: string;
+    sections: AgentOutputSection[];
+    metadata: Record<string, string | string[]>;
+    qualityChecks: string[];
+    body: string;
+  };
+}) {
+  const normalizedQualityChecks =
+    input.output.qualityChecks.length > 0
+      ? normalizeStringList(input.output.qualityChecks)
+      : normalizeStringList(input.step.qualityChecks);
+  const normalizedSections = Array.isArray(input.output.sections) ? input.output.sections : [];
+  const normalizedPreviewText =
+    trimText(input.output.previewText) || trimText(normalizedSections[0]?.content);
+
+  return {
+    isSkeleton: false,
+    stepId: trimText(input.step.id),
+    stepIndex: Math.max(0, Math.floor(input.stepIndex)),
+    stepTotal: Math.max(1, Math.floor(input.stepTotal)),
+    title: trimText(input.output.title) || trimText(input.step.title),
+    channel: trimText(input.output.channel) || trimText(input.step.channel),
+    outputType: trimText(input.step.outputType),
+    artifactType: trimText(input.output.artifactType) || trimText(input.step.artifactType),
+    goal: trimText(input.step.goal),
+    requiredSections: normalizeStringList(input.step.requiredSections),
+    qualityChecks: normalizedQualityChecks,
+    previewText: normalizedPreviewText,
+    sections: normalizedSections,
+    metadata:
+      input.output.metadata && typeof input.output.metadata === "object" ? input.output.metadata : {},
+    body: deriveLegacyBodyFallback({
+      title: trimText(input.output.title) || trimText(input.step.title),
+      previewText: normalizedPreviewText,
+      sections: normalizedSections,
+      body: input.output.body,
+    }),
+  };
+}
+
 type AgentExecutionStepRuntime = AgentExecutionStep & {
   nodeId: Id<"nodes">;
   stepIndex: number;
@@ -350,6 +594,10 @@ function normalizeExecutionSteps(raw: unknown): AgentExecutionStepRuntime[] {
     const title = trimText(itemRecord.title);
     const channel = trimText(itemRecord.channel);
     const outputType = trimText(itemRecord.outputType);
+    const artifactType = trimText(itemRecord.artifactType) || outputType;
+    const goal = trimText(itemRecord.goal) || "Deliver channel-ready output.";
+    const requiredSections = normalizeStringList(itemRecord.requiredSections);
+    const qualityChecks = normalizeStringList(itemRecord.qualityChecks);
     const rawStepIndex = itemRecord.stepIndex;
     const rawStepTotal = itemRecord.stepTotal;
     const stepIndex =
@@ -370,6 +618,10 @@ function normalizeExecutionSteps(raw: unknown): AgentExecutionStepRuntime[] {
       title,
       channel,
       outputType,
+      artifactType,
+      goal,
+      requiredSections,
+      qualityChecks,
       nodeId: nodeId as Id<"nodes">,
       stepIndex,
       stepTotal,
@@ -379,47 +631,29 @@ function normalizeExecutionSteps(raw: unknown): AgentExecutionStepRuntime[] {
   return steps.sort((a, b) => a.stepIndex - b.stepIndex);
 }
 
-function serializeNodeDataForPrompt(data: unknown): string {
-  if (data === undefined) {
-    return "{}";
-  }
-  try {
-    return JSON.stringify(data).slice(0, 1200);
-  } catch {
-    return "{}";
-  }
-}
-
-function collectIncomingContext(
+function collectIncomingContextNodes(
   graph: { nodes: Doc<"nodes">[]; edges: Doc<"edges">[] },
   agentNodeId: Id<"nodes">,
-): string {
+): PromptContextNode[] {
   const nodeById = new Map(graph.nodes.map((node) => [node._id, node] as const));
   const incomingEdges = graph.edges.filter((edge) => edge.targetNodeId === agentNodeId);
 
-  if (incomingEdges.length === 0) {
-    return "No incoming nodes connected to this agent.";
-  }
-
-  const lines: string[] = [];
+  const nodes: PromptContextNode[] = [];
   for (const edge of incomingEdges) {
     const source = nodeById.get(edge.sourceNodeId);
     if (!source) {
       continue;
     }
-    lines.push(
-      `- nodeId=${source._id}, type=${source.type}, status=${source.status}, data=${serializeNodeDataForPrompt(source.data)}`,
-    );
+
+    nodes.push({
+      nodeId: source._id,
+      type: source.type,
+      status: source.status,
+      data: source.data,
+    });
   }
 
-  return lines.length > 0 ? lines.join("\n") : "No incoming nodes connected to this agent.";
-}
-
-function countIncomingContext(
-  graph: { edges: Doc<"edges">[] },
-  agentNodeId: Id<"nodes">,
-): number {
-  return graph.edges.filter((edge) => edge.targetNodeId === agentNodeId).length;
+  return nodes;
 }
 
 function getAgentNodeFromGraph(
@@ -489,6 +723,15 @@ function getSelectedModelOrThrow(modelId: string): AgentModel {
   return selectedModel;
 }
 
+function getAgentDefinitionOrThrow(templateId: unknown) {
+  const resolvedId = trimText(templateId) || "campaign-distributor";
+  const definition = getAgentDefinition(resolvedId);
+  if (!definition) {
+    throw new Error(`Unknown agent definition: ${resolvedId}`);
+  }
+  return definition;
+}
+
 function assertAgentModelTier(model: AgentModel, tier: string | undefined): void {
   const normalizedTier = normalizePublicTier(tier);
   if (!isAgentModelAvailableForTier(normalizedTier, model.id)) {
@@ -523,7 +766,9 @@ export const setAgentAnalyzing = internalMutation({
         modelId: args.modelId,
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
+        analysisSummary: undefined,
         executionPlanSummary: undefined,
+        executionSummary: undefined,
         executionSteps: [],
       },
     });
@@ -589,6 +834,8 @@ export const createExecutionSkeletonOutputs = internalMutation({
   args: {
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
+    analysisSummary: v.string(),
+    definitionVersion: v.optional(v.number()),
     executionPlan: v.object({
       summary: v.string(),
       steps: v.array(
@@ -597,6 +844,10 @@ export const createExecutionSkeletonOutputs = internalMutation({
           title: v.string(),
           channel: v.string(),
           outputType: v.string(),
+          artifactType: v.string(),
+          goal: v.string(),
+          requiredSections: v.array(v.string()),
+          qualityChecks: v.array(v.string()),
         }),
       ),
     }),
@@ -630,6 +881,10 @@ export const createExecutionSkeletonOutputs = internalMutation({
       title: string;
       channel: string;
       outputType: string;
+      artifactType: string;
+      goal: string;
+      requiredSections: string[];
+      qualityChecks: string[];
     }> = [];
 
     for (let index = 0; index < args.executionPlan.steps.length; index += 1) {
@@ -643,16 +898,12 @@ export const createExecutionSkeletonOutputs = internalMutation({
         height: 260,
         status: "executing",
         retryCount: 0,
-        data: {
-          isSkeleton: true,
-          stepId: step.id,
+        data: buildSkeletonOutputData({
+          step,
           stepIndex: index,
           stepTotal,
-          title: step.title,
-          channel: step.channel,
-          outputType: step.outputType,
-          body: "",
-        },
+          definitionVersion: args.definitionVersion,
+        }),
       });
 
       outputNodeIds.push(outputNodeId);
@@ -664,6 +915,10 @@ export const createExecutionSkeletonOutputs = internalMutation({
         title: step.title,
         channel: step.channel,
         outputType: step.outputType,
+        artifactType: step.artifactType,
+        goal: step.goal,
+        requiredSections: step.requiredSections,
+        qualityChecks: step.qualityChecks,
       });
 
       await ctx.db.insert("edges", {
@@ -678,7 +933,11 @@ export const createExecutionSkeletonOutputs = internalMutation({
     await ctx.db.patch(args.nodeId, {
       data: {
         ...prev,
-        executionPlanSummary: trimText(args.executionPlan.summary),
+        analysisSummary: trimText(args.analysisSummary),
+        executionPlanSummary: resolveExecutionPlanSummary({
+          executionPlanSummary: args.executionPlan.summary,
+          analysisSummary: args.analysisSummary,
+        }),
         executionSteps: runtimeSteps,
         outputNodeIds: [...existingOutputNodeIds, ...outputNodeIds],
       },
@@ -704,6 +963,19 @@ export const completeExecutionStepOutput = internalMutation({
     title: v.string(),
     channel: v.string(),
     outputType: v.string(),
+    artifactType: v.string(),
+    goal: v.string(),
+    requiredSections: v.array(v.string()),
+    qualityChecks: v.array(v.string()),
+    previewText: v.string(),
+    sections: v.array(
+      v.object({
+        id: v.string(),
+        label: v.string(),
+        content: v.string(),
+      }),
+    ),
+    metadata: v.record(v.string(), v.union(v.string(), v.array(v.string()))),
     body: v.string(),
   },
   handler: async (ctx, args) => {
@@ -726,20 +998,36 @@ export const completeExecutionStepOutput = internalMutation({
       throw new Error("Output node does not belong to the same canvas");
     }
 
+    const normalizedOutputData = buildCompletedOutputData({
+      step: {
+        id: args.stepId,
+        title: args.title,
+        channel: args.channel,
+        outputType: args.outputType,
+        artifactType: args.artifactType,
+        goal: args.goal,
+        requiredSections: args.requiredSections,
+        qualityChecks: args.qualityChecks,
+      },
+      stepIndex: args.stepIndex,
+      stepTotal: args.stepTotal,
+      output: {
+        title: args.title,
+        channel: args.channel,
+        artifactType: args.artifactType,
+        previewText: args.previewText,
+        sections: args.sections,
+        metadata: args.metadata,
+        qualityChecks: args.qualityChecks,
+        body: args.body,
+      },
+    });
+
     await ctx.db.patch(args.outputNodeId, {
       status: "done",
       statusMessage: undefined,
       retryCount: 0,
-      data: {
-        isSkeleton: false,
-        stepId: trimText(args.stepId),
-        stepIndex: Math.max(0, Math.floor(args.stepIndex)),
-        stepTotal: Math.max(1, Math.floor(args.stepTotal)),
-        title: trimText(args.title),
-        channel: trimText(args.channel),
-        outputType: trimText(args.outputType),
-        body: trimText(args.body),
-      },
+      data: normalizedOutputData,
     });
   },
 });
@@ -831,7 +1119,18 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
         ...prev,
         clarificationQuestions: [],
         outputNodeIds: existingOutputNodeIds,
-        lastRunSummary: trimText(args.summary),
+        executionSummary: resolveFinalExecutionSummary({
+          executionSummary: prev.executionSummary,
+          modelSummary: args.summary,
+          executionPlanSummary: prev.executionPlanSummary,
+          analysisSummary: prev.analysisSummary,
+        }),
+        lastRunSummary: resolveFinalExecutionSummary({
+          executionSummary: prev.executionSummary,
+          modelSummary: args.summary,
+          executionPlanSummary: prev.executionPlanSummary,
+          analysisSummary: prev.analysisSummary,
+        }),
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
       },
@@ -870,12 +1169,13 @@ export const analyzeAgent = internalAction({
       });
       const agentNode = getAgentNodeFromGraph(graph, args.nodeId);
       const agentData = getNodeDataRecord(agentNode.data);
-      const template = getAgentTemplate(trimText(agentData.templateId) || "campaign-distributor");
+      const definition = getAgentDefinitionOrThrow(agentData.templateId);
       const existingAnswers = normalizeAnswerMap(agentData.clarificationAnswers);
       const locale = normalizeAgentLocale(args.locale);
       const briefConstraints = normalizeAgentBriefConstraints(agentData.briefConstraints);
-      const incomingContext = collectIncomingContext(graph, args.nodeId);
-      const incomingContextCount = countIncomingContext(graph, args.nodeId);
+      const incomingContextNodes = collectIncomingContextNodes(graph, args.nodeId);
+      const incomingContext = summarizeIncomingContext(incomingContextNodes);
+      const incomingContextCount = incomingContextNodes.length;
 
       const preflightClarificationQuestions = buildPreflightClarificationQuestions({
         briefConstraints,
@@ -902,29 +1202,14 @@ export const analyzeAgent = internalAction({
         model: args.modelId,
         schemaName: "agent_analyze_result",
         schema: ANALYZE_SCHEMA,
-        messages: [
-          {
-            role: "system",
-            content:
-              [
-                "You are the LemonSpace Agent Analyzer. Inspect incoming canvas context and decide if clarification is required before execution. Ask only necessary short questions.",
-                getOutputLanguageInstruction(locale),
-              ].join(" "),
-          },
-          {
-            role: "user",
-            content: [
-                `Template: ${template?.name ?? "Unknown template"}`,
-                `Template description: ${template?.description ?? ""}`,
-                `Brief + constraints: ${JSON.stringify(briefConstraints)}`,
-                "Incoming node context:",
-                incomingContext,
-                `Incoming context node count: ${incomingContextCount}`,
-                `Current clarification answers: ${JSON.stringify(existingAnswers)}`,
-                "Return structured JSON matching the schema.",
-              ].join("\n\n"),
-            },
-          ],
+        messages: buildAnalyzeMessages({
+          definition,
+          locale,
+          briefConstraints,
+          clarificationAnswers: existingAnswers,
+          incomingContextSummary: incomingContext,
+          incomingContextCount,
+        }),
       });
 
       const clarificationQuestions = normalizeClarificationQuestions(
@@ -950,6 +1235,8 @@ export const analyzeAgent = internalAction({
       await ctx.runMutation(internalApi.agents.createExecutionSkeletonOutputs, {
         canvasId: args.canvasId,
         nodeId: args.nodeId,
+        analysisSummary: trimText(analysis.analysisSummary),
+        definitionVersion: definition.version,
         executionPlan,
       });
 
@@ -1001,12 +1288,16 @@ export const executeAgent = internalAction({
       });
       const agentNode = getAgentNodeFromGraph(graph, args.nodeId);
       const agentData = getNodeDataRecord(agentNode.data);
-      const template = getAgentTemplate(trimText(agentData.templateId) || "campaign-distributor");
+      const definition = getAgentDefinitionOrThrow(agentData.templateId);
       const clarificationAnswers = normalizeAnswerMap(agentData.clarificationAnswers);
       const locale = normalizeAgentLocale(args.locale);
       const briefConstraints = normalizeAgentBriefConstraints(agentData.briefConstraints);
-      const incomingContext = collectIncomingContext(graph, args.nodeId);
-      const executionPlanSummary = trimText(agentData.executionPlanSummary);
+      const incomingContextNodes = collectIncomingContextNodes(graph, args.nodeId);
+      const incomingContext = summarizeIncomingContext(incomingContextNodes);
+      const executionPlanSummary = resolveExecutionPlanSummary({
+        executionPlanSummary: agentData.executionPlanSummary,
+        analysisSummary: agentData.analysisSummary,
+      });
       const executionSteps = normalizeExecutionSteps(agentData.executionSteps);
 
       if (executionSteps.length === 0) {
@@ -1017,42 +1308,31 @@ export const executeAgent = internalAction({
 
       const execution = await generateStructuredObjectViaOpenRouter<{
         summary: string;
-        stepOutputs: Record<string, AgentOutputDraft>;
+        stepOutputs: Record<string, AgentStructuredOutputDraft>;
       }>(apiKey, {
         model: args.modelId,
         schemaName: "agent_execute_result",
         schema: executeSchema,
-        messages: [
-          {
-            role: "system",
-            content:
-              [
-                "You are the LemonSpace Agent Executor. Produce concrete channel outputs from context and clarification answers. Return one output per step, keyed by stepId.",
-                getOutputLanguageInstruction(locale),
-              ].join(" "),
+        messages: buildExecuteMessages({
+          definition,
+          locale,
+          briefConstraints,
+          clarificationAnswers,
+          incomingContextSummary: incomingContext,
+          executionPlan: {
+            summary: executionPlanSummary,
+            steps: executionSteps.map((step) => ({
+              id: step.id,
+              title: step.title,
+              channel: step.channel,
+              outputType: step.outputType,
+              artifactType: step.artifactType,
+              goal: step.goal,
+              requiredSections: step.requiredSections,
+              qualityChecks: step.qualityChecks,
+            })),
           },
-          {
-            role: "user",
-            content: [
-              `Template: ${template?.name ?? "Unknown template"}`,
-              `Template description: ${template?.description ?? ""}`,
-              `Brief + constraints: ${JSON.stringify(briefConstraints)}`,
-              `Analyze summary: ${executionPlanSummary}`,
-              `Clarification answers: ${JSON.stringify(clarificationAnswers)}`,
-              `Execution steps: ${JSON.stringify(
-                executionSteps.map((step) => ({
-                  id: step.id,
-                  title: step.title,
-                  channel: step.channel,
-                  outputType: step.outputType,
-                })),
-              )}`,
-              "Incoming node context:",
-              incomingContext,
-              "Return structured JSON matching the schema.",
-            ].join("\n\n"),
-          },
-        ],
+        }),
       });
 
       const stepOutputs =
@@ -1072,11 +1352,10 @@ export const executeAgent = internalAction({
           throw new Error(`Missing execution output for step ${step.id}`);
         }
 
-        const normalized = normalizeAgentOutputDraft({
-          ...rawOutput,
-          title: trimText(rawOutput.title) || step.title,
-          channel: trimText(rawOutput.channel) || step.channel,
-          outputType: trimText(rawOutput.outputType) || step.outputType,
+        const normalized = normalizeAgentStructuredOutput(rawOutput, {
+          title: step.title,
+          channel: step.channel,
+          artifactType: step.artifactType,
         });
 
         await ctx.runMutation(internalApi.agents.completeExecutionStepOutput, {
@@ -1087,7 +1366,15 @@ export const executeAgent = internalAction({
           stepTotal: step.stepTotal,
           title: normalized.title,
           channel: normalized.channel,
-          outputType: normalized.outputType,
+          outputType: step.outputType,
+          artifactType: normalized.artifactType,
+          goal: step.goal,
+          requiredSections: step.requiredSections,
+          qualityChecks:
+            normalized.qualityChecks.length > 0 ? normalized.qualityChecks : step.qualityChecks,
+          previewText: normalized.previewText,
+          sections: normalized.sections,
+          metadata: normalized.metadata,
           body: normalized.body,
         });
       }
@@ -1115,6 +1402,14 @@ export const executeAgent = internalAction({
     }
   },
 });
+
+export const __testables = {
+  buildSkeletonOutputData,
+  buildCompletedOutputData,
+  getAnalyzeExecutionStepRequiredFields,
+  resolveExecutionPlanSummary,
+  resolveFinalExecutionSummary,
+};
 
 export const runAgent = action({
   args: {

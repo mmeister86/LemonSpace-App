@@ -20,9 +20,7 @@ import {
   resolveMediaPreviewUrl,
 } from "@/components/media/media-preview-utils";
 
-const DEFAULT_LIMIT = 200;
-const MIN_LIMIT = 1;
-const MAX_LIMIT = 500;
+const DEFAULT_PAGE_SIZE = 8;
 
 export type MediaLibraryMetadataItem = {
   kind: "image" | "video" | "asset";
@@ -54,18 +52,18 @@ export type MediaLibraryDialogProps = {
   onPick?: (item: MediaLibraryItem) => void | Promise<void>;
   title?: string;
   description?: string;
-  limit?: number;
+  pageSize?: number;
   kindFilter?: "image" | "video" | "asset";
   pickCtaLabel?: string;
 };
 
-function normalizeLimit(limit: number | undefined): number {
-  if (typeof limit !== "number" || !Number.isFinite(limit)) {
-    return DEFAULT_LIMIT;
-  }
-
-  return Math.min(MAX_LIMIT, Math.max(MIN_LIMIT, Math.floor(limit)));
-}
+type MediaLibraryResponse = {
+  items: MediaLibraryMetadataItem[];
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalCount: number;
+};
 
 function formatDimensions(width: number | undefined, height: number | undefined): string | null {
   if (typeof width !== "number" || typeof height !== "number") {
@@ -128,20 +126,39 @@ export function MediaLibraryDialog({
   onPick,
   title = "Mediathek",
   description,
-  limit,
+  pageSize = DEFAULT_PAGE_SIZE,
   kindFilter,
   pickCtaLabel = "Auswaehlen",
 }: MediaLibraryDialogProps) {
-  const normalizedLimit = useMemo(() => normalizeLimit(limit), [limit]);
+  const [page, setPage] = useState(1);
+  const normalizedPageSize = useMemo(() => {
+    if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
+      return DEFAULT_PAGE_SIZE;
+    }
+
+    return Math.max(1, Math.floor(pageSize));
+  }, [pageSize]);
+
+  useEffect(() => {
+    if (!open) {
+      setPage(1);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [kindFilter]);
+
   const metadata = useAuthQuery(
     api.dashboard.listMediaLibrary,
     open
       ? {
-          limit: normalizedLimit,
+          page,
+          pageSize: normalizedPageSize,
           ...(kindFilter ? { kindFilter } : {}),
         }
       : "skip",
-  );
+  ) as MediaLibraryResponse | undefined;
   const resolveUrls = useMutation(api.storage.batchGetUrlsForUserMedia);
 
   const [urlMap, setUrlMap] = useState<Record<string, string | undefined>>({});
@@ -164,7 +181,7 @@ export function MediaLibraryDialog({
         return;
       }
 
-      const storageIds = collectMediaStorageIdsForResolution(metadata);
+      const storageIds = collectMediaStorageIdsForResolution(metadata.items);
       if (storageIds.length === 0) {
         setUrlMap({});
         setUrlError(null);
@@ -206,11 +223,13 @@ export function MediaLibraryDialog({
       return [];
     }
 
-    return metadata.map((item) => ({
+    return metadata.items.map((item) => ({
       ...item,
       url: resolveMediaPreviewUrl(item, urlMap),
     }));
   }, [metadata, urlMap]);
+
+  const visibleItems = useMemo(() => items.slice(0, DEFAULT_PAGE_SIZE), [items]);
 
   const isMetadataLoading = open && metadata === undefined;
   const isInitialLoading = isMetadataLoading || (metadata !== undefined && isResolvingUrls);
@@ -244,9 +263,9 @@ export function MediaLibraryDialog({
 
         <div className="min-h-[320px] overflow-y-auto pr-1">
           {isInitialLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {Array.from({ length: 12 }).map((_, index) => (
-                <div key={index} className="overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+               {Array.from({ length: DEFAULT_PAGE_SIZE }).map((_, index) => (
+                 <div key={index} className="overflow-hidden rounded-lg border">
                   <div className="aspect-square animate-pulse bg-muted" />
                   <div className="space-y-1 p-2">
                     <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
@@ -270,8 +289,8 @@ export function MediaLibraryDialog({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {items.map((item) => {
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+               {visibleItems.map((item) => {
                 const itemKey = getItemKey(item);
                 const isPickingThis = pendingPickItemKey === itemKey;
                 const itemLabel = getItemLabel(item);
@@ -347,6 +366,30 @@ export function MediaLibraryDialog({
             </div>
           )}
         </div>
+
+        {metadata && !isInitialLoading && !urlError && items.length > 0 ? (
+          <div className="flex shrink-0 items-center justify-center gap-2 border-t px-5 py-3" aria-live="polite">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page <= 1}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {metadata.page} of {metadata.totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((current) => Math.min(metadata.totalPages, current + 1))}
+              disabled={page >= metadata.totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

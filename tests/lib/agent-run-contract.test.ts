@@ -122,6 +122,10 @@ describe("agent run contract helpers", () => {
             title: "Instagram captions",
             channel: "Instagram",
             outputType: "caption-pack",
+            artifactType: "caption-pack",
+            goal: "Deliver channel-ready output.",
+            requiredSections: [],
+            qualityChecks: [],
           },
         ],
       });
@@ -149,6 +153,10 @@ describe("agent run contract helpers", () => {
             title: "Untitled",
             channel: "general",
             outputType: "text",
+            artifactType: "text",
+            goal: "Deliver channel-ready output.",
+            requiredSections: [],
+            qualityChecks: [],
           },
         ],
       });
@@ -180,6 +188,51 @@ describe("agent run contract helpers", () => {
       });
 
       expect(normalized.steps.map((step) => step.id)).toEqual(["step", "step-2", "step-3"]);
+    });
+
+    it("normalizes enriched execution-step fields with deterministic array handling", () => {
+      const normalized = normalizeAgentExecutionPlan({
+        summary: "ready",
+        steps: [
+          {
+            id: "main",
+            title: "Deliver",
+            channel: "linkedin",
+            outputType: "post",
+            artifactType: " social-caption-pack ",
+            goal: "  Explain launch value  ",
+            requiredSections: ["Hook", "CTA", "Hook", "  "],
+            qualityChecks: ["fits_tone", "fits_tone", "references_context", ""],
+          },
+        ],
+      });
+
+      expect(normalized.steps[0]).toEqual({
+        id: "main",
+        title: "Deliver",
+        channel: "linkedin",
+        outputType: "post",
+        artifactType: "social-caption-pack",
+        goal: "Explain launch value",
+        requiredSections: ["Hook", "CTA"],
+        qualityChecks: ["fits_tone", "references_context"],
+      });
+    });
+
+    it("keeps compatibility by falling back artifactType to outputType", () => {
+      const normalized = normalizeAgentExecutionPlan({
+        summary: "ready",
+        steps: [
+          {
+            id: "legacy",
+            title: "Legacy step",
+            channel: "email",
+            outputType: "newsletter-copy",
+          },
+        ],
+      });
+
+      expect(normalized.steps[0]?.artifactType).toBe("newsletter-copy");
     });
   });
 

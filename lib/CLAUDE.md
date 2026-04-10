@@ -13,7 +13,11 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `canvas-node-types.ts` | TypeScript-Typen und Union-Typen für Canvas-Nodes |
 | `canvas-node-templates.ts` | Default-Daten für neue Nodes (beim Einfügen aus Palette) |
 | `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
-| `agent-templates.ts` | Typsichere Agent-Registry für statische Agent-Node-Metadaten |
+| `agent-definitions.ts` | Runtime-Registry fuer Agent-Definitionen (Struktur, Regeln, Blueprints, Docs-Pfad) |
+| `agent-templates.ts` | UI-Projektion auf Agent-Metadaten aus `agent-definitions.ts` |
+| `agent-prompting.ts` | Pure Prompt-Builder (`summarizeIncomingContext`, `buildAnalyzeMessages`, `buildExecuteMessages`) |
+| `agent-run-contract.ts` | Normalisierung fuer Clarifications, Execution Plan und strukturierte Agent-Outputs |
+| `generated/agent-doc-segments.ts` | Generierte Prompt-Segmente aus `components/agents/*.md` (nicht manuell editieren) |
 | `ai-models.ts` | Client-seitige Bild-Modell-Definitionen (muss mit `convex/openrouter.ts` in sync bleiben) |
 | `ai-video-models.ts` | Video-Modell-Registry: 5 MVP-Modelle mit Endpunkten, Credit-Kosten, Tier-Zugang |
 | `video-poll-logging.ts` | Log-Volumen-Steuerung für Video-Polling (vermeidet excessive Konsolenausgabe) |
@@ -36,6 +40,21 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `utils.ts` | `cn()` (clsx + tailwind-merge), allgemeine Utilities |
 | `credits-activity.ts` | Credits-Aktivitäts-Analytics: Transaktions-Priorisierung, Activity-Series, Usage-Domain-Berechnung |
 | `dashboard-snapshot-cache.ts` | localStorage-Cache für Dashboard-Snapshots (12h TTL, versioniert) |
+
+---
+
+## Agent Runtime: Dual Model
+
+Die Agent-Runtime folgt einem dualen Modell:
+
+- **TS-Vertraege als Struktur-Single-Source:** `lib/agent-definitions.ts` + `lib/agent-run-contract.ts` definieren IDs, Regeln, Blueprints und Normalisierung.
+- **Markdown-Segmente als kuratierter Prompt-Input:** markierte Segmente in `components/agents/*.md` werden via `scripts/compile-agent-docs.ts` in `lib/generated/agent-doc-segments.ts` kompiliert.
+
+Wichtig:
+
+- `convex/agents.ts` liest nur die generierte TS-Datei, nicht Raw-Markdown.
+- Nur markierte `AGENT_PROMPT_SEGMENT`-Bloecke beeinflussen Analyze/Execute-Prompts.
+- `agent-templates.ts` ist bewusst nur eine UI-Projektion aus `agent-definitions.ts`.
 
 ---
 

@@ -12,10 +12,11 @@ import {
   listMediaArchiveItems,
   upsertMediaItemByOwnerAndDedupe,
 } from "@/convex/media";
+import { listMediaLibrary } from "@/convex/dashboard";
 import { verifyOwnedStorageIds } from "@/convex/storage";
 import { registerUploadedImageMedia } from "@/convex/storage";
 import { buildStoredMediaDedupeKey } from "@/lib/media-archive";
-import { requireAuth } from "@/convex/helpers";
+import { optionalAuth, requireAuth } from "@/convex/helpers";
 
 type MockMediaItem = {
   _id: Id<"mediaItems">;
@@ -85,6 +86,98 @@ function createMockDb(initialRows: MockMediaItem[] = []) {
         Object.assign(row, patch);
       },
       get: async (id: Id<"mediaItems">) => rows.find((entry) => entry._id === id) ?? null,
+    },
+  };
+}
+
+type MockDashboardMediaItem = {
+  _id: Id<"mediaItems">;
+  _creationTime: number;
+  ownerId: string;
+  dedupeKey: string;
+  kind: "image" | "video" | "asset";
+  source: "upload" | "ai-image" | "ai-video" | "freepik-asset" | "pexels-video";
+  storageId?: Id<"_storage">;
+  previewStorageId?: Id<"_storage">;
+  originalUrl?: string;
+  previewUrl?: string;
+  sourceUrl?: string;
+  filename?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  updatedAt: number;
+};
+
+function createListMediaLibraryCtx(mediaItems: MockDashboardMediaItem[]) {
+  return {
+    db: {
+      query: vi.fn((table: string) => {
+        if (table === "mediaItems") {
+          return {
+            withIndex: vi.fn(
+              (
+                index: "by_owner_updated" | "by_owner_kind_updated",
+                apply: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const clauses: Array<{ field: string; value: unknown }> = [];
+                const queryBuilder = {
+                  eq(field: string, value: unknown) {
+                    clauses.push({ field, value });
+                    return this;
+                  },
+                };
+                apply(queryBuilder);
+
+                let filtered = [...mediaItems];
+                const ownerId = clauses.find((clause) => clause.field === "ownerId")?.value;
+                if (ownerId) {
+                  filtered = filtered.filter((item) => item.ownerId === ownerId);
+                }
+
+                if (index === "by_owner_kind_updated") {
+                  const kind = clauses.find((clause) => clause.field === "kind")?.value;
+                  filtered = filtered.filter((item) => item.kind === kind);
+                }
+
+                const sorted = filtered.sort((a, b) => b.updatedAt - a.updatedAt);
+
+                return {
+                  order: vi.fn((direction: "desc") => {
+                    expect(direction).toBe("desc");
+                    return {
+                      collect: vi.fn(async () => sorted),
+                      take: vi.fn(async (count: number) => sorted.slice(0, count)),
+                    };
+                  }),
+                };
+              },
+            ),
+          };
+        }
+
+        if (table === "canvases") {
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({
+                collect: vi.fn(async () => []),
+              })),
+            })),
+          };
+        }
+
+        if (table === "nodes") {
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({
+                take: vi.fn(async () => []),
+              })),
+            })),
+          };
+        }
+
+        throw new Error(`Unexpected table query: ${table}`);
+      }),
     },
   };
 }
@@ -473,6 +566,131 @@ describe("media archive", () => {
       durationSeconds: 5,
       firstSourceCanvasId: canvasId,
       firstSourceNodeId: nodeId,
+    });
+  });
+
+  it("listMediaLibrary returns paginated object with default page size 8", async () => {
+    vi.mocked(optionalAuth).mockResolvedValue({ userId: "user_1" } as never);
+
+    const mediaItems: MockDashboardMediaItem[] = Array.from({ length: 11 }, (_, index) => ({
+      _id: `media_${index + 1}` as Id<"mediaItems">,
+      _creationTime: index + 1,
+      ownerId: "user_1",
+      dedupeKey: `storage:s${index + 1}`,
+      kind: index % 2 === 0 ? "image" : "video",
+      source: index % 2 === 0 ? "upload" : "ai-video",
+      storageId: `storage_${index + 1}` as Id<"_storage">,
+      updatedAt: 1000 - index,
+    }));
+
+    const result = await (listMediaLibrary as unknown as {
+      _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+    })._handler(createListMediaLibraryCtx(mediaItems) as never, { page: 1 });
+
+    expect(result).toMatchObject({
+      page: 1,
+      pageSize: 8,
+      totalPages: 2,
+      totalCount: 11,
+    });
+    expect((result as { items: unknown[] }).items).toHaveLength(8);
+  });
+
+  it("listMediaLibrary paginates with page and pageSize args", async () => {
+    vi.mocked(optionalAuth).mockResolvedValue({ userId: "user_1" } as never);
+
+    const mediaItems: MockDashboardMediaItem[] = Array.from({ length: 12 }, (_, index) => ({
+      _id: `media_${index + 1}` as Id<"mediaItems">,
+      _creationTime: index + 1,
+      ownerId: "user_1",
+      dedupeKey: `storage:s${index + 1}`,
+      kind: index % 2 === 0 ? "image" : "video",
+      source: index % 2 === 0 ? "upload" : "ai-video",
+      storageId: `storage_${index + 1}` as Id<"_storage">,
+      updatedAt: 2000 - index,
+    }));
+
+    const result = await (listMediaLibrary as unknown as {
+      _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+    })._handler(createListMediaLibraryCtx(mediaItems) as never, { page: 2, pageSize: 5 });
+
+    expect(result).toMatchObject({
+      page: 2,
+      pageSize: 5,
+      totalPages: 3,
+      totalCount: 12,
+    });
+    expect((result as { items: unknown[] }).items).toHaveLength(5);
+  });
+
+  it("listMediaLibrary applies kindFilter with paginated response", async () => {
+    vi.mocked(optionalAuth).mockResolvedValue({ userId: "user_1" } as never);
+
+    const mediaItems: MockDashboardMediaItem[] = [
+      {
+        _id: "media_1" as Id<"mediaItems">,
+        _creationTime: 1,
+        ownerId: "user_1",
+        dedupeKey: "storage:image_1",
+        kind: "image",
+        source: "upload",
+        storageId: "storage_image_1" as Id<"_storage">,
+        updatedAt: 100,
+      },
+      {
+        _id: "media_2" as Id<"mediaItems">,
+        _creationTime: 2,
+        ownerId: "user_1",
+        dedupeKey: "storage:video_1",
+        kind: "video",
+        source: "ai-video",
+        storageId: "storage_video_1" as Id<"_storage">,
+        updatedAt: 99,
+      },
+      {
+        _id: "media_3" as Id<"mediaItems">,
+        _creationTime: 3,
+        ownerId: "user_1",
+        dedupeKey: "storage:video_2",
+        kind: "video",
+        source: "ai-video",
+        storageId: "storage_video_2" as Id<"_storage">,
+        updatedAt: 98,
+      },
+    ];
+
+    const result = await (listMediaLibrary as unknown as {
+      _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+    })._handler(createListMediaLibraryCtx(mediaItems) as never, {
+      page: 1,
+      pageSize: 1,
+      kindFilter: "video",
+    });
+
+    expect(result).toMatchObject({
+      page: 1,
+      pageSize: 1,
+      totalPages: 2,
+      totalCount: 2,
+    });
+    expect((result as { items: Array<{ kind: string }> }).items).toEqual([
+      expect.objectContaining({ kind: "video" }),
+    ]);
+  });
+
+  it("listMediaLibrary returns paginated empty shape when unauthenticated", async () => {
+    vi.mocked(optionalAuth).mockResolvedValue(null);
+
+    const result = await (listMediaLibrary as unknown as {
+      _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+    })._handler(createListMediaLibraryCtx([]) as never, { page: 2, pageSize: 5 });
+
+    expect(result).toEqual({
+      items: [],
+      page: 2,
+      pageSize: 5,
+      totalPages: 0,
+      totalCount: 0,
     });
   });
 });

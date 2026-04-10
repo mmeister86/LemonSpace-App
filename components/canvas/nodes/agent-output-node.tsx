@@ -12,6 +12,15 @@ type AgentOutputNodeData = {
   stepTotal?: number;
   title?: string;
   channel?: string;
+  artifactType?: string;
+  previewText?: string;
+  sections?: Array<{
+    id?: string;
+    label?: string;
+    content?: string;
+  }>;
+  metadata?: Record<string, string | string[] | unknown>;
+  qualityChecks?: string[];
   outputType?: string;
   body?: string;
   _status?: string;
@@ -40,6 +49,70 @@ function tryFormatJsonBody(body: string): string | null {
   }
 }
 
+function normalizeSections(raw: AgentOutputNodeData["sections"]) {
+  if (!Array.isArray(raw)) {
+    return [] as Array<{ id: string; label: string; content: string }>;
+  }
+
+  const sections: Array<{ id: string; label: string; content: string }> = [];
+  for (const item of raw) {
+    const label = typeof item?.label === "string" ? item.label.trim() : "";
+    const content = typeof item?.content === "string" ? item.content.trim() : "";
+    if (label === "" || content === "") {
+      continue;
+    }
+    const id = typeof item.id === "string" && item.id.trim() !== "" ? item.id.trim() : label;
+    sections.push({ id, label, content });
+  }
+
+  return sections;
+}
+
+function normalizeMetadata(raw: AgentOutputNodeData["metadata"]) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return [] as Array<[string, string]>;
+  }
+
+  const entries: Array<[string, string]> = [];
+  for (const [rawKey, rawValue] of Object.entries(raw)) {
+    const key = rawKey.trim();
+    if (key === "") {
+      continue;
+    }
+
+    if (typeof rawValue === "string") {
+      const value = rawValue.trim();
+      if (value !== "") {
+        entries.push([key, value]);
+      }
+      continue;
+    }
+
+    if (Array.isArray(rawValue)) {
+      const values = rawValue
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value !== "");
+      if (values.length > 0) {
+        entries.push([key, values.join(", ")]);
+      }
+    }
+  }
+
+  return entries;
+}
+
+function normalizeQualityChecks(raw: AgentOutputNodeData["qualityChecks"]): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+}
+
 export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutputNodeType>) {
   const t = useTranslations("agentOutputNode");
   const nodeData = data as AgentOutputNodeData;
@@ -65,6 +138,16 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
     nodeData.title ??
     (isSkeleton ? t("plannedOutputDefaultTitle") : t("defaultTitle"));
   const body = nodeData.body ?? "";
+  const artifactType = nodeData.artifactType ?? nodeData.outputType ?? "";
+  const sections = normalizeSections(nodeData.sections);
+  const metadataEntries = normalizeMetadata(nodeData.metadata);
+  const qualityChecks = normalizeQualityChecks(nodeData.qualityChecks);
+  const previewText =
+    typeof nodeData.previewText === "string" && nodeData.previewText.trim() !== ""
+      ? nodeData.previewText.trim()
+      : sections[0]?.content ?? "";
+  const hasStructuredOutput =
+    sections.length > 0 || metadataEntries.length > 0 || qualityChecks.length > 0 || previewText !== "";
   const formattedJsonBody = isSkeleton ? null : tryFormatJsonBody(body);
 
   return (
@@ -110,44 +193,108 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("channelLabel")}</p>
             <p className="truncate text-xs font-medium text-foreground/90" title={nodeData.channel}>
-              {nodeData.channel ?? "-"}
+              {nodeData.channel ?? t("emptyValue")}
             </p>
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("typeLabel")}</p>
-            <p className="truncate text-xs font-medium text-foreground/90" title={nodeData.outputType}>
-              {nodeData.outputType ?? "-"}
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("artifactTypeLabel")}</p>
+            <p className="truncate text-xs font-medium text-foreground/90" title={artifactType}>
+              {artifactType || t("emptyValue")}
             </p>
           </div>
         </section>
 
-        <section className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("bodyLabel")}
-          </p>
-          {isSkeleton ? (
+        {isSkeleton ? (
+          <section className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("bodyLabel")}
+            </p>
             <div
               data-testid="agent-output-skeleton-body"
               className="animate-pulse rounded-md border border-dashed border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 p-3"
             >
               <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90">{t("plannedContent")}</p>
             </div>
-          ) : formattedJsonBody ? (
+          </section>
+        ) : hasStructuredOutput ? (
+          <>
+            {sections.length > 0 ? (
+              <section data-testid="agent-output-sections" className="space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("sectionsLabel")}</p>
+                <div className="space-y-1.5">
+                  {sections.map((section) => (
+                    <div key={section.id} className="rounded-md border border-border/70 bg-background/70 p-2">
+                      <p className="text-[11px] font-semibold text-foreground/90">{section.label}</p>
+                      <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90">
+                        {section.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {metadataEntries.length > 0 ? (
+              <section data-testid="agent-output-metadata" className="space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("metadataLabel")}</p>
+                <div className="space-y-1 text-[12px] text-foreground/90">
+                  {metadataEntries.map(([key, value]) => (
+                    <p key={key} className="break-words">
+                      <span className="font-semibold">{key}</span>: {value}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {qualityChecks.length > 0 ? (
+              <section data-testid="agent-output-quality-checks" className="space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("qualityChecksLabel")}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {qualityChecks.map((qualityCheck) => (
+                    <span
+                      key={qualityCheck}
+                      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200"
+                    >
+                      {qualityCheck}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section data-testid="agent-output-preview" className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("previewLabel")}</p>
+              <div className="max-h-40 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
+                <p className="whitespace-pre-wrap break-words">{previewText || t("previewFallback")}</p>
+              </div>
+            </section>
+          </>
+        ) : formattedJsonBody ? (
+          <section className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("bodyLabel")}
+            </p>
             <pre
               data-testid="agent-output-json-body"
               className="max-h-48 overflow-auto rounded-md border border-border/80 bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground/95"
             >
               <code>{formattedJsonBody}</code>
             </pre>
-          ) : (
+          </section>
+        ) : (
+          <section className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("bodyLabel")}
+            </p>
             <div
               data-testid="agent-output-text-body"
               className="max-h-48 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90"
             >
               <p className="whitespace-pre-wrap break-words">{body}</p>
             </div>
-          )}
-        </section>
+          </section>
+        )}
       </div>
     </BaseNodeWrapper>
   );

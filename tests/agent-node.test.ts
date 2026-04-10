@@ -6,6 +6,46 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const handleCalls: Array<{ type: string; id?: string }> = [];
+const getAgentTemplateMock = vi.fn((id: string) => {
+  if (id === "future-agent") {
+    return {
+      id: "future-agent",
+      name: "Future Agent",
+      description: "Generic definition-backed template metadata.",
+      emoji: "rocket",
+      color: "blue",
+      vibe: "Builds reusable workflows.",
+      tools: [],
+      channels: ["Email", "LinkedIn"],
+      expectedInputs: ["Text node"],
+      expectedOutputs: ["Plan"],
+      notes: [],
+    };
+  }
+
+  if (id === "campaign-distributor") {
+    return {
+      id: "campaign-distributor",
+      name: "Campaign Distributor",
+      description:
+        "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
+      emoji: "lemon",
+      color: "yellow",
+      vibe: "Campaign-first",
+      tools: [],
+      channels: ["LinkedIn", "Instagram"],
+      expectedInputs: ["Render"],
+      expectedOutputs: ["Caption pack"],
+      notes: [],
+    };
+  }
+
+  return undefined;
+});
+
+vi.mock("@/lib/agent-templates", () => ({
+  getAgentTemplate: (id: string) => getAgentTemplateMock(id),
+}));
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
@@ -71,6 +111,7 @@ describe("AgentNode", () => {
 
   beforeEach(() => {
     handleCalls.length = 0;
+    getAgentTemplateMock.mockClear();
   });
 
   afterEach(() => {
@@ -84,7 +125,7 @@ describe("AgentNode", () => {
     root = null;
   });
 
-  it("renders campaign distributor metadata and source/target handles", async () => {
+  it("renders definition-projected metadata and source/target handles without template-specific branching", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -102,7 +143,7 @@ describe("AgentNode", () => {
           isConnectable: true,
           type: "agent",
           data: {
-            templateId: "campaign-distributor",
+            templateId: "future-agent",
             _status: "idle",
           } as Record<string, unknown>,
           positionAbsoluteX: 0,
@@ -111,7 +152,8 @@ describe("AgentNode", () => {
       );
     });
 
-    expect(container.textContent).toContain("Campaign Distributor");
+    expect(container.textContent).toContain("Future Agent");
+    expect(container.textContent).toContain("Generic definition-backed template metadata.");
     expect(container.textContent).toContain("Briefing");
     expect(container.textContent).toContain("Constraints");
     expect(container.textContent).toContain("Template reference");
@@ -119,7 +161,7 @@ describe("AgentNode", () => {
     expect(handleCalls.filter((call) => call.type === "source")).toHaveLength(1);
   });
 
-  it("falls back to the default template when templateId is missing", async () => {
+  it("falls back to the default template when templateId is missing or unknown", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -137,6 +179,7 @@ describe("AgentNode", () => {
           isConnectable: true,
           type: "agent",
           data: {
+            templateId: "unknown-template",
             _status: "done",
           } as Record<string, unknown>,
           positionAbsoluteX: 0,
@@ -146,5 +189,7 @@ describe("AgentNode", () => {
     });
 
     expect(container.textContent).toContain("Campaign Distributor");
+    expect(getAgentTemplateMock).toHaveBeenCalledWith("unknown-template");
+    expect(getAgentTemplateMock).toHaveBeenCalledWith("campaign-distributor");
   });
 });

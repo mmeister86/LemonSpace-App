@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
@@ -16,7 +16,6 @@ import {
   DEFAULT_AGENT_MODEL_ID,
   getAgentModel,
   getAvailableAgentModels,
-  type AgentModelId,
 } from "@/lib/agent-models";
 import {
   type AgentClarificationAnswerMap,
@@ -88,11 +87,16 @@ function useSafeSubscription() {
   }
 }
 
-function useSafeAction(reference: FunctionReference<"action", "public", any, unknown>) {
+function useSafeAction<Args extends Record<string, unknown>, Output>(
+  reference: FunctionReference<"action", "public", Args, Output>,
+) {
   try {
     return useAction(reference);
   } catch {
-    return async (_args: any) => undefined;
+    return async (args: Args): Promise<Output | undefined> => {
+      void args;
+      return undefined;
+    };
   }
 }
 
@@ -183,6 +187,10 @@ function CompactList({ items }: { items: readonly string[] }) {
   );
 }
 
+function toTemplateTranslationKey(templateId: string): string {
+  return templateId.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
 export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeType>) {
   const t = useTranslations("agentNode");
   const locale = useLocale();
@@ -195,13 +203,35 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const userTier = normalizePublicTier(subscription?.tier ?? "free");
 
   const availableModels = useMemo(() => getAvailableAgentModels(userTier), [userTier]);
-  const [modelId, setModelId] = useState(nodeData.modelId ?? DEFAULT_AGENT_MODEL_ID);
-  const [clarificationAnswers, setClarificationAnswers] = useState<AgentClarificationAnswerMap>(
-    normalizeClarificationAnswers(nodeData.clarificationAnswers),
+  const clarificationAnswersFromNode = useMemo(
+    () => normalizeClarificationAnswers(nodeData.clarificationAnswers),
+    [nodeData.clarificationAnswers],
   );
-  const [briefConstraints, setBriefConstraints] = useState<AgentBriefConstraints>(
-    normalizeBriefConstraints(nodeData.briefConstraints),
+  const briefConstraintsFromNode = useMemo(
+    () => normalizeBriefConstraints(nodeData.briefConstraints),
+    [nodeData.briefConstraints],
   );
+  const nodeModelId =
+    typeof nodeData.modelId === "string" && nodeData.modelId.trim().length > 0
+      ? nodeData.modelId
+      : DEFAULT_AGENT_MODEL_ID;
+  const [modelDraftId, setModelDraftId] = useState<string | null>(null);
+  const [clarificationAnswersDraft, setClarificationAnswersDraft] =
+    useState<AgentClarificationAnswerMap | null>(null);
+  const [briefConstraintsDraft, setBriefConstraintsDraft] =
+    useState<AgentBriefConstraints | null>(null);
+
+  const modelId = modelDraftId === nodeModelId ? nodeModelId : modelDraftId ?? nodeModelId;
+  const clarificationAnswers =
+    clarificationAnswersDraft &&
+    areAnswerMapsEqual(clarificationAnswersDraft, clarificationAnswersFromNode)
+      ? clarificationAnswersFromNode
+      : clarificationAnswersDraft ?? clarificationAnswersFromNode;
+  const briefConstraints =
+    briefConstraintsDraft &&
+    areBriefConstraintsEqual(briefConstraintsDraft, briefConstraintsFromNode)
+      ? briefConstraintsFromNode
+      : briefConstraintsDraft ?? briefConstraintsFromNode;
 
   const agentActionsApi = api as unknown as {
     agents: {
@@ -234,57 +264,30 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const resumeAgent = useSafeAction(agentActionsApi.agents.resumeAgent);
   const normalizedLocale = locale === "en" ? "en" : "de";
 
-  useEffect(() => {
-    setModelId(nodeData.modelId ?? DEFAULT_AGENT_MODEL_ID);
-  }, [nodeData.modelId]);
-
-  useEffect(() => {
-    const normalized = normalizeClarificationAnswers(nodeData.clarificationAnswers);
-    setClarificationAnswers((current) => {
-      if (areAnswerMapsEqual(current, normalized)) {
-        return current;
-      }
-      return normalized;
-    });
-  }, [nodeData.clarificationAnswers]);
-
-  useEffect(() => {
-    const normalized = normalizeBriefConstraints(nodeData.briefConstraints);
-    setBriefConstraints((current) => {
-      if (areBriefConstraintsEqual(current, normalized)) {
-        return current;
-      }
-      return normalized;
-    });
-  }, [nodeData.briefConstraints]);
-
-  useEffect(() => {
-    if (availableModels.length === 0) {
-      return;
-    }
+  const resolvedModelId = useMemo(() => {
     if (availableModels.some((model) => model.id === modelId)) {
-      return;
+      return modelId;
     }
 
-    const nextModelId = availableModels[0]!.id;
-    setModelId(nextModelId);
+    return availableModels[0]?.id ?? DEFAULT_AGENT_MODEL_ID;
   }, [availableModels, modelId]);
-
   const selectedModel =
-    getAgentModel(modelId) ??
+    getAgentModel(resolvedModelId) ??
     availableModels[0] ??
     getAgentModel(DEFAULT_AGENT_MODEL_ID);
-  const resolvedModelId = selectedModel?.id ?? DEFAULT_AGENT_MODEL_ID;
   const creditCost = selectedModel?.creditCost ?? 0;
   const clarificationQuestions = nodeData.clarificationQuestions ?? [];
+  const templateTranslationKey = `templates.${toTemplateTranslationKey(template?.id ?? DEFAULT_AGENT_TEMPLATE_ID)}`;
+  const translatedTemplateName = t(`${templateTranslationKey}.name`);
+  const translatedTemplateDescription = t(`${templateTranslationKey}.description`);
   const templateName =
-    template?.id === "campaign-distributor"
-      ? t("templates.campaignDistributor.name")
-      : (template?.name ?? "");
+    translatedTemplateName === `${templateTranslationKey}.name`
+      ? (template?.name ?? "")
+      : translatedTemplateName;
   const templateDescription =
-    template?.id === "campaign-distributor"
-      ? t("templates.campaignDistributor.description")
-      : (template?.description ?? "");
+    translatedTemplateDescription === `${templateTranslationKey}.description`
+      ? (template?.description ?? "")
+      : translatedTemplateDescription;
   const isExecutionActive = nodeData._status === "analyzing" || nodeData._status === "executing";
   const executionProgressLine = useMemo(() => {
     if (nodeData._status !== "executing") {
@@ -373,7 +376,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
 
   const handleModelChange = useCallback(
     (value: string) => {
-      setModelId(value);
+      setModelDraftId(value);
       void persistNodeData({ modelId: value });
     },
     [persistNodeData],
@@ -381,33 +384,29 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
 
   const handleClarificationAnswerChange = useCallback(
     (questionId: string, value: string) => {
-      setClarificationAnswers((prev) => {
-        const next = {
-          ...prev,
-          [questionId]: value,
-        };
-        void persistNodeData({ clarificationAnswers: next });
-        return next;
-      });
+      const next = {
+        ...clarificationAnswers,
+        [questionId]: value,
+      };
+      setClarificationAnswersDraft(next);
+      void persistNodeData({ clarificationAnswers: next });
     },
-    [persistNodeData],
+    [clarificationAnswers, persistNodeData],
   );
 
   const handleBriefConstraintsChange = useCallback(
     (patch: Partial<AgentBriefConstraints>) => {
-      setBriefConstraints((prev) => {
-        const next = {
-          ...prev,
-          ...patch,
-        };
-        void persistNodeData({ briefConstraints: next });
-        return next;
-      });
+      const next = {
+        ...briefConstraints,
+        ...patch,
+      };
+      setBriefConstraintsDraft(next);
+      void persistNodeData({ briefConstraints: next });
     },
-    [persistNodeData],
+    [briefConstraints, persistNodeData],
   );
 
-  const handleRunAgent = useCallback(async () => {
+  const handleRunAgent = async () => {
     if (isExecutionActive) {
       return;
     }
@@ -431,9 +430,9 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       modelId: resolvedModelId,
       locale: normalizedLocale,
     });
-  }, [isExecutionActive, nodeData.canvasId, id, normalizedLocale, resolvedModelId, runAgent, status.isOffline, t]);
+  };
 
-  const handleSubmitClarification = useCallback(async () => {
+  const handleSubmitClarification = async () => {
     if (status.isOffline) {
       toast.warning(
         t("offlineTitle"),
@@ -453,7 +452,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       clarificationAnswers,
       locale: normalizedLocale,
     });
-  }, [clarificationAnswers, nodeData.canvasId, id, normalizedLocale, resumeAgent, status.isOffline, t]);
+  };
 
   if (!template) {
     return null;

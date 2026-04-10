@@ -23,6 +23,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `polar.ts` | Polar.sh Webhook-Handler (Subscriptions) |
 | `pexels.ts` | Pexels Stock-Bilder API |
 | `freepik.ts` | Freepik Asset-Browser API + Video-Generierungs-Client |
+| `agents.ts` | Agent-Orchestrierung: Analyze/Execute-Flow, Clarifications, strukturierte Outputs, Scheduler/Credits-Integration |
 | `ai_utils.ts` | Gemeinsame Helpers für AI-Pipeline (z. B. `assertNodeBelongsToCanvasOrThrow`) |
 | `storage.ts` | Convex File Storage Helpers + gebündelte Canvas-URL-Auflösung |
 | `export.ts` | Canvas-Export-Logik |
@@ -86,6 +87,35 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 **`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`.
 
 **`dailyUsage`** — Täglicher Zähler pro User für Abuse-Prevention. Key: `userId + date (ISO)`.
+
+---
+
+## Agent-Orchestrierung (`agents.ts`)
+
+`agents.ts` orchestriert den Lauf von Agent-Nodes in zwei Stufen:
+
+1. Analyze: Brief + Kontext auswerten, Clarification-Fragen und Execution-Plan erzeugen.
+2. Execute: Pro Plan-Step strukturierte Deliverables erzeugen und in `agent-output`-Nodes persistieren.
+
+### Architekturgrenzen
+
+- Scheduling, Status-Mutationen und Credit-Flow bleiben in `agents.ts`.
+- Prompt-Aufbau liegt in `lib/agent-prompting.ts` (`summarizeIncomingContext`, `buildAnalyzeMessages`, `buildExecuteMessages`).
+- Strukturvertraege und Normalisierung kommen aus `lib/agent-run-contract.ts`.
+- Agent-Metadaten, Regeln und Blueprints kommen aus `lib/agent-definitions.ts`.
+- Prompt-Segmente kommen aus `lib/generated/agent-doc-segments.ts` (generiert durch `scripts/compile-agent-docs.ts`).
+
+Wichtig: `agents.ts` liest keine Raw-Markdown-Dateien zur Laufzeit.
+
+### Strukturierte Output-Persistenz
+
+Pro Step wird ein strukturierter Output gespeichert mit:
+
+- `title`, `channel`, `artifactType`, `previewText`
+- `sections[]` (`id`, `label`, `content`)
+- `metadata` (`Record<string, string | string[]>`)
+- `qualityChecks[]`
+- `body` als Legacy-Fallback
 
 ---
 
