@@ -20,10 +20,13 @@ export function useDashboardSnapshot(userId?: string | null): {
 } {
   const [cacheEpoch, setCacheEpoch] = useState(0);
   const liveSnapshot = useAuthQuery(api.dashboard.getSnapshot, userId ? {} : "skip");
-  const cachedSnapshot =
-    userId && cacheEpoch >= 0
-      ? readDashboardSnapshotCache<DashboardSnapshot>(userId)?.snapshot ?? null
-      : null;
+  const cachedSnapshot = useMemo(() => {
+    if (!userId || cacheEpoch < 0) {
+      return null;
+    }
+
+    return readDashboardSnapshotCache<DashboardSnapshot>(userId)?.snapshot ?? null;
+  }, [userId, cacheEpoch]);
 
   useEffect(() => {
     if (!userId || !liveSnapshot) return;
