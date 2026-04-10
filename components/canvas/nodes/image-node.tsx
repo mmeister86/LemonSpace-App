@@ -376,6 +376,11 @@ export default function ImageNode({
         return;
       }
 
+      if (item.kind !== "image" || !item.storageId) {
+        toast.error(t('canvas.uploadFailed'), "Nur Bilddateien mit Storage-ID koennen uebernommen werden.");
+        return;
+      }
+
       setMediaLibraryPhase("applying");
       setPendingMediaLibraryStorageId(item.storageId);
 
@@ -644,6 +649,7 @@ export default function ImageNode({
         open={isMediaLibraryOpen}
         onOpenChange={setIsMediaLibraryOpen}
         onPick={handlePickFromMediaLibrary}
+        kindFilter="image"
         pickCtaLabel="Uebernehmen"
       />
     </>

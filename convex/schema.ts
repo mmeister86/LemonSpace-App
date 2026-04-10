@@ -32,6 +32,20 @@ const nodeStatus = v.union(
   v.literal("error")
 );
 
+const mediaItemKind = v.union(
+  v.literal("image"),
+  v.literal("video"),
+  v.literal("asset")
+);
+
+const mediaItemSource = v.union(
+  v.literal("upload"),
+  v.literal("ai-image"),
+  v.literal("ai-video"),
+  v.literal("freepik-asset"),
+  v.literal("pexels-video")
+);
+
 // ============================================================================
 // Node Data — typ-spezifische Payloads
 // ============================================================================
@@ -186,6 +200,34 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_userId_nodeType", ["userId", "nodeType"]),
+
+  mediaItems: defineTable({
+    ownerId: v.string(),
+    kind: mediaItemKind,
+    source: mediaItemSource,
+    dedupeKey: v.string(),
+    title: v.optional(v.string()),
+    filename: v.optional(v.string()),
+    mimeType: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    previewStorageId: v.optional(v.id("_storage")),
+    originalUrl: v.optional(v.string()),
+    previewUrl: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    providerAssetId: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    durationSeconds: v.optional(v.number()),
+    metadata: v.optional(v.any()),
+    firstSourceCanvasId: v.optional(v.id("canvases")),
+    firstSourceNodeId: v.optional(v.id("nodes")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastUsedAt: v.number(),
+  })
+    .index("by_owner_updated", ["ownerId", "updatedAt"])
+    .index("by_owner_kind_updated", ["ownerId", "kind", "updatedAt"])
+    .index("by_owner_dedupe", ["ownerId", "dedupeKey"]),
 
   // ==========================================================================
   // Credit-System

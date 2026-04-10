@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 import { CANVAS_NODE_DND_MIME } from "@/lib/canvas-connection-policy";
 import { NODE_DEFAULTS } from "@/lib/canvas-utils";
+import {
+  emitDashboardSnapshotCacheInvalidationSignal,
+  invalidateDashboardSnapshotForLastSignedInUser,
+} from "@/lib/dashboard-snapshot-cache";
 import { toast } from "@/lib/toast";
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
 import { createCompressedImagePreview } from "@/components/canvas/canvas-media-utils";
@@ -26,6 +30,11 @@ vi.mock("@/components/canvas/canvas-media-utils", () => ({
     width: 640,
     height: 360,
   })),
+}));
+
+vi.mock("@/lib/dashboard-snapshot-cache", () => ({
+  invalidateDashboardSnapshotForLastSignedInUser: vi.fn(),
+  emitDashboardSnapshotCacheInvalidationSignal: vi.fn(),
 }));
 
 const latestHandlersRef: {
@@ -245,6 +254,62 @@ describe("useCanvasDrop", () => {
       width: 1600,
       height: 900,
     });
+    expect(invalidateDashboardSnapshotForLastSignedInUser).toHaveBeenCalledTimes(1);
+    expect(emitDashboardSnapshotCacheInvalidationSignal).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers dropped image media when node creation fails", async () => {
+    const registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const }));
+    const runCreateNodeOnlineOnly = vi.fn(async () => {
+      throw new Error("create failed");
+    });
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+    const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          registerUploadedImageMedia={registerUploadedImageMedia}
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 240,
+        clientY: 180,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(syncPendingMoveForClientRequest).not.toHaveBeenCalled();
+    expect(registerUploadedImageMedia).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      storageId: "storage-1",
+      filename: "photo.png",
+      mimeType: "image/png",
+      width: 1600,
+      height: 900,
+    });
+    expect(registerUploadedImageMedia).not.toHaveBeenCalledWith(
+      expect.objectContaining({ nodeId: expect.anything() }),
+    );
+    expect(invalidateDashboardSnapshotForLastSignedInUser).toHaveBeenCalledTimes(1);
+    expect(emitDashboardSnapshotCacheInvalidationSignal).toHaveBeenCalledTimes(1);
   });
 
   it("creates a node from a JSON payload drop", async () => {

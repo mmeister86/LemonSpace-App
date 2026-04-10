@@ -14,6 +14,26 @@ import {
 
 export type DashboardSnapshot = FunctionReturnType<typeof api.dashboard.getSnapshot>;
 
+function isDashboardSnapshotShapeCompatible(snapshot: unknown): snapshot is DashboardSnapshot {
+  if (!snapshot || typeof snapshot !== "object") {
+    return false;
+  }
+
+  const value = snapshot as { mediaPreview?: unknown };
+  if (!Array.isArray(value.mediaPreview)) {
+    return false;
+  }
+
+  return value.mediaPreview.every((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    const kind = (item as { kind?: unknown }).kind;
+    return kind === "image" || kind === "video" || kind === "asset";
+  });
+}
+
 export function useDashboardSnapshot(userId?: string | null): {
   snapshot: DashboardSnapshot | undefined;
   source: "live" | "cache" | "none";
@@ -25,7 +45,12 @@ export function useDashboardSnapshot(userId?: string | null): {
       return null;
     }
 
-    return readDashboardSnapshotCache<DashboardSnapshot>(userId)?.snapshot ?? null;
+    const cached = readDashboardSnapshotCache<DashboardSnapshot>(userId)?.snapshot ?? null;
+    if (!cached) {
+      return null;
+    }
+
+    return isDashboardSnapshotShapeCompatible(cached) ? cached : null;
   }, [userId, cacheEpoch]);
 
   useEffect(() => {

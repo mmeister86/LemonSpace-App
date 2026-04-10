@@ -49,7 +49,31 @@ function createCachedSnapshot() {
       },
     ],
     canvases: [],
-    mediaPreview: [],
+    mediaPreview: [
+      {
+        kind: "image",
+        storageId: "storage_1",
+        filename: "preview.jpg",
+        createdAt: 1,
+      },
+    ],
+  };
+}
+
+function createLegacyCachedSnapshotWithoutKind() {
+  return {
+    balance: { available: 120 },
+    subscription: null,
+    usageStats: null,
+    recentTransactions: [],
+    canvases: [],
+    mediaPreview: [
+      {
+        storageId: "storage_legacy",
+        filename: "legacy.jpg",
+        createdAt: 1,
+      },
+    ],
   };
 }
 
@@ -115,5 +139,24 @@ describe("useDashboardSnapshot", () => {
 
     expect(latestHookValue.current?.source).toBe("cache");
     expect(firstSnapshot).toBe(secondSnapshot);
+  });
+
+  it("ignores legacy cached snapshots that miss media item kind", async () => {
+    useAuthQueryMock.mockReturnValue(undefined);
+    getDashboardSnapshotCacheInvalidationSignalKeyMock.mockReturnValue("dashboard:invalidate");
+    readDashboardSnapshotCacheMock.mockReturnValue({
+      snapshot: createLegacyCachedSnapshotWithoutKind(),
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(React.createElement(HookHarness, { userId: "user_legacy" }));
+    });
+
+    expect(latestHookValue.current?.source).toBe("none");
+    expect(latestHookValue.current?.snapshot).toBeUndefined();
   });
 });

@@ -1,6 +1,11 @@
 type MediaPreviewReference<TStorageId extends string = string> = {
-  storageId: TStorageId;
+  kind?: "image" | "video" | "asset";
+  storageId?: TStorageId;
   previewStorageId?: TStorageId;
+  previewUrl?: string;
+  originalUrl?: string;
+  sourceUrl?: string;
+  url?: string;
 };
 
 export function collectMediaStorageIdsForResolution<TStorageId extends string>(
@@ -25,11 +30,31 @@ export function resolveMediaPreviewUrl(
   item: MediaPreviewReference,
   urlMap: Record<string, string | undefined>,
 ): string | undefined {
+  if (item.previewUrl) {
+    return item.previewUrl;
+  }
+
   if (item.previewStorageId) {
     const previewUrl = urlMap[item.previewStorageId];
     if (previewUrl) {
       return previewUrl;
     }
+  }
+
+  if (item.originalUrl) {
+    return item.originalUrl;
+  }
+
+  if (item.sourceUrl) {
+    return item.sourceUrl;
+  }
+
+  if (item.url) {
+    return item.url;
+  }
+
+  if (!item.storageId) {
+    return undefined;
   }
 
   return urlMap[item.storageId];

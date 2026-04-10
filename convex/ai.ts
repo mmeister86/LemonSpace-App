@@ -38,6 +38,8 @@ import {
   type VideoPollStatus,
 } from "../lib/video-poll-logging";
 import { normalizePublicTier } from "../lib/tier-credits";
+import { upsertMediaItemByOwnerAndDedupe } from "./media";
+import { buildStoredMediaDedupeKey } from "../lib/media-archive";
 
 const MAX_IMAGE_RETRIES = 2;
 const MAX_VIDEO_POLL_ATTEMPTS = 30;
@@ -157,6 +159,23 @@ export const finalizeImageSuccess = internalMutation({
         generatedAt: Date.now(),
         creditCost,
         ...(resolvedAspectRatio ? { aspectRatio: resolvedAspectRatio } : {}),
+      },
+    });
+
+    const canvas = await ctx.db.get(existing.canvasId);
+    if (!canvas) {
+      throw new Error("Canvas not found");
+    }
+
+    await upsertMediaItemByOwnerAndDedupe(ctx, {
+      ownerId: canvas.ownerId,
+      input: {
+        kind: "image",
+        source: "ai-image",
+        dedupeKey: buildStoredMediaDedupeKey(storageId),
+        storageId,
+        firstSourceCanvasId: existing.canvasId,
+        firstSourceNodeId: nodeId,
       },
     });
 
@@ -598,6 +617,24 @@ export const finalizeVideoSuccess = internalMutation({
         durationSeconds,
         generatedAt: Date.now(),
         creditCost,
+      },
+    });
+
+    const canvas = await ctx.db.get(existing.canvasId);
+    if (!canvas) {
+      throw new Error("Canvas not found");
+    }
+
+    await upsertMediaItemByOwnerAndDedupe(ctx, {
+      ownerId: canvas.ownerId,
+      input: {
+        kind: "video",
+        source: "ai-video",
+        dedupeKey: buildStoredMediaDedupeKey(storageId),
+        storageId,
+        durationSeconds,
+        firstSourceCanvasId: existing.canvasId,
+        firstSourceNodeId: nodeId,
       },
     });
   },

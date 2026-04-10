@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useReactFlow } from "@xyflow/react";
 import { X, Search, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -21,6 +21,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
+import { buildFreepikAssetDedupeKey } from "@/lib/media-archive";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { toast } from "@/lib/toast";
 
@@ -92,6 +93,7 @@ export function AssetBrowserPanel({
   const [selectingAssetKey, setSelectingAssetKey] = useState<string | null>(null);
 
   const searchFreepik = useAction(api.freepik.search);
+  const upsertMedia = useMutation(api.media.upsert);
   const { getNode } = useReactFlow();
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(Boolean(initialState?.results?.length));
@@ -234,6 +236,36 @@ export function AssetBrowserPanel({
           width: targetSize.width,
           height: targetSize.height,
         });
+
+        try {
+          await upsertMedia({
+            input: {
+              kind: "asset",
+              source: "freepik-asset",
+              dedupeKey: buildFreepikAssetDedupeKey(asset.assetType, asset.id),
+              title: asset.title,
+              originalUrl: asset.previewUrl,
+              previewUrl: asset.previewUrl,
+              sourceUrl: asset.sourceUrl,
+              providerAssetId: String(asset.id),
+              width: asset.intrinsicWidth,
+              height: asset.intrinsicHeight,
+              metadata: {
+                provider: "freepik",
+                assetId: asset.id,
+                assetType: asset.assetType,
+                license: asset.license,
+                authorName: asset.authorName,
+                orientation: asset.orientation,
+              },
+              firstSourceCanvasId: canvasId as Id<"canvases">,
+              firstSourceNodeId: nodeId as Id<"nodes">,
+            },
+          });
+        } catch (mediaError) {
+          console.error("Failed to upsert Freepik media item", mediaError);
+        }
+
         onClose();
       } catch (error) {
         console.error("Failed to select asset", error);
@@ -241,7 +273,7 @@ export function AssetBrowserPanel({
         setSelectingAssetKey(null);
       }
     },
-    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
+    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline, upsertMedia],
   );
 
   const handlePreviousPage = useCallback(() => {

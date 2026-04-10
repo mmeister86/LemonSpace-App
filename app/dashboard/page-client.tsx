@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
 import {
+  Box,
   ChevronDown,
   Coins,
   ImageIcon,
@@ -16,6 +17,7 @@ import {
   Moon,
   Search,
   Sun,
+  Video,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -64,6 +66,50 @@ function formatDimensions(width: number | undefined, height: number | undefined)
   }
 
   return "Größe unbekannt";
+}
+
+function getMediaItemKey(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
+  if (item.storageId) {
+    return item.storageId;
+  }
+
+  if (item.originalUrl) {
+    return `url:${item.originalUrl}`;
+  }
+
+  if (item.previewUrl) {
+    return `preview:${item.previewUrl}`;
+  }
+
+  if (item.sourceUrl) {
+    return `source:${item.sourceUrl}`;
+  }
+
+  return `${item.kind}:${item.createdAt}:${item.filename ?? "unnamed"}`;
+}
+
+function getMediaItemMeta(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
+  if (item.kind === "video") {
+    return "Videodatei";
+  }
+
+  return formatDimensions(item.width, item.height);
+}
+
+function getMediaItemLabel(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
+  if (item.filename) {
+    return item.filename;
+  }
+
+  if (item.kind === "video") {
+    return "Unbenanntes Video";
+  }
+
+  if (item.kind === "asset") {
+    return "Unbenanntes Asset";
+  }
+
+  return "Unbenanntes Bild";
 }
 
 export function DashboardPageClient() {
@@ -357,16 +403,27 @@ export function DashboardPageClient() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-4">
               {(mediaPreview ?? []).map((item) => {
+                const itemKey = getMediaItemKey(item);
                 const previewUrl = resolveMediaPreviewUrl(item, mediaPreviewUrlMap);
+                const itemLabel = getMediaItemLabel(item);
+                const itemMeta = getMediaItemMeta(item);
 
                 return (
-                  <article key={item.storageId} className="overflow-hidden rounded-xl border bg-card">
+                  <article key={itemKey} className="overflow-hidden rounded-xl border bg-card">
                     <div className="relative aspect-square bg-muted/50">
-                      {previewUrl ? (
+                      {previewUrl && item.kind === "video" ? (
+                        <video
+                          src={previewUrl}
+                          className="h-full w-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : previewUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={previewUrl}
-                          alt={item.filename ?? "Mediathek-Bild"}
+                          alt={itemLabel}
                           className="h-full w-full object-cover"
                           loading="lazy"
                         />
@@ -376,17 +433,21 @@ export function DashboardPageClient() {
                         </div>
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                          <ImageIcon className="size-5" />
+                          {item.kind === "video" ? (
+                            <Video className="size-5" />
+                          ) : item.kind === "asset" ? (
+                            <Box className="size-5" />
+                          ) : (
+                            <ImageIcon className="size-5" />
+                          )}
                         </div>
                       )}
                     </div>
                     <div className="space-y-1 p-2">
-                      <p className="truncate text-xs font-medium" title={item.filename}>
-                        {item.filename ?? "Unbenanntes Bild"}
+                      <p className="truncate text-xs font-medium" title={itemLabel}>
+                        {itemLabel}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatDimensions(item.width, item.height)}
-                      </p>
+                      <p className="text-[11px] text-muted-foreground">{itemMeta}</p>
                     </div>
                   </article>
                 );
@@ -400,7 +461,7 @@ export function DashboardPageClient() {
         open={isMediaLibraryDialogOpen}
         onOpenChange={setIsMediaLibraryDialogOpen}
         title="Mediathek"
-        description="Alle deine Bilder aus LemonSpace in einer zentralen Vorschau."
+        description="Alle deine Medien aus LemonSpace in einer zentralen Vorschau."
       />
     </div>
   );

@@ -2,6 +2,8 @@ import { mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Id } from "./_generated/dataModel";
+import { collectOwnedMediaStorageIds, upsertMediaItemByOwnerAndDedupe } from "./media";
+import { buildStoredMediaDedupeKey } from "../lib/media-archive";
 
 const STORAGE_URL_BATCH_SIZE = 12;
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
@@ -29,6 +31,24 @@ type StorageUrlResult =
       url: null;
       error: string;
     };
+
+export function verifyOwnedStorageIds(
+  requestedStorageIds: Array<Id<"_storage">>,
+  ownedStorageIds: Set<Id<"_storage">>,
+): {
+  verifiedStorageIds: Array<Id<"_storage">>;
+  rejectedStorageIds: number;
+} {
+  const uniqueSortedStorageIds = [...new Set(requestedStorageIds)].sort();
+  const verifiedStorageIds = uniqueSortedStorageIds.filter((storageId) =>
+    ownedStorageIds.has(storageId),
+  );
+
+  return {
+    verifiedStorageIds,
+    rejectedStorageIds: uniqueSortedStorageIds.length - verifiedStorageIds.length,
+  };
+}
 
 async function assertCanvasOwner(
   ctx: QueryCtx | MutationCtx,
@@ -170,20 +190,24 @@ export const batchGetUrlsForUserMedia = mutation({
     const startedAt = Date.now();
     const user = await requireAuth(ctx);
 
-    const uniqueSortedStorageIds = [...new Set(storageIds)].sort();
-    if (uniqueSortedStorageIds.length === 0) {
+    if (storageIds.length === 0) {
       return {};
     }
 
-    const ownedStorageIds = await collectOwnedImageStorageIdsForUser(ctx, user.userId);
-    const verifiedStorageIds = uniqueSortedStorageIds.filter((storageId) =>
-      ownedStorageIds.has(storageId),
+    const mediaItems = await ctx.db
+      .query("mediaItems")
+      .withIndex("by_owner_updated", (q) => q.eq("ownerId", user.userId))
+      .collect();
+    const ownedStorageIds = collectOwnedMediaStorageIds(mediaItems);
+    const { verifiedStorageIds, rejectedStorageIds } = verifyOwnedStorageIds(
+      storageIds,
+      ownedStorageIds,
     );
-    const rejectedStorageIds = uniqueSortedStorageIds.length - verifiedStorageIds.length;
+
     if (rejectedStorageIds > 0) {
       console.warn("[storage.batchGetUrlsForUserMedia] rejected unowned storage ids", {
         userId: user.userId,
-        requestedCount: uniqueSortedStorageIds.length,
+        requestedCount: storageIds.length,
         rejectedStorageIds,
       });
     }
@@ -236,6 +260,22 @@ export const registerUploadedImageMedia = mutation({
       }
     }
 
+    await upsertMediaItemByOwnerAndDedupe(ctx, {
+      ownerId: user.userId,
+      input: {
+        kind: "image",
+        source: "upload",
+        dedupeKey: buildStoredMediaDedupeKey(args.storageId),
+        storageId: args.storageId,
+        filename: args.filename,
+        mimeType: args.mimeType,
+        width: args.width,
+        height: args.height,
+        firstSourceCanvasId: args.canvasId,
+        firstSourceNodeId: args.nodeId,
+      },
+    });
+
     console.info("[storage.registerUploadedImageMedia] acknowledged", {
       userId: user.userId,
       canvasId: args.canvasId,
@@ -279,43 +319,4 @@ function collectStorageIds(
   }
 
   return [...ids];
-}
-
-async function collectOwnedImageStorageIdsForUser(
-  ctx: QueryCtx | MutationCtx,
-  userId: string,
-): Promise<Set<Id<"_storage">>> {
-  const canvases = await ctx.db
-    .query("canvases")
-    .withIndex("by_owner", (q) => q.eq("ownerId", userId))
-    .collect();
-  if (canvases.length === 0) {
-    return new Set();
-  }
-
-  const imageNodesByCanvas = await Promise.all(
-    canvases.map((canvas) =>
-      ctx.db
-        .query("nodes")
-        .withIndex("by_canvas_type", (q) => q.eq("canvasId", canvas._id).eq("type", "image"))
-        .collect(),
-    ),
-  );
-
-  const imageStorageIds = new Set<Id<"_storage">>();
-  for (const nodes of imageNodesByCanvas) {
-    for (const node of nodes) {
-      const data = node.data as Record<string, unknown> | undefined;
-      const storageId = data?.storageId;
-      const previewStorageId = data?.previewStorageId;
-      if (typeof storageId === "string" && storageId.length > 0) {
-        imageStorageIds.add(storageId as Id<"_storage">);
-      }
-      if (typeof previewStorageId === "string" && previewStorageId.length > 0) {
-        imageStorageIds.add(previewStorageId as Id<"_storage">);
-      }
-    }
-  }
-
-  return imageStorageIds;
 }

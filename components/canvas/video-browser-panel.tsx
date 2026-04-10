@@ -10,7 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useReactFlow } from "@xyflow/react";
 import { X, Search, Loader2, AlertCircle, Play, Pause } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import type { PexelsVideo, PexelsVideoFile } from "@/lib/pexels-types";
 import { pickPreviewVideoFile, pickVideoFile } from "@/lib/pexels-types";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
+import { buildPexelsVideoDedupeKey } from "@/lib/media-archive";
 import { toast } from "@/lib/toast";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 
@@ -85,6 +86,7 @@ export function VideoBrowserPanel({
 
   const searchVideos = useAction(api.pexels.searchVideos);
   const popularVideos = useAction(api.pexels.popularVideos);
+  const upsertMedia = useMutation(api.media.upsert);
   const { getNode } = useReactFlow();
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
   const shouldSkipInitialSearchRef = useRef(
@@ -253,6 +255,43 @@ export function VideoBrowserPanel({
           width: targetWidth,
           height: targetHeight,
         });
+
+        try {
+          await upsertMedia({
+            input: {
+              kind: "video",
+              source: "pexels-video",
+              dedupeKey: buildPexelsVideoDedupeKey(video.id),
+              providerAssetId: String(video.id),
+              originalUrl: file.link,
+              previewUrl: video.image,
+              sourceUrl: video.url,
+              width: video.width,
+              height: video.height,
+              durationSeconds: video.duration,
+              metadata: {
+                provider: "pexels",
+                videoId: video.id,
+                userId: video.user.id,
+                userName: video.user.name,
+                userUrl: video.user.url,
+                selectedFile: {
+                  id: file.id,
+                  quality: file.quality,
+                  fileType: file.file_type,
+                  width: file.width,
+                  height: file.height,
+                  fps: file.fps,
+                },
+              },
+              firstSourceCanvasId: canvasId as Id<"canvases">,
+              firstSourceNodeId: nodeId as Id<"nodes">,
+            },
+          });
+        } catch (mediaError) {
+          console.error("Failed to upsert Pexels media item", mediaError);
+        }
+
         onClose();
       } catch (error) {
         console.error("Failed to select video", error);
@@ -260,7 +299,7 @@ export function VideoBrowserPanel({
         setSelectingVideoId(null);
       }
     },
-    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline],
+    [canvasId, getNode, isSelecting, nodeId, onClose, queueNodeDataUpdate, queueNodeResize, status.isOffline, upsertMedia],
   );
 
   const handlePreviousPage = useCallback(() => {

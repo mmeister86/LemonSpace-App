@@ -1,5 +1,5 @@
 const STORAGE_NAMESPACE = "lemonspace.dashboard";
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
 const LAST_DASHBOARD_USER_KEY = "ls-last-dashboard-user";
 const INVALIDATION_SIGNAL_KEY = `${STORAGE_NAMESPACE}:snapshot:invalidate:v${CACHE_VERSION}`;

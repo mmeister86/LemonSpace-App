@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
-import { AlertCircle, ImageIcon, Loader2 } from "lucide-react";
+import { AlertCircle, Box, ImageIcon, Loader2, Video } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -25,16 +25,22 @@ const MIN_LIMIT = 1;
 const MAX_LIMIT = 500;
 
 export type MediaLibraryMetadataItem = {
-  storageId: Id<"_storage">;
+  kind: "image" | "video" | "asset";
+  source: "upload" | "ai-image" | "ai-video" | "freepik-asset" | "pexels-video";
+  storageId?: Id<"_storage">;
   previewStorageId?: Id<"_storage">;
+  previewUrl?: string;
+  originalUrl?: string;
+  sourceUrl?: string;
   filename?: string;
   mimeType?: string;
   width?: number;
   height?: number;
   previewWidth?: number;
   previewHeight?: number;
-  sourceCanvasId: Id<"canvases">;
-  sourceNodeId: Id<"nodes">;
+  durationSeconds?: number;
+  sourceCanvasId?: Id<"canvases">;
+  sourceNodeId?: Id<"nodes">;
   createdAt: number;
 };
 
@@ -49,6 +55,7 @@ export type MediaLibraryDialogProps = {
   title?: string;
   description?: string;
   limit?: number;
+  kindFilter?: "image" | "video" | "asset";
   pickCtaLabel?: string;
 };
 
@@ -68,26 +75,79 @@ function formatDimensions(width: number | undefined, height: number | undefined)
   return `${width} x ${height}px`;
 }
 
+function formatMediaMeta(item: MediaLibraryItem): string {
+  if (item.kind === "video") {
+    if (typeof item.durationSeconds === "number" && Number.isFinite(item.durationSeconds)) {
+      return `${Math.max(1, Math.round(item.durationSeconds))}s`;
+    }
+    return "Videodatei";
+  }
+
+  return formatDimensions(item.width, item.height) ?? "Groesse unbekannt";
+}
+
+function getItemKey(item: MediaLibraryItem): string {
+  if (item.storageId) {
+    return item.storageId;
+  }
+
+  if (item.originalUrl) {
+    return `url:${item.originalUrl}`;
+  }
+
+  if (item.previewUrl) {
+    return `preview:${item.previewUrl}`;
+  }
+
+  if (item.sourceUrl) {
+    return `source:${item.sourceUrl}`;
+  }
+
+  return `${item.kind}:${item.createdAt}:${item.filename ?? "unnamed"}`;
+}
+
+function getItemLabel(item: MediaLibraryItem): string {
+  if (item.filename) {
+    return item.filename;
+  }
+
+  if (item.kind === "video") {
+    return "Unbenanntes Video";
+  }
+
+  if (item.kind === "asset") {
+    return "Unbenanntes Asset";
+  }
+
+  return "Unbenanntes Bild";
+}
+
 export function MediaLibraryDialog({
   open,
   onOpenChange,
   onPick,
   title = "Mediathek",
-  description = "Waehle ein Bild aus deiner LemonSpace-Mediathek.",
+  description,
   limit,
+  kindFilter,
   pickCtaLabel = "Auswaehlen",
 }: MediaLibraryDialogProps) {
   const normalizedLimit = useMemo(() => normalizeLimit(limit), [limit]);
   const metadata = useAuthQuery(
     api.dashboard.listMediaLibrary,
-    open ? { limit: normalizedLimit } : "skip",
+    open
+      ? {
+          limit: normalizedLimit,
+          ...(kindFilter ? { kindFilter } : {}),
+        }
+      : "skip",
   );
   const resolveUrls = useMutation(api.storage.batchGetUrlsForUserMedia);
 
   const [urlMap, setUrlMap] = useState<Record<string, string | undefined>>({});
   const [isResolvingUrls, setIsResolvingUrls] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
-  const [pendingPickStorageId, setPendingPickStorageId] = useState<Id<"_storage"> | null>(null);
+  const [pendingPickItemKey, setPendingPickItemKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -155,17 +215,22 @@ export function MediaLibraryDialog({
   const isMetadataLoading = open && metadata === undefined;
   const isInitialLoading = isMetadataLoading || (metadata !== undefined && isResolvingUrls);
   const isPreviewMode = typeof onPick !== "function";
+  const effectiveDescription =
+    description ??
+    (kindFilter === "image"
+      ? "Waehle ein Bild aus deiner LemonSpace-Mediathek."
+      : "Durchsuche deine Medien aus Uploads, KI-Generierung und Archivquellen.");
 
   async function handlePick(item: MediaLibraryItem): Promise<void> {
-    if (!onPick || pendingPickStorageId) {
+    if (!onPick || pendingPickItemKey) {
       return;
     }
 
-    setPendingPickStorageId(item.storageId);
+    setPendingPickItemKey(getItemKey(item));
     try {
       await onPick(item);
     } finally {
-      setPendingPickStorageId(null);
+      setPendingPickItemKey(null);
     }
   }
 
@@ -174,7 +239,7 @@ export function MediaLibraryDialog({
       <DialogContent className="max-h-[85vh] sm:max-w-5xl" showCloseButton>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription>{effectiveDescription}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-[320px] overflow-y-auto pr-1">
@@ -201,42 +266,58 @@ export function MediaLibraryDialog({
               <ImageIcon className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm font-medium">Keine Medien vorhanden</p>
               <p className="text-xs text-muted-foreground">
-                Sobald du Bilder hochlaedst oder generierst, erscheinen sie hier.
+                Sobald du Medien hochlaedst oder generierst, erscheinen sie hier.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {items.map((item) => {
-                const dimensions = formatDimensions(item.width, item.height);
-                const isPickingThis = pendingPickStorageId === item.storageId;
+                const itemKey = getItemKey(item);
+                const isPickingThis = pendingPickItemKey === itemKey;
+                const itemLabel = getItemLabel(item);
+                const metaLabel = formatMediaMeta(item);
 
                 return (
                   <div
-                    key={item.storageId}
+                    key={itemKey}
                     className="group flex flex-col overflow-hidden rounded-lg border bg-card"
                   >
                     <div className="relative aspect-square bg-muted/50">
-                      {item.url ? (
+                      {item.url && item.kind === "video" ? (
+                        <video
+                          src={item.url}
+                          className="h-full w-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : item.url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.url}
-                          alt={item.filename ?? "Mediathek-Bild"}
+                          alt={itemLabel}
                           className="h-full w-full object-cover"
                           loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                          <ImageIcon className="h-6 w-6" />
+                          {item.kind === "video" ? (
+                            <Video className="h-6 w-6" />
+                          ) : item.kind === "asset" ? (
+                            <Box className="h-6 w-6" />
+                          ) : (
+                            <ImageIcon className="h-6 w-6" />
+                          )}
                         </div>
                       )}
                     </div>
 
                     <div className="flex flex-1 flex-col gap-1 p-2">
-                      <p className="truncate text-xs font-medium" title={item.filename}>
-                        {item.filename ?? "Unbenanntes Bild"}
+                      <p className="truncate text-xs font-medium" title={itemLabel}>
+                        {itemLabel}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        {dimensions ?? "Groesse unbekannt"}
+                        {metaLabel}
                       </p>
 
                       {isPreviewMode ? (
@@ -247,7 +328,7 @@ export function MediaLibraryDialog({
                           size="sm"
                           className="mt-2 h-7"
                           onClick={() => void handlePick(item)}
-                          disabled={Boolean(pendingPickStorageId)}
+                          disabled={Boolean(pendingPickItemKey)}
                         >
                           {isPickingThis ? (
                             <>

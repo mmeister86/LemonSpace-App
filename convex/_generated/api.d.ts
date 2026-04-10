@@ -25,6 +25,8 @@ import type * as export_ from "../export.js";
 import type * as freepik from "../freepik.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
+import type * as media from "../media.js";
+import type * as migrations from "../migrations.js";
 import type * as node_type_validator from "../node_type_validator.js";
 import type * as nodes from "../nodes.js";
 import type * as openrouter from "../openrouter.js";
@@ -59,6 +61,8 @@ declare const fullApi: ApiFromModules<{
   freepik: typeof freepik;
   helpers: typeof helpers;
   http: typeof http;
+  media: typeof media;
+  migrations: typeof migrations;
   node_type_validator: typeof node_type_validator;
   nodes: typeof nodes;
   openrouter: typeof openrouter;

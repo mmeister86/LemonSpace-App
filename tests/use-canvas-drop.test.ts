@@ -40,9 +40,13 @@ type RunCreateNodeOnlineOnly = Parameters<typeof useCanvasDrop>[0]["runCreateNod
 
 type HarnessProps = {
   runCreateNodeOnlineOnly: RunCreateNodeOnlineOnly;
+  registerUploadedImageMedia?: Parameters<typeof useCanvasDrop>[0]["registerUploadedImageMedia"];
 };
 
-function HookHarness({ runCreateNodeOnlineOnly }: HarnessProps) {
+function HookHarness({
+  runCreateNodeOnlineOnly,
+  registerUploadedImageMedia = async () => ({ ok: true }),
+}: HarnessProps) {
   const value = useCanvasDrop({
     canvasId: "canvas_1" as Id<"canvases">,
     isSyncOnline: true,
@@ -50,7 +54,7 @@ function HookHarness({ runCreateNodeOnlineOnly }: HarnessProps) {
     edges: [],
     screenToFlowPosition: ({ x, y }) => ({ x, y }),
     generateUploadUrl: async () => "https://upload.example.com",
-    registerUploadedImageMedia: async () => ({ ok: true }),
+    registerUploadedImageMedia,
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly: async () => "node_split_1" as Id<"nodes">,
     notifyOfflineUnsupported: () => {},
@@ -116,6 +120,7 @@ describe("useCanvasDrop image upload path", () => {
     const runCreateNodeOnlineOnly = vi
       .fn<HarnessProps["runCreateNodeOnlineOnly"]>()
       .mockResolvedValue("node_1" as Id<"nodes">);
+    const registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const }));
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -125,6 +130,7 @@ describe("useCanvasDrop image upload path", () => {
       root?.render(
         React.createElement(HookHarness, {
           runCreateNodeOnlineOnly,
+          registerUploadedImageMedia,
         }),
       );
     });
@@ -149,6 +155,15 @@ describe("useCanvasDrop image upload path", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(runCreateNodeOnlineOnly).toHaveBeenCalledTimes(1);
+    expect(registerUploadedImageMedia).toHaveBeenCalledWith({
+      canvasId: "canvas_1",
+      nodeId: "node_1",
+      storageId: "storage_1",
+      filename: "drop.png",
+      mimeType: "image/png",
+      width: 640,
+      height: 480,
+    });
     expect(invalidateDashboardSnapshotForLastSignedInUserMock).toHaveBeenCalledTimes(1);
     expect(emitDashboardSnapshotCacheInvalidationSignalMock).toHaveBeenCalledTimes(1);
   });
