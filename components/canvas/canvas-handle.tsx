@@ -34,10 +34,26 @@ export default function CanvasHandle({
   const connection = useConnection();
   const { activeTarget } = useCanvasConnectionMagnetism();
 
+  const connectionState = connection as {
+    inProgress?: boolean;
+    fromNode?: unknown;
+    toNode?: unknown;
+    fromHandle?: unknown;
+    toHandle?: unknown;
+  };
+  const hasConnectionPayload =
+    connectionState.fromNode !== undefined ||
+    connectionState.toNode !== undefined ||
+    connectionState.fromHandle !== undefined ||
+    connectionState.toHandle !== undefined;
+  const isConnectionDragActive =
+    connectionState.inProgress === true ||
+    (connectionState.inProgress === undefined && hasConnectionPayload);
+
   const handleId = normalizeHandleId(id);
   const targetHandleId = normalizeHandleId(activeTarget?.handleId);
   const isActiveTarget =
-    connection.inProgress &&
+    isConnectionDragActive &&
     activeTarget !== null &&
     activeTarget.nodeId === nodeId &&
     activeTarget.handleType === type &&

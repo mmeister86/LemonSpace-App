@@ -10,7 +10,13 @@ import {
   useCanvasConnectionMagnetism,
 } from "@/components/canvas/canvas-connection-magnetism-context";
 
-const connectionStateRef: { current: { inProgress: boolean } } = {
+const connectionStateRef: {
+  current: {
+    inProgress?: boolean;
+    fromNode?: { id: string };
+    fromHandle?: { id?: string; type?: "source" | "target" };
+  };
+} = {
   current: { inProgress: false },
 };
 
@@ -77,7 +83,11 @@ describe("CanvasHandle", () => {
   });
 
   async function renderHandle(args?: {
-    inProgress?: boolean;
+    connectionState?: {
+      inProgress?: boolean;
+      fromNode?: { id: string };
+      fromHandle?: { id?: string; type?: "source" | "target" };
+    };
     activeTarget?: {
       nodeId: string;
       handleId?: string;
@@ -88,7 +98,7 @@ describe("CanvasHandle", () => {
     } | null;
     props?: Partial<React.ComponentProps<typeof CanvasHandle>>;
   }) {
-    connectionStateRef.current = { inProgress: args?.inProgress ?? false };
+    connectionStateRef.current = args?.connectionState ?? { inProgress: false };
 
     await act(async () => {
       root?.render(
@@ -98,7 +108,7 @@ describe("CanvasHandle", () => {
             nodeId="node-1"
             nodeType="image"
             type="target"
-            position="left"
+            position={"left" as React.ComponentProps<typeof CanvasHandle>["position"]}
             id="image-in"
             {...args?.props}
           />
@@ -128,7 +138,7 @@ describe("CanvasHandle", () => {
 
   it("turns on near-target glow when this handle is active target", async () => {
     await renderHandle({
-      inProgress: true,
+      connectionState: { inProgress: true },
       activeTarget: {
         nodeId: "node-1",
         handleId: "image-in",
@@ -145,7 +155,7 @@ describe("CanvasHandle", () => {
 
   it("renders a stronger glow in snapped state than near state", async () => {
     await renderHandle({
-      inProgress: true,
+      connectionState: { inProgress: true },
       activeTarget: {
         nodeId: "node-1",
         handleId: "image-in",
@@ -160,7 +170,7 @@ describe("CanvasHandle", () => {
     const nearGlow = nearHandle.style.boxShadow;
 
     await renderHandle({
-      inProgress: true,
+      connectionState: { inProgress: true },
       activeTarget: {
         nodeId: "node-1",
         handleId: "image-in",
@@ -178,7 +188,7 @@ describe("CanvasHandle", () => {
 
   it("does not glow for non-target handles during the same drag", async () => {
     await renderHandle({
-      inProgress: true,
+      connectionState: { inProgress: true },
       activeTarget: {
         nodeId: "other-node",
         handleId: "image-in",
@@ -193,13 +203,33 @@ describe("CanvasHandle", () => {
     expect(handle.getAttribute("data-glow-state")).toBe("idle");
   });
 
+  it("shows glow while dragging when connection payload exists without inProgress", async () => {
+    await renderHandle({
+      connectionState: {
+        fromNode: { id: "source-node" },
+        fromHandle: { id: "image-out", type: "source" },
+      },
+      activeTarget: {
+        nodeId: "node-1",
+        handleId: "image-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: HANDLE_SNAP_RADIUS_PX + 2,
+      },
+    });
+
+    const handle = getHandleElement();
+    expect(handle.getAttribute("data-glow-state")).toBe("near");
+  });
+
   it("emits stable handle geometry data attributes", async () => {
     await renderHandle({
       props: {
         nodeId: "node-2",
         id: undefined,
         type: "source",
-        position: "right",
+        position: "right" as React.ComponentProps<typeof CanvasHandle>["position"],
       },
     });
 

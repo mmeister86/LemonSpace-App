@@ -7,6 +7,7 @@ import {
   getSmoothStepPath,
   getStraightPath,
   type ConnectionLineComponentProps,
+  useConnection,
   useReactFlow,
 } from "@xyflow/react";
 import { useEffect, useMemo } from "react";
@@ -52,14 +53,20 @@ export default function CustomConnectionLine({
   connectionStatus,
 }: ConnectionLineComponentProps) {
   const { getNodes, getEdges } = useReactFlow();
+  const connection = useConnection();
   const { activeTarget, setActiveTarget } = useCanvasConnectionMagnetism();
   const fromHandleId = fromHandle?.id;
   const fromNodeId = fromNode?.id;
 
+  const connectionFromHandleType =
+    connection.fromHandle?.type === "source" || connection.fromHandle?.type === "target"
+      ? connection.fromHandle.type
+      : null;
+
   const fromHandleType =
     fromHandle?.type === "source" || fromHandle?.type === "target"
       ? fromHandle.type
-      : null;
+      : connectionFromHandleType ?? "source";
 
   const resolvedMagnetTarget = useMemo(() => {
     if (!fromHandleType || !fromNodeId) {

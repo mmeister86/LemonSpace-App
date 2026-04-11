@@ -27,6 +27,16 @@ const reactFlowStateRef: {
   },
 };
 
+const connectionStateRef: {
+  current: {
+    fromHandle?: { type?: "source" | "target" };
+  };
+} = {
+  current: {
+    fromHandle: { type: "source" },
+  },
+};
+
 vi.mock("@xyflow/react", async () => {
   const actual = await vi.importActual<typeof import("@xyflow/react")>("@xyflow/react");
 
@@ -36,6 +46,7 @@ vi.mock("@xyflow/react", async () => {
       getNodes: () => reactFlowStateRef.current.nodes,
       getEdges: () => reactFlowStateRef.current.edges,
     }),
+    useConnection: () => connectionStateRef.current,
   };
 });
 
@@ -93,6 +104,7 @@ describe("CustomConnectionLine", () => {
   function renderLine(args?: {
     withMagnetHandle?: boolean;
     connectionStatus?: ConnectionLineComponentProps["connectionStatus"];
+    omitFromHandleType?: boolean;
   }) {
     document
       .querySelectorAll("[data-testid='custom-line-magnet-handle']")
@@ -104,6 +116,10 @@ describe("CustomConnectionLine", () => {
         { id: "target-node", type: "render", position: { x: 0, y: 0 }, data: {} },
       ],
       edges: [],
+    };
+
+    connectionStateRef.current = {
+      fromHandle: { type: "source" },
     };
 
     if (args?.withMagnetHandle && container) {
@@ -128,11 +144,19 @@ describe("CustomConnectionLine", () => {
     }
 
     act(() => {
+      const lineProps = {
+        ...baseProps,
+        fromHandle: {
+          ...baseProps.fromHandle,
+          ...(args?.omitFromHandleType ? { type: undefined } : null),
+        },
+      } as ConnectionLineComponentProps;
+
       root?.render(
         <CanvasConnectionMagnetismProvider>
           <svg>
             <CustomConnectionLine
-              {...baseProps}
+              {...lineProps}
               connectionStatus={args?.connectionStatus ?? "valid"}
             />
           </svg>
@@ -163,6 +187,17 @@ describe("CustomConnectionLine", () => {
   it("snaps endpoint to active magnet target center", () => {
     renderLine({
       withMagnetHandle: true,
+    });
+
+    const path = getPath();
+    expect(path.getAttribute("d")).toContain("300");
+    expect(path.getAttribute("d")).toContain("220");
+  });
+
+  it("still resolves magnet target when fromHandle.type is missing", () => {
+    renderLine({
+      withMagnetHandle: true,
+      omitFromHandleType: true,
     });
 
     const path = getPath();
