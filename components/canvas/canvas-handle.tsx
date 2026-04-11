@@ -2,11 +2,14 @@
 
 import { Handle, useConnection } from "@xyflow/react";
 
-import { HANDLE_SNAP_RADIUS_PX } from "@/components/canvas/canvas-connection-magnetism";
+import {
+  resolveCanvasGlowStrength,
+} from "@/components/canvas/canvas-connection-magnetism";
 import { useCanvasConnectionMagnetism } from "@/components/canvas/canvas-connection-magnetism-context";
 import {
   canvasHandleAccentColor,
-  canvasHandleAccentColorWithAlpha,
+  canvasHandleGlowShadow,
+  type EdgeGlowColorMode,
 } from "@/lib/canvas-utils";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +39,7 @@ export default function CanvasHandle({
 
   const connectionState = connection as {
     inProgress?: boolean;
+    isValid?: boolean | null;
     fromNode?: unknown;
     toNode?: unknown;
     fromHandle?: unknown;
@@ -52,6 +56,32 @@ export default function CanvasHandle({
 
   const handleId = normalizeHandleId(id);
   const targetHandleId = normalizeHandleId(activeTarget?.handleId);
+
+  const toNodeId =
+    connectionState.toNode &&
+    typeof connectionState.toNode === "object" &&
+    "id" in connectionState.toNode &&
+    typeof (connectionState.toNode as { id?: unknown }).id === "string"
+      ? ((connectionState.toNode as { id: string }).id ?? null)
+      : null;
+
+  const toHandleMeta =
+    connectionState.toHandle && typeof connectionState.toHandle === "object"
+      ? (connectionState.toHandle as { id?: string | null; type?: "source" | "target" })
+      : null;
+  const toHandleId = normalizeHandleId(
+    toHandleMeta?.id === null ? undefined : toHandleMeta?.id,
+  );
+  const toHandleType =
+    toHandleMeta?.type === "source" || toHandleMeta?.type === "target"
+      ? toHandleMeta.type
+      : null;
+
+  const colorMode: EdgeGlowColorMode =
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+      ? "dark"
+      : "light";
+
   const isActiveTarget =
     isConnectionDragActive &&
     activeTarget !== null &&
@@ -59,21 +89,37 @@ export default function CanvasHandle({
     activeTarget.handleType === type &&
     targetHandleId === handleId;
 
-  const glowState: "idle" | "near" | "snapped" = isActiveTarget
-    ? activeTarget.distancePx <= HANDLE_SNAP_RADIUS_PX
-      ? "snapped"
-      : "near"
-    : "idle";
+  const isNativeHoverTarget =
+    connectionState.inProgress === true &&
+    toNodeId === nodeId &&
+    toHandleType === type &&
+    toHandleId === handleId;
+
+  let glowStrength = 0;
+
+  if (isActiveTarget) {
+    glowStrength = resolveCanvasGlowStrength({
+      distancePx: activeTarget.distancePx,
+    });
+  } else if (isNativeHoverTarget) {
+    glowStrength = connectionState.isValid === true ? 1 : 0.68;
+  }
+
+  const glowState: "idle" | "near" | "snapped" =
+    glowStrength <= 0 ? "idle" : glowStrength >= 0.96 ? "snapped" : "near";
 
   const accentColor = canvasHandleAccentColor({
     nodeType,
     handleId,
     handleType: type,
   });
-  const glowAlpha = glowState === "snapped" ? 0.62 : glowState === "near" ? 0.4 : 0;
-  const ringAlpha = glowState === "snapped" ? 0.34 : glowState === "near" ? 0.2 : 0;
-  const glowSize = glowState === "snapped" ? 14 : glowState === "near" ? 10 : 0;
-  const ringSize = glowState === "snapped" ? 6 : glowState === "near" ? 4 : 0;
+  const boxShadow = canvasHandleGlowShadow({
+    nodeType,
+    handleId,
+    handleType: type,
+    strength: glowStrength,
+    colorMode,
+  });
 
   return (
     <Handle
@@ -87,15 +133,14 @@ export default function CanvasHandle({
       style={{
         ...style,
         backgroundColor: accentColor,
-        boxShadow:
-          glowState === "idle"
-            ? undefined
-            : `0 0 0 ${ringSize}px ${canvasHandleAccentColorWithAlpha({ nodeType, handleId, handleType: type }, ringAlpha)}, 0 0 ${glowSize}px ${canvasHandleAccentColorWithAlpha({ nodeType, handleId, handleType: type }, glowAlpha)}`,
+        boxShadow,
       }}
       data-node-id={nodeId}
       data-handle-id={id ?? ""}
       data-handle-type={type}
       data-glow-state={glowState}
+      data-glow-strength={glowStrength.toFixed(3)}
+      data-glow-mode={colorMode}
     />
   );
 }

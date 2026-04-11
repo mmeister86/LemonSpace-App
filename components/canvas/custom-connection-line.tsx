@@ -14,10 +14,15 @@ import { useEffect, useMemo } from "react";
 
 import {
   HANDLE_SNAP_RADIUS_PX,
+  resolveCanvasGlowStrength,
   resolveCanvasMagnetTarget,
 } from "@/components/canvas/canvas-connection-magnetism";
 import { useCanvasConnectionMagnetism } from "@/components/canvas/canvas-connection-magnetism-context";
-import { connectionLineAccentRgb } from "@/lib/canvas-utils";
+import {
+  connectionLineAccentRgb,
+  connectionLineGlowFilter,
+  type EdgeGlowColorMode,
+} from "@/lib/canvas-utils";
 
 function hasSameMagnetTarget(
   a: Parameters<ReturnType<typeof useCanvasConnectionMagnetism>["setActiveTarget"]>[0],
@@ -51,8 +56,9 @@ export default function CustomConnectionLine({
   fromPosition,
   toPosition,
   connectionStatus,
+  pointer,
 }: ConnectionLineComponentProps) {
-  const { getNodes, getEdges } = useReactFlow();
+  const { getNodes, getEdges, screenToFlowPosition } = useReactFlow();
   const connection = useConnection();
   const { activeTarget, setActiveTarget } = useCanvasConnectionMagnetism();
   const fromHandleId = fromHandle?.id;
@@ -73,15 +79,20 @@ export default function CustomConnectionLine({
       return null;
     }
 
+     const magnetPoint =
+      pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+        ? { x: pointer.x, y: pointer.y }
+        : { x: toX, y: toY };
+
     return resolveCanvasMagnetTarget({
-      point: { x: toX, y: toY },
+      point: magnetPoint,
       fromNodeId,
       fromHandleId: fromHandleId ?? undefined,
       fromHandleType,
       nodes: getNodes(),
       edges: getEdges(),
     });
-  }, [fromHandleId, fromHandleType, fromNodeId, getEdges, getNodes, toX, toY]);
+  }, [fromHandleId, fromHandleType, fromNodeId, getEdges, getNodes, pointer, toX, toY]);
 
   useEffect(() => {
     if (hasSameMagnetTarget(activeTarget, resolvedMagnetTarget)) {
@@ -91,12 +102,21 @@ export default function CustomConnectionLine({
   }, [activeTarget, resolvedMagnetTarget, setActiveTarget]);
 
   const magnetTarget = activeTarget ?? resolvedMagnetTarget;
+  const glowStrength = magnetTarget
+    ? resolveCanvasGlowStrength({
+        distancePx: magnetTarget.distancePx,
+      })
+    : 0;
   const snappedTarget =
     magnetTarget && magnetTarget.distancePx <= HANDLE_SNAP_RADIUS_PX
       ? magnetTarget
       : null;
-  const targetX = snappedTarget?.centerX ?? toX;
-  const targetY = snappedTarget?.centerY ?? toY;
+  const snappedFlowPoint =
+    snappedTarget === null
+      ? null
+      : screenToFlowPosition({ x: snappedTarget.centerX, y: snappedTarget.centerY });
+  const targetX = snappedFlowPoint?.x ?? toX;
+  const targetY = snappedFlowPoint?.y ?? toY;
 
   const pathParams = {
     sourceX: fromX,
@@ -130,10 +150,17 @@ export default function CustomConnectionLine({
 
   const [r, g, b] = connectionLineAccentRgb(fromNode.type, fromHandleId);
   const opacity = connectionStatus === "invalid" ? 0.45 : 1;
-  const strokeWidth = snappedTarget ? 3.25 : 2.5;
-  const filter = snappedTarget
-    ? `drop-shadow(0 0 3px rgba(${r}, ${g}, ${b}, 0.7)) drop-shadow(0 0 8px rgba(${r}, ${g}, ${b}, 0.48))`
-    : undefined;
+  const colorMode: EdgeGlowColorMode =
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+      ? "dark"
+      : "light";
+  const strokeWidth = 2.5 + glowStrength * 0.75;
+  const filter = connectionLineGlowFilter({
+    nodeType: fromNode.type,
+    handleId: fromHandleId,
+    strength: glowStrength,
+    colorMode,
+  });
 
   return (
     <path

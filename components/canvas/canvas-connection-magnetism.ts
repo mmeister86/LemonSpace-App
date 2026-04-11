@@ -5,6 +5,52 @@ import { validateCanvasConnectionPolicy } from "@/lib/canvas-connection-policy";
 export const HANDLE_GLOW_RADIUS_PX = 56;
 export const HANDLE_SNAP_RADIUS_PX = 40;
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+function smoothstep(value: number): number {
+  const v = clamp01(value);
+  return v * v * (3 - 2 * v);
+}
+
+export function resolveCanvasGlowStrength(args: {
+  distancePx: number;
+  glowRadiusPx?: number;
+  snapRadiusPx?: number;
+}): number {
+  const glowRadius = args.glowRadiusPx ?? HANDLE_GLOW_RADIUS_PX;
+  const snapRadius = args.snapRadiusPx ?? HANDLE_SNAP_RADIUS_PX;
+
+  if (!Number.isFinite(args.distancePx)) {
+    return 0;
+  }
+  if (args.distancePx <= 0) {
+    return 1;
+  }
+  if (args.distancePx >= glowRadius) {
+    return 0;
+  }
+  if (args.distancePx <= snapRadius) {
+    return 1;
+  }
+
+  const preSnapRange = Math.max(1, glowRadius - snapRadius);
+  const progressToSnap = (glowRadius - args.distancePx) / preSnapRange;
+  const eased = smoothstep(progressToSnap);
+
+  return 0.22 + eased * 0.68;
+}
+
 export type CanvasMagnetTarget = {
   nodeId: string;
   handleId?: string;

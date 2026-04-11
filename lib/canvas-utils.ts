@@ -200,6 +200,84 @@ export function canvasHandleAccentColorWithAlpha(
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+function lerp(min: number, max: number, t: number): number {
+  return min + (max - min) * t;
+}
+
+export function canvasHandleGlowShadow(args: {
+  nodeType: string | undefined;
+  handleId?: string | null;
+  handleType: "source" | "target";
+  strength: number;
+  colorMode: EdgeGlowColorMode;
+}): string | undefined {
+  const strength = clampUnit(args.strength);
+  if (strength <= 0) {
+    return undefined;
+  }
+
+  const [r, g, b] = canvasHandleAccentRgb(args);
+  const isDark = args.colorMode === "dark";
+
+  const ringAlpha = isDark
+    ? lerp(0.08, 0.3, strength)
+    : lerp(0.06, 0.2, strength);
+  const glowAlpha = isDark
+    ? lerp(0.12, 0.58, strength)
+    : lerp(0.08, 0.34, strength);
+  const ringSize = isDark
+    ? lerp(1.8, 6.4, strength)
+    : lerp(1.5, 5.2, strength);
+  const glowSize = isDark
+    ? lerp(4.5, 15, strength)
+    : lerp(3.5, 12, strength);
+
+  return `0 0 0 ${ringSize.toFixed(2)}px rgba(${r}, ${g}, ${b}, ${ringAlpha.toFixed(3)}), 0 0 ${glowSize.toFixed(2)}px rgba(${r}, ${g}, ${b}, ${glowAlpha.toFixed(3)})`;
+}
+
+export function connectionLineGlowFilter(args: {
+  nodeType: string | undefined;
+  handleId: string | null | undefined;
+  strength: number;
+  colorMode: EdgeGlowColorMode;
+}): string | undefined {
+  const strength = clampUnit(args.strength);
+  if (strength <= 0) {
+    return undefined;
+  }
+
+  const [r, g, b] = connectionLineAccentRgb(args.nodeType, args.handleId);
+  const isDark = args.colorMode === "dark";
+
+  const innerAlpha = isDark
+    ? lerp(0.22, 0.72, strength)
+    : lerp(0.12, 0.42, strength);
+  const outerAlpha = isDark
+    ? lerp(0.12, 0.38, strength)
+    : lerp(0.06, 0.2, strength);
+  const innerBlur = isDark
+    ? lerp(2.4, 4.2, strength)
+    : lerp(2, 3.4, strength);
+  const outerBlur = isDark
+    ? lerp(5.4, 9.8, strength)
+    : lerp(4.6, 7.8, strength);
+
+  return `drop-shadow(0 0 ${innerBlur.toFixed(2)}px rgba(${r}, ${g}, ${b}, ${innerAlpha.toFixed(3)})) drop-shadow(0 0 ${outerBlur.toFixed(2)}px rgba(${r}, ${g}, ${b}, ${outerAlpha.toFixed(3)}))`;
+}
+
 /**
  * RGB für die temporäre Verbindungslinie (Quell-Node + optional Handle, z. B. Reconnect).
  */

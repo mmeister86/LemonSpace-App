@@ -190,6 +190,11 @@
     z-index: 50;
   }
 
+  /* Reconnect-Anker immer pointer-interactive halten (Drag-Detach/Reconnect) */
+  .react-flow__edgeupdater {
+    pointer-events: all;
+  }
+
   /* Proximity-Vorschaukante (temp) */
   .react-flow__edge.temp {
     opacity: 0.9;

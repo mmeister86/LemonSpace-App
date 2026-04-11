@@ -4,7 +4,10 @@ import React, { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HANDLE_SNAP_RADIUS_PX } from "@/components/canvas/canvas-connection-magnetism";
+import {
+  HANDLE_GLOW_RADIUS_PX,
+  HANDLE_SNAP_RADIUS_PX,
+} from "@/components/canvas/canvas-connection-magnetism";
 import {
   CanvasConnectionMagnetismProvider,
   useCanvasConnectionMagnetism,
@@ -15,6 +18,9 @@ const connectionStateRef: {
     inProgress?: boolean;
     fromNode?: { id: string };
     fromHandle?: { id?: string; type?: "source" | "target" };
+    toNode?: { id: string } | null;
+    toHandle?: { id?: string | null; type?: "source" | "target" } | null;
+    isValid?: boolean | null;
   };
 } = {
   current: { inProgress: false },
@@ -78,6 +84,7 @@ describe("CanvasHandle", () => {
       });
     }
     container?.remove();
+    document.documentElement.classList.remove("dark");
     container = null;
     root = null;
   });
@@ -87,6 +94,9 @@ describe("CanvasHandle", () => {
       inProgress?: boolean;
       fromNode?: { id: string };
       fromHandle?: { id?: string; type?: "source" | "target" };
+      toNode?: { id: string } | null;
+      toHandle?: { id?: string | null; type?: "source" | "target" } | null;
+      isValid?: boolean | null;
     };
     activeTarget?: {
       nodeId: string;
@@ -186,6 +196,42 @@ describe("CanvasHandle", () => {
     expect(snappedHandle.style.boxShadow).not.toBe(nearGlow);
   });
 
+  it("ramps up glow intensity as pointer gets closer within glow radius", async () => {
+    await renderHandle({
+      connectionState: { inProgress: true },
+      activeTarget: {
+        nodeId: "node-1",
+        handleId: "image-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: HANDLE_GLOW_RADIUS_PX - 1,
+      },
+    });
+
+    const farHandle = getHandleElement();
+    const farStrength = Number(farHandle.getAttribute("data-glow-strength") ?? "0");
+
+    await renderHandle({
+      connectionState: { inProgress: true },
+      activeTarget: {
+        nodeId: "node-1",
+        handleId: "image-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: HANDLE_SNAP_RADIUS_PX + 1,
+      },
+    });
+
+    const nearHandle = getHandleElement();
+    const nearStrength = Number(nearHandle.getAttribute("data-glow-strength") ?? "0");
+
+    expect(farHandle.getAttribute("data-glow-state")).toBe("near");
+    expect(nearHandle.getAttribute("data-glow-state")).toBe("near");
+    expect(nearStrength).toBeGreaterThan(farStrength);
+  });
+
   it("does not glow for non-target handles during the same drag", async () => {
     await renderHandle({
       connectionState: { inProgress: true },
@@ -221,6 +267,61 @@ describe("CanvasHandle", () => {
 
     const handle = getHandleElement();
     expect(handle.getAttribute("data-glow-state")).toBe("near");
+  });
+
+  it("shows glow from native connection hover target even without custom magnet target", async () => {
+    await renderHandle({
+      connectionState: {
+        inProgress: true,
+        isValid: true,
+        toNode: { id: "node-1" },
+        toHandle: { id: "image-in", type: "target" },
+      },
+      activeTarget: null,
+    });
+
+    const handle = getHandleElement();
+    expect(handle.getAttribute("data-glow-state")).toBe("snapped");
+  });
+
+  it("adapts glow rendering between light and dark modes", async () => {
+    await renderHandle({
+      connectionState: { inProgress: true },
+      activeTarget: {
+        nodeId: "node-1",
+        handleId: "image-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: HANDLE_SNAP_RADIUS_PX + 1,
+      },
+    });
+
+    const lightHandle = getHandleElement();
+    const lightShadow = lightHandle.style.boxShadow;
+    const lightMode = lightHandle.getAttribute("data-glow-mode");
+
+    document.documentElement.classList.add("dark");
+
+    await renderHandle({
+      connectionState: { inProgress: true },
+      activeTarget: {
+        nodeId: "node-1",
+        handleId: "image-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: HANDLE_SNAP_RADIUS_PX + 1,
+      },
+    });
+
+    const darkHandle = getHandleElement();
+    const darkShadow = darkHandle.style.boxShadow;
+    const darkMode = darkHandle.getAttribute("data-glow-mode");
+
+    expect(lightMode).toBe("light");
+    expect(darkMode).toBe("dark");
+    expect(darkShadow).not.toBe(lightShadow);
   });
 
   it("emits stable handle geometry data attributes", async () => {

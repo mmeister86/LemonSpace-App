@@ -19,11 +19,13 @@ const reactFlowStateRef: {
   current: {
     nodes: Array<{ id: string; type: string; position: { x: number; y: number }; data: object }>;
     edges: Array<{ id: string; source: string; target: string; targetHandle?: string | null }>;
+    screenToFlowPosition: ({ x, y }: { x: number; y: number }) => { x: number; y: number };
   };
 } = {
   current: {
     nodes: [],
     edges: [],
+    screenToFlowPosition: ({ x, y }) => ({ x, y }),
   },
 };
 
@@ -45,6 +47,7 @@ vi.mock("@xyflow/react", async () => {
     useReactFlow: () => ({
       getNodes: () => reactFlowStateRef.current.nodes,
       getEdges: () => reactFlowStateRef.current.edges,
+      screenToFlowPosition: reactFlowStateRef.current.screenToFlowPosition,
     }),
     useConnection: () => connectionStateRef.current,
   };
@@ -97,6 +100,7 @@ describe("CustomConnectionLine", () => {
     document
       .querySelectorAll("[data-testid='custom-line-magnet-handle']")
       .forEach((element) => element.remove());
+    document.documentElement.classList.remove("dark");
     container = null;
     root = null;
   });
@@ -105,6 +109,9 @@ describe("CustomConnectionLine", () => {
     withMagnetHandle?: boolean;
     connectionStatus?: ConnectionLineComponentProps["connectionStatus"];
     omitFromHandleType?: boolean;
+    toX?: number;
+    toY?: number;
+    pointer?: { x: number; y: number };
   }) {
     document
       .querySelectorAll("[data-testid='custom-line-magnet-handle']")
@@ -116,6 +123,7 @@ describe("CustomConnectionLine", () => {
         { id: "target-node", type: "render", position: { x: 0, y: 0 }, data: {} },
       ],
       edges: [],
+      screenToFlowPosition: ({ x, y }) => ({ x, y }),
     };
 
     connectionStateRef.current = {
@@ -144,11 +152,14 @@ describe("CustomConnectionLine", () => {
     }
 
     act(() => {
-      const lineProps = {
-        ...baseProps,
-        fromHandle: {
-          ...baseProps.fromHandle,
-          ...(args?.omitFromHandleType ? { type: undefined } : null),
+        const lineProps = {
+          ...baseProps,
+          ...(args?.toX !== undefined ? { toX: args.toX } : null),
+          ...(args?.toY !== undefined ? { toY: args.toY } : null),
+          ...(args?.pointer ? { pointer: args.pointer } : null),
+          fromHandle: {
+            ...baseProps.fromHandle,
+            ...(args?.omitFromHandleType ? { type: undefined } : null),
         },
       } as ConnectionLineComponentProps;
 
@@ -220,6 +231,29 @@ describe("CustomConnectionLine", () => {
     expect(snappedPath.style.filter).not.toBe(idleFilter);
   });
 
+  it("ramps stroke feedback up as pointer gets closer before snap", () => {
+    renderLine({
+      withMagnetHandle: true,
+      toX: 252,
+      toY: 220,
+      pointer: { x: 252, y: 220 },
+    });
+    const farNearPath = getPath();
+    const farNearWidth = Number(farNearPath.style.strokeWidth || "0");
+
+    renderLine({
+      withMagnetHandle: true,
+      toX: 266,
+      toY: 220,
+      pointer: { x: 266, y: 220 },
+    });
+    const closeNearPath = getPath();
+    const closeNearWidth = Number(closeNearPath.style.strokeWidth || "0");
+
+    expect(farNearWidth).toBeGreaterThan(2.5);
+    expect(closeNearWidth).toBeGreaterThan(farNearWidth);
+  });
+
   it("keeps invalid connection opacity behavior while snapped", () => {
     renderLine({
       withMagnetHandle: true,
@@ -228,5 +262,49 @@ describe("CustomConnectionLine", () => {
 
     const path = getPath();
     expect(path.style.opacity).toBe("0.45");
+  });
+
+  it("uses client pointer coordinates for magnet lookup and converts snapped endpoint back to flow space", () => {
+    reactFlowStateRef.current.screenToFlowPosition = ({ x, y }) => ({
+      x: Math.round(x / 10),
+      y: Math.round(y / 10),
+    });
+
+    renderLine({
+      withMagnetHandle: true,
+      toX: 29,
+      toY: 21,
+      pointer: { x: 300, y: 220 },
+    });
+
+    const path = getPath();
+    expect(path.getAttribute("d")).toContain("30");
+    expect(path.getAttribute("d")).toContain("22");
+  });
+
+  it("adjusts glow filter between light and dark mode", () => {
+    renderLine({
+      withMagnetHandle: true,
+      toX: 266,
+      toY: 220,
+      pointer: { x: 266, y: 220 },
+    });
+    const lightPath = getPath();
+    const lightFilter = lightPath.style.filter;
+
+    document.documentElement.classList.add("dark");
+
+    renderLine({
+      withMagnetHandle: true,
+      toX: 266,
+      toY: 220,
+      pointer: { x: 266, y: 220 },
+    });
+    const darkPath = getPath();
+    const darkFilter = darkPath.style.filter;
+
+    expect(lightFilter).not.toBe("");
+    expect(darkFilter).not.toBe("");
+    expect(darkFilter).not.toBe(lightFilter);
   });
 });
