@@ -7,7 +7,6 @@ import { resolveDroppedConnectionTarget } from "@/components/canvas/canvas-helpe
 
 function createNode(overrides: Partial<RFNode> & Pick<RFNode, "id">): RFNode {
   return {
-    id: overrides.id,
     position: { x: 0, y: 0 },
     data: {},
     ...overrides,
@@ -37,6 +36,34 @@ function makeNodeElement(id: string, rect: Partial<DOMRect> = {}): HTMLElement {
     height: rect.height ?? 120,
     toJSON: () => ({}),
   } as DOMRect);
+  return element;
+}
+
+function makeHandleElement(args: {
+  nodeId: string;
+  handleType: "source" | "target";
+  handleId?: string;
+  rect: Partial<DOMRect>;
+}): HTMLElement {
+  const element = document.createElement("div");
+  element.className = "react-flow__handle";
+  element.dataset.nodeId = args.nodeId;
+  element.dataset.handleType = args.handleType;
+  if (args.handleId !== undefined) {
+    element.dataset.handleId = args.handleId;
+  }
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    x: args.rect.left ?? 0,
+    y: args.rect.top ?? 0,
+    top: args.rect.top ?? 0,
+    left: args.rect.left ?? 0,
+    right: args.rect.right ?? 10,
+    bottom: args.rect.bottom ?? 10,
+    width: args.rect.width ?? 10,
+    height: args.rect.height ?? 10,
+    toJSON: () => ({}),
+  } as DOMRect);
+  document.body.appendChild(element);
   return element;
 }
 
@@ -144,6 +171,169 @@ describe("resolveDroppedConnectionTarget", () => {
     });
   });
 
+  it("resolves nearest valid target handle even without a node body hit", () => {
+    const sourceNode = createNode({
+      id: "node-source",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const compareNode = createNode({
+      id: "node-compare",
+      type: "compare",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "node-compare",
+      handleType: "target",
+      handleId: "left",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "node-compare",
+      handleType: "target",
+      handleId: "right",
+      rect: { left: 438, top: 332, width: 12, height: 12, right: 450, bottom: 344 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "node-source",
+      fromHandleType: "source",
+      nodes: [sourceNode, compareNode],
+      edges: [],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "node-source",
+      targetNodeId: "node-compare",
+      sourceHandle: undefined,
+      targetHandle: "left",
+    });
+  });
+
+  it("skips a closer invalid handle and picks the nearest valid handle", () => {
+    const sourceNode = createNode({
+      id: "node-source",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const mixerNode = createNode({
+      id: "node-mixer",
+      type: "mixer",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "node-mixer",
+      handleType: "target",
+      handleId: "base",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "node-mixer",
+      handleType: "target",
+      handleId: "overlay",
+      rect: { left: 386, top: 278, width: 12, height: 12, right: 398, bottom: 290 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "node-source",
+      fromHandleType: "source",
+      nodes: [sourceNode, mixerNode],
+      edges: [
+        createEdge({
+          id: "edge-base-taken",
+          source: "node-source",
+          target: "node-mixer",
+          targetHandle: "base",
+        }),
+      ],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "node-source",
+      targetNodeId: "node-mixer",
+      sourceHandle: undefined,
+      targetHandle: "overlay",
+    });
+  });
+
+  it("prefers the actually nearest handle for compare and mixer targets", () => {
+    const sourceNode = createNode({
+      id: "node-source",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const compareNode = createNode({
+      id: "node-compare",
+      type: "compare",
+      position: { x: 320, y: 200 },
+    });
+    const mixerNode = createNode({
+      id: "node-mixer",
+      type: "mixer",
+      position: { x: 640, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "node-compare",
+      handleType: "target",
+      handleId: "left",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "node-compare",
+      handleType: "target",
+      handleId: "right",
+      rect: { left: 438, top: 332, width: 12, height: 12, right: 450, bottom: 344 },
+    });
+    makeHandleElement({
+      nodeId: "node-mixer",
+      handleType: "target",
+      handleId: "base",
+      rect: { left: 678, top: 252, width: 12, height: 12, right: 690, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "node-mixer",
+      handleType: "target",
+      handleId: "overlay",
+      rect: { left: 678, top: 292, width: 12, height: 12, right: 690, bottom: 304 },
+    });
+
+    const compareResult = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "node-source",
+      fromHandleType: "source",
+      nodes: [sourceNode, compareNode, mixerNode],
+      edges: [],
+    });
+
+    const mixerResult = resolveDroppedConnectionTarget({
+      point: { x: 684, y: 299 },
+      fromNodeId: "node-source",
+      fromHandleType: "source",
+      nodes: [sourceNode, compareNode, mixerNode],
+      edges: [],
+    });
+
+    expect(compareResult?.targetHandle).toBe("left");
+    expect(mixerResult?.targetHandle).toBe("overlay");
+  });
+
   it("reverses the connection when the drag starts from a target handle", () => {
     const droppedNode = createNode({
       id: "node-dropped",
@@ -175,6 +365,46 @@ describe("resolveDroppedConnectionTarget", () => {
       targetNodeId: "node-source",
       sourceHandle: undefined,
       targetHandle: "target-handle",
+    });
+  });
+
+  it("resolves nearest source handle when drag starts from target handle", () => {
+    const fromNode = createNode({
+      id: "node-compare-target",
+      type: "compare",
+      position: { x: 0, y: 0 },
+    });
+    const compareNode = createNode({
+      id: "node-compare-source",
+      type: "compare",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "node-compare-source",
+      handleType: "source",
+      handleId: "compare-out",
+      rect: { left: 478, top: 288, width: 12, height: 12, right: 490, bottom: 300 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 484, y: 294 },
+      fromNodeId: "node-compare-target",
+      fromHandleId: "left",
+      fromHandleType: "target",
+      nodes: [fromNode, compareNode],
+      edges: [],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "node-compare-source",
+      targetNodeId: "node-compare-target",
+      sourceHandle: "compare-out",
+      targetHandle: "left",
     });
   });
 });

@@ -102,7 +102,9 @@ export function convexEdgeToRF(edge: Doc<"edges">): RFEdge {
  * Akzentfarben der Handles je Node-Typ (s. jeweilige Node-Komponente).
  * Für einen dezenten Glow entlang der Kante (drop-shadow am Pfad).
  */
-const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = {
+type RgbColor = readonly [number, number, number];
+
+const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   prompt: [139, 92, 246],
   "video-prompt": [124, 58, 237],
   "ai-image": [139, 92, 246],
@@ -123,21 +125,59 @@ const SOURCE_NODE_GLOW_RGB: Record<string, readonly [number, number, number]> = 
   render: [14, 165, 233],
   agent: [245, 158, 11],
   "agent-output": [245, 158, 11],
+  mixer: [100, 116, 139],
 };
 
 /** Compare: Ziel-Handles blau/smaragd, Quelle compare-out grau (wie in compare-node.tsx). */
-const COMPARE_HANDLE_CONNECTION_RGB: Record<
-  string,
-  readonly [number, number, number]
-> = {
+const COMPARE_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
   left: [59, 130, 246],
   right: [16, 185, 129],
   "compare-out": [100, 116, 139],
 };
 
-const CONNECTION_LINE_FALLBACK_RGB: readonly [number, number, number] = [
-  13, 148, 136,
-];
+const MIXER_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
+  base: [14, 165, 233],
+  overlay: [236, 72, 153],
+  "mixer-out": [100, 116, 139],
+};
+
+const CONNECTION_LINE_FALLBACK_RGB: RgbColor = [13, 148, 136];
+
+export function canvasHandleAccentRgb(args: {
+  nodeType: string | undefined;
+  handleId?: string | null;
+  handleType: "source" | "target";
+}): RgbColor {
+  const nodeType = args.nodeType;
+  const handleId = args.handleId ?? undefined;
+  const handleType = args.handleType;
+
+  if (nodeType === "compare" && handleId) {
+    if (handleType === "target" && handleId === "compare-out") {
+      return SOURCE_NODE_GLOW_RGB.compare;
+    }
+    const byHandle = COMPARE_HANDLE_CONNECTION_RGB[handleId];
+    if (byHandle) {
+      return byHandle;
+    }
+  }
+
+  if (nodeType === "mixer" && handleId) {
+    if (handleType === "target" && handleId === "mixer-out") {
+      return SOURCE_NODE_GLOW_RGB.mixer;
+    }
+    const byHandle = MIXER_HANDLE_CONNECTION_RGB[handleId];
+    if (byHandle) {
+      return byHandle;
+    }
+  }
+
+  if (!nodeType) {
+    return CONNECTION_LINE_FALLBACK_RGB;
+  }
+
+  return SOURCE_NODE_GLOW_RGB[nodeType] ?? CONNECTION_LINE_FALLBACK_RGB;
+}
 
 /**
  * RGB für die temporäre Verbindungslinie (Quell-Node + optional Handle, z. B. Reconnect).
@@ -145,13 +185,12 @@ const CONNECTION_LINE_FALLBACK_RGB: readonly [number, number, number] = [
 export function connectionLineAccentRgb(
   nodeType: string | undefined,
   handleId: string | null | undefined,
-): readonly [number, number, number] {
-  if (nodeType === "compare" && handleId) {
-    const byHandle = COMPARE_HANDLE_CONNECTION_RGB[handleId];
-    if (byHandle) return byHandle;
-  }
-  if (!nodeType) return CONNECTION_LINE_FALLBACK_RGB;
-  return SOURCE_NODE_GLOW_RGB[nodeType] ?? CONNECTION_LINE_FALLBACK_RGB;
+): RgbColor {
+  return canvasHandleAccentRgb({
+    nodeType,
+    handleId,
+    handleType: "source",
+  });
 }
 
 export type EdgeGlowColorMode = "light" | "dark";

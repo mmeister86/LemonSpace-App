@@ -8,6 +8,7 @@ import {
   getSourceImageFromGraph,
 } from "@/lib/canvas-render-preview";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import { resolveCanvasMagnetTarget } from "@/components/canvas/canvas-connection-magnetism";
 
 export const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 export const OPTIMISTIC_EDGE_PREFIX = "optimistic_edge_";
@@ -421,59 +422,70 @@ export function resolveDroppedConnectionTarget(args: {
       ? []
       : document.elementsFromPoint(args.point.x, args.point.y);
   const nodeElement = getNodeElementAtClientPoint(args.point, elementsAtPoint);
-  if (!nodeElement) {
-    logCanvasConnectionDebug("drop-target:node-missed", {
-      point: args.point,
-      fromNodeId: args.fromNodeId,
-      fromHandleId: args.fromHandleId ?? null,
-      fromHandleType: args.fromHandleType,
-      elementsAtPoint: elementsAtPoint.slice(0, 6).map(describeConnectionDebugElement),
-    });
-    return null;
-  }
+  if (nodeElement) {
+    const targetNodeId = nodeElement.dataset.id;
+    if (!targetNodeId) {
+      logCanvasConnectionDebug("drop-target:node-missing-data-id", {
+        point: args.point,
+        fromNodeId: args.fromNodeId,
+        fromHandleId: args.fromHandleId ?? null,
+        fromHandleType: args.fromHandleType,
+        nodeElement: describeConnectionDebugElement(nodeElement),
+      });
+      return null;
+    }
 
-  const targetNodeId = nodeElement.dataset.id;
-  if (!targetNodeId) {
-    logCanvasConnectionDebug("drop-target:node-missing-data-id", {
-      point: args.point,
-      fromNodeId: args.fromNodeId,
-      fromHandleId: args.fromHandleId ?? null,
-      fromHandleType: args.fromHandleType,
-      nodeElement: describeConnectionDebugElement(nodeElement),
-    });
-    return null;
-  }
+    const targetNode = args.nodes.find((node) => node.id === targetNodeId);
+    if (!targetNode) {
+      logCanvasConnectionDebug("drop-target:node-not-in-state", {
+        point: args.point,
+        fromNodeId: args.fromNodeId,
+        fromHandleId: args.fromHandleId ?? null,
+        fromHandleType: args.fromHandleType,
+        targetNodeId,
+        nodeCount: args.nodes.length,
+        nodeElement: describeConnectionDebugElement(nodeElement),
+      });
+      return null;
+    }
 
-  const targetNode = args.nodes.find((node) => node.id === targetNodeId);
-  if (!targetNode) {
-    logCanvasConnectionDebug("drop-target:node-not-in-state", {
-      point: args.point,
-      fromNodeId: args.fromNodeId,
-      fromHandleId: args.fromHandleId ?? null,
-      fromHandleType: args.fromHandleType,
-      targetNodeId,
-      nodeCount: args.nodes.length,
-      nodeElement: describeConnectionDebugElement(nodeElement),
-    });
-    return null;
-  }
+    const handles = NODE_HANDLE_MAP[targetNode.type ?? ""];
 
-  const handles = NODE_HANDLE_MAP[targetNode.type ?? ""];
+    if (args.fromHandleType === "source") {
+      const droppedConnection = {
+        sourceNodeId: args.fromNodeId,
+        targetNodeId,
+        sourceHandle: args.fromHandleId,
+        targetHandle:
+          targetNode.type === "compare"
+            ? getCompareBodyDropTargetHandle({
+                point: args.point,
+                nodeElement,
+                targetNodeId,
+                edges: args.edges,
+              })
+            : handles?.target,
+      };
 
-  if (args.fromHandleType === "source") {
+      logCanvasConnectionDebug("drop-target:node-detected", {
+        point: args.point,
+        fromNodeId: args.fromNodeId,
+        fromHandleId: args.fromHandleId ?? null,
+        fromHandleType: args.fromHandleType,
+        targetNodeId,
+        targetNodeType: targetNode.type ?? null,
+        nodeElement: describeConnectionDebugElement(nodeElement),
+        resolvedConnection: droppedConnection,
+      });
+
+      return droppedConnection;
+    }
+
     const droppedConnection = {
-      sourceNodeId: args.fromNodeId,
-      targetNodeId,
-      sourceHandle: args.fromHandleId,
-      targetHandle:
-        targetNode.type === "compare"
-          ? getCompareBodyDropTargetHandle({
-              point: args.point,
-              nodeElement,
-              targetNodeId,
-              edges: args.edges,
-            })
-          : handles?.target,
+      sourceNodeId: targetNodeId,
+      targetNodeId: args.fromNodeId,
+      sourceHandle: handles?.source,
+      targetHandle: args.fromHandleId,
     };
 
     logCanvasConnectionDebug("drop-target:node-detected", {
@@ -490,21 +502,59 @@ export function resolveDroppedConnectionTarget(args: {
     return droppedConnection;
   }
 
+  const magnetTarget = resolveCanvasMagnetTarget({
+    point: args.point,
+    fromNodeId: args.fromNodeId,
+    fromHandleId: args.fromHandleId,
+    fromHandleType: args.fromHandleType,
+    nodes: args.nodes,
+    edges: args.edges,
+  });
+
+  if (!magnetTarget) {
+    logCanvasConnectionDebug("drop-target:node-missed", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      elementsAtPoint: elementsAtPoint.slice(0, 6).map(describeConnectionDebugElement),
+    });
+    return null;
+  }
+
+  if (args.fromHandleType === "source") {
+    const droppedConnection = {
+      sourceNodeId: args.fromNodeId,
+      targetNodeId: magnetTarget.nodeId,
+      sourceHandle: args.fromHandleId,
+      targetHandle: magnetTarget.handleId,
+    };
+
+    logCanvasConnectionDebug("drop-target:magnet-detected", {
+      point: args.point,
+      fromNodeId: args.fromNodeId,
+      fromHandleId: args.fromHandleId ?? null,
+      fromHandleType: args.fromHandleType,
+      magnetTarget,
+      resolvedConnection: droppedConnection,
+    });
+
+    return droppedConnection;
+  }
+
   const droppedConnection = {
-    sourceNodeId: targetNodeId,
+    sourceNodeId: magnetTarget.nodeId,
     targetNodeId: args.fromNodeId,
-    sourceHandle: handles?.source,
+    sourceHandle: magnetTarget.handleId,
     targetHandle: args.fromHandleId,
   };
 
-  logCanvasConnectionDebug("drop-target:node-detected", {
+  logCanvasConnectionDebug("drop-target:magnet-detected", {
     point: args.point,
     fromNodeId: args.fromNodeId,
     fromHandleId: args.fromHandleId ?? null,
     fromHandleType: args.fromHandleType,
-    targetNodeId,
-    targetNodeType: targetNode.type ?? null,
-    nodeElement: describeConnectionDebugElement(nodeElement),
+    magnetTarget,
     resolvedConnection: droppedConnection,
   });
 
