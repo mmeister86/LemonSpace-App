@@ -60,6 +60,7 @@ vi.mock("@xyflow/react", () => ({
     });
   },
   Position: { Left: "left", Right: "right" },
+  useConnection: () => ({ inProgress: false }),
 }));
 
 const translations: Record<string, string> = {

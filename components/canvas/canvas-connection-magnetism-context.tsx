@@ -18,6 +18,11 @@ type CanvasConnectionMagnetismState = {
 const CanvasConnectionMagnetismContext =
   createContext<CanvasConnectionMagnetismState | null>(null);
 
+const FALLBACK_MAGNETISM_STATE: CanvasConnectionMagnetismState = {
+  activeTarget: null,
+  setActiveTarget: () => undefined,
+};
+
 export function CanvasConnectionMagnetismProvider({
   children,
 }: {
@@ -42,10 +47,5 @@ export function CanvasConnectionMagnetismProvider({
 
 export function useCanvasConnectionMagnetism(): CanvasConnectionMagnetismState {
   const context = useContext(CanvasConnectionMagnetismContext);
-  if (!context) {
-    throw new Error(
-      "useCanvasConnectionMagnetism must be used within CanvasConnectionMagnetismProvider",
-    );
-  }
-  return context;
+  return context ?? FALLBACK_MAGNETISM_STATE;
 }

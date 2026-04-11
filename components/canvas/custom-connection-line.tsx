@@ -53,6 +53,8 @@ export default function CustomConnectionLine({
 }: ConnectionLineComponentProps) {
   const { getNodes, getEdges } = useReactFlow();
   const { activeTarget, setActiveTarget } = useCanvasConnectionMagnetism();
+  const fromHandleId = fromHandle?.id;
+  const fromNodeId = fromNode?.id;
 
   const fromHandleType =
     fromHandle?.type === "source" || fromHandle?.type === "target"
@@ -60,19 +62,19 @@ export default function CustomConnectionLine({
       : null;
 
   const resolvedMagnetTarget = useMemo(() => {
-    if (!fromHandleType || !fromNode?.id) {
+    if (!fromHandleType || !fromNodeId) {
       return null;
     }
 
     return resolveCanvasMagnetTarget({
       point: { x: toX, y: toY },
-      fromNodeId: fromNode.id,
-      fromHandleId: fromHandle?.id ?? undefined,
+      fromNodeId,
+      fromHandleId: fromHandleId ?? undefined,
       fromHandleType,
       nodes: getNodes(),
       edges: getEdges(),
     });
-  }, [fromHandle?.id, fromHandleType, fromNode?.id, getEdges, getNodes, toX, toY]);
+  }, [fromHandleId, fromHandleType, fromNodeId, getEdges, getNodes, toX, toY]);
 
   useEffect(() => {
     if (hasSameMagnetTarget(activeTarget, resolvedMagnetTarget)) {
@@ -119,7 +121,7 @@ export default function CustomConnectionLine({
       [path] = getStraightPath(pathParams);
   }
 
-  const [r, g, b] = connectionLineAccentRgb(fromNode.type, fromHandle.id);
+  const [r, g, b] = connectionLineAccentRgb(fromNode.type, fromHandleId);
   const opacity = connectionStatus === "invalid" ? 0.45 : 1;
   const strokeWidth = snappedTarget ? 3.25 : 2.5;
   const filter = snappedTarget

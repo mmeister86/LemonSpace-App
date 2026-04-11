@@ -19,6 +19,7 @@ const parameterSliderState = vi.hoisted(() => ({
 vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
+  useConnection: () => ({ inProgress: false }),
 }));
 
 vi.mock("convex/react", () => ({

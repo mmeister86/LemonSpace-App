@@ -699,6 +699,7 @@ describe("favorite retention in strict local node flows", () => {
     vi.doMock("@xyflow/react", () => ({
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
+      useConnection: () => ({ inProgress: false }),
     }));
 
     const importedModule = (await import(modulePath)) as {
