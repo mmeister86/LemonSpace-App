@@ -78,6 +78,7 @@ import { useCanvasEdgeTypes } from "./use-canvas-edge-types";
 import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
+import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -709,7 +710,9 @@ interface CanvasProps {
 export default function Canvas({ canvasId }: CanvasProps) {
   return (
     <ReactFlowProvider>
-      <CanvasInner canvasId={canvasId} />
+      <CanvasConnectionMagnetismProvider>
+        <CanvasInner canvasId={canvasId} />
+      </CanvasConnectionMagnetismProvider>
     </ReactFlowProvider>
   );
 }

@@ -39,6 +39,7 @@ type UseCanvasReconnectHandlersParams = {
     nextOtherEdgeHandle: "base" | "overlay";
   } | null;
   onInvalidConnection?: (message: string) => void;
+  clearActiveMagnetTarget?: () => void;
 };
 
 export function useCanvasReconnectHandlers({
@@ -52,6 +53,7 @@ export function useCanvasReconnectHandlers({
   validateConnection,
   resolveMixerSwapReconnect,
   onInvalidConnection,
+  clearActiveMagnetTarget,
 }: UseCanvasReconnectHandlersParams): {
   onReconnectStart: () => void;
   onReconnect: (oldEdge: RFEdge, newConnection: Connection) => void;
@@ -72,10 +74,11 @@ export function useCanvasReconnectHandlers({
   >(null);
 
   const onReconnectStart = useCallback(() => {
+    clearActiveMagnetTarget?.();
     edgeReconnectSuccessful.current = false;
     isReconnectDragActiveRef.current = true;
     pendingReconnectRef.current = null;
-  }, [edgeReconnectSuccessful, isReconnectDragActiveRef]);
+  }, [clearActiveMagnetTarget, edgeReconnectSuccessful, isReconnectDragActiveRef]);
 
   const onReconnect = useCallback(
     (oldEdge: RFEdge, newConnection: Connection) => {
@@ -201,11 +204,13 @@ export function useCanvasReconnectHandlers({
 
         edgeReconnectSuccessful.current = true;
       } finally {
+        clearActiveMagnetTarget?.();
         isReconnectDragActiveRef.current = false;
       }
     },
     [
       canvasId,
+      clearActiveMagnetTarget,
       edgeReconnectSuccessful,
       isReconnectDragActiveRef,
       runCreateEdgeMutation,
