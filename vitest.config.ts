@@ -26,6 +26,7 @@ export default defineConfig({
       "components/canvas/__tests__/use-canvas-node-interactions.test.tsx",
       "components/canvas/__tests__/canvas-delete-handlers.test.tsx",
       "components/canvas/__tests__/canvas-handle.test.tsx",
+      "components/canvas/__tests__/custom-connection-line.test.tsx",
       "components/canvas/__tests__/canvas-media-utils.test.ts",
       "components/canvas/__tests__/base-node-wrapper.test.tsx",
       "components/canvas/__tests__/use-node-local-data.test.tsx",
