@@ -32,8 +32,6 @@ import {
 
 import { CanvasUserMenu } from "@/components/canvas/canvas-user-menu";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
-import { useAuthQuery } from "@/hooks/use-auth-query";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   NODE_CATEGORY_META,
@@ -107,14 +105,14 @@ function SidebarRow({
       className={cn(
         "rounded-lg border transition-colors",
         compact
-          ? "flex h-10 w-full items-center justify-center p-0"
+          ? "flex aspect-square min-h-0 w-full items-center justify-center rounded-md p-0"
           : "flex items-center gap-2 px-3 py-2 text-sm",
         enabled
           ? "cursor-grab border-border/80 bg-card hover:bg-accent active:cursor-grabbing"
           : "cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0 opacity-80" />
+      <Icon className={cn("shrink-0 opacity-80", compact ? "size-[1.3rem]" : "size-4")} />
       {!compact ? <span className="min-w-0 flex-1 truncate">{entry.label}</span> : null}
       {!compact && entry.phase > 1 ? (
         <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground/80">
@@ -135,18 +133,14 @@ export default function CanvasSidebar({
   canvasId,
   railMode = false,
 }: CanvasSidebarProps) {
-  const canvas = useAuthQuery(api.canvases.get, { canvasId });
+  void canvasId;
   const byCategory = catalogEntriesByCategory();
   const [collapsedByCategory, setCollapsedByCategory] = useState<
     Partial<Record<(typeof NODE_CATEGORIES_ORDERED)[number], boolean>>
   >(() =>
     Object.fromEntries(
-      NODE_CATEGORIES_ORDERED.map((categoryId) => [categoryId, categoryId !== "source"]),
+      NODE_CATEGORIES_ORDERED.map((categoryId) => [categoryId, false]),
     ),
-  );
-
-  const railEntries = NODE_CATEGORIES_ORDERED.flatMap(
-    (categoryId) => byCategory.get(categoryId) ?? [],
   );
 
   return (
@@ -154,12 +148,24 @@ export default function CanvasSidebar({
       {railMode ? (
         <div className="border-b border-border/80 px-2 py-3">
           <div className="flex items-center justify-center">
-            <span
-              className="line-clamp-1 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-              title={canvas?.name ?? "Canvas"}
-            >
-              {canvas?.name?.slice(0, 2).toUpperCase() ?? "CV"}
-            </span>
+            <div className="relative">
+              <NextImage
+                src="/logos/lemonspace-logo-v2-black-rgb.svg"
+                alt="LemonSpace"
+                width={74}
+                height={14}
+                className="h-auto w-[4.625rem] dark:hidden"
+                priority
+              />
+              <NextImage
+                src="/logos/lemonspace-logo-v2-white-rgb.svg"
+                alt="LemonSpace"
+                width={74}
+                height={14}
+                className="hidden h-auto w-[4.625rem] dark:block"
+                priority
+              />
+            </div>
           </div>
         </div>
       ) : (
@@ -191,14 +197,33 @@ export default function CanvasSidebar({
         <div
           className={cn(
             "h-full overflow-y-auto overscroll-contain",
-            railMode ? "p-2 pb-20" : "p-3 pb-28",
+            railMode ? "px-2 py-2 pb-20" : "p-3 pb-28",
           )}
         >
           {railMode ? (
-            <div className="flex flex-col gap-1.5">
-              {railEntries.map((entry) => (
-                <SidebarRow key={entry.type} entry={entry} compact />
-              ))}
+            <div className="flex flex-col gap-3">
+              {NODE_CATEGORIES_ORDERED.map((categoryId, index) => {
+                const entries = byCategory.get(categoryId) ?? [];
+                if (entries.length === 0) return null;
+                return (
+                  <section
+                    key={categoryId}
+                    className={cn("space-y-1.5", index === 0 ? "pt-0" : "border-t border-border/70 pt-2")}
+                  >
+                    {index > 0 ? (
+                      <div data-testid={`sidebar-rail-category-${categoryId}-divider`} aria-hidden="true" />
+                    ) : null}
+                    <div
+                      data-testid={`sidebar-rail-category-${categoryId}-grid`}
+                      className="grid grid-cols-2 gap-1"
+                    >
+                      {entries.map((entry) => (
+                        <SidebarRow key={entry.type} entry={entry} compact />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           ) : (
             <>
@@ -206,7 +231,7 @@ export default function CanvasSidebar({
                 const entries = byCategory.get(categoryId) ?? [];
                 if (entries.length === 0) return null;
                 const { label } = NODE_CATEGORY_META[categoryId];
-                const isCollapsed = collapsedByCategory[categoryId] ?? categoryId !== "source";
+                const isCollapsed = collapsedByCategory[categoryId] ?? false;
                 return (
                   <div key={categoryId} className="mb-4 last:mb-0">
                     <button
@@ -214,7 +239,7 @@ export default function CanvasSidebar({
                       onClick={() =>
                         setCollapsedByCategory((prev) => ({
                           ...prev,
-                          [categoryId]: !(prev[categoryId] ?? categoryId !== "source"),
+                          [categoryId]: !(prev[categoryId] ?? false),
                         }))
                       }
                       className="mb-2 flex w-full items-center justify-between rounded-md px-0.5 py-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"

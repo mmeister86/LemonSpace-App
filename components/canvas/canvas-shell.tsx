@@ -15,8 +15,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 const SIDEBAR_DEFAULT_SIZE = "18%";
 const SIDEBAR_COLLAPSE_THRESHOLD = "10%";
 const SIDEBAR_MAX_SIZE = "40%";
-const SIDEBAR_COLLAPSED_SIZE = "64px";
-const SIDEBAR_RAIL_MAX_WIDTH_PX = 112;
+const SIDEBAR_COLLAPSED_SIZE = "84px";
+const SIDEBAR_RAIL_MAX_WIDTH_PX = 148;
 const MAIN_PANEL_MIN_SIZE = "40%";
 
 type CanvasShellProps = {

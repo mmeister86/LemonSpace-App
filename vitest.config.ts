@@ -30,6 +30,7 @@ export default defineConfig({
       "components/canvas/__tests__/use-node-local-data.test.tsx",
       "components/canvas/__tests__/use-canvas-sync-engine.test.ts",
       "components/canvas/__tests__/use-canvas-sync-engine-hook.test.tsx",
+      "components/canvas/__tests__/canvas-sidebar.test.tsx",
       "components/canvas/__tests__/asset-browser-panel.test.tsx",
       "components/canvas/__tests__/video-browser-panel.test.tsx",
       "components/media/__tests__/media-preview-utils.test.ts",
