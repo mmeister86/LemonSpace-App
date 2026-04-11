@@ -759,6 +759,18 @@ export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   return target.closest("input, textarea, select, [contenteditable=true]") !== null;
 }
 
+export function getSingleCharacterHotkey(event: { key?: string; type: string }): string {
+  if (typeof event.key !== "string") {
+    console.warn("[Canvas] keyboard event missing string key", {
+      eventType: event.type,
+      key: event.key,
+    });
+    return "";
+  }
+
+  return event.key.length === 1 ? event.key.toLowerCase() : "";
+}
+
 export function isEdgeCuttable(edge: RFEdge): boolean {
   if (edge.className === "temp") return false;
   if (isOptimisticEdgeId(edge.id)) return false;

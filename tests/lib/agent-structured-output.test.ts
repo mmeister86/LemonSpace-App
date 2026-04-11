@@ -47,6 +47,10 @@ describe("normalizeAgentStructuredOutput", () => {
         language: "en",
         tags: ["launch", "saas"],
       },
+      metadataLabels: {
+        language: "language",
+        tags: "tags",
+      },
       qualityChecks: ["concise", "channel-fit"],
       body: "Legacy flat content",
     });
@@ -144,5 +148,39 @@ describe("normalizeAgentStructuredOutput", () => {
     expect(normalized.body).toBe(
       "Hook:\nLead with a bold claim.\n\nCTA:\nInvite replies with a concrete question.",
     );
+  });
+
+  it("slugifies non-ascii metadata keys and preserves original labels", () => {
+    const normalized = normalizeAgentStructuredOutput(
+      {
+        sections: [
+          {
+            id: "caption",
+            label: "Caption",
+            content: "Publish-ready caption.",
+          },
+        ],
+        metadataEntries: [
+          { key: "tonalität", values: ["freundlich"] },
+          { key: "hashtags", values: ["dogs", "berner-sennenhund"] },
+          { key: "empty", values: [] },
+          { key: "  ", values: ["ignored"] },
+        ],
+      },
+      {
+        title: "Fallback Title",
+        channel: "fallback-channel",
+        artifactType: "fallback-artifact",
+      },
+    );
+
+    expect(normalized.metadata).toEqual({
+      tonalitaet: "freundlich",
+      hashtags: ["dogs", "berner-sennenhund"],
+    });
+    expect(normalized.metadataLabels).toEqual({
+      tonalitaet: "tonalität",
+      hashtags: "hashtags",
+    });
   });
 });

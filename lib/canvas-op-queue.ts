@@ -72,6 +72,7 @@ export type CanvasSyncOpPayloadByType = {
     targetNodeId: Id<"nodes">;
     sourceHandle?: string;
     targetHandle?: string;
+    edgeIdToIgnore?: Id<"edges">;
     clientRequestId: string;
   };
   removeEdge: {
@@ -476,6 +477,10 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
         targetHandle:
           typeof payload.targetHandle === "string"
             ? payload.targetHandle
+            : undefined,
+        edgeIdToIgnore:
+          typeof payload.edgeIdToIgnore === "string"
+            ? (payload.edgeIdToIgnore as Id<"edges">)
             : undefined,
         clientRequestId: payload.clientRequestId,
       },

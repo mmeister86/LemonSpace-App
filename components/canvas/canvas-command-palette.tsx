@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { getSingleCharacterHotkey } from "@/components/canvas/canvas-helpers";
 import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import {
   Command,
@@ -98,7 +99,7 @@ export function CanvasCommandPalette() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
-      if (e.key.toLowerCase() !== "k") return;
+      if (getSingleCharacterHotkey(e) !== "k") return;
       e.preventDefault();
       setOpen((prev) => !prev);
     };

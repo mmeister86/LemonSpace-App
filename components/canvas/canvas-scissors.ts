@@ -12,6 +12,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNavTool } from "@/components/canvas/canvas-toolbar";
 import {
   collectCuttableEdgesAlongScreenSegment,
+  getSingleCharacterHotkey,
   getIntersectedEdgeId,
   isEdgeCuttable,
   isEditableKeyboardTarget,
@@ -50,8 +51,7 @@ export function useCanvasScissors({
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const isScissorHotkey =
-        event.key.length === 1 && event.key.toLowerCase() === "k";
+      const isScissorHotkey = getSingleCharacterHotkey(event) === "k";
       if (!isScissorHotkey) return;
       if (isEditableKeyboardTarget(event.target)) return;
 

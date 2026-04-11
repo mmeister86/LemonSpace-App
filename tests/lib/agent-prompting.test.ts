@@ -136,6 +136,10 @@ describe("agent prompting helpers", () => {
     const user = messages[1]?.content ?? "";
 
     expect(system).toContain("execution rules");
+    expect(system).toContain("deliverable-first rules");
+    expect(system).toContain("Prioritize publishable, user-facing deliverables");
+    expect(system).toContain("Do not produce reasoning-dominant output");
+    expect(system).toContain("For Campaign Distributor steps, output channel-ready publishable copy first");
     expect(system).toContain("channel-notes");
     expect(system).toContain("German (de-DE)");
     expect(user).toContain("Execution plan summary: Ship launch content");

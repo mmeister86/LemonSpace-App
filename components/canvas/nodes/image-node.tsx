@@ -71,6 +71,7 @@ export default function ImageNode({
   height,
 }: NodeProps<ImageNode>) {
   const t = useTranslations('toasts');
+  const tMedia = useTranslations("mediaLibrary.imageNode");
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const registerUploadedImageMedia = useMutation(api.storage.registerUploadedImageMedia);
   const { queueNodeDataUpdate, queueNodeResize, status } = useCanvasSync();
@@ -377,7 +378,7 @@ export default function ImageNode({
       }
 
       if (item.kind !== "image" || !item.storageId) {
-        toast.error(t('canvas.uploadFailed'), "Nur Bilddateien mit Storage-ID koennen uebernommen werden.");
+        toast.error(t('canvas.uploadFailed'), tMedia("invalidSelection"));
         return;
       }
 
@@ -427,7 +428,7 @@ export default function ImageNode({
         );
       }
     },
-    [data, id, isNodeLoading, queueNodeDataUpdate, queueNodeResize, t],
+    [data, id, isNodeLoading, queueNodeDataUpdate, queueNodeResize, t, tMedia],
   );
 
   const handleClick = useCallback(() => {
@@ -586,7 +587,9 @@ export default function ImageNode({
                 disabled={isNodeLoading || !isNodeStable}
                 className="nodrag mt-3 inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isNodeStable ? "Aus Mediathek" : "Mediathek wird vorbereitet..."}
+                {isNodeStable
+                  ? tMedia("openButton")
+                  : tMedia("preparingButton")}
               </button>
             </div>
           )}
@@ -650,7 +653,7 @@ export default function ImageNode({
         onOpenChange={setIsMediaLibraryOpen}
         onPick={handlePickFromMediaLibrary}
         kindFilter="image"
-        pickCtaLabel="Uebernehmen"
+        pickCtaLabel={tMedia("pickCta")}
       />
     </>
   );

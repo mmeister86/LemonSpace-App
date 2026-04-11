@@ -50,6 +50,7 @@ type UseCanvasConnectionsParams = {
     targetNodeId: Id<"nodes">;
     sourceHandle?: string;
     targetHandle?: string;
+    edgeIdToIgnore?: Id<"edges">;
   }) => Promise<unknown>;
   runSplitEdgeAtExistingNodeMutation: (args: {
     canvasId: Id<"canvases">;
@@ -61,6 +62,11 @@ type UseCanvasConnectionsParams = {
     newNodeTargetHandle?: string;
   }) => Promise<unknown>;
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
+  runSwapMixerInputsMutation: (args: {
+    canvasId: Id<"canvases">;
+    edgeId: Id<"edges">;
+    otherEdgeId: Id<"edges">;
+  }) => Promise<unknown>;
   runCreateNodeWithEdgeFromSourceOnlineOnly: (args: {
     canvasId: Id<"canvases">;
     type: CanvasNodeType;
@@ -113,6 +119,7 @@ export function useCanvasConnections({
   runRemoveEdgeMutation,
   runCreateNodeWithEdgeFromSourceOnlineOnly,
   runCreateNodeWithEdgeToTargetOnlineOnly,
+  runSwapMixerInputsMutation,
   showConnectionRejectedToast,
 }: UseCanvasConnectionsParams) {
   const [connectionDropMenu, setConnectionDropMenu] =
@@ -176,6 +183,70 @@ export function useCanvasConnections({
       });
     },
     [canvasId, edges, nodes, runCreateEdgeMutation, showConnectionRejectedToast],
+  );
+
+  const resolveMixerSwapReconnect = useCallback(
+    (oldEdge: RFEdge, newConnection: Connection, validationError: string) => {
+      if (validationError !== "mixer-handle-incoming-limit") {
+        return null;
+      }
+
+      if (!newConnection.target || oldEdge.target !== newConnection.target) {
+        return null;
+      }
+
+      const targetNode = nodes.find((node) => node.id === newConnection.target);
+      if (!targetNode || targetNode.type !== "mixer") {
+        return null;
+      }
+
+      const normalizeMixerHandle = (handle: string | null | undefined): "base" | "overlay" | null => {
+        if (handle == null || handle === "" || handle === "null") {
+          return "base";
+        }
+        if (handle === "base" || handle === "overlay") {
+          return handle;
+        }
+        return null;
+      };
+
+      const oldHandle = normalizeMixerHandle(oldEdge.targetHandle);
+      const requestedHandle = normalizeMixerHandle(newConnection.targetHandle);
+      if (!oldHandle || !requestedHandle || oldHandle === requestedHandle) {
+        return null;
+      }
+
+      const mixerIncomingEdges = edges.filter(
+        (edge) =>
+          edge.className !== "temp" &&
+          !isOptimisticEdgeId(edge.id) &&
+          edge.target === newConnection.target,
+      );
+
+      if (mixerIncomingEdges.length !== 2) {
+        return null;
+      }
+
+      const otherEdge = mixerIncomingEdges.find(
+        (candidate) => candidate.id !== oldEdge.id,
+      );
+      if (!otherEdge) {
+        return null;
+      }
+
+      const otherHandle = normalizeMixerHandle(otherEdge.targetHandle);
+      if (!otherHandle || otherHandle !== requestedHandle) {
+        return null;
+      }
+
+      return {
+        edgeId: oldEdge.id as Id<"edges">,
+        otherEdgeId: otherEdge.id as Id<"edges">,
+        nextEdgeHandle: requestedHandle,
+        nextOtherEdgeHandle: oldHandle,
+      };
+    },
+    [edges, nodes],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(
@@ -438,6 +509,7 @@ export function useCanvasConnections({
           sourceType: fromNode.type ?? "",
           targetType: template.type,
           targetNodeId: `__pending_${template.type}_${Date.now()}`,
+          targetHandle: handles?.target,
           edges: edgesRef.current,
         });
         if (validationError) {
@@ -469,6 +541,7 @@ export function useCanvasConnections({
           sourceType: template.type,
           targetType: fromNode.type ?? "",
           targetNodeId: fromNode.id,
+          targetHandle: ctx.fromHandleId,
           edges: edgesRef.current,
         });
         if (validationError) {
@@ -518,8 +591,10 @@ export function useCanvasConnections({
     setEdges,
     runCreateEdgeMutation,
     runRemoveEdgeMutation,
+    runSwapMixerInputsMutation,
     validateConnection: (oldEdge, nextConnection) =>
       validateCanvasConnection(nextConnection, nodes, edges, oldEdge.id),
+    resolveMixerSwapReconnect,
     onInvalidConnection: (reason) => {
       showConnectionRejectedToast(reason as CanvasConnectionValidationReason);
     },

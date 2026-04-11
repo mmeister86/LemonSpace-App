@@ -223,6 +223,7 @@
     "sectionsLabel": "Sections",
     "metadataLabel": "Metadata",
     "qualityChecksLabel": "Quality checks",
+    "detailsLabel": "Details",
     "previewLabel": "Preview",
     "previewFallback": "No preview available",
     "emptyValue": "-",
@@ -274,6 +275,46 @@
     "openrouterImageUrlLoadFailed": "OpenRouter: Could not load image URL.",
     "openrouterDataUriCreationFailed": "OpenRouter: Could not process image.",
     "openrouterDataUriMissingBase64": "OpenRouter: Could not process image."
+  },
+  "mediaLibrary": {
+    "common": {
+      "untitledImage": "Untitled image",
+      "untitledVideo": "Untitled video",
+      "untitledAsset": "Untitled asset",
+      "unknownSize": "Unknown size",
+      "videoFile": "Video file"
+    },
+    "dialog": {
+      "title": "Media library",
+      "descriptionDefault": "Browse your media from uploads, AI generation, and archive sources.",
+      "descriptionImage": "Choose an image from your LemonSpace media library.",
+      "descriptionVideo": "Choose a video from your LemonSpace media library.",
+      "descriptionAsset": "Choose an asset from your LemonSpace media library.",
+      "urlResolveError": "Could not load URLs.",
+      "errorTitle": "Media library could not be loaded",
+      "emptyTitle": "No media yet",
+      "emptyDescription": "As soon as you upload or generate media, it will appear here.",
+      "previewOnly": "Preview only",
+      "pick": "Select",
+      "pickLoading": "Applying...",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {totalPages}"
+    },
+    "dashboard": {
+      "sectionTitle": "Media library",
+      "openAll": "Open full media library",
+      "loading": "Loading media library...",
+      "previewError": "Could not load media preview. {error}",
+      "empty": "No media yet. As soon as you upload or generate images, they will appear here.",
+      "dialogDescription": "All your LemonSpace media in one central preview."
+    },
+    "imageNode": {
+      "openButton": "From media library",
+      "preparingButton": "Preparing media library...",
+      "pickCta": "Apply",
+      "invalidSelection": "Only image files with a storage ID can be applied."
+    }
   },
   "toasts": {
     "canvas": {

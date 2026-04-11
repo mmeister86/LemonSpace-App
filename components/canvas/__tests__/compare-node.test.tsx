@@ -166,4 +166,99 @@ describe("CompareNode render preview inputs", () => {
       preferPreview: true,
     });
   });
+
+  it("prefers mixer composite preview over persisted compare finalUrl when mixer is connected", () => {
+    storeState.nodes = [
+      {
+        id: "base-image",
+        type: "image",
+        data: { url: "https://cdn.example.com/base.png" },
+      },
+      {
+        id: "overlay-image",
+        type: "asset",
+        data: { url: "https://cdn.example.com/overlay.png" },
+      },
+      {
+        id: "mixer-1",
+        type: "mixer",
+        data: {
+          blendMode: "multiply",
+          opacity: 62,
+          offsetX: 12,
+          offsetY: -4,
+        },
+      },
+      {
+        id: "right-image",
+        type: "image",
+        data: { url: "https://cdn.example.com/right.png" },
+      },
+    ];
+    storeState.edges = [
+      {
+        id: "edge-base-mixer",
+        source: "base-image",
+        target: "mixer-1",
+        targetHandle: "base",
+      },
+      {
+        id: "edge-overlay-mixer",
+        source: "overlay-image",
+        target: "mixer-1",
+        targetHandle: "overlay",
+      },
+      {
+        id: "edge-mixer-compare",
+        source: "mixer-1",
+        target: "compare-1",
+        targetHandle: "left",
+      },
+      {
+        id: "edge-image-compare",
+        source: "right-image",
+        target: "compare-1",
+        targetHandle: "right",
+      },
+    ];
+
+    renderCompareNode({
+      id: "compare-1",
+      data: {
+        leftUrl: "https://cdn.example.com/base.png",
+        rightUrl: "https://cdn.example.com/right.png",
+      },
+      selected: false,
+      dragging: false,
+      zIndex: 0,
+      isConnectable: true,
+      type: "compare",
+      xPos: 0,
+      yPos: 0,
+      width: 500,
+      height: 380,
+      sourcePosition: undefined,
+      targetPosition: undefined,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    });
+
+    expect(compareSurfaceSpy).toHaveBeenCalledTimes(2);
+    const mixerCall = compareSurfaceSpy.mock.calls.find(
+      ([props]) =>
+        Boolean((props as { mixerPreviewState?: { status?: string } }).mixerPreviewState),
+    );
+    expect(mixerCall?.[0]).toMatchObject({
+      finalUrl: undefined,
+      mixerPreviewState: {
+        status: "ready",
+        baseUrl: "https://cdn.example.com/base.png",
+        overlayUrl: "https://cdn.example.com/overlay.png",
+        blendMode: "multiply",
+        opacity: 62,
+        offsetX: 12,
+        offsetY: -4,
+      },
+    });
+  });
 });

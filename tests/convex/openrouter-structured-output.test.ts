@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { generateStructuredObjectViaOpenRouter } from "@/convex/openrouter";
+import {
+  __testables,
+  generateStructuredObjectViaOpenRouter,
+} from "@/convex/openrouter";
 
 type MockResponseInit = {
   ok: boolean;
@@ -283,6 +286,67 @@ describe("generateStructuredObjectViaOpenRouter", () => {
         code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
         status: 503,
       },
+    });
+  });
+
+  it("extracts provider details from OpenRouter JSON error payload", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: false,
+        status: 502,
+        text: '{"error":{"message":"Provider returned error","code":"provider_error","type":"upstream_error"}}',
+      }),
+    );
+
+    await expect(
+      generateStructuredObjectViaOpenRouter("test-api-key", {
+        model: "openai/gpt-5-mini",
+        messages: [{ role: "user", content: "hello" }],
+        schemaName: "test_schema",
+        schema: { type: "object" },
+      }),
+    ).rejects.toMatchObject({
+      data: {
+        code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
+        status: 502,
+        providerCode: "provider_error",
+        providerType: "upstream_error",
+        providerMessage: "Provider returned error",
+        message: "OpenRouter 502: Provider returned error [code=provider_error, type=upstream_error]",
+      },
+    });
+  });
+
+  it("detects schema features that are likely to matter for structured-output debugging", () => {
+    const diagnostics = __testables.getStructuredSchemaDiagnostics({
+      schema: {
+        type: "object",
+        required: ["summary", "metadata"],
+        properties: {
+          summary: { type: "string" },
+          metadata: {
+            type: "object",
+            additionalProperties: {
+              anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+            },
+          },
+        },
+      },
+      messages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "user prompt" },
+      ],
+    });
+
+    expect(diagnostics).toMatchObject({
+      topLevelType: "object",
+      topLevelRequiredCount: 2,
+      topLevelPropertyCount: 2,
+      messageCount: 2,
+      messageLengths: [13, 11],
+      hasAnyOf: true,
+      hasDynamicAdditionalProperties: true,
+      hasPatternProperties: false,
     });
   });
 });

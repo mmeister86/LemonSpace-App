@@ -215,6 +215,24 @@ function formatExecutionRequirements(plan: AgentExecutionPlan): string {
     .join("\n");
 }
 
+function formatDeliverableFirstInstructions(definition: AgentDefinition): string {
+  const rules = [
+    "Prioritize publishable, user-facing deliverables for every execution step.",
+    "Lead with final copy/content that can be shipped immediately.",
+    "Keep assumptions, rationale, and risk notes secondary and concise.",
+    "Do not produce reasoning-dominant output or long meta commentary.",
+    "When context is partial, deliver the best safe draft first and clearly note assumptions in brief form.",
+  ];
+
+  if (definition.id === "campaign-distributor") {
+    rules.push(
+      "For Campaign Distributor steps, output channel-ready publishable copy first, then short format/assumption notes.",
+    );
+  }
+
+  return `deliverable-first rules:\n- ${rules.join("\n- ")}`;
+}
+
 export function buildExecuteMessages(input: {
   definition: AgentDefinition;
   locale: AgentLocale;
@@ -235,6 +253,7 @@ export function buildExecuteMessages(input: {
         "Use the following compiled prompt segments:",
         formatPromptSegments(segments),
         `execution rules:\n- ${input.definition.executionRules.join("\n- ")}`,
+        formatDeliverableFirstInstructions(input.definition),
         "Return one output payload per execution step keyed by step id.",
       ].join("\n\n"),
     },

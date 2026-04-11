@@ -11,6 +11,7 @@ import {
   Image,
   Package,
   Palette,
+  Layers,
   Sparkles,
   StickyNote,
   Sun,
@@ -43,6 +44,7 @@ const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
   "light-adjust": Sun,
   "detail-adjust": Focus,
   render: ImageDown,
+  mixer: Layers,
 };
 
 const NODE_SEARCH_KEYWORDS: Partial<

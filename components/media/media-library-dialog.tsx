@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { AlertCircle, Box, ImageIcon, Loader2, Video } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -73,15 +74,18 @@ function formatDimensions(width: number | undefined, height: number | undefined)
   return `${width} x ${height}px`;
 }
 
-function formatMediaMeta(item: MediaLibraryItem): string {
+function formatMediaMeta(
+  item: MediaLibraryItem,
+  tCommon: ReturnType<typeof useTranslations>,
+): string {
   if (item.kind === "video") {
     if (typeof item.durationSeconds === "number" && Number.isFinite(item.durationSeconds)) {
       return `${Math.max(1, Math.round(item.durationSeconds))}s`;
     }
-    return "Videodatei";
+    return tCommon("videoFile");
   }
 
-  return formatDimensions(item.width, item.height) ?? "Groesse unbekannt";
+  return formatDimensions(item.width, item.height) ?? tCommon("unknownSize");
 }
 
 function getItemKey(item: MediaLibraryItem): string {
@@ -104,32 +108,37 @@ function getItemKey(item: MediaLibraryItem): string {
   return `${item.kind}:${item.createdAt}:${item.filename ?? "unnamed"}`;
 }
 
-function getItemLabel(item: MediaLibraryItem): string {
+function getItemLabel(
+  item: MediaLibraryItem,
+  tCommon: ReturnType<typeof useTranslations>,
+): string {
   if (item.filename) {
     return item.filename;
   }
 
   if (item.kind === "video") {
-    return "Unbenanntes Video";
+    return tCommon("untitledVideo");
   }
 
   if (item.kind === "asset") {
-    return "Unbenanntes Asset";
+    return tCommon("untitledAsset");
   }
 
-  return "Unbenanntes Bild";
+  return tCommon("untitledImage");
 }
 
 export function MediaLibraryDialog({
   open,
   onOpenChange,
   onPick,
-  title = "Mediathek",
+  title,
   description,
   pageSize = DEFAULT_PAGE_SIZE,
   kindFilter,
-  pickCtaLabel = "Auswaehlen",
+  pickCtaLabel,
 }: MediaLibraryDialogProps) {
+  const tDialog = useTranslations("mediaLibrary.dialog");
+  const tCommon = useTranslations("mediaLibrary.common");
   const [page, setPage] = useState(1);
   const normalizedPageSize = useMemo(() => {
     if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
@@ -203,7 +212,7 @@ export function MediaLibraryDialog({
           return;
         }
         setUrlMap({});
-        setUrlError(error instanceof Error ? error.message : "URLs konnten nicht geladen werden.");
+        setUrlError(error instanceof Error ? error.message : tDialog("urlResolveError"));
       } finally {
         if (!isCancelled) {
           setIsResolvingUrls(false);
@@ -216,7 +225,7 @@ export function MediaLibraryDialog({
     return () => {
       isCancelled = true;
     };
-  }, [metadata, open, resolveUrls]);
+  }, [metadata, open, resolveUrls, tDialog]);
 
   const items: MediaLibraryItem[] = useMemo(() => {
     if (!metadata) {
@@ -229,16 +238,25 @@ export function MediaLibraryDialog({
     }));
   }, [metadata, urlMap]);
 
-  const visibleItems = useMemo(() => items.slice(0, DEFAULT_PAGE_SIZE), [items]);
+  const visibleItems = useMemo(
+    () => items.slice(0, normalizedPageSize),
+    [items, normalizedPageSize],
+  );
 
   const isMetadataLoading = open && metadata === undefined;
   const isInitialLoading = isMetadataLoading || (metadata !== undefined && isResolvingUrls);
   const isPreviewMode = typeof onPick !== "function";
+  const effectiveTitle = title ?? tDialog("title");
+  const effectivePickCtaLabel = pickCtaLabel ?? tDialog("pick");
   const effectiveDescription =
     description ??
     (kindFilter === "image"
-      ? "Waehle ein Bild aus deiner LemonSpace-Mediathek."
-      : "Durchsuche deine Medien aus Uploads, KI-Generierung und Archivquellen.");
+      ? tDialog("descriptionImage")
+      : kindFilter === "video"
+        ? tDialog("descriptionVideo")
+        : kindFilter === "asset"
+          ? tDialog("descriptionAsset")
+          : tDialog("descriptionDefault"));
 
   async function handlePick(item: MediaLibraryItem): Promise<void> {
     if (!onPick || pendingPickItemKey) {
@@ -257,7 +275,7 @@ export function MediaLibraryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] sm:max-w-5xl" showCloseButton>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>{effectiveTitle}</DialogTitle>
           <DialogDescription>{effectiveDescription}</DialogDescription>
         </DialogHeader>
 
@@ -277,15 +295,15 @@ export function MediaLibraryDialog({
           ) : urlError ? (
             <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 text-center">
               <AlertCircle className="h-8 w-8 text-destructive" />
-              <p className="text-sm font-medium">Mediathek konnte nicht geladen werden</p>
+              <p className="text-sm font-medium">{tDialog("errorTitle")}</p>
               <p className="max-w-md text-xs text-muted-foreground">{urlError}</p>
             </div>
           ) : items.length === 0 ? (
             <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 text-center">
               <ImageIcon className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Keine Medien vorhanden</p>
+              <p className="text-sm font-medium">{tDialog("emptyTitle")}</p>
               <p className="text-xs text-muted-foreground">
-                Sobald du Medien hochlaedst oder generierst, erscheinen sie hier.
+                {tDialog("emptyDescription")}
               </p>
             </div>
           ) : (
@@ -293,8 +311,8 @@ export function MediaLibraryDialog({
                {visibleItems.map((item) => {
                 const itemKey = getItemKey(item);
                 const isPickingThis = pendingPickItemKey === itemKey;
-                const itemLabel = getItemLabel(item);
-                const metaLabel = formatMediaMeta(item);
+                const itemLabel = getItemLabel(item, tCommon);
+                const metaLabel = formatMediaMeta(item, tCommon);
 
                 return (
                   <div
@@ -340,7 +358,7 @@ export function MediaLibraryDialog({
                       </p>
 
                       {isPreviewMode ? (
-                        <p className="mt-auto text-[11px] text-muted-foreground">Nur Vorschau</p>
+                        <p className="mt-auto text-[11px] text-muted-foreground">{tDialog("previewOnly")}</p>
                       ) : (
                         <Button
                           type="button"
@@ -352,10 +370,10 @@ export function MediaLibraryDialog({
                           {isPickingThis ? (
                             <>
                               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                              Wird uebernommen...
+                              {tDialog("pickLoading")}
                             </>
                           ) : (
-                            pickCtaLabel
+                            effectivePickCtaLabel
                           )}
                         </Button>
                       )}
@@ -375,10 +393,10 @@ export function MediaLibraryDialog({
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={page <= 1}
             >
-              Previous
+              {tDialog("previous")}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Page {metadata.page} of {metadata.totalPages}
+              {tDialog("pageOf", { page: metadata.page, totalPages: metadata.totalPages })}
             </span>
             <Button
               variant="outline"
@@ -386,7 +404,7 @@ export function MediaLibraryDialog({
               onClick={() => setPage((current) => Math.min(metadata.totalPages, current + 1))}
               disabled={page >= metadata.totalPages}
             >
-              Next
+              {tDialog("next")}
             </Button>
           </div>
         ) : null}

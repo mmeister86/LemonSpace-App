@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import {
   computeEdgeInsertLayout,
   computeEdgeInsertReflowPlan,
+  getSingleCharacterHotkey,
   withResolvedCompareData,
 } from "../canvas-helpers";
 import {
@@ -312,6 +313,24 @@ describe("canvas preview graph helpers", () => {
         params: { exposure: 0.8 },
       },
     ]);
+  });
+});
+
+describe("getSingleCharacterHotkey", () => {
+  it("returns a lowercase printable hotkey for single-character keys", () => {
+    expect(getSingleCharacterHotkey({ key: "K", type: "keydown" })).toBe("k");
+    expect(getSingleCharacterHotkey({ key: "v", type: "keydown" })).toBe("v");
+    expect(getSingleCharacterHotkey({ key: "Escape", type: "keydown" })).toBe("");
+  });
+
+  it("returns an empty string and logs when the event has no string key", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(getSingleCharacterHotkey({ type: "keydown" } as { key?: string; type: string })).toBe("");
+    expect(warnSpy).toHaveBeenCalledWith("[Canvas] keyboard event missing string key", {
+      eventType: "keydown",
+      key: undefined,
+    });
   });
 });
 

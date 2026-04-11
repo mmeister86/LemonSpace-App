@@ -56,6 +56,7 @@ import CustomConnectionLine from "@/components/canvas/custom-connection-line";
 import {
   CANVAS_MIN_ZOOM,
   DEFAULT_EDGE_OPTIONS,
+  getSingleCharacterHotkey,
   getMiniMapNodeColor,
   getMiniMapNodeStrokeColor,
   getPendingRemovedEdgeIdsFromLocalOps,
@@ -100,6 +101,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const registerUploadedImageMedia = useMutation(api.storage.registerUploadedImageMedia);
+  const runSwapMixerInputsMutation = useMutation(api.edges.swapMixerInputs);
   const convexNodeIdsSnapshotForEdgeCarryRef = useRef(new Set<string>());
   const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
     string | null
@@ -237,7 +239,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableKeyboardTarget(e.target)) return;
-      const key = e.key.length === 1 ? e.key.toLowerCase() : "";
+      const key = getSingleCharacterHotkey(e);
       if (key === "v") {
         e.preventDefault();
         handleNavToolChange("select");
@@ -342,6 +344,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runCreateEdgeMutation,
     runSplitEdgeAtExistingNodeMutation,
     runRemoveEdgeMutation,
+    runSwapMixerInputsMutation,
     runCreateNodeWithEdgeFromSourceOnlineOnly,
     runCreateNodeWithEdgeToTargetOnlineOnly,
     showConnectionRejectedToast,

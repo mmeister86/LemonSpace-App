@@ -49,11 +49,12 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 
 | Kategorie | Nodes | Beschreibung |
 |-----------|-------|-------------|
-| **source** (Quelle) | `image`, `text`, `video`, `asset`, `color` | Input-Quellen für den Workflow |
-| **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text`, `ai-video`, `agent-output` | KI-generierte Inhalte |
+| **source** (Quelle) | `image`, `text`, `video`, `asset`, `color`, `ai-video` | Input-Quellen für den Workflow |
+| **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text` | KI-generierte Inhalte |
+| **agents** (Agents) | `agent`, `agent-output` | Agent-Orchestrierung und Agent-Outputs |
 | **transform** (Transformation) | `crop`, `bg-remove`, `upscale` | Bildbearbeitung-Transformationen |
 | **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust` | Preset-basierte Adjustments |
-| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch`, `agent` | Kontrollfluss-Elemente |
+| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch`, `mixer` | Kontrollfluss-Elemente |
 | **layout** (Canvas & Layout) | `group`, `frame`, `note`, `compare` | Layout-Elemente |
 
 ### Node-Typen im Detail
@@ -67,9 +68,9 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
 | `video-prompt` | 2 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
 | `ai-text` | 2 | 🔲 | ai-output | source: `text-out`, target: `text-in` |
-| `ai-video` | 2 | ✅ (systemOutput) | ai-output | source: `video-out`, target: `video-in` |
-| `agent` | 2 | ✅ | control | target: `agent-in`, source (default) |
-| `agent-output` | 2 | ✅ (systemOutput) | ai-output | target: `agent-output-in` |
+| `ai-video` | 2 | ✅ (systemOutput) | source | source: `video-out`, target: `video-in` |
+| `agent` | 2 | ✅ | agents | target: `agent-in`, source (default) |
+| `agent-output` | 2 | ✅ (systemOutput) | agents | target: `agent-output-in` |
 | `crop` | 2 | 🔲 | transform | 🔲 |
 | `bg-remove` | 2 | 🔲 | transform | 🔲 |
 | `upscale` | 2 | 🔲 | transform | 🔲 |
@@ -81,6 +82,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `frame` | 1 | ✅ | layout | source: `frame-out`, target: `frame-in` |
 | `note` | 1 | ✅ | layout | source (default), target (default) |
 | `compare` | 1 | ✅ | layout | source: `compare-out`, targets: `left`, `right` |
+| `mixer` | 1 | ✅ | control | source: `mixer-out`, targets: `base`, `overlay` |
 
 > `implemented: false` (🔲) bedeutet Phase-2/3 Node, der noch nicht implementiert ist. **Hinweis:** Phase-2/3 Nodes müssen im Schema (`convex/node_type_validator.ts`) vordeklariert werden, damit das System nicht bei jeder Phasenübergang neu migriert werden muss. Die UI filtert Nodes nach Phase.
 
@@ -119,7 +121,27 @@ video-prompt: 288 × 220   ai-video:     360 × 280
 agent:       360 × 320
 group:       400 × 300    frame:        400 × 300
 note:        208 × 100    compare:      500 × 380
+render:      300 × 420    mixer:        360 × 320
 ```
+
+---
+
+## Mixer V1 (Merge Node)
+
+`mixer` ist in V1 ein bewusst enger 2-Layer-Blend-Node.
+
+- **Handles:** genau zwei Inputs links (`base`, `overlay`) und ein Output rechts (`mixer-out`).
+- **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`.
+- **Connection-Limits:** maximal 2 eingehende Kanten insgesamt, davon pro Handle genau 1.
+- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `offsetX`, `offsetY`.
+- **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
+- **UI/Interaction:** nur Inline-Formcontrols im Node; keine Drag-Manipulation im Preview, keine Rotation/Skalierung/Masks.
+
+### Compare-Integration (V1)
+
+- `compare` versteht `mixer`-Outputs ueber `lib/canvas-mixer-preview.ts`.
+- Die Vorschau wird als DOM/CSS-Layering im Client gerendert (inkl. Blend/Opacity/Offset).
+- Scope bleibt eng: keine pauschale pseudo-image-Unterstuetzung fuer alle Consumer in V1.
 
 ---
 
@@ -291,6 +313,8 @@ useCanvasData (use-canvas-data.ts)
 - **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
+- **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
+- **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Downstream-Nodes muessen den pseudo-image-Resolver nutzen (aktuell gezielt fuer `compare`).
 - **Agent-Flow:** `agent` akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`) als Input; ausgehende Kanten sind fuer `agent -> agent-output` vorgesehen.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
 - **Canvas Graph Query:** Der Canvas nutzt `canvasGraph.get` (aus `convex/canvasGraph.ts`) statt separater `nodes.list`/`edges.list` Queries. Optimistic Updates laufen über `canvas-graph-query-cache.ts`.

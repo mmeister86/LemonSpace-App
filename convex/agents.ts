@@ -11,7 +11,13 @@ import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { generateStructuredObjectViaOpenRouter } from "./openrouter";
 import { getNodeDataRecord } from "./ai_node_data";
-import { formatTerminalStatusMessage } from "./ai_errors";
+import {
+  errorMessage,
+  formatTerminalStatusMessage,
+  getErrorCode,
+  getErrorSource,
+  getProviderStatus,
+} from "./ai_errors";
 import {
   areClarificationAnswersComplete,
   buildPreflightClarificationQuestions,
@@ -119,14 +125,17 @@ function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
     },
   };
 
-  const metadataValueSchema: Record<string, unknown> = {
-    anyOf: [
-      { type: "string" },
-      {
+  const metadataEntrySchema: Record<string, unknown> = {
+    type: "object",
+    additionalProperties: false,
+    required: ["key", "values"],
+    properties: {
+      key: { type: "string" },
+      values: {
         type: "array",
         items: { type: "string" },
       },
-    ],
+    },
   };
 
   const stepOutputProperties: Record<string, unknown> = {};
@@ -134,31 +143,31 @@ function buildExecuteSchema(stepIds: string[]): Record<string, unknown> {
     stepOutputProperties[stepId] = {
       type: "object",
       additionalProperties: false,
-      required: [
-        "title",
-        "channel",
-        "artifactType",
-        "previewText",
-        "sections",
-        "metadata",
-        "qualityChecks",
-      ],
-      properties: {
-        title: { type: "string" },
-        channel: { type: "string" },
+        required: [
+          "title",
+          "channel",
+          "artifactType",
+          "previewText",
+          "sections",
+          "metadataEntries",
+          "qualityChecks",
+        ],
+        properties: {
+          title: { type: "string" },
+          channel: { type: "string" },
         artifactType: { type: "string" },
         previewText: { type: "string" },
-        sections: {
-          type: "array",
-          items: sectionSchema,
-        },
-        metadata: {
-          type: "object",
-          additionalProperties: metadataValueSchema,
-        },
-        qualityChecks: {
-          type: "array",
-          items: { type: "string" },
+          sections: {
+            type: "array",
+            items: sectionSchema,
+          },
+          metadataEntries: {
+            type: "array",
+            items: metadataEntrySchema,
+          },
+          qualityChecks: {
+            type: "array",
+            items: { type: "string" },
         },
       },
     };
@@ -297,6 +306,7 @@ type InternalApiShape = {
         previewText: string;
         sections: AgentOutputSection[];
         metadata: Record<string, string | string[]>;
+        metadataLabels: Record<string, string>;
         body: string;
       },
       unknown
@@ -349,6 +359,18 @@ const internalApi = internal as unknown as InternalApiShape;
 
 function trimText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function logAgentFailure(stage: string, context: Record<string, unknown>, error: unknown): void {
+  const formattedStatus = formatTerminalStatusMessage(error);
+  console.error(`[agents][${stage}] failed`, {
+    ...context,
+    statusMessage: formattedStatus,
+    code: getErrorCode(error),
+    source: getErrorSource(error),
+    providerStatus: getProviderStatus(error),
+    message: errorMessage(error),
+  });
 }
 
 function normalizeAnswerMap(raw: unknown): AgentClarificationAnswerMap {
@@ -519,6 +541,7 @@ function buildSkeletonOutputData(input: {
     previewText: buildSkeletonPreviewPlaceholder(input.step.title),
     sections: [],
     metadata: {},
+    metadataLabels: {},
     body: "",
     ...(definitionVersion ? { definitionVersion } : {}),
   };
@@ -535,6 +558,7 @@ function buildCompletedOutputData(input: {
     previewText: string;
     sections: AgentOutputSection[];
     metadata: Record<string, string | string[]>;
+    metadataLabels: Record<string, string>;
     qualityChecks: string[];
     body: string;
   };
@@ -563,6 +587,10 @@ function buildCompletedOutputData(input: {
     sections: normalizedSections,
     metadata:
       input.output.metadata && typeof input.output.metadata === "object" ? input.output.metadata : {},
+    metadataLabels:
+      input.output.metadataLabels && typeof input.output.metadataLabels === "object"
+        ? input.output.metadataLabels
+        : {},
     body: deriveLegacyBodyFallback({
       title: trimText(input.output.title) || trimText(input.step.title),
       previewText: normalizedPreviewText,
@@ -976,6 +1004,7 @@ export const completeExecutionStepOutput = internalMutation({
       }),
     ),
     metadata: v.record(v.string(), v.union(v.string(), v.array(v.string()))),
+    metadataLabels: v.record(v.string(), v.string()),
     body: v.string(),
   },
   handler: async (ctx, args) => {
@@ -1018,6 +1047,7 @@ export const completeExecutionStepOutput = internalMutation({
         previewText: args.previewText,
         sections: args.sections,
         metadata: args.metadata,
+        metadataLabels: args.metadataLabels,
         qualityChecks: args.qualityChecks,
         body: args.body,
       },
@@ -1254,6 +1284,7 @@ export const analyzeAgent = internalAction({
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
       });
     } catch (error) {
+      logAgentFailure("analyzeAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
       await releaseInternalReservationBestEffort(ctx, args.reservationId);
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
@@ -1305,6 +1336,17 @@ export const executeAgent = internalAction({
       }
 
       const executeSchema = buildExecuteSchema(executionSteps.map((step) => step.id));
+
+      console.info("[agents][executeAgent] request context", {
+        nodeId: args.nodeId,
+        modelId: args.modelId,
+        stepCount: executionSteps.length,
+        stepIds: executionSteps.map((step) => step.id),
+        artifactTypes: executionSteps.map((step) => step.artifactType),
+        channels: executionSteps.map((step) => step.channel),
+        incomingContextLength: incomingContext.length,
+        executionPlanSummaryLength: executionPlanSummary.length,
+      });
 
       const execution = await generateStructuredObjectViaOpenRouter<{
         summary: string;
@@ -1375,6 +1417,7 @@ export const executeAgent = internalAction({
           previewText: normalized.previewText,
           sections: normalized.sections,
           metadata: normalized.metadata,
+          metadataLabels: normalized.metadataLabels,
           body: normalized.body,
         });
       }
@@ -1393,6 +1436,7 @@ export const executeAgent = internalAction({
 
       await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
     } catch (error) {
+      logAgentFailure("executeAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
       await releaseInternalReservationBestEffort(ctx, args.reservationId);
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
@@ -1404,6 +1448,7 @@ export const executeAgent = internalAction({
 });
 
 export const __testables = {
+  buildExecuteSchema,
   buildSkeletonOutputData,
   buildCompletedOutputData,
   getAnalyzeExecutionStepRequiredFields,
@@ -1485,6 +1530,7 @@ export const runAgent = action({
       scheduled = true;
       return { queued: true, nodeId: args.nodeId };
     } catch (error) {
+      logAgentFailure("runAgent", { nodeId: args.nodeId, modelId: selectedModel.id }, error);
       await releasePublicReservationBestEffort(ctx, reservationId);
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
@@ -1572,6 +1618,7 @@ export const resumeAgent = action({
 
       return { queued: true, nodeId: args.nodeId };
     } catch (error) {
+      logAgentFailure("resumeAgent", { nodeId: args.nodeId, modelId }, error);
       await releasePublicReservationBestEffort(ctx, reservationId ?? null);
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { nodeTypes } from "@/components/canvas/node-types";
 import { CANVAS_NODE_TEMPLATES } from "@/lib/canvas-node-templates";
-import { NODE_CATALOG, isNodePaletteEnabled } from "@/lib/canvas-node-catalog";
+import {
+  NODE_CATALOG,
+  NODE_CATEGORY_META,
+  catalogEntriesByCategory,
+  isNodePaletteEnabled,
+} from "@/lib/canvas-node-catalog";
 import { NODE_DEFAULTS, NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
 describe("canvas agent config", () => {
@@ -20,6 +25,27 @@ describe("canvas agent config", () => {
     const entry = NODE_CATALOG.find((item) => item.type === "agent");
     expect(entry).toBeDefined();
     expect(entry && isNodePaletteEnabled(entry)).toBe(true);
+  });
+
+  it("moves agent nodes into an Agents category", () => {
+    expect(NODE_CATEGORY_META.agents.label).toBe("Agents");
+
+    const byCategory = catalogEntriesByCategory();
+    const agentsEntries = byCategory.get("agents") ?? [];
+    const aiOutputEntries = byCategory.get("ai-output") ?? [];
+
+    expect(agentsEntries.map((entry) => entry.type)).toEqual(["agent", "agent-output"]);
+    expect(agentsEntries[0]).toMatchObject({
+      label: "Campaign Orchestrator",
+      category: "agents",
+    });
+
+    expect(aiOutputEntries.map((entry) => entry.type)).toEqual([
+      "prompt",
+      "video-prompt",
+      "ai-text",
+    ]);
+    expect(NODE_CATALOG.find((entry) => entry.type === "ai-video")?.category).toBe("source");
   });
 
   it("keeps the agent input-only in MVP", () => {

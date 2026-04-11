@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { __testables } from "@/convex/agents";
+import { __testables as openrouterTestables } from "@/convex/openrouter";
 
 describe("agent orchestration contract helpers", () => {
   it("builds skeleton output data with rich execution-plan metadata", () => {
@@ -59,7 +60,8 @@ describe("agent orchestration contract helpers", () => {
           { id: "hook", label: "Hook", content: "Lead with proof." },
           { id: "cta", label: "CTA", content: "Invite comments." },
         ],
-        metadata: { audience: "SaaS founders" },
+        metadata: { tonalitaet: "freundlich", audience: "SaaS founders" },
+        metadataLabels: { tonalitaet: "tonalität", audience: "audience" },
         qualityChecks: [],
         body: "",
       },
@@ -69,6 +71,7 @@ describe("agent orchestration contract helpers", () => {
     expect(data.body).toBe("Hook:\nLead with proof.\n\nCTA:\nInvite comments.");
     expect(data.previewText).toBe("Lead with proof.");
     expect(data.qualityChecks).toEqual(["channel-fit", "clear-cta"]);
+    expect(data.metadataLabels).toEqual({ tonalitaet: "tonalität", audience: "audience" });
   });
 
   it("requires rich execution-step fields in analyze schema", () => {
@@ -85,6 +88,25 @@ describe("agent orchestration contract helpers", () => {
         "qualityChecks",
       ]),
     );
+  });
+
+  it("builds provider-safe execute schema without dynamic metadata maps", () => {
+    const schema = __testables.buildExecuteSchema(["step-1"]);
+    const diagnostics = openrouterTestables.getStructuredSchemaDiagnostics({
+      schema,
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "user" },
+      ],
+    });
+
+    const stepOne = (((schema.properties as Record<string, unknown>).stepOutputs as Record<string, unknown>)
+      .properties as Record<string, unknown>)["step-1"] as Record<string, unknown>;
+
+    expect(stepOne.required).toContain("metadataEntries");
+    expect(stepOne.required).not.toContain("metadata");
+    expect(diagnostics.hasAnyOf).toBe(false);
+    expect(diagnostics.hasDynamicAdditionalProperties).toBe(false);
   });
 
   it("resolves persisted summaries consistently across analyze and execute", () => {

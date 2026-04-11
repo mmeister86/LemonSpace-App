@@ -16,12 +16,28 @@ type UseCanvasReconnectHandlersParams = {
     targetNodeId: Id<"nodes">;
     sourceHandle?: string;
     targetHandle?: string;
+    edgeIdToIgnore?: Id<"edges">;
+  }) => Promise<unknown>;
+  runSwapMixerInputsMutation?: (args: {
+    canvasId: Id<"canvases">;
+    edgeId: Id<"edges">;
+    otherEdgeId: Id<"edges">;
   }) => Promise<unknown>;
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
   validateConnection?: (
     oldEdge: RFEdge,
     newConnection: Connection,
   ) => string | null;
+  resolveMixerSwapReconnect?: (
+    oldEdge: RFEdge,
+    newConnection: Connection,
+    validationError: string,
+  ) => {
+    edgeId: Id<"edges">;
+    otherEdgeId: Id<"edges">;
+    nextEdgeHandle: "base" | "overlay";
+    nextOtherEdgeHandle: "base" | "overlay";
+  } | null;
   onInvalidConnection?: (message: string) => void;
 };
 
@@ -31,18 +47,29 @@ export function useCanvasReconnectHandlers({
   isReconnectDragActiveRef,
   setEdges,
   runCreateEdgeMutation,
+  runSwapMixerInputsMutation,
   runRemoveEdgeMutation,
   validateConnection,
+  resolveMixerSwapReconnect,
   onInvalidConnection,
 }: UseCanvasReconnectHandlersParams): {
   onReconnectStart: () => void;
   onReconnect: (oldEdge: RFEdge, newConnection: Connection) => void;
   onReconnectEnd: (_: MouseEvent | TouchEvent, edge: RFEdge) => void;
 } {
-  const pendingReconnectRef = useRef<{
-    oldEdge: RFEdge;
-    newConnection: Connection;
-  } | null>(null);
+  const pendingReconnectRef = useRef<
+    | {
+        kind: "replace";
+        oldEdge: RFEdge;
+        newConnection: Connection;
+      }
+    | {
+        kind: "swap";
+        edgeId: Id<"edges">;
+        otherEdgeId: Id<"edges">;
+      }
+    | null
+  >(null);
 
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
@@ -54,6 +81,38 @@ export function useCanvasReconnectHandlers({
     (oldEdge: RFEdge, newConnection: Connection) => {
       const validationError = validateConnection?.(oldEdge, newConnection) ?? null;
       if (validationError) {
+        const swapReconnect = resolveMixerSwapReconnect?.(
+          oldEdge,
+          newConnection,
+          validationError,
+        );
+        if (swapReconnect) {
+          edgeReconnectSuccessful.current = true;
+          pendingReconnectRef.current = {
+            kind: "swap",
+            edgeId: swapReconnect.edgeId,
+            otherEdgeId: swapReconnect.otherEdgeId,
+          };
+          setEdges((currentEdges) =>
+            currentEdges.map((candidate) => {
+              if (candidate.id === swapReconnect.edgeId) {
+                return {
+                  ...candidate,
+                  targetHandle: swapReconnect.nextEdgeHandle,
+                };
+              }
+              if (candidate.id === swapReconnect.otherEdgeId) {
+                return {
+                  ...candidate,
+                  targetHandle: swapReconnect.nextOtherEdgeHandle,
+                };
+              }
+              return candidate;
+            }),
+          );
+          return;
+        }
+
         edgeReconnectSuccessful.current = true;
         pendingReconnectRef.current = null;
         onInvalidConnection?.(validationError);
@@ -61,10 +120,20 @@ export function useCanvasReconnectHandlers({
       }
 
       edgeReconnectSuccessful.current = true;
-      pendingReconnectRef.current = { oldEdge, newConnection };
+      pendingReconnectRef.current = {
+        kind: "replace",
+        oldEdge,
+        newConnection,
+      };
       setEdges((currentEdges) => reconnectEdge(oldEdge, newConnection, currentEdges));
     },
-    [edgeReconnectSuccessful, onInvalidConnection, setEdges, validateConnection],
+    [
+      edgeReconnectSuccessful,
+      onInvalidConnection,
+      resolveMixerSwapReconnect,
+      setEdges,
+      validateConnection,
+    ],
   );
 
   const onReconnectEnd = useCallback(
@@ -95,32 +164,35 @@ export function useCanvasReconnectHandlers({
 
         const pendingReconnect = pendingReconnectRef.current;
         pendingReconnectRef.current = null;
-        if (
-          pendingReconnect &&
-          pendingReconnect.newConnection.source &&
-          pendingReconnect.newConnection.target
-        ) {
+        if (pendingReconnect?.kind === "replace" && pendingReconnect.newConnection.source && pendingReconnect.newConnection.target) {
           void runCreateEdgeMutation({
             canvasId,
             sourceNodeId: pendingReconnect.newConnection.source as Id<"nodes">,
             targetNodeId: pendingReconnect.newConnection.target as Id<"nodes">,
             sourceHandle: pendingReconnect.newConnection.sourceHandle ?? undefined,
             targetHandle: pendingReconnect.newConnection.targetHandle ?? undefined,
-          }).catch((error) => {
-            console.error("[Canvas edge reconnect failed] create edge", {
-              oldEdgeId: pendingReconnect.oldEdge.id,
-              source: pendingReconnect.newConnection.source,
-              target: pendingReconnect.newConnection.target,
-              error: String(error),
-            });
-          });
-
-          if (pendingReconnect.oldEdge.className !== "temp") {
-            void runRemoveEdgeMutation({
-              edgeId: pendingReconnect.oldEdge.id as Id<"edges">,
-            }).catch((error) => {
-              console.error("[Canvas edge reconnect failed] remove old edge", {
+            edgeIdToIgnore: pendingReconnect.oldEdge.id as Id<"edges">,
+          })
+            .catch((error) => {
+              console.error("[Canvas edge reconnect failed] create edge", {
                 oldEdgeId: pendingReconnect.oldEdge.id,
+                source: pendingReconnect.newConnection.source,
+                target: pendingReconnect.newConnection.target,
+                error: String(error),
+              });
+            });
+        }
+
+        if (pendingReconnect?.kind === "swap") {
+          if (runSwapMixerInputsMutation) {
+            void runSwapMixerInputsMutation({
+              canvasId,
+              edgeId: pendingReconnect.edgeId,
+              otherEdgeId: pendingReconnect.otherEdgeId,
+            }).catch((error) => {
+              console.error("[Canvas edge reconnect failed] swap mixer inputs", {
+                edgeId: pendingReconnect.edgeId,
+                otherEdgeId: pendingReconnect.otherEdgeId,
                 error: String(error),
               });
             });
@@ -138,6 +210,7 @@ export function useCanvasReconnectHandlers({
       isReconnectDragActiveRef,
       runCreateEdgeMutation,
       runRemoveEdgeMutation,
+      runSwapMixerInputsMutation,
       setEdges,
     ],
   );

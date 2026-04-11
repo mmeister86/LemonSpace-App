@@ -223,6 +223,7 @@
     "sectionsLabel": "Abschnitte",
     "metadataLabel": "Metadaten",
     "qualityChecksLabel": "Qualitaetschecks",
+    "detailsLabel": "Details",
     "previewLabel": "Vorschau",
     "previewFallback": "Keine Vorschau verfuegbar",
     "emptyValue": "-",
@@ -274,6 +275,46 @@
     "openrouterImageUrlLoadFailed": "OpenRouter: Bild-URL konnte nicht geladen werden.",
     "openrouterDataUriCreationFailed": "OpenRouter: Bild konnte nicht verarbeitet werden.",
     "openrouterDataUriMissingBase64": "OpenRouter: Bild konnte nicht verarbeitet werden."
+  },
+  "mediaLibrary": {
+    "common": {
+      "untitledImage": "Unbenanntes Bild",
+      "untitledVideo": "Unbenanntes Video",
+      "untitledAsset": "Unbenanntes Asset",
+      "unknownSize": "Groesse unbekannt",
+      "videoFile": "Videodatei"
+    },
+    "dialog": {
+      "title": "Mediathek",
+      "descriptionDefault": "Durchsuche deine Medien aus Uploads, KI-Generierung und Archivquellen.",
+      "descriptionImage": "Waehle ein Bild aus deiner LemonSpace-Mediathek.",
+      "descriptionVideo": "Waehle ein Video aus deiner LemonSpace-Mediathek.",
+      "descriptionAsset": "Waehle ein Asset aus deiner LemonSpace-Mediathek.",
+      "urlResolveError": "URLs konnten nicht geladen werden.",
+      "errorTitle": "Mediathek konnte nicht geladen werden",
+      "emptyTitle": "Keine Medien vorhanden",
+      "emptyDescription": "Sobald du Medien hochlaedst oder generierst, erscheinen sie hier.",
+      "previewOnly": "Nur Vorschau",
+      "pick": "Auswaehlen",
+      "pickLoading": "Wird uebernommen...",
+      "previous": "Zurueck",
+      "next": "Weiter",
+      "pageOf": "Seite {page} von {totalPages}"
+    },
+    "dashboard": {
+      "sectionTitle": "Mediathek",
+      "openAll": "Ganze Mediathek oeffnen",
+      "loading": "Mediathek wird geladen...",
+      "previewError": "Mediathek-Vorschau konnte nicht geladen werden. {error}",
+      "empty": "Noch keine Medien vorhanden. Sobald du Bilder hochlaedst oder generierst, werden sie hier angezeigt.",
+      "dialogDescription": "Alle deine Medien aus LemonSpace in einer zentralen Vorschau."
+    },
+    "imageNode": {
+      "openButton": "Aus Mediathek",
+      "preparingButton": "Mediathek wird vorbereitet...",
+      "pickCta": "Uebernehmen",
+      "invalidSelection": "Nur Bilddateien mit Storage-ID koennen uebernommen werden."
+    }
   },
   "toasts": {
     "canvas": {

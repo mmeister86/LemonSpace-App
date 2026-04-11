@@ -418,34 +418,27 @@ function normalizeNodeDataForWrite(
   return preserveNodeFavorite(data, data);
 }
 
-async function countIncomingEdges(
+async function getIncomingEdgePolicyContext(
   ctx: MutationCtx,
   args: {
     targetNodeId: Id<"nodes">;
     edgeIdToIgnore?: Id<"edges">;
   },
-): Promise<number> {
+): Promise<{ count: number; targetHandles: Array<string | undefined> }> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
     .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
 
   const checkStartedAt = Date.now();
-  const incomingEdges = await (
-    args.edgeIdToIgnore ? incomingEdgesQuery.take(2) : incomingEdgesQuery.first()
-  );
+  const incomingEdges = await incomingEdgesQuery.take(3);
   const checkDurationMs = Date.now() - checkStartedAt;
 
-  const incomingCount = Array.isArray(incomingEdges)
-    ? incomingEdges.filter((edge) => edge._id !== args.edgeIdToIgnore).length
-    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore
-      ? 1
-      : 0;
+  const filteredIncomingEdges = incomingEdges.filter(
+    (edge) => edge._id !== args.edgeIdToIgnore,
+  );
+  const incomingCount = filteredIncomingEdges.length;
   if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
-    const inspected = Array.isArray(incomingEdges)
-      ? incomingEdges.length
-      : incomingEdges === null
-        ? 0
-        : 1;
+    const inspected = incomingEdges.length;
 
     console.warn("[nodes.countIncomingEdges] slow incoming edge check", {
       targetNodeId: args.targetNodeId,
@@ -455,7 +448,10 @@ async function countIncomingEdges(
     });
   }
 
-  return incomingCount;
+  return {
+    count: incomingCount,
+    targetHandles: filteredIncomingEdges.map((edge) => edge.targetHandle),
+  };
 }
 
 async function assertConnectionPolicyForTypes(
@@ -464,16 +460,21 @@ async function assertConnectionPolicyForTypes(
     sourceType: Doc<"nodes">["type"];
     targetType: Doc<"nodes">["type"];
     targetNodeId: Id<"nodes">;
+    targetHandle?: string;
     edgeIdToIgnore?: Id<"edges">;
   },
 ): Promise<void> {
+  const targetIncoming = await getIncomingEdgePolicyContext(ctx, {
+    targetNodeId: args.targetNodeId,
+    edgeIdToIgnore: args.edgeIdToIgnore,
+  });
+
   const reason = validateCanvasConnectionPolicy({
     sourceType: args.sourceType,
     targetType: args.targetType,
-    targetIncomingCount: await countIncomingEdges(ctx, {
-      targetNodeId: args.targetNodeId,
-      edgeIdToIgnore: args.edgeIdToIgnore,
-    }),
+    targetIncomingCount: targetIncoming.count,
+    targetHandle: args.targetHandle,
+    targetIncomingHandles: targetIncoming.targetHandles,
   });
 
   if (reason) {
@@ -870,6 +871,8 @@ export const createWithEdgeSplit = mutation({
       sourceType: sourceNode.type,
       targetType: args.type,
       targetIncomingCount: 0,
+      targetHandle: args.newNodeTargetHandle,
+      targetIncomingHandles: [],
     });
     if (firstEdgeReason) {
       throw new Error(getCanvasConnectionValidationMessage(firstEdgeReason));
@@ -879,6 +882,7 @@ export const createWithEdgeSplit = mutation({
       sourceType: args.type,
       targetType: targetNode.type,
       targetNodeId: edge.targetNodeId,
+      targetHandle: args.splitTargetHandle,
       edgeIdToIgnore: args.splitEdgeId,
     });
 
@@ -1008,6 +1012,7 @@ export const splitEdgeAtExistingNode = mutation({
       sourceType: sourceNode.type,
       targetType: middle.type,
       targetNodeId: args.middleNodeId,
+      targetHandle: args.newNodeTargetHandle,
     });
 
     await ctx.db.insert("edges", {
@@ -1022,6 +1027,7 @@ export const splitEdgeAtExistingNode = mutation({
       sourceType: middle.type,
       targetType: targetNode.type,
       targetNodeId: edge.targetNodeId,
+      targetHandle: args.splitTargetHandle,
       edgeIdToIgnore: args.splitEdgeId,
     });
 
@@ -1098,6 +1104,8 @@ export const createWithEdgeFromSource = mutation({
       sourceType: source.type,
       targetType: args.type,
       targetIncomingCount: 0,
+      targetHandle: args.targetHandle,
+      targetIncomingHandles: [],
     });
     if (fromSourceReason) {
       throw new Error(getCanvasConnectionValidationMessage(fromSourceReason));
@@ -1188,6 +1196,7 @@ export const createWithEdgeToTarget = mutation({
       sourceType: args.type,
       targetType: target.type,
       targetNodeId,
+      targetHandle: args.targetHandle,
     });
 
     const normalizedData = normalizeNodeDataForWrite(args.type, args.data);

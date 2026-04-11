@@ -60,6 +60,19 @@ describe("ai error helpers", () => {
     ).toBe("Provider: OpenRouter API error 503: Upstream timeout");
   });
 
+  it("formats structured-output http error with extracted provider details from JSON payload", () => {
+    expect(
+      formatTerminalStatusMessage(
+        new ConvexError({
+          code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
+          status: 502,
+          message:
+            '{"error":{"message":"Provider returned error","code":"provider_error","type":"upstream_error"}}',
+        }),
+      ),
+    ).toBe("Provider: OpenRouter 502: Provider returned error [code=provider_error, type=upstream_error]");
+  });
+
   it("formats structured-output http error without falling back to raw code", () => {
     expect(
       formatTerminalStatusMessage(

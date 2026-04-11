@@ -6,6 +6,7 @@ import {
   shouldFastPathPreviewPipeline,
   type RenderPreviewInput,
 } from "@/lib/canvas-render-preview";
+import type { MixerPreviewState } from "@/lib/canvas-mixer-preview";
 
 const EMPTY_STEPS: RenderPreviewInput["steps"] = [];
 
@@ -13,6 +14,7 @@ type CompareSurfaceProps = {
   finalUrl?: string;
   label?: string;
   previewInput?: RenderPreviewInput;
+  mixerPreviewState?: MixerPreviewState;
   nodeWidth: number;
   clipWidthPercent?: number;
   preferPreview?: boolean;
@@ -22,6 +24,7 @@ export default function CompareSurface({
   finalUrl,
   label,
   previewInput,
+  mixerPreviewState,
   nodeWidth,
   clipWidthPercent,
   preferPreview,
@@ -52,6 +55,7 @@ export default function CompareSurface({
   });
 
   const hasPreview = Boolean(usePreview && previewInput);
+  const hasMixerPreview = mixerPreviewState?.status === "ready";
   const clipStyle =
     typeof clipWidthPercent === "number"
       ? {
@@ -75,6 +79,28 @@ export default function CompareSurface({
           ref={canvasRef}
           className="absolute inset-0 h-full w-full object-contain"
         />
+      ) : hasMixerPreview ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={mixerPreviewState.baseUrl}
+            alt={label ?? "Comparison image"}
+            className="absolute inset-0 h-full w-full object-contain"
+            draggable={false}
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={mixerPreviewState.overlayUrl}
+            alt={label ?? "Comparison image"}
+            className="absolute inset-0 h-full w-full object-contain"
+            draggable={false}
+            style={{
+              mixBlendMode: mixerPreviewState.blendMode,
+              opacity: mixerPreviewState.opacity / 100,
+              transform: `translate(${mixerPreviewState.offsetX}px, ${mixerPreviewState.offsetY}px)`,
+            }}
+          />
+        </>
       ) : null}
 
       {hasPreview ? (

@@ -58,6 +58,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 | `video-prompt` | `content`, `modelId`, `durationSeconds` | KI-Video-Steuer-Node (Eingabe) |
 | `ai-video` | `storageId`, `prompt`, `model`, `modelLabel`, `durationSeconds`, `creditCost`, `generatedAt`, `taskId` (transient) | Generiertes KI-Video (System-Output) |
 | `compare` | `leftNodeId`, `rightNodeId`, `sliderPosition` | Vergleichs-Node |
+| `mixer` | `blendMode`, `opacity`, `offsetX`, `offsetY` | V1 Merge-Control-Node mit pseudo-image Output (kein Storage-Write) |
 | `frame` | `label`, `exportWidth`, `exportHeight`, `backgroundColor` | Artboard |
 | `group` | `label`, `collapsed` | Container-Node |
 | `note` | `content`, `color` | Anmerkung |
@@ -327,7 +328,16 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - Ziel: `ai-image`, `ai-video`, `compare` → Target-Ports
 - `video-prompt` → `ai-video` ✅ (einzige gültige Kombination für Video-Flow)
 - `ai-video` als Source für andere Nodes → ❌ (nur Compare)
+- `mixer` akzeptiert nur `image|asset|ai-image|render` als Source-Typ
+- `mixer` akzeptiert nur Target-Handles `base` und `overlay`
+- `mixer` erlaubt max. eine eingehende Kante pro Handle und max. zwei insgesamt
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
+
+### Mixer V1: Backend-Scope
+
+- `mixer` ist ein Control-Node mit pseudo-image Semantik, nicht mit persistiertem Medien-Output.
+- Keine zusaetzlichen Convex-Tabellen oder Storage-Flows fuer Mixer-Vorschauen.
+- Validierung laeuft client- und serverseitig ueber dieselbe Policy (`validateCanvasConnectionPolicy`); `edges.ts` delegiert darauf fuer Paritaet.
 
 ---
 

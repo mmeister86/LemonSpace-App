@@ -7,7 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   useAuthQuery: vi.fn(),
   resolveUrls: vi.fn(async () => ({})),
+  useTranslations: vi.fn(),
 }));
+
+const translations = {
+  previous: "Zurueck",
+  next: "Weiter",
+  pageOf: "Seite {page} von {totalPages}",
+} as const;
 
 vi.mock("convex/react", () => ({
   useMutation: () => mocks.resolveUrls,
@@ -15,6 +22,10 @@ vi.mock("convex/react", () => ({
 
 vi.mock("@/hooks/use-auth-query", () => ({
   useAuthQuery: (...args: unknown[]) => mocks.useAuthQuery(...args),
+}));
+
+vi.mock("next-intl", () => ({
+  useTranslations: (...args: unknown[]) => mocks.useTranslations(...args),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -49,7 +60,23 @@ describe("MediaLibraryDialog", () => {
   beforeEach(() => {
     mocks.useAuthQuery.mockReset();
     mocks.resolveUrls.mockReset();
+    mocks.useTranslations.mockReset();
     mocks.resolveUrls.mockImplementation(async () => ({}));
+    const translate = (
+      key: keyof typeof translations,
+      values?: Record<string, string | number>,
+    ) => {
+      const template = translations[key] ?? key;
+      if (!values) {
+        return template;
+      }
+
+      return template.replace(/\{(\w+)\}/g, (_, token: string) => {
+        const value = values[token];
+        return value === undefined ? `{${token}}` : String(value);
+      });
+    };
+    mocks.useTranslations.mockReturnValue(translate);
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -86,7 +113,7 @@ describe("MediaLibraryDialog", () => {
     );
   });
 
-  it("renders at most 8 cards and shows Freepik-style pagination footer", async () => {
+  it("renders at most 8 cards and shows localized pagination footer", async () => {
     mocks.useAuthQuery.mockReturnValue({
       items: makeItems(10),
       page: 1,
@@ -102,9 +129,9 @@ describe("MediaLibraryDialog", () => {
     const cards = document.querySelectorAll("img[alt^='Item 1-']");
     expect(cards).toHaveLength(8);
 
-    expect(document.body.textContent).toContain("Previous");
-    expect(document.body.textContent).toContain("Page 1 of 3");
-    expect(document.body.textContent).toContain("Next");
+    expect(document.body.textContent).toContain("Zurueck");
+    expect(document.body.textContent).toContain("Seite 1 von 3");
+    expect(document.body.textContent).toContain("Weiter");
   });
 
   it("updates query args when clicking next and previous", async () => {
@@ -135,7 +162,7 @@ describe("MediaLibraryDialog", () => {
     });
 
     const nextButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Next",
+      (button) => button.textContent?.trim() === "Weiter",
     );
     if (!(nextButton instanceof HTMLButtonElement)) {
       throw new Error("Next button not found");
@@ -149,7 +176,7 @@ describe("MediaLibraryDialog", () => {
     expect(nextCallArgs).toEqual(expect.objectContaining({ page: 2, pageSize: 8 }));
 
     const previousButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Previous",
+      (button) => button.textContent?.trim() === "Zurueck",
     );
     if (!(previousButton instanceof HTMLButtonElement)) {
       throw new Error("Previous button not found");

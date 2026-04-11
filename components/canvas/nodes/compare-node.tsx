@@ -11,6 +11,10 @@ import {
   resolveRenderPreviewInputFromGraph,
   type RenderPreviewInput,
 } from "@/lib/canvas-render-preview";
+import {
+  resolveMixerPreviewFromGraph,
+  type MixerPreviewState,
+} from "@/lib/canvas-mixer-preview";
 
 interface CompareNodeData {
   leftUrl?: string;
@@ -25,6 +29,7 @@ type CompareSideState = {
   finalUrl?: string;
   label?: string;
   previewInput?: RenderPreviewInput;
+  mixerPreviewState?: MixerPreviewState;
   isStaleRenderOutput: boolean;
 };
 
@@ -59,6 +64,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
       const label = finalLabel ?? sourceLabel ?? defaultLabel;
 
       let previewInput: RenderPreviewInput | undefined;
+      let mixerPreviewState: MixerPreviewState | undefined;
       let isStaleRenderOutput = false;
 
       if (sourceNode && sourceNode.type === "render") {
@@ -97,11 +103,36 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
         }
       }
 
-      if (finalUrl) {
-        return { finalUrl, label, previewInput, isStaleRenderOutput };
+      if (sourceNode && sourceNode.type === "mixer") {
+        const mixerPreview = resolveMixerPreviewFromGraph({
+          nodeId: sourceNode.id,
+          graph,
+        });
+
+        if (mixerPreview.status === "ready") {
+          mixerPreviewState = mixerPreview;
+        }
       }
 
-      return { label, previewInput, isStaleRenderOutput };
+      const visibleFinalUrl =
+        sourceNode?.type === "mixer" && mixerPreviewState ? undefined : finalUrl;
+
+      if (visibleFinalUrl) {
+        return {
+          finalUrl: visibleFinalUrl,
+          label,
+          previewInput,
+          mixerPreviewState,
+          isStaleRenderOutput,
+        };
+      }
+
+      return {
+        label,
+        previewInput,
+        mixerPreviewState,
+        isStaleRenderOutput,
+      };
     };
 
     return {
@@ -117,8 +148,16 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
     graph,
   ]);
 
-  const hasLeft = Boolean(resolvedSides.left.finalUrl || resolvedSides.left.previewInput);
-  const hasRight = Boolean(resolvedSides.right.finalUrl || resolvedSides.right.previewInput);
+  const hasLeft = Boolean(
+    resolvedSides.left.finalUrl ||
+      resolvedSides.left.previewInput ||
+      resolvedSides.left.mixerPreviewState,
+  );
+  const hasRight = Boolean(
+    resolvedSides.right.finalUrl ||
+      resolvedSides.right.previewInput ||
+      resolvedSides.right.mixerPreviewState,
+  );
   const hasConnectedRenderInput = useMemo(
     () =>
       incomingEdges.some((edge) => {
@@ -273,6 +312,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
               finalUrl={resolvedSides.right.finalUrl}
               label={resolvedSides.right.label}
               previewInput={resolvedSides.right.previewInput}
+              mixerPreviewState={resolvedSides.right.mixerPreviewState}
               nodeWidth={previewNodeWidth}
               preferPreview={effectiveDisplayMode === "preview"}
             />
@@ -283,6 +323,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
               finalUrl={resolvedSides.left.finalUrl}
               label={resolvedSides.left.label}
               previewInput={resolvedSides.left.previewInput}
+              mixerPreviewState={resolvedSides.left.mixerPreviewState}
               nodeWidth={previewNodeWidth}
               clipWidthPercent={sliderX}
               preferPreview={effectiveDisplayMode === "preview"}

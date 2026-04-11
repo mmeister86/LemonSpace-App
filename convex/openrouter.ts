@@ -151,6 +151,161 @@ function parseStructuredJsonFromMessageContent(contentText: string):
   return { ok: false };
 }
 
+type StructuredOpenRouterErrorInfo = {
+  userMessage: string;
+  providerMessage: string;
+  providerCode: string;
+  providerType: string;
+  rawBodyPreview: string;
+};
+
+type StructuredSchemaDiagnostics = {
+  topLevelType: string;
+  topLevelRequiredCount: number;
+  topLevelPropertyCount: number;
+  schemaBytes: number;
+  messageCount: number;
+  messageLengths: number[];
+  hasAnyOf: boolean;
+  hasOneOf: boolean;
+  hasAllOf: boolean;
+  hasPatternProperties: boolean;
+  hasDynamicAdditionalProperties: boolean;
+};
+
+function walkStructuredSchema(
+  value: unknown,
+  visitor: (node: Record<string, unknown>) => void,
+): void {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      walkStructuredSchema(item, visitor);
+    }
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  visitor(record);
+
+  for (const nested of Object.values(record)) {
+    walkStructuredSchema(nested, visitor);
+  }
+}
+
+function getStructuredSchemaDiagnostics(args: {
+  schema: Record<string, unknown>;
+  messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+}): StructuredSchemaDiagnostics {
+  const topLevelType = typeof args.schema.type === "string" ? args.schema.type : "unknown";
+  const topLevelRequiredCount = Array.isArray(args.schema.required) ? args.schema.required.length : 0;
+  const properties =
+    args.schema.properties && typeof args.schema.properties === "object" && !Array.isArray(args.schema.properties)
+      ? (args.schema.properties as Record<string, unknown>)
+      : null;
+
+  const diagnostics: StructuredSchemaDiagnostics = {
+    topLevelType,
+    topLevelRequiredCount,
+    topLevelPropertyCount: properties ? Object.keys(properties).length : 0,
+    schemaBytes: JSON.stringify(args.schema).length,
+    messageCount: args.messages.length,
+    messageLengths: args.messages.map((message) => message.content.length),
+    hasAnyOf: false,
+    hasOneOf: false,
+    hasAllOf: false,
+    hasPatternProperties: false,
+    hasDynamicAdditionalProperties: false,
+  };
+
+  walkStructuredSchema(args.schema, (node) => {
+    if (Array.isArray(node.anyOf) && node.anyOf.length > 0) {
+      diagnostics.hasAnyOf = true;
+    }
+    if (Array.isArray(node.oneOf) && node.oneOf.length > 0) {
+      diagnostics.hasOneOf = true;
+    }
+    if (Array.isArray(node.allOf) && node.allOf.length > 0) {
+      diagnostics.hasAllOf = true;
+    }
+    if (
+      node.patternProperties &&
+      typeof node.patternProperties === "object" &&
+      !Array.isArray(node.patternProperties)
+    ) {
+      diagnostics.hasPatternProperties = true;
+    }
+    if (
+      node.additionalProperties &&
+      typeof node.additionalProperties === "object" &&
+      !Array.isArray(node.additionalProperties)
+    ) {
+      diagnostics.hasDynamicAdditionalProperties = true;
+    }
+  });
+
+  return diagnostics;
+}
+
+function summarizeStructuredOpenRouterError(errorText: string, status: number): StructuredOpenRouterErrorInfo {
+  const trimmed = errorText.trim();
+  const rawBodyPreview = trimmed.slice(0, 4000);
+
+  let providerMessage = "";
+  let providerCode = "";
+  let providerType = "";
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const record = parsed as Record<string, unknown>;
+        const errorBlock =
+          record.error && typeof record.error === "object" && !Array.isArray(record.error)
+            ? (record.error as Record<string, unknown>)
+            : undefined;
+
+        providerMessage =
+          (typeof errorBlock?.message === "string" ? errorBlock.message.trim() : "") ||
+          (typeof record.message === "string" ? record.message.trim() : "");
+        providerCode =
+          (typeof errorBlock?.code === "string" ? errorBlock.code.trim() : "") ||
+          (typeof record.code === "string" ? record.code.trim() : "");
+        providerType =
+          (typeof errorBlock?.type === "string" ? errorBlock.type.trim() : "") ||
+          (typeof record.type === "string" ? record.type.trim() : "");
+      }
+    } catch {
+      // Keep defaults and fall back to raw text below.
+    }
+  }
+
+  const decorators = [
+    providerCode ? `code=${providerCode}` : "",
+    providerType ? `type=${providerType}` : "",
+  ].filter(Boolean);
+
+  const suffix = decorators.length > 0 ? ` [${decorators.join(", ")}]` : "";
+  const fallbackMessage = rawBodyPreview || `HTTP ${status}`;
+  const userMessage = providerMessage
+    ? `OpenRouter ${status}: ${providerMessage}${suffix}`
+    : fallbackMessage;
+
+  return {
+    userMessage,
+    providerMessage,
+    providerCode,
+    providerType,
+    rawBodyPreview,
+  };
+}
+
 export async function generateStructuredObjectViaOpenRouter<T>(
   apiKey: string,
   args: {
@@ -163,6 +318,17 @@ export async function generateStructuredObjectViaOpenRouter<T>(
     schema: Record<string, unknown>;
   },
 ): Promise<T> {
+  const schemaDiagnostics = getStructuredSchemaDiagnostics({
+    schema: args.schema,
+    messages: args.messages,
+  });
+
+  console.info("[openrouter][structured] request", {
+    model: args.model,
+    schemaName: args.schemaName,
+    ...schemaDiagnostics,
+  });
+
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
@@ -188,10 +354,25 @@ export async function generateStructuredObjectViaOpenRouter<T>(
 
   if (!response.ok) {
     const errorText = await response.text();
+    const errorInfo = summarizeStructuredOpenRouterError(errorText, response.status);
+    console.error("[openrouter][structured] non-ok response", {
+      model: args.model,
+      schemaName: args.schemaName,
+      status: response.status,
+      providerMessage: errorInfo.providerMessage || undefined,
+      providerCode: errorInfo.providerCode || undefined,
+      providerType: errorInfo.providerType || undefined,
+      rawBodyPreview: errorInfo.rawBodyPreview,
+    });
+
     throw new ConvexError({
       code: "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR",
       status: response.status,
-      message: errorText,
+      message: errorInfo.userMessage,
+      providerMessage: errorInfo.providerMessage || undefined,
+      providerCode: errorInfo.providerCode || undefined,
+      providerType: errorInfo.providerType || undefined,
+      rawBodyPreview: errorInfo.rawBodyPreview,
     });
   }
 
@@ -222,6 +403,11 @@ export async function generateStructuredObjectViaOpenRouter<T>(
 
   return parsedContent.value as T;
 }
+
+export const __testables = {
+  getStructuredSchemaDiagnostics,
+  summarizeStructuredOpenRouterError,
+};
 
 export interface OpenRouterModel {
   id: string;

@@ -32,6 +32,7 @@ const translations: Record<string, string> = {
   "agentOutputNode.sectionsLabel": "Sections",
   "agentOutputNode.metadataLabel": "Metadata",
   "agentOutputNode.qualityChecksLabel": "Quality checks",
+  "agentOutputNode.detailsLabel": "Details",
   "agentOutputNode.previewLabel": "Preview",
   "agentOutputNode.previewFallback": "No preview available",
   "agentOutputNode.emptyValue": "-",
@@ -76,7 +77,7 @@ describe("AgentOutputNode", () => {
     root = null;
   });
 
-  it("renders structured output with artifact meta, sections, metadata, quality checks, and preview fallback", async () => {
+  it("renders structured output with deliverable first and default-collapsed details", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -134,6 +135,65 @@ describe("AgentOutputNode", () => {
     expect(container.querySelector('[data-testid="agent-output-metadata"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="agent-output-quality-checks"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="agent-output-preview"]')).not.toBeNull();
+    const details = container.querySelector('[data-testid="agent-output-details"]') as
+      | HTMLDetailsElement
+      | null;
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+  });
+
+  it("prioritizes social caption sections and moves secondary notes into details", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-caption-pack",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Caption Pack",
+            channel: "instagram-feed",
+            artifactType: "social-caption-pack",
+            sections: [
+              { id: "hook", label: "Hook", content: "Start strong" },
+              { id: "format", label: "Format note", content: "Best as 4:5" },
+              { id: "cta", label: "CTA", content: "Save this post" },
+              { id: "hashtags", label: "Hashtags", content: "#buildinpublic #launch" },
+              { id: "caption", label: "Caption", content: "Launch day is here" },
+              { id: "assumptions", label: "Assumptions", content: "Audience is founder-led" },
+            ],
+            qualityChecks: ["channel-fit"],
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const primarySections = container.querySelector('[data-testid="agent-output-sections"]');
+    expect(primarySections).not.toBeNull();
+    const primaryText = primarySections?.textContent ?? "";
+    expect(primaryText).toContain("Caption");
+    expect(primaryText).toContain("Hashtags");
+    expect(primaryText).toContain("CTA");
+    expect(primaryText.indexOf("Caption")).toBeLessThan(primaryText.indexOf("Hashtags"));
+    expect(primaryText.indexOf("Hashtags")).toBeLessThan(primaryText.indexOf("CTA"));
+    expect(primaryText).not.toContain("Format note");
+    expect(primaryText).not.toContain("Assumptions");
+
+    const secondarySections = container.querySelector('[data-testid="agent-output-secondary-sections"]');
+    expect(secondarySections).not.toBeNull();
+    expect(secondarySections?.textContent).toContain("Format note");
+    expect(secondarySections?.textContent).toContain("Assumptions");
   });
 
   it("renders parseable json body in a pretty-printed code block", async () => {

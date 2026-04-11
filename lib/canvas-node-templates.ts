@@ -44,6 +44,18 @@ export const CANVAS_NODE_TEMPLATES = [
     },
   },
   {
+    type: "mixer",
+    label: "Mixer / Merge",
+    width: 360,
+    height: 320,
+    defaultData: {
+      blendMode: "normal",
+      opacity: 100,
+      offsetX: 0,
+      offsetY: 0,
+    },
+  },
+  {
     type: "note",
     label: "Notiz",
     width: 220,

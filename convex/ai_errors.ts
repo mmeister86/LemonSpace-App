@@ -14,6 +14,47 @@ interface ErrorData {
   [key: string]: unknown;
 }
 
+function trimText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseStructuredProviderErrorMessage(raw: string): {
+  message: string;
+  code: string;
+  type: string;
+} | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const errorBlock =
+      record.error && typeof record.error === "object" && !Array.isArray(record.error)
+        ? (record.error as Record<string, unknown>)
+        : undefined;
+
+    const message =
+      trimText(errorBlock?.message) || trimText(record.message) || trimText(errorBlock?.detail);
+    const code = trimText(errorBlock?.code) || trimText(record.code);
+    const type = trimText(errorBlock?.type) || trimText(record.type);
+
+    if (!message) {
+      return null;
+    }
+
+    return { message, code, type };
+  } catch {
+    return null;
+  }
+}
+
 export function getErrorCode(error: unknown): string | undefined {
   if (error instanceof ConvexError) {
     const data = error.data as ErrorData;
@@ -166,13 +207,34 @@ export function formatTerminalStatusMessage(error: unknown): string {
     typeof convexData?.status === "number" && Number.isFinite(convexData.status)
       ? convexData.status
       : null;
+  const structuredProviderFromMessage = parseStructuredProviderErrorMessage(convexDataMessage);
+
+  const structuredProviderMessageFromData =
+    trimText(convexData?.providerMessage) ||
+    structuredProviderFromMessage?.message;
+  const structuredProviderCodeFromData =
+    trimText(convexData?.providerCode) || structuredProviderFromMessage?.code;
+  const structuredProviderTypeFromData =
+    trimText(convexData?.providerType) || structuredProviderFromMessage?.type;
+
+  const structuredProviderDecorators = [
+    structuredProviderCodeFromData ? `code=${structuredProviderCodeFromData}` : "",
+    structuredProviderTypeFromData ? `type=${structuredProviderTypeFromData}` : "",
+  ].filter(Boolean);
+
+  const structuredProviderSuffix =
+    structuredProviderDecorators.length > 0
+      ? ` [${structuredProviderDecorators.join(", ")}]`
+      : "";
 
   const message =
     code === "OPENROUTER_STRUCTURED_OUTPUT_HTTP_ERROR"
-      ? convexDataMessage ||
-        (convexDataStatus !== null
-          ? `HTTP ${convexDataStatus}`
-          : "Anfrage fehlgeschlagen")
+      ? structuredProviderMessageFromData
+        ? `${convexDataStatus !== null ? `OpenRouter ${convexDataStatus}: ` : ""}${structuredProviderMessageFromData}${structuredProviderSuffix}`
+        : convexDataMessage ||
+          (convexDataStatus !== null
+            ? `HTTP ${convexDataStatus}`
+            : "Anfrage fehlgeschlagen")
       : errorMessage(error).trim() || "Generation failed";
 
   const { category } =

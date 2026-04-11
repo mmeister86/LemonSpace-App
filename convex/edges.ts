@@ -8,37 +8,41 @@ import {
 } from "../lib/canvas-connection-policy";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+const MIXER_HANDLES = new Set(["base", "overlay"] as const);
 
-async function countIncomingEdges(
+function normalizeMixerHandle(handle: string | undefined): "base" | "overlay" | null {
+  if (handle == null || handle === "" || handle === "null") {
+    return "base";
+  }
+
+  if (MIXER_HANDLES.has(handle as "base" | "overlay")) {
+    return handle as "base" | "overlay";
+  }
+
+  return null;
+}
+
+async function getIncomingEdgePolicyContext(
   ctx: MutationCtx,
   args: {
     targetNodeId: Id<"nodes">;
     edgeIdToIgnore?: Id<"edges">;
   },
-): Promise<number> {
+): Promise<{ count: number; targetHandles: Array<string | undefined> }> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
     .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
 
   const checkStartedAt = Date.now();
-  const incomingEdges = await (
-    args.edgeIdToIgnore
-      ? incomingEdgesQuery.take(2)
-      : incomingEdgesQuery.first()
-  );
+  const incomingEdges = await incomingEdgesQuery.take(3);
   const checkDurationMs = Date.now() - checkStartedAt;
 
-  const incomingCount = Array.isArray(incomingEdges)
-    ? incomingEdges.filter((edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore).length
-    : incomingEdges !== null && incomingEdges._id !== args.edgeIdToIgnore
-      ? 1
-      : 0;
+  const filteredIncomingEdges = incomingEdges.filter(
+    (edge: Doc<"edges">) => edge._id !== args.edgeIdToIgnore,
+  );
+  const incomingCount = filteredIncomingEdges.length;
   if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
-    const inspected = Array.isArray(incomingEdges)
-      ? incomingEdges.length
-      : incomingEdges === null
-        ? 0
-        : 1;
+    const inspected = incomingEdges.length;
 
     console.warn("[edges.assertTargetAllowsIncomingEdge] slow incoming edge check", {
       targetNodeId: args.targetNodeId,
@@ -48,7 +52,10 @@ async function countIncomingEdges(
     });
   }
 
-  return incomingCount;
+  return {
+    count: incomingCount,
+    targetHandles: filteredIncomingEdges.map((edge) => edge.targetHandle),
+  };
 }
 
 async function assertConnectionPolicy(
@@ -56,6 +63,7 @@ async function assertConnectionPolicy(
   args: {
     sourceNodeId: Id<"nodes">;
     targetNodeId: Id<"nodes">;
+    targetHandle?: string;
     edgeIdToIgnore?: Id<"edges">;
   },
 ): Promise<void> {
@@ -65,7 +73,7 @@ async function assertConnectionPolicy(
     throw new Error("Source or target node not found");
   }
 
-  const targetIncomingCount = await countIncomingEdges(ctx, {
+  const targetIncoming = await getIncomingEdgePolicyContext(ctx, {
     targetNodeId: args.targetNodeId,
     edgeIdToIgnore: args.edgeIdToIgnore,
   });
@@ -73,7 +81,9 @@ async function assertConnectionPolicy(
   const reason = validateCanvasConnectionPolicy({
     sourceType: sourceNode.type,
     targetType: targetNode.type,
-    targetIncomingCount,
+    targetIncomingCount: targetIncoming.count,
+    targetHandle: args.targetHandle,
+    targetIncomingHandles: targetIncoming.targetHandles,
   });
 
   if (reason) {
@@ -83,7 +93,7 @@ async function assertConnectionPolicy(
       edgeIdToIgnore: args.edgeIdToIgnore,
       sourceType: sourceNode.type,
       targetType: targetNode.type,
-      targetIncomingCount,
+      targetIncomingCount: targetIncoming.count,
       reason,
     });
     throw new Error(getCanvasConnectionValidationMessage(reason));
@@ -151,6 +161,7 @@ export const create = mutation({
     targetNodeId: v.id("nodes"),
     sourceHandle: v.optional(v.string()),
     targetHandle: v.optional(v.string()),
+    edgeIdToIgnore: v.optional(v.id("edges")),
     clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -207,9 +218,23 @@ export const create = mutation({
       throw new Error("Cannot connect a node to itself");
     }
 
+    const edgeToIgnore = args.edgeIdToIgnore
+      ? await ctx.db.get(args.edgeIdToIgnore)
+      : null;
+    if (args.edgeIdToIgnore) {
+      if (!edgeToIgnore) {
+        throw new Error("Edge to ignore not found");
+      }
+      if (edgeToIgnore.canvasId !== args.canvasId) {
+        throw new Error("Edge to ignore must belong to the same canvas");
+      }
+    }
+
     await assertConnectionPolicy(ctx, {
       sourceNodeId: args.sourceNodeId,
       targetNodeId: args.targetNodeId,
+      targetHandle: args.targetHandle,
+      edgeIdToIgnore: args.edgeIdToIgnore,
     });
 
     const edgeId = await ctx.db.insert("edges", {
@@ -219,6 +244,10 @@ export const create = mutation({
       sourceHandle: args.sourceHandle,
       targetHandle: args.targetHandle,
     });
+
+    if (edgeToIgnore) {
+      await ctx.db.delete(edgeToIgnore._id);
+    }
 
     console.info("[canvas.updatedAt] touch", {
       canvasId: args.canvasId,
@@ -239,6 +268,54 @@ export const create = mutation({
       });
     }
     return edgeId;
+  },
+});
+
+export const swapMixerInputs = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    edgeId: v.id("edges"),
+    otherEdgeId: v.id("edges"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    const canvas = await ctx.db.get(args.canvasId);
+    if (!canvas || canvas.ownerId !== user.userId) {
+      throw new Error("Canvas not found");
+    }
+
+    if (args.edgeId === args.otherEdgeId) {
+      throw new Error("Edge IDs must be different");
+    }
+
+    const edge = await ctx.db.get(args.edgeId);
+    const otherEdge = await ctx.db.get(args.otherEdgeId);
+    if (!edge || !otherEdge) {
+      throw new Error("Edge not found");
+    }
+
+    if (edge.canvasId !== args.canvasId || otherEdge.canvasId !== args.canvasId) {
+      throw new Error("Edges must belong to the same canvas");
+    }
+
+    if (edge.targetNodeId !== otherEdge.targetNodeId) {
+      throw new Error("Edges must target the same mixer node");
+    }
+
+    const mixerNode = await ctx.db.get(edge.targetNodeId);
+    if (!mixerNode || mixerNode.canvasId !== args.canvasId || mixerNode.type !== "mixer") {
+      throw new Error("Mixer node not found");
+    }
+
+    const edgeHandle = normalizeMixerHandle(edge.targetHandle);
+    const otherEdgeHandle = normalizeMixerHandle(otherEdge.targetHandle);
+    if (!edgeHandle || !otherEdgeHandle || edgeHandle === otherEdgeHandle) {
+      throw new Error("Mixer swap requires one base and one overlay edge");
+    }
+
+    await ctx.db.patch(edge._id, { targetHandle: otherEdgeHandle });
+    await ctx.db.patch(otherEdge._id, { targetHandle: edgeHandle });
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
   },
 });
 

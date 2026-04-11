@@ -50,6 +50,23 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "ai-video",
 ]);
 
+const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "ai-image",
+  "render",
+]);
+
+const MIXER_TARGET_HANDLES = new Set<string>(["base", "overlay"]);
+
+function normalizeMixerHandle(handle: string | null | undefined): string {
+  if (handle == null || handle === "" || handle === "null") {
+    return "base";
+  }
+
+  return handle;
+}
+
 const ADJUSTMENT_DISALLOWED_TARGET_TYPES = new Set<string>(["prompt", "ai-image"]);
 
 export type CanvasConnectionValidationReason =
@@ -66,14 +83,52 @@ export type CanvasConnectionValidationReason =
   | "adjustment-target-forbidden"
   | "render-source-invalid"
   | "agent-source-invalid"
-  | "agent-output-source-invalid";
+  | "agent-output-source-invalid"
+  | "mixer-source-invalid"
+  | "mixer-target-handle-invalid"
+  | "mixer-handle-incoming-limit"
+  | "mixer-incoming-limit";
 
 export function validateCanvasConnectionPolicy(args: {
   sourceType: string;
   targetType: string;
   targetIncomingCount: number;
+  targetHandle?: string | null;
+  targetIncomingHandles?: Array<string | null | undefined>;
 }): CanvasConnectionValidationReason | null {
-  const { sourceType, targetType, targetIncomingCount } = args;
+  const {
+    sourceType,
+    targetType,
+    targetIncomingCount,
+    targetHandle,
+    targetIncomingHandles,
+  } = args;
+
+  if (targetType === "mixer") {
+    if (!MIXER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "mixer-source-invalid";
+    }
+
+    const normalizedTargetHandle = normalizeMixerHandle(targetHandle);
+    if (!MIXER_TARGET_HANDLES.has(normalizedTargetHandle)) {
+      return "mixer-target-handle-invalid";
+    }
+
+    if (targetIncomingCount >= 2) {
+      return "mixer-incoming-limit";
+    }
+
+    const normalizedIncomingHandles = (targetIncomingHandles ?? []).map((handle) =>
+      normalizeMixerHandle(handle),
+    );
+    const incomingOnHandle = normalizedIncomingHandles.filter(
+      (handle) => handle === normalizedTargetHandle,
+    ).length;
+
+    if (incomingOnHandle >= 1) {
+      return "mixer-handle-incoming-limit";
+    }
+  }
 
   if (targetType === "agent-output" && sourceType !== "agent") {
     return "agent-output-source-invalid";
@@ -159,6 +214,14 @@ export function getCanvasConnectionValidationMessage(
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
     case "agent-output-source-invalid":
       return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
+    case "mixer-source-invalid":
+      return "Mixer akzeptiert nur Bild-, Asset-, KI-Bild- oder Render-Input.";
+    case "mixer-target-handle-invalid":
+      return "Mixer akzeptiert nur die Ziel-Handles 'base' und 'overlay'.";
+    case "mixer-handle-incoming-limit":
+      return "Jeder Mixer-Handle akzeptiert nur eine eingehende Verbindung.";
+    case "mixer-incoming-limit":
+      return "Mixer-Nodes erlauben maximal zwei eingehende Verbindungen.";
     default:
       return "Verbindung ist fuer diese Node-Typen nicht erlaubt.";
   }

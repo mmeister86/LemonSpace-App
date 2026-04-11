@@ -18,6 +18,7 @@ import RenderNode from "./nodes/render-node";
 import CropNode from "./nodes/crop-node";
 import AgentNode from "./nodes/agent-node";
 import AgentOutputNode from "./nodes/agent-output-node";
+import MixerNode from "./nodes/mixer-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -46,5 +47,6 @@ export const nodeTypes = {
   crop: CropNode,
   render: RenderNode,
   agent: AgentNode,
+  mixer: MixerNode,
   "agent-output": AgentOutputNode,
 } as const;

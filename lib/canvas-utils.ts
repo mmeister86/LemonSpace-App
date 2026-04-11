@@ -231,6 +231,7 @@ export const NODE_HANDLE_MAP: Record<
   crop: { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
+  mixer: { source: "mixer-out", target: "base" },
   "agent-output": { target: "agent-output-in" },
 };
 
@@ -290,6 +291,16 @@ export const NODE_DEFAULTS: Record<
       clarificationQuestions: [],
       clarificationAnswers: {},
       outputNodeIds: [],
+    },
+  },
+  mixer: {
+    width: 360,
+    height: 320,
+    data: {
+      blendMode: "normal",
+      opacity: 100,
+      offsetX: 0,
+      offsetY: 0,
     },
   },
   "agent-output": {

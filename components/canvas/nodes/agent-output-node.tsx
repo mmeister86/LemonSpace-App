@@ -20,6 +20,7 @@ type AgentOutputNodeData = {
     content?: string;
   }>;
   metadata?: Record<string, string | string[] | unknown>;
+  metadataLabels?: Record<string, string | unknown>;
   qualityChecks?: string[];
   outputType?: string;
   body?: string;
@@ -102,6 +103,18 @@ function normalizeMetadata(raw: AgentOutputNodeData["metadata"]) {
   return entries;
 }
 
+function resolveMetadataLabel(
+  key: string,
+  rawLabels: AgentOutputNodeData["metadataLabels"],
+): string {
+  if (!rawLabels || typeof rawLabels !== "object" || Array.isArray(rawLabels)) {
+    return key;
+  }
+
+  const candidate = rawLabels[key];
+  return typeof candidate === "string" && candidate.trim() !== "" ? candidate.trim() : key;
+}
+
 function normalizeQualityChecks(raw: AgentOutputNodeData["qualityChecks"]): string[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -111,6 +124,66 @@ function normalizeQualityChecks(raw: AgentOutputNodeData["qualityChecks"]): stri
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim())
     .filter((value) => value !== "");
+}
+
+function normalizeSectionToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function partitionSections(
+  sections: Array<{ id: string; label: string; content: string }>,
+  artifactType: string,
+) {
+  const artifactToken = normalizeSectionToken(artifactType);
+  const priorityTokens = artifactToken === "socialcaptionpack" ? ["caption", "hashtags", "cta"] : [];
+  const isSecondaryNote = (label: string) => {
+    const token = normalizeSectionToken(label);
+    return token.includes("formatnote") || token.includes("assumption");
+  };
+
+  const primaryWithIndex: Array<{ section: (typeof sections)[number]; index: number }> = [];
+  const secondary: Array<{ id: string; label: string; content: string }> = [];
+
+  sections.forEach((section, index) => {
+    if (isSecondaryNote(section.label)) {
+      secondary.push(section);
+      return;
+    }
+    primaryWithIndex.push({ section, index });
+  });
+
+  if (priorityTokens.length === 0) {
+    return {
+      primary: primaryWithIndex.map((entry) => entry.section),
+      secondary,
+    };
+  }
+
+  const priorityIndexByToken = new Map(priorityTokens.map((token, index) => [token, index]));
+  const primary = [...primaryWithIndex]
+    .sort((left, right) => {
+      const leftToken = normalizeSectionToken(left.section.label);
+      const rightToken = normalizeSectionToken(right.section.label);
+      const leftPriority = priorityIndexByToken.get(leftToken);
+      const rightPriority = priorityIndexByToken.get(rightToken);
+
+      if (leftPriority !== undefined && rightPriority !== undefined) {
+        return leftPriority - rightPriority;
+      }
+      if (leftPriority !== undefined) {
+        return -1;
+      }
+      if (rightPriority !== undefined) {
+        return 1;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.section);
+
+  return {
+    primary,
+    secondary,
+  };
 }
 
 export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutputNodeType>) {
@@ -140,14 +213,23 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
   const body = nodeData.body ?? "";
   const artifactType = nodeData.artifactType ?? nodeData.outputType ?? "";
   const sections = normalizeSections(nodeData.sections);
+  const { primary: primarySections, secondary: secondarySections } = partitionSections(
+    sections,
+    artifactType,
+  );
   const metadataEntries = normalizeMetadata(nodeData.metadata);
+  const metadataLabels = nodeData.metadataLabels;
   const qualityChecks = normalizeQualityChecks(nodeData.qualityChecks);
   const previewText =
     typeof nodeData.previewText === "string" && nodeData.previewText.trim() !== ""
       ? nodeData.previewText.trim()
-      : sections[0]?.content ?? "";
+      : primarySections[0]?.content ?? sections[0]?.content ?? "";
   const hasStructuredOutput =
     sections.length > 0 || metadataEntries.length > 0 || qualityChecks.length > 0 || previewText !== "";
+  const hasMetaValues =
+    (typeof nodeData.channel === "string" && nodeData.channel.trim() !== "") || artifactType.trim() !== "";
+  const hasDetailsContent =
+    secondarySections.length > 0 || metadataEntries.length > 0 || qualityChecks.length > 0 || hasMetaValues;
   const formattedJsonBody = isSkeleton ? null : tryFormatJsonBody(body);
 
   return (
@@ -186,24 +268,6 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
             ) : null}
         </header>
 
-        <section
-          data-testid="agent-output-meta-strip"
-          className="grid grid-cols-2 gap-2 rounded-md border border-border/70 bg-muted/30 px-2 py-1.5"
-        >
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("channelLabel")}</p>
-            <p className="truncate text-xs font-medium text-foreground/90" title={nodeData.channel}>
-              {nodeData.channel ?? t("emptyValue")}
-            </p>
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("artifactTypeLabel")}</p>
-            <p className="truncate text-xs font-medium text-foreground/90" title={artifactType}>
-              {artifactType || t("emptyValue")}
-            </p>
-          </div>
-        </section>
-
         {isSkeleton ? (
           <section className="space-y-1">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -218,11 +282,20 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
           </section>
         ) : hasStructuredOutput ? (
           <>
-            {sections.length > 0 ? (
+            {previewText !== "" ? (
+              <section data-testid="agent-output-preview" className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("previewLabel")}</p>
+                <div className="max-h-40 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
+                  <p className="whitespace-pre-wrap break-words">{previewText}</p>
+                </div>
+              </section>
+            ) : null}
+
+            {primarySections.length > 0 ? (
               <section data-testid="agent-output-sections" className="space-y-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("sectionsLabel")}</p>
                 <div className="space-y-1.5">
-                  {sections.map((section) => (
+                  {primarySections.map((section) => (
                     <div key={section.id} className="rounded-md border border-border/70 bg-background/70 p-2">
                       <p className="text-[11px] font-semibold text-foreground/90">{section.label}</p>
                       <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90">
@@ -234,41 +307,77 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
               </section>
             ) : null}
 
-            {metadataEntries.length > 0 ? (
-              <section data-testid="agent-output-metadata" className="space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("metadataLabel")}</p>
-                <div className="space-y-1 text-[12px] text-foreground/90">
-                  {metadataEntries.map(([key, value]) => (
-                    <p key={key} className="break-words">
-                      <span className="font-semibold">{key}</span>: {value}
-                    </p>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {qualityChecks.length > 0 ? (
-              <section data-testid="agent-output-quality-checks" className="space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("qualityChecksLabel")}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {qualityChecks.map((qualityCheck) => (
-                    <span
-                      key={qualityCheck}
-                      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200"
+            {hasDetailsContent ? (
+              <details data-testid="agent-output-details" className="rounded-md border border-border/70 bg-muted/30 px-2 py-1.5">
+                <summary className="cursor-pointer text-[11px] font-semibold text-foreground/80">{t("detailsLabel")}</summary>
+                <div className="mt-2 space-y-2">
+                  {hasMetaValues ? (
+                    <section
+                      data-testid="agent-output-meta-strip"
+                      className="grid grid-cols-2 gap-2 rounded-md border border-border/70 bg-background/70 px-2 py-1.5"
                     >
-                      {qualityCheck}
-                    </span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("channelLabel")}</p>
+                        <p className="truncate text-xs font-medium text-foreground/90" title={nodeData.channel}>
+                          {nodeData.channel ?? t("emptyValue")}
+                        </p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("artifactTypeLabel")}</p>
+                        <p className="truncate text-xs font-medium text-foreground/90" title={artifactType}>
+                          {artifactType || t("emptyValue")}
+                        </p>
+                      </div>
+                    </section>
+                  ) : null}
 
-            <section data-testid="agent-output-preview" className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("previewLabel")}</p>
-              <div className="max-h-40 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
-                <p className="whitespace-pre-wrap break-words">{previewText || t("previewFallback")}</p>
-              </div>
-            </section>
+                  {secondarySections.length > 0 ? (
+                    <section data-testid="agent-output-secondary-sections" className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("sectionsLabel")}</p>
+                      <div className="space-y-1.5">
+                        {secondarySections.map((section) => (
+                          <div key={section.id} className="rounded-md border border-border/70 bg-background/70 p-2">
+                            <p className="text-[11px] font-semibold text-foreground/90">{section.label}</p>
+                            <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90">
+                              {section.content}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {metadataEntries.length > 0 ? (
+                    <section data-testid="agent-output-metadata" className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("metadataLabel")}</p>
+                      <div className="space-y-1 text-[12px] text-foreground/90">
+                        {metadataEntries.map(([key, value]) => (
+                          <p key={key} className="break-words">
+                            <span className="font-semibold">{resolveMetadataLabel(key, metadataLabels)}</span>: {value}
+                          </p>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {qualityChecks.length > 0 ? (
+                    <section data-testid="agent-output-quality-checks" className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("qualityChecksLabel")}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {qualityChecks.map((qualityCheck) => (
+                          <span
+                            key={qualityCheck}
+                            className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200"
+                          >
+                            {qualityCheck}
+                          </span>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
           </>
         ) : formattedJsonBody ? (
           <section className="space-y-1">

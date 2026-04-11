@@ -223,4 +223,16 @@ describe("canvas connection policy", () => {
       getCanvasConnectionValidationMessage("agent-output-source-invalid"),
     ).toBe("Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.");
   });
+
+  it("treats legacy mixer handles 'null' and empty string as base occupancy", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetIncomingCount: 1,
+        targetHandle: "base",
+        targetIncomingHandles: ["null", ""],
+      }),
+    ).toBe("mixer-handle-incoming-limit");
+  });
 });

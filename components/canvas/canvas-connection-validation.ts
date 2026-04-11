@@ -4,6 +4,7 @@ import {
   validateCanvasConnectionPolicy,
   type CanvasConnectionValidationReason,
 } from "@/lib/canvas-connection-policy";
+import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 
 import { isOptimisticEdgeId } from "./canvas-helpers";
 
@@ -27,6 +28,7 @@ export function validateCanvasConnection(
     sourceType: sourceNode.type ?? "",
     targetType: targetNode.type ?? "",
     targetNodeId: connection.target,
+    targetHandle: connection.targetHandle,
     edges,
     edgeToReplaceId,
     includeOptimisticEdges: options?.includeOptimisticEdges,
@@ -37,22 +39,25 @@ export function validateCanvasConnectionByType(args: {
   sourceType: string;
   targetType: string;
   targetNodeId: string;
+  targetHandle?: string | null;
   edges: RFEdge[];
   edgeToReplaceId?: string;
   includeOptimisticEdges?: boolean;
 }): CanvasConnectionValidationReason | null {
-  const targetIncomingCount = args.edges.filter(
+  const targetIncomingEdges = args.edges.filter(
     (edge) =>
       edge.className !== "temp" &&
       (args.includeOptimisticEdges || !isOptimisticEdgeId(edge.id)) &&
       edge.target === args.targetNodeId &&
       edge.id !== args.edgeToReplaceId,
-  ).length;
+  );
 
   return validateCanvasConnectionPolicy({
     sourceType: args.sourceType,
     targetType: args.targetType,
-    targetIncomingCount,
+    targetIncomingCount: targetIncomingEdges.length,
+    targetHandle: args.targetHandle,
+    targetIncomingHandles: targetIncomingEdges.map((edge) => edge.targetHandle),
   });
 }
 
@@ -69,17 +74,21 @@ export function validateCanvasEdgeSplit(args: {
     return "unknown-node";
   }
 
+  const middleNodeHandles = NODE_HANDLE_MAP[args.middleNode.type ?? ""];
+
   return (
     validateCanvasConnectionByType({
       sourceType: sourceNode.type ?? "",
       targetType: args.middleNode.type ?? "",
       targetNodeId: args.middleNode.id,
+      targetHandle: middleNodeHandles?.target,
       edges: args.edges,
     }) ??
     validateCanvasConnectionByType({
       sourceType: args.middleNode.type ?? "",
       targetType: targetNode.type ?? "",
       targetNodeId: targetNode.id,
+      targetHandle: args.splitEdge.targetHandle,
       edges: args.edges,
       edgeToReplaceId: args.splitEdge.id,
     })

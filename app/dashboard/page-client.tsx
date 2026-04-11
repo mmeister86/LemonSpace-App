@@ -60,12 +60,16 @@ function getInitials(nameOrEmail: string) {
   return normalized.slice(0, 2).toUpperCase();
 }
 
-function formatDimensions(width: number | undefined, height: number | undefined): string {
+function formatDimensions(
+  width: number | undefined,
+  height: number | undefined,
+  unknownSizeLabel: string,
+): string {
   if (typeof width === "number" && typeof height === "number") {
     return `${width} x ${height}px`;
   }
 
-  return "Größe unbekannt";
+  return unknownSizeLabel;
 }
 
 function getMediaItemKey(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
@@ -88,32 +92,48 @@ function getMediaItemKey(item: NonNullable<ReturnType<typeof useDashboardSnapsho
   return `${item.kind}:${item.createdAt}:${item.filename ?? "unnamed"}`;
 }
 
-function getMediaItemMeta(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
+function getMediaItemMeta(
+  item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number],
+  labels: {
+    unknownSize: string;
+    videoFile: string;
+  },
+): string {
   if (item.kind === "video") {
-    return "Videodatei";
+    return labels.videoFile;
   }
 
-  return formatDimensions(item.width, item.height);
+  return formatDimensions(item.width, item.height, labels.unknownSize);
 }
 
-function getMediaItemLabel(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
+function getMediaItemLabel(
+  item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number],
+  labels: {
+    untitledImage: string;
+    untitledVideo: string;
+    untitledAsset: string;
+  },
+): string {
   if (item.filename) {
     return item.filename;
   }
 
   if (item.kind === "video") {
-    return "Unbenanntes Video";
+    return labels.untitledVideo;
   }
 
   if (item.kind === "asset") {
-    return "Unbenanntes Asset";
+    return labels.untitledAsset;
   }
 
-  return "Unbenanntes Bild";
+  return labels.untitledImage;
 }
 
 export function DashboardPageClient() {
   const t = useTranslations("toasts");
+  const tMediaCommon = useTranslations("mediaLibrary.common");
+  const tMediaDashboard = useTranslations("mediaLibrary.dashboard");
+  const tMediaDialog = useTranslations("mediaLibrary.dialog");
   const router = useRouter();
   const welcomeToastSentRef = useRef(false);
   const { theme = "system", setTheme } = useTheme();
@@ -183,7 +203,7 @@ export function DashboardPageClient() {
         }
         setMediaPreviewUrlMap({});
         setMediaPreviewError(
-          error instanceof Error ? error.message : "Vorschau konnte nicht geladen werden.",
+          error instanceof Error ? error.message : tMediaDialog("urlResolveError"),
         );
       } finally {
         if (!isCancelled) {
@@ -197,7 +217,7 @@ export function DashboardPageClient() {
     return () => {
       isCancelled = true;
     };
-  }, [dashboardSnapshot, mediaPreviewStorageIds, resolveMediaPreviewUrls]);
+  }, [dashboardSnapshot, mediaPreviewStorageIds, resolveMediaPreviewUrls, tMediaDialog]);
 
   const handleSignOut = async () => {
     toast.info(t("auth.signedOut"));
@@ -373,7 +393,7 @@ export function DashboardPageClient() {
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium">
               <ImageIcon className="size-3.5 text-muted-foreground" />
-              Mediathek
+              {tMediaDashboard("sectionTitle")}
             </div>
             <Button
               variant="ghost"
@@ -383,30 +403,36 @@ export function DashboardPageClient() {
               onClick={() => setIsMediaLibraryDialogOpen(true)}
               disabled={!hasClientMounted || isSessionPending || !session?.user}
             >
-              Ganze Mediathek öffnen
+              {tMediaDashboard("openAll")}
             </Button>
           </div>
 
           {dashboardSnapshot === undefined ? (
             <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Mediathek wird geladen...
+              {tMediaDashboard("loading")}
             </div>
           ) : mediaPreviewError ? (
             <div className="rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Mediathek-Vorschau konnte nicht geladen werden. {mediaPreviewError}
+              {tMediaDashboard("previewError", { error: mediaPreviewError })}
             </div>
           ) : !mediaPreview || mediaPreview.length === 0 ? (
             <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Noch keine Medien vorhanden. Sobald du Bilder hochlädst oder generierst, werden
-              sie hier angezeigt.
+              {tMediaDashboard("empty")}
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-4">
               {(mediaPreview ?? []).map((item) => {
                 const itemKey = getMediaItemKey(item);
                 const previewUrl = resolveMediaPreviewUrl(item, mediaPreviewUrlMap);
-                const itemLabel = getMediaItemLabel(item);
-                const itemMeta = getMediaItemMeta(item);
+                const itemLabel = getMediaItemLabel(item, {
+                  untitledImage: tMediaCommon("untitledImage"),
+                  untitledVideo: tMediaCommon("untitledVideo"),
+                  untitledAsset: tMediaCommon("untitledAsset"),
+                });
+                const itemMeta = getMediaItemMeta(item, {
+                  unknownSize: tMediaCommon("unknownSize"),
+                  videoFile: tMediaCommon("videoFile"),
+                });
 
                 return (
                   <article key={itemKey} className="overflow-hidden rounded-xl border bg-card">
@@ -460,8 +486,8 @@ export function DashboardPageClient() {
       <MediaLibraryDialog
         open={isMediaLibraryDialogOpen}
         onOpenChange={setIsMediaLibraryDialogOpen}
-        title="Mediathek"
-        description="Alle deine Medien aus LemonSpace in einer zentralen Vorschau."
+        title={tMediaDialog("title")}
+        description={tMediaDashboard("dialogDescription")}
       />
     </div>
   );

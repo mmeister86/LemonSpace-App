@@ -9,6 +9,7 @@ import type { CanvasNodeType } from "@/lib/canvas-node-types";
 export type NodeCategoryId =
   | "source"
   | "ai-output"
+  | "agents"
   | "transform"
   | "image-edit"
   | "control"
@@ -20,10 +21,11 @@ export const NODE_CATEGORY_META: Record<
 > = {
   source: { label: "Quelle", order: 0 },
   "ai-output": { label: "KI-Ausgabe", order: 1 },
-  transform: { label: "Transformation", order: 2 },
-  "image-edit": { label: "Bildbearbeitung", order: 3 },
-  control: { label: "Steuerung & Flow", order: 4 },
-  layout: { label: "Canvas & Layout", order: 5 },
+  agents: { label: "Agents", order: 2 },
+  transform: { label: "Transformation", order: 3 },
+  "image-edit": { label: "Bildbearbeitung", order: 4 },
+  control: { label: "Steuerung & Flow", order: 5 },
+  layout: { label: "Canvas & Layout", order: 6 },
 };
 
 export const NODE_CATEGORIES_ORDERED: NodeCategoryId[] = (
@@ -86,6 +88,14 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     phase: 2,
   }),
   entry({
+    type: "ai-video",
+    label: "KI-Video-Ausgabe",
+    category: "source",
+    phase: 2,
+    systemOutput: true,
+    disabledHint: "Wird von der KI erzeugt",
+  }),
+  entry({
     type: "asset",
     label: "Asset (Stock)",
     category: "source",
@@ -112,18 +122,17 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     systemOutput: true,
     disabledHint: "Wird von der KI erzeugt",
   }),
+  // Agents
   entry({
-    type: "ai-video",
-    label: "KI-Video-Ausgabe",
-    category: "ai-output",
+    type: "agent",
+    label: "Campaign Orchestrator",
+    category: "agents",
     phase: 2,
-    systemOutput: true,
-    disabledHint: "Wird von der KI erzeugt",
   }),
   entry({
     type: "agent-output",
     label: "Agent-Ausgabe",
-    category: "ai-output",
+    category: "agents",
     phase: 2,
     implemented: true,
     systemOutput: true,
@@ -217,18 +226,10 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     disabledHint: "Folgt in Phase 2",
   }),
   entry({
-    type: "agent",
-    label: "Agent",
-    category: "control",
-    phase: 2,
-  }),
-  entry({
     type: "mixer",
     label: "Mixer / Merge",
     category: "control",
-    phase: 3,
-    implemented: false,
-    disabledHint: "Folgt in Phase 3",
+    phase: 1,
   }),
   entry({
     type: "switch",
