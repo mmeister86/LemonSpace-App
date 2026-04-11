@@ -199,6 +199,48 @@ describe("worker-client fallbacks", () => {
     expect(bridgeMocks.renderFull).not.toHaveBeenCalled();
   });
 
+  it("does not include AbortSignal in full worker payload serialization", async () => {
+    const workerMessages: WorkerMessage[] = [];
+    FakeWorker.behavior = (worker, message) => {
+      workerMessages.push(message);
+      if (message.kind !== "full") {
+        return;
+      }
+
+      queueMicrotask(() => {
+        worker.onmessage?.({
+          data: {
+            kind: "full-result",
+            requestId: message.requestId,
+            payload: createFullResult(),
+          },
+        } as MessageEvent);
+      });
+    };
+    vi.stubGlobal("Worker", FakeWorker as unknown as typeof Worker);
+
+    const { renderFullWithWorkerFallback } = await import("@/lib/image-pipeline/worker-client");
+
+    await renderFullWithWorkerFallback({
+      sourceUrl: "https://cdn.example.com/source.png",
+      steps: [],
+      render: {
+        resolution: "original",
+        format: "png",
+      },
+      signal: new AbortController().signal,
+    });
+
+    const fullMessage = workerMessages.find((message) => message.kind === "full") as
+      | (WorkerMessage & {
+          payload?: Record<string, unknown>;
+        })
+      | undefined;
+
+    expect(fullMessage).toBeDefined();
+    expect(fullMessage?.payload).not.toHaveProperty("signal");
+  });
+
   it("still falls back to the main thread when the Worker API is unavailable", async () => {
     vi.stubGlobal("Worker", undefined);
 

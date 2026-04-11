@@ -32,7 +32,7 @@ type PreviewWorkerPayload = {
   featureFlags?: BackendFeatureFlags;
 };
 
-type FullWorkerPayload = RenderFullOptions & {
+type FullWorkerPayload = Omit<RenderFullOptions, "signal"> & {
   featureFlags?: BackendFeatureFlags;
 };
 
@@ -323,7 +323,7 @@ function runWorkerRequest<TResponse extends PreviewRenderResult | RenderFullResu
     worker.postMessage({
       kind: "full",
       requestId,
-      payload: args.payload as RenderFullOptions,
+      payload: args.payload as FullWorkerPayload,
     } satisfies WorkerRequestMessage);
   });
 }
@@ -501,14 +501,16 @@ export async function renderPreviewWithWorkerFallback(options: {
 export async function renderFullWithWorkerFallback(
   options: RenderFullOptions,
 ): Promise<RenderFullResult> {
+  const { signal, ...serializableOptions } = options;
+
   try {
     return await runWorkerRequest<RenderFullResult>({
       kind: "full",
       payload: {
-        ...options,
+        ...serializableOptions,
         featureFlags: getWorkerFeatureFlagsSnapshot(),
       },
-      signal: options.signal,
+      signal,
     });
   } catch (error: unknown) {
     if (isAbortError(error)) {

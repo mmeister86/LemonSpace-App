@@ -21,7 +21,7 @@ type PreviewWorkerPayload = {
   featureFlags?: BackendFeatureFlags;
 };
 
-type FullWorkerPayload = RenderFullOptions & {
+type FullWorkerPayload = Omit<RenderFullOptions, "signal"> & {
   featureFlags?: BackendFeatureFlags;
 };
 
