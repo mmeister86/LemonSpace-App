@@ -133,15 +133,21 @@ render:      300 × 420    mixer:        360 × 320
 - **Handles:** genau zwei Inputs links (`base`, `overlay`) und ein Output rechts (`mixer-out`).
 - **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`.
 - **Connection-Limits:** maximal 2 eingehende Kanten insgesamt, davon pro Handle genau 1.
-- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `offsetX`, `offsetY`.
+- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` (normierte 0..1-Rect-Werte).
 - **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
-- **UI/Interaction:** nur Inline-Formcontrols im Node; keine Drag-Manipulation im Preview, keine Rotation/Skalierung/Masks.
+- **UI/Interaction:** Overlay ist im Preview direkt per Drag verschiebbar und ueber Corner-Handles frei resizable; numerische Inline-Controls bleiben als Feineinstellung erhalten.
 
 ### Compare-Integration (V1)
 
 - `compare` versteht `mixer`-Outputs ueber `lib/canvas-mixer-preview.ts`.
-- Die Vorschau wird als DOM/CSS-Layering im Client gerendert (inkl. Blend/Opacity/Offset).
+- Die Vorschau wird als DOM/CSS-Layering im Client gerendert (inkl. Blend/Opacity/Overlay-Rect).
 - Scope bleibt eng: keine pauschale pseudo-image-Unterstuetzung fuer alle Consumer in V1.
+
+### Render-Bake-Pfad (V1)
+
+- Offizieller Bake-Flow: `mixer -> render`.
+- `render` konsumiert die Mixer-Komposition (`sourceComposition.kind = "mixer"`) und nutzt sie fuer Preview + finalen Render/Upload.
+- `mixer -> adjustments -> render` ist bewusst verschoben (deferred) und aktuell nicht offizieller Scope.
 
 ---
 
@@ -314,7 +320,7 @@ useCanvasData (use-canvas-data.ts)
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
 - **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
-- **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Downstream-Nodes muessen den pseudo-image-Resolver nutzen (aktuell gezielt fuer `compare`).
+- **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Offizielle Consumer sind `compare` und der direkte Bake-Pfad `mixer -> render`; `mixer -> adjustments -> render` bleibt vorerst deferred.
 - **Agent-Flow:** `agent` akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`) als Input; ausgehende Kanten sind fuer `agent -> agent-output` vorgesehen.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
 - **Canvas Graph Query:** Der Canvas nutzt `canvasGraph.get` (aus `convex/canvasGraph.ts`) statt separater `nodes.list`/`edges.list` Queries. Optimistic Updates laufen über `canvas-graph-query-cache.ts`.

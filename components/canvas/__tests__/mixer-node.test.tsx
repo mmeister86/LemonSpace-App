@@ -52,8 +52,10 @@ function buildMixerNodeProps(overrides?: Partial<React.ComponentProps<typeof Mix
     data: {
       blendMode: "normal",
       opacity: 100,
-      offsetX: 0,
-      offsetY: 0,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 0.5,
+      overlayHeight: 0.5,
     },
     selected: false,
     dragging: false,
@@ -76,7 +78,30 @@ describe("MixerNode", () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
 
+  const readyNodes: TestNode[] = [
+    { id: "image-base", type: "image", data: { url: "https://cdn.example.com/base.png" } },
+    { id: "image-overlay", type: "asset", data: { url: "https://cdn.example.com/overlay.png" } },
+    {
+      id: "mixer-1",
+      type: "mixer",
+      data: {
+        blendMode: "normal",
+        opacity: 100,
+        overlayX: 0,
+        overlayY: 0,
+        overlayWidth: 0.5,
+        overlayHeight: 0.5,
+      },
+    },
+  ];
+
+  const readyEdges: TestEdge[] = [
+    { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "base" },
+    { id: "edge-overlay", source: "image-overlay", target: "mixer-1", targetHandle: "overlay" },
+  ];
+
   beforeEach(() => {
+    vi.useFakeTimers();
     mocks.queueNodeDataUpdate.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -90,6 +115,7 @@ describe("MixerNode", () => {
       });
     }
     container?.remove();
+    vi.useRealTimers();
     root = null;
     container = null;
   });
@@ -130,26 +156,7 @@ describe("MixerNode", () => {
   });
 
   it("renders ready state with stacked base and overlay previews", async () => {
-    await renderNode({
-      nodes: [
-        { id: "image-base", type: "image", data: { url: "https://cdn.example.com/base.png" } },
-        { id: "image-overlay", type: "asset", data: { url: "https://cdn.example.com/overlay.png" } },
-        {
-          id: "mixer-1",
-          type: "mixer",
-          data: { blendMode: "multiply", opacity: 60, offsetX: 14, offsetY: -8 },
-        },
-      ],
-      edges: [
-        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "base" },
-        {
-          id: "edge-overlay",
-          source: "image-overlay",
-          target: "mixer-1",
-          targetHandle: "overlay",
-        },
-      ],
-    });
+    await renderNode({ nodes: readyNodes, edges: readyEdges });
 
     const baseImage = container?.querySelector('img[alt="Mixer base"]');
     const overlayImage = container?.querySelector('img[alt="Mixer overlay"]');
@@ -158,13 +165,199 @@ describe("MixerNode", () => {
     expect(overlayImage).toBeTruthy();
   });
 
-  it("queues node data updates for blend mode, opacity, and overlay offsets", async () => {
+  it("drag updates persisted overlay geometry", async () => {
+    await renderNode({ nodes: readyNodes, edges: readyEdges });
+
+    const preview = container?.querySelector('[data-testid="mixer-preview"]');
+    const overlay = container?.querySelector('[data-testid="mixer-overlay"]');
+
+    if (!(preview instanceof HTMLDivElement)) {
+      throw new Error("preview not found");
+    }
+    if (!(overlay instanceof HTMLImageElement)) {
+      throw new Error("overlay image not found");
+    }
+
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 50, clientY: 50 }));
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 90, clientY: 70 }));
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        overlayX: 0.2,
+        overlayY: 0.1,
+        overlayWidth: 0.5,
+        overlayHeight: 0.5,
+      }),
+    });
+  });
+
+  it("drag clamps overlay bounds inside preview", async () => {
+    await renderNode({ nodes: readyNodes, edges: readyEdges });
+
+    const preview = container?.querySelector('[data-testid="mixer-preview"]');
+    const overlay = container?.querySelector('[data-testid="mixer-overlay"]');
+
+    if (!(preview instanceof HTMLDivElement)) {
+      throw new Error("preview not found");
+    }
+    if (!(overlay instanceof HTMLImageElement)) {
+      throw new Error("overlay image not found");
+    }
+
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 20, clientY: 20 }));
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 400, clientY: 380 }));
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        overlayX: 0.5,
+        overlayY: 0.5,
+        overlayWidth: 0.5,
+        overlayHeight: 0.5,
+      }),
+    });
+  });
+
+  it("resize updates persisted overlay width and height", async () => {
+    await renderNode({ nodes: readyNodes, edges: readyEdges });
+
+    const preview = container?.querySelector('[data-testid="mixer-preview"]');
+    const resizeHandle = container?.querySelector('[data-testid="mixer-resize-se"]');
+
+    if (!(preview instanceof HTMLDivElement)) {
+      throw new Error("preview not found");
+    }
+    if (!(resizeHandle instanceof HTMLDivElement)) {
+      throw new Error("resize handle not found");
+    }
+
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    await act(async () => {
+      resizeHandle.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, clientX: 100, clientY: 100 }),
+      );
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 140, clientY: 120 }));
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        overlayWidth: 0.7,
+        overlayHeight: 0.6,
+      }),
+    });
+  });
+
+  it("enforces minimum overlay size during resize", async () => {
+    await renderNode({ nodes: readyNodes, edges: readyEdges });
+
+    const preview = container?.querySelector('[data-testid="mixer-preview"]');
+    const resizeHandle = container?.querySelector('[data-testid="mixer-resize-se"]');
+
+    if (!(preview instanceof HTMLDivElement)) {
+      throw new Error("preview not found");
+    }
+    if (!(resizeHandle instanceof HTMLDivElement)) {
+      throw new Error("resize handle not found");
+    }
+
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    await act(async () => {
+      resizeHandle.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, clientX: 100, clientY: 100 }),
+      );
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: -600, clientY: -700 }));
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        overlayWidth: 0.1,
+        overlayHeight: 0.1,
+      }),
+    });
+  });
+
+  it("numeric controls still update overlay rect fields", async () => {
     await renderNode();
 
     const blendMode = container?.querySelector('select[name="blendMode"]');
     const opacity = container?.querySelector('input[name="opacity"]');
-    const offsetX = container?.querySelector('input[name="offsetX"]');
-    const offsetY = container?.querySelector('input[name="offsetY"]');
+    const overlayX = container?.querySelector('input[name="overlayX"]');
+    const overlayY = container?.querySelector('input[name="overlayY"]');
+    const overlayWidth = container?.querySelector('input[name="overlayWidth"]');
+    const overlayHeight = container?.querySelector('input[name="overlayHeight"]');
 
     if (!(blendMode instanceof HTMLSelectElement)) {
       throw new Error("blendMode select not found");
@@ -172,16 +365,23 @@ describe("MixerNode", () => {
     if (!(opacity instanceof HTMLInputElement)) {
       throw new Error("opacity input not found");
     }
-    if (!(offsetX instanceof HTMLInputElement)) {
-      throw new Error("offsetX input not found");
+    if (!(overlayX instanceof HTMLInputElement)) {
+      throw new Error("overlayX input not found");
     }
-    if (!(offsetY instanceof HTMLInputElement)) {
-      throw new Error("offsetY input not found");
+    if (!(overlayY instanceof HTMLInputElement)) {
+      throw new Error("overlayY input not found");
+    }
+    if (!(overlayWidth instanceof HTMLInputElement)) {
+      throw new Error("overlayWidth input not found");
+    }
+    if (!(overlayHeight instanceof HTMLInputElement)) {
+      throw new Error("overlayHeight input not found");
     }
 
     await act(async () => {
       blendMode.value = "screen";
       blendMode.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
     });
     expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
       nodeId: "mixer-1",
@@ -192,6 +392,7 @@ describe("MixerNode", () => {
       opacity.value = "45";
       opacity.dispatchEvent(new Event("input", { bubbles: true }));
       opacity.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
     });
     expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
       nodeId: "mixer-1",
@@ -199,23 +400,47 @@ describe("MixerNode", () => {
     });
 
     await act(async () => {
-      offsetX.value = "12";
-      offsetX.dispatchEvent(new Event("input", { bubbles: true }));
-      offsetX.dispatchEvent(new Event("change", { bubbles: true }));
+      overlayX.value = "0.25";
+      overlayX.dispatchEvent(new Event("input", { bubbles: true }));
+      overlayX.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
     });
     expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
       nodeId: "mixer-1",
-      data: expect.objectContaining({ offsetX: 12 }),
+      data: expect.objectContaining({ overlayX: 0.25 }),
     });
 
     await act(async () => {
-      offsetY.value = "-6";
-      offsetY.dispatchEvent(new Event("input", { bubbles: true }));
-      offsetY.dispatchEvent(new Event("change", { bubbles: true }));
+      overlayY.value = "0.4";
+      overlayY.dispatchEvent(new Event("input", { bubbles: true }));
+      overlayY.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
     });
     expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
       nodeId: "mixer-1",
-      data: expect.objectContaining({ offsetY: -6 }),
+      data: expect.objectContaining({ overlayY: 0.4 }),
+    });
+
+    await act(async () => {
+      overlayWidth.value = "0.66";
+      overlayWidth.dispatchEvent(new Event("input", { bubbles: true }));
+      overlayWidth.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({ overlayWidth: 0.66 }),
+    });
+
+    await act(async () => {
+      overlayHeight.value = "0.33";
+      overlayHeight.dispatchEvent(new Event("input", { bubbles: true }));
+      overlayHeight.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({ overlayHeight: 0.33 }),
     });
   });
 

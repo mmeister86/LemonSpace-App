@@ -24,6 +24,18 @@ export type RenderSizeLimits = {
   maxPixels?: number;
 };
 
+export type RenderSourceComposition = {
+  kind: "mixer";
+  baseUrl: string;
+  overlayUrl: string;
+  blendMode: "normal" | "multiply" | "screen" | "overlay";
+  opacity: number;
+  overlayX: number;
+  overlayY: number;
+  overlayWidth: number;
+  overlayHeight: number;
+};
+
 export type ResolvedRenderSize = {
   width: number;
   height: number;
@@ -32,7 +44,8 @@ export type ResolvedRenderSize = {
 };
 
 export type RenderFullOptions = {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   render: RenderOptions;
   limits?: RenderSizeLimits;

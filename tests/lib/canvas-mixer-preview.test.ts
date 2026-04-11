@@ -25,7 +25,14 @@ describe("resolveMixerPreviewFromGraph", () => {
         {
           id: "mixer-1",
           type: "mixer",
-          data: { blendMode: "screen", opacity: 70, offsetX: 12, offsetY: -8 },
+          data: {
+            blendMode: "screen",
+            opacity: 70,
+            overlayX: 0.12,
+            overlayY: 0.2,
+            overlayWidth: 0.6,
+            overlayHeight: 0.5,
+          },
         },
       ],
       [
@@ -41,8 +48,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayUrl: "https://cdn.example.com/overlay.png",
       blendMode: "screen",
       opacity: 70,
-      offsetX: 12,
-      offsetY: -8,
+      overlayX: 0.12,
+      overlayY: 0.2,
+      overlayWidth: 0.6,
+      overlayHeight: 0.5,
     });
   });
 
@@ -85,8 +94,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayUrl: "https://cdn.example.com/render-output.png",
       blendMode: "normal",
       opacity: 100,
-      offsetX: 0,
-      offsetY: 0,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
     });
   });
 
@@ -113,12 +124,14 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayUrl: undefined,
       blendMode: "normal",
       opacity: 100,
-      offsetX: 0,
-      offsetY: 0,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
     });
   });
 
-  it("normalizes blend mode and clamps numeric values", () => {
+  it("normalizes rect values and clamps", () => {
     const graph = buildGraphSnapshot(
       [
         {
@@ -137,8 +150,10 @@ describe("resolveMixerPreviewFromGraph", () => {
           data: {
             blendMode: "unknown",
             opacity: 180,
-            offsetX: 9999,
-            offsetY: "-9999",
+            overlayX: -3,
+            overlayY: "1.4",
+            overlayWidth: 2,
+            overlayHeight: 0,
           },
         },
       ],
@@ -154,8 +169,92 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayUrl: "https://cdn.example.com/overlay-asset.png",
       blendMode: "normal",
       opacity: 100,
-      offsetX: 2048,
-      offsetY: -2048,
+      overlayX: 0,
+      overlayY: 0.9,
+      overlayWidth: 1,
+      overlayHeight: 0.1,
+    });
+  });
+
+  it("missing rect fields fallback to sensible defaults", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-ai",
+          type: "ai-image",
+          data: { url: "https://cdn.example.com/base-ai.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay-asset.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            blendMode: "multiply",
+            opacity: 42,
+          },
+        },
+      ],
+      [
+        { source: "base-ai", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-asset", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual({
+      status: "ready",
+      baseUrl: "https://cdn.example.com/base-ai.png",
+      overlayUrl: "https://cdn.example.com/overlay-asset.png",
+      blendMode: "multiply",
+      opacity: 42,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
+    });
+  });
+
+  it("legacy offset fields still yield visible overlay geometry", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-ai",
+          type: "ai-image",
+          data: { url: "https://cdn.example.com/base-ai.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay-asset.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            offsetX: 100,
+            offsetY: -40,
+          },
+        },
+      ],
+      [
+        { source: "base-ai", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-asset", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual({
+      status: "ready",
+      baseUrl: "https://cdn.example.com/base-ai.png",
+      overlayUrl: "https://cdn.example.com/overlay-asset.png",
+      blendMode: "normal",
+      opacity: 100,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
     });
   });
 
@@ -190,8 +289,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayUrl: undefined,
       blendMode: "normal",
       opacity: 100,
-      offsetX: 0,
-      offsetY: 0,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
       error: "duplicate-handle-edge",
     });
   });

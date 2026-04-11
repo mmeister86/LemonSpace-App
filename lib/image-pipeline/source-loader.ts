@@ -12,6 +12,24 @@ type LoadSourceBitmapOptions = {
   signal?: AbortSignal;
 };
 
+type RenderSourceComposition = {
+  kind: "mixer";
+  baseUrl: string;
+  overlayUrl: string;
+  blendMode: "normal" | "multiply" | "screen" | "overlay";
+  opacity: number;
+  overlayX: number;
+  overlayY: number;
+  overlayWidth: number;
+  overlayHeight: number;
+};
+
+type LoadRenderSourceBitmapOptions = {
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
+  signal?: AbortSignal;
+};
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw new DOMException("The operation was aborted.", "AbortError");
@@ -214,4 +232,201 @@ export async function loadSourceBitmap(
 
   const promise = getOrCreateSourceBitmapPromise(sourceUrl);
   return await awaitWithLocalAbort(promise, options.signal);
+}
+
+function createWorkingCanvas(width: number, height: number):
+  | HTMLCanvasElement
+  | OffscreenCanvas {
+  if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  }
+
+  if (typeof OffscreenCanvas !== "undefined") {
+    return new OffscreenCanvas(width, height);
+  }
+
+  throw new Error("Canvas rendering is not available in this environment.");
+}
+
+function mixerBlendModeToCompositeOperation(
+  blendMode: RenderSourceComposition["blendMode"],
+): GlobalCompositeOperation {
+  if (blendMode === "normal") {
+    return "source-over";
+  }
+
+  return blendMode;
+}
+
+function normalizeCompositionOpacity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.max(0, Math.min(100, value)) / 100;
+}
+
+function normalizeRatio(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return value;
+}
+
+function normalizeMixerRect(source: RenderSourceComposition): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const overlayX = Math.max(0, Math.min(0.9, normalizeRatio(source.overlayX, 0)));
+  const overlayY = Math.max(0, Math.min(0.9, normalizeRatio(source.overlayY, 0)));
+  const overlayWidth = Math.max(
+    0.1,
+    Math.min(1, normalizeRatio(source.overlayWidth, 1), 1 - overlayX),
+  );
+  const overlayHeight = Math.max(
+    0.1,
+    Math.min(1, normalizeRatio(source.overlayHeight, 1), 1 - overlayY),
+  );
+
+  return {
+    x: overlayX,
+    y: overlayY,
+    width: overlayWidth,
+    height: overlayHeight,
+  };
+}
+
+function computeObjectCoverSourceRect(args: {
+  sourceWidth: number;
+  sourceHeight: number;
+  destinationWidth: number;
+  destinationHeight: number;
+}): {
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+} {
+  const { sourceWidth, sourceHeight, destinationWidth, destinationHeight } = args;
+
+  if (
+    sourceWidth <= 0 ||
+    sourceHeight <= 0 ||
+    destinationWidth <= 0 ||
+    destinationHeight <= 0
+  ) {
+    return {
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth,
+      sourceHeight,
+    };
+  }
+
+  const sourceAspectRatio = sourceWidth / sourceHeight;
+  const destinationAspectRatio = destinationWidth / destinationHeight;
+
+  if (!Number.isFinite(sourceAspectRatio) || !Number.isFinite(destinationAspectRatio)) {
+    return {
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth,
+      sourceHeight,
+    };
+  }
+
+  if (sourceAspectRatio > destinationAspectRatio) {
+    const croppedWidth = sourceHeight * destinationAspectRatio;
+    return {
+      sourceX: (sourceWidth - croppedWidth) / 2,
+      sourceY: 0,
+      sourceWidth: croppedWidth,
+      sourceHeight,
+    };
+  }
+
+  const croppedHeight = sourceWidth / destinationAspectRatio;
+  return {
+    sourceX: 0,
+    sourceY: (sourceHeight - croppedHeight) / 2,
+    sourceWidth,
+    sourceHeight: croppedHeight,
+  };
+}
+
+async function loadMixerCompositionBitmap(
+  sourceComposition: RenderSourceComposition,
+  signal?: AbortSignal,
+): Promise<ImageBitmap> {
+  const [baseBitmap, overlayBitmap] = await Promise.all([
+    loadSourceBitmap(sourceComposition.baseUrl, { signal }),
+    loadSourceBitmap(sourceComposition.overlayUrl, { signal }),
+  ]);
+
+  throwIfAborted(signal);
+
+  const canvas = createWorkingCanvas(baseBitmap.width, baseBitmap.height);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("Render composition could not create a 2D context.");
+  }
+
+  context.clearRect(0, 0, baseBitmap.width, baseBitmap.height);
+  context.drawImage(baseBitmap, 0, 0, baseBitmap.width, baseBitmap.height);
+
+  const rect = normalizeMixerRect(sourceComposition);
+  const destinationX = rect.x * baseBitmap.width;
+  const destinationY = rect.y * baseBitmap.height;
+  const destinationWidth = rect.width * baseBitmap.width;
+  const destinationHeight = rect.height * baseBitmap.height;
+  const sourceRect = computeObjectCoverSourceRect({
+    sourceWidth: overlayBitmap.width,
+    sourceHeight: overlayBitmap.height,
+    destinationWidth,
+    destinationHeight,
+  });
+
+  context.globalCompositeOperation = mixerBlendModeToCompositeOperation(
+    sourceComposition.blendMode,
+  );
+  context.globalAlpha = normalizeCompositionOpacity(sourceComposition.opacity);
+  context.drawImage(
+    overlayBitmap,
+    sourceRect.sourceX,
+    sourceRect.sourceY,
+    sourceRect.sourceWidth,
+    sourceRect.sourceHeight,
+    destinationX,
+    destinationY,
+    destinationWidth,
+    destinationHeight,
+  );
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+
+  return await createImageBitmap(canvas);
+}
+
+export async function loadRenderSourceBitmap(
+  options: LoadRenderSourceBitmapOptions,
+): Promise<ImageBitmap> {
+  if (options.sourceComposition) {
+    if (options.sourceComposition.kind !== "mixer") {
+      throw new Error(`Unsupported source composition '${options.sourceComposition.kind}'.`);
+    }
+
+    return await loadMixerCompositionBitmap(options.sourceComposition, options.signal);
+  }
+
+  if (!options.sourceUrl) {
+    throw new Error("Render source is required.");
+  }
+
+  return await loadSourceBitmap(options.sourceUrl, { signal: options.signal });
 }

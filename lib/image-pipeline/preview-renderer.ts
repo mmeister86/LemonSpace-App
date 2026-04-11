@@ -8,7 +8,8 @@ import {
   applyGeometryStepsToSource,
   partitionPipelineSteps,
 } from "@/lib/image-pipeline/geometry-transform";
-import { loadSourceBitmap } from "@/lib/image-pipeline/source-loader";
+import { loadRenderSourceBitmap } from "@/lib/image-pipeline/source-loader";
+import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
 
 export type PreviewRenderResult = {
   width: number;
@@ -64,13 +65,16 @@ async function yieldToMainOrWorkerLoop(): Promise<void> {
 }
 
 export async function renderPreview(options: {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
   signal?: AbortSignal;
 }): Promise<PreviewRenderResult> {
-  const bitmap = await loadSourceBitmap(options.sourceUrl, {
+  const bitmap = await loadRenderSourceBitmap({
+    sourceUrl: options.sourceUrl,
+    sourceComposition: options.sourceComposition,
     signal: options.signal,
   });
   const { geometrySteps, tonalSteps } = partitionPipelineSteps(options.steps);

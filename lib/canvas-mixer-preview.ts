@@ -19,8 +19,10 @@ export type MixerPreviewState = {
   overlayUrl?: string;
   blendMode: MixerBlendMode;
   opacity: number;
-  offsetX: number;
-  offsetY: number;
+  overlayX: number;
+  overlayY: number;
+  overlayWidth: number;
+  overlayHeight: number;
   error?: MixerPreviewError;
 };
 
@@ -35,9 +37,14 @@ const DEFAULT_BLEND_MODE: MixerBlendMode = "normal";
 const DEFAULT_OPACITY = 100;
 const MIN_OPACITY = 0;
 const MAX_OPACITY = 100;
-const DEFAULT_OFFSET = 0;
-const MIN_OFFSET = -2048;
-const MAX_OFFSET = 2048;
+const DEFAULT_OVERLAY_X = 0;
+const DEFAULT_OVERLAY_Y = 0;
+const DEFAULT_OVERLAY_WIDTH = 1;
+const DEFAULT_OVERLAY_HEIGHT = 1;
+const MIN_OVERLAY_POSITION = 0;
+const MAX_OVERLAY_POSITION = 1;
+const MIN_OVERLAY_SIZE = 0.1;
+const MAX_OVERLAY_SIZE = 1;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -65,18 +72,67 @@ function normalizeOpacity(value: unknown): number {
   return clamp(parsed, MIN_OPACITY, MAX_OPACITY);
 }
 
-function normalizeOffset(value: unknown): number {
+function normalizeOverlayNumber(value: unknown, fallback: number): number {
   const parsed = parseNumeric(value);
   if (parsed === null) {
-    return DEFAULT_OFFSET;
+    return fallback;
   }
 
-  return clamp(parsed, MIN_OFFSET, MAX_OFFSET);
+  return parsed;
+}
+
+function normalizeOverlayRect(record: Record<string, unknown>): Pick<
+  MixerPreviewState,
+  "overlayX" | "overlayY" | "overlayWidth" | "overlayHeight"
+> {
+  const hasLegacyOffset = record.offsetX !== undefined || record.offsetY !== undefined;
+  const hasOverlayRectField =
+    record.overlayX !== undefined ||
+    record.overlayY !== undefined ||
+    record.overlayWidth !== undefined ||
+    record.overlayHeight !== undefined;
+
+  if (hasLegacyOffset && !hasOverlayRectField) {
+    return {
+      overlayX: DEFAULT_OVERLAY_X,
+      overlayY: DEFAULT_OVERLAY_Y,
+      overlayWidth: DEFAULT_OVERLAY_WIDTH,
+      overlayHeight: DEFAULT_OVERLAY_HEIGHT,
+    };
+  }
+
+  const overlayX = clamp(
+    normalizeOverlayNumber(record.overlayX, DEFAULT_OVERLAY_X),
+    MIN_OVERLAY_POSITION,
+    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+  );
+  const overlayY = clamp(
+    normalizeOverlayNumber(record.overlayY, DEFAULT_OVERLAY_Y),
+    MIN_OVERLAY_POSITION,
+    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+  );
+  const overlayWidth = clamp(
+    normalizeOverlayNumber(record.overlayWidth, DEFAULT_OVERLAY_WIDTH),
+    MIN_OVERLAY_SIZE,
+    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - overlayX),
+  );
+  const overlayHeight = clamp(
+    normalizeOverlayNumber(record.overlayHeight, DEFAULT_OVERLAY_HEIGHT),
+    MIN_OVERLAY_SIZE,
+    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - overlayY),
+  );
+
+  return {
+    overlayX,
+    overlayY,
+    overlayWidth,
+    overlayHeight,
+  };
 }
 
 export function normalizeMixerPreviewData(data: unknown): Pick<
   MixerPreviewState,
-  "blendMode" | "opacity" | "offsetX" | "offsetY"
+  "blendMode" | "opacity" | "overlayX" | "overlayY" | "overlayWidth" | "overlayHeight"
 > {
   const record = (data ?? {}) as Record<string, unknown>;
   const blendMode = MIXER_BLEND_MODES.has(record.blendMode as MixerBlendMode)
@@ -86,8 +142,7 @@ export function normalizeMixerPreviewData(data: unknown): Pick<
   return {
     blendMode,
     opacity: normalizeOpacity(record.opacity),
-    offsetX: normalizeOffset(record.offsetX),
-    offsetY: normalizeOffset(record.offsetY),
+    ...normalizeOverlayRect(record),
   };
 }
 
@@ -172,6 +227,8 @@ export function resolveMixerPreviewFromGraph(args: {
   if (base.duplicate || overlay.duplicate) {
     return {
       status: "error",
+      baseUrl: undefined,
+      overlayUrl: undefined,
       ...normalized,
       error: "duplicate-handle-edge",
     };

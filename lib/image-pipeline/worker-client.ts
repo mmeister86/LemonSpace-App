@@ -5,7 +5,11 @@ import {
 } from "@/lib/image-pipeline/preview-renderer";
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
-import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/render-types";
+import type {
+  RenderFullOptions,
+  RenderFullResult,
+  RenderSourceComposition,
+} from "@/lib/image-pipeline/render-types";
 import {
   getBackendFeatureFlags,
   type BackendFeatureFlags,
@@ -20,7 +24,8 @@ export type BackendDiagnosticsMetadata = {
 };
 
 type PreviewWorkerPayload = {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
@@ -324,13 +329,14 @@ function runWorkerRequest<TResponse extends PreviewRenderResult | RenderFullResu
 }
 
 function getPreviewRequestKey(options: {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
 }): string {
   return [
-    hashPipeline(options.sourceUrl, options.steps),
+    hashPipeline(options.sourceComposition ?? options.sourceUrl ?? null, options.steps),
     options.previewWidth,
     options.includeHistogram === true ? 1 : 0,
   ].join(":");
@@ -341,7 +347,8 @@ function getWorkerFeatureFlagsSnapshot(): BackendFeatureFlags {
 }
 
 async function runPreviewRequest(options: {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
@@ -352,6 +359,7 @@ async function runPreviewRequest(options: {
       kind: "preview",
       payload: {
         sourceUrl: options.sourceUrl,
+        sourceComposition: options.sourceComposition,
         steps: options.steps,
         previewWidth: options.previewWidth,
         includeHistogram: options.includeHistogram,
@@ -367,6 +375,7 @@ async function runPreviewRequest(options: {
     if (!shouldFallbackToMainThread(error)) {
       logWorkerClientDebug("preview request failed without fallback", {
         sourceUrl: options.sourceUrl,
+        sourceComposition: options.sourceComposition,
         previewWidth: options.previewWidth,
         includeHistogram: options.includeHistogram,
         diagnostics: getLastBackendDiagnostics(),
@@ -377,6 +386,7 @@ async function runPreviewRequest(options: {
 
     logWorkerClientDebug("preview request falling back to main-thread", {
       sourceUrl: options.sourceUrl,
+      sourceComposition: options.sourceComposition,
       previewWidth: options.previewWidth,
       includeHistogram: options.includeHistogram,
       error,
@@ -387,7 +397,8 @@ async function runPreviewRequest(options: {
 }
 
 function getOrCreateSharedPreviewRequest(options: {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
@@ -419,7 +430,8 @@ function getOrCreateSharedPreviewRequest(options: {
 }
 
 export async function renderPreviewWithWorkerFallback(options: {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
@@ -431,6 +443,7 @@ export async function renderPreviewWithWorkerFallback(options: {
 
   const sharedRequest = getOrCreateSharedPreviewRequest({
     sourceUrl: options.sourceUrl,
+    sourceComposition: options.sourceComposition,
     steps: options.steps,
     previewWidth: options.previewWidth,
     includeHistogram: options.includeHistogram,

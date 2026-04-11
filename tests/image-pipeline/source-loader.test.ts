@@ -355,4 +355,105 @@ describe("loadSourceBitmap", () => {
     expect(createImageBitmap).toHaveBeenCalledWith(fakeVideo);
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:video-source");
   });
+
+  it("renders mixer overlays with object-cover semantics instead of stretching", async () => {
+    const baseBlob = new Blob(["base"]);
+    const overlayBlob = new Blob(["overlay"]);
+    const baseBitmap = { width: 100, height: 100 } as ImageBitmap;
+    const overlayBitmap = { width: 200, height: 100 } as ImageBitmap;
+    const composedBitmap = { width: 100, height: 100 } as ImageBitmap;
+
+    const drawImage = vi.fn();
+    const context = {
+      clearRect: vi.fn(),
+      drawImage,
+      globalCompositeOperation: "source-over" as GlobalCompositeOperation,
+      globalAlpha: 1,
+    };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(context),
+    } as unknown as HTMLCanvasElement;
+
+    const nativeCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      if (tagName.toLowerCase() === "canvas") {
+        return canvas;
+      }
+
+      return nativeCreateElement(tagName);
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("base.png")) {
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: vi.fn().mockReturnValue("image/png") },
+            blob: vi.fn().mockResolvedValue(baseBlob),
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue("image/png") },
+          blob: vi.fn().mockResolvedValue(overlayBlob),
+        };
+      }),
+    );
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockImplementation(async (input: unknown) => {
+        if (input === baseBlob) {
+          return baseBitmap;
+        }
+        if (input === overlayBlob) {
+          return overlayBitmap;
+        }
+        if (input === canvas) {
+          return composedBitmap;
+        }
+
+        throw new Error("Unexpected createImageBitmap input in mixer cover-fit test.");
+      }),
+    );
+
+    const { loadRenderSourceBitmap } = await importSubject();
+
+    await expect(
+      loadRenderSourceBitmap({
+        sourceComposition: {
+          kind: "mixer",
+          baseUrl: "https://cdn.example.com/base.png",
+          overlayUrl: "https://cdn.example.com/overlay.png",
+          blendMode: "overlay",
+          opacity: 80,
+          overlayX: 0.1,
+          overlayY: 0.2,
+          overlayWidth: 0.25,
+          overlayHeight: 0.5,
+        },
+      }),
+    ).resolves.toBe(composedBitmap);
+
+    expect(drawImage).toHaveBeenNthCalledWith(1, baseBitmap, 0, 0, 100, 100);
+    expect(drawImage).toHaveBeenNthCalledWith(
+      2,
+      overlayBitmap,
+      75,
+      0,
+      50,
+      100,
+      10,
+      20,
+      25,
+      50,
+    );
+  });
 });

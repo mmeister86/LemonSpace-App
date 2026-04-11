@@ -256,8 +256,10 @@ describe("CompareNode render preview inputs", () => {
         overlayUrl: "https://cdn.example.com/overlay.png",
         blendMode: "multiply",
         opacity: 62,
-        offsetX: 12,
-        offsetY: -4,
+        overlayX: 0,
+        overlayY: 0,
+        overlayWidth: 1,
+        overlayHeight: 1,
       },
     });
   });

@@ -32,6 +32,13 @@ vi.mock("@/lib/image-pipeline/render-core", () => ({
 
 vi.mock("@/lib/image-pipeline/source-loader", () => ({
   loadSourceBitmap: sourceLoaderMocks.loadSourceBitmap,
+  loadRenderSourceBitmap: ({ sourceUrl }: { sourceUrl?: string }) => {
+    if (!sourceUrl) {
+      throw new Error("Render source is required.");
+    }
+
+    return sourceLoaderMocks.loadSourceBitmap(sourceUrl);
+  },
 }));
 
 describe("preview-renderer cancellation", () => {

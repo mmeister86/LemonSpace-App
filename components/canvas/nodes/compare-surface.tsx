@@ -32,6 +32,7 @@ export default function CompareSurface({
   const graph = useCanvasGraph();
   const usePreview = Boolean(previewInput && (preferPreview || !finalUrl));
   const previewSourceUrl = usePreview ? previewInput?.sourceUrl ?? null : null;
+  const previewSourceComposition = usePreview ? previewInput?.sourceComposition : undefined;
   const previewSteps = usePreview ? previewInput?.steps ?? EMPTY_STEPS : EMPTY_STEPS;
   const visibleFinalUrl = usePreview ? undefined : finalUrl;
   const previewDebounceMs = shouldFastPathPreviewPipeline(
@@ -43,6 +44,7 @@ export default function CompareSurface({
 
   const { canvasRef, isRendering, error } = usePipelinePreview({
     sourceUrl: previewSourceUrl,
+    sourceComposition: previewSourceComposition,
     steps: previewSteps,
     nodeWidth,
     includeHistogram: false,
@@ -92,12 +94,15 @@ export default function CompareSurface({
           <img
             src={mixerPreviewState.overlayUrl}
             alt={label ?? "Comparison image"}
-            className="absolute inset-0 h-full w-full object-contain"
+            className="absolute object-contain"
             draggable={false}
             style={{
               mixBlendMode: mixerPreviewState.blendMode,
               opacity: mixerPreviewState.opacity / 100,
-              transform: `translate(${mixerPreviewState.offsetX}px, ${mixerPreviewState.offsetY}px)`,
+              left: `${mixerPreviewState.overlayX * 100}%`,
+              top: `${mixerPreviewState.overlayY * 100}%`,
+              width: `${mixerPreviewState.overlayWidth * 100}%`,
+              height: `${mixerPreviewState.overlayHeight * 100}%`,
             }}
           />
         </>

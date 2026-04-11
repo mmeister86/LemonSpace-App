@@ -51,8 +51,10 @@ export const CANVAS_NODE_TEMPLATES = [
     defaultData: {
       blendMode: "normal",
       opacity: 100,
-      offsetX: 0,
-      offsetY: 0,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
     },
   },
   {

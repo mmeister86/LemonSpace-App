@@ -10,7 +10,7 @@ import {
   applyGeometryStepsToSource,
   partitionPipelineSteps,
 } from "@/lib/image-pipeline/geometry-transform";
-import { loadSourceBitmap } from "@/lib/image-pipeline/source-loader";
+import { loadRenderSourceBitmap } from "@/lib/image-pipeline/source-loader";
 
 type SupportedCanvas = HTMLCanvasElement | OffscreenCanvas;
 type SupportedContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -99,7 +99,11 @@ function resolveMimeType(format: RenderFormat): string {
 export async function renderFull(options: RenderFullOptions): Promise<RenderFullResult> {
   const { signal } = options;
 
-  const bitmap = await loadSourceBitmap(options.sourceUrl, { signal });
+  const bitmap = await loadRenderSourceBitmap({
+    sourceUrl: options.sourceUrl,
+    sourceComposition: options.sourceComposition,
+    signal,
+  });
   const { geometrySteps, tonalSteps } = partitionPipelineSteps(options.steps);
   const geometryResult = applyGeometryStepsToSource({
     source: bitmap,

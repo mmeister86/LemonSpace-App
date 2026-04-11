@@ -30,6 +30,7 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "mixer",
   "crop",
   "curves",
   "color-adjust",
