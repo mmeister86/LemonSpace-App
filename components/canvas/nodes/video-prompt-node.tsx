@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Handle, Position, useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
+import { Position, useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { useRouter } from "next/navigation";
@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type VideoPromptNodeData = {
   prompt?: string;
@@ -300,7 +301,9 @@ export default function VideoPromptNode({
       statusMessage={nodeData._statusMessage}
       className="min-w-[260px] border-violet-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="video-prompt"
         type="target"
         position={Position.Left}
         id="video-prompt-in"
@@ -407,7 +410,9 @@ export default function VideoPromptNode({
         ) : null}
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="video-prompt"
         type="source"
         position={Position.Right}
         id="video-prompt-out"

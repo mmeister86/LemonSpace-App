@@ -8,7 +8,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Position, type NodeProps, type Node } from "@xyflow/react";
 import { Maximize2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { api } from "@/convex/_generated/api";
@@ -37,6 +37,7 @@ import {
   getImageDimensions,
 } from "@/components/canvas/canvas-media-utils";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -508,7 +509,9 @@ export default function ImageNode({
           },
         ]}
       >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="image"
         type="target"
         position={Position.Left}
         className="h-3! w-3! bg-primary! border-2! border-background!"
@@ -609,7 +612,9 @@ export default function ImageNode({
         className="hidden"
       />
 
-        <Handle
+        <CanvasHandle
+          nodeId={id}
+          nodeType="image"
           type="source"
           position={Position.Right}
           className="h-3! w-3! bg-primary! border-2! border-background!"

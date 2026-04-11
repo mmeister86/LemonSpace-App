@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
-  Handle,
   Position,
   useReactFlow,
   type NodeProps,
@@ -20,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type TextNodeData = {
   content?: string;
@@ -155,7 +155,9 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
         ]}
         className="relative"
       >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="text"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !bg-primary !border-2 !border-background"
@@ -190,7 +192,9 @@ export default function TextNode({ id, data, selected }: NodeProps<TextNode>) {
           </div>
         )}
       </div>
-        <Handle
+        <CanvasHandle
+          nodeId={id}
+          nodeType="text"
           type="source"
           position={Position.Right}
           className="!h-3 !w-3 !bg-primary !border-2 !border-background"

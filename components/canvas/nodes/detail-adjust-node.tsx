@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 import { Focus } from "lucide-react";
 
@@ -29,6 +29,7 @@ import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { DETAIL_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type DetailAdjustNodeData = DetailAdjustData & {
   _status?: string;
@@ -202,7 +203,9 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
       statusMessage={data._statusMessage}
       className="min-w-[300px] border-indigo-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="detail-adjust"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-background !bg-indigo-500"
@@ -286,7 +289,9 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
         />
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="detail-adjust"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !border-background !bg-indigo-500"

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type GroupNodeData = {
   label?: string;
@@ -47,7 +48,9 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
       selected={selected}
       className="min-w-[200px] min-h-[150px] p-3 border-dashed"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="group"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !bg-muted-foreground !border-2 !border-background"
@@ -71,7 +74,9 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
         </div>
       )}
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="group"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !bg-muted-foreground !border-2 !border-background"

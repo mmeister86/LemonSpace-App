@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2, Maximize2, X } from "lucide-react";
 import { useMutation } from "convex/react";
 
@@ -29,6 +29,7 @@ import {
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type RenderResolutionOption = "original" | "2x" | "custom";
 type RenderFormatOption = "png" | "jpeg" | "webp";
@@ -978,7 +979,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         ]}
         className="flex h-full min-w-[280px] flex-col overflow-hidden border-sky-500/30"
       >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="render"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
@@ -1273,7 +1276,9 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         </div>
       </div>
 
-        <Handle
+        <CanvasHandle
+          nodeId={id}
+          nodeType="render"
           type="source"
           position={Position.Right}
           className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"

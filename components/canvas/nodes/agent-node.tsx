@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { useTranslations } from "next-intl";
@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import BaseNodeWrapper from "./base-node-wrapper";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type AgentNodeData = {
   templateId?: string;
@@ -466,13 +467,17 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       statusMessage={nodeData._statusMessage}
       className="min-w-[300px] border-amber-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="agent"
         type="target"
         position={Position.Left}
         id="agent-in"
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="agent"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"

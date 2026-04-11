@@ -8,7 +8,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { Handle, Position, useStore, type Node, type NodeProps } from "@xyflow/react";
+import { Position, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { ExternalLink, ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import {
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type AssetNodeData = {
   assetId?: number;
@@ -152,7 +153,9 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
       status={data._status}
       statusMessage={data._statusMessage}
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="asset"
         type="target"
         position={Position.Left}
         className="h-3! w-3! border-2! border-background! bg-primary!"
@@ -273,7 +276,9 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
         />
       ) : null}
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="asset"
         type="source"
         position={Position.Right}
         className="h-3! w-3! border-2! border-background! bg-primary!"

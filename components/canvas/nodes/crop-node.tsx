@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { Crop } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -24,6 +24,7 @@ import {
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type CropNodeViewData = CropNodeData & {
   _status?: string;
@@ -400,7 +401,9 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
       statusMessage={data._statusMessage}
       className="min-w-[320px] border-violet-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="crop"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-background !bg-violet-500"
@@ -735,7 +738,9 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
         {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="crop"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !border-background !bg-violet-500"
