@@ -30,6 +30,7 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "mixer",
   "crop",
   "curves",
   "color-adjust",
@@ -209,7 +210,7 @@ export function getCanvasConnectionValidationMessage(
     case "adjustment-target-forbidden":
       return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
     case "render-source-invalid":
-      return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Crop- oder Adjustment-Input.";
+      return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Mixer-, Crop- oder Adjustment-Input.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
     case "agent-output-source-invalid":

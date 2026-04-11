@@ -5,9 +5,25 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
+  useViewport,
   type EdgeProps,
 } from "@xyflow/react";
 import { Plus } from "lucide-react";
+
+const MIN_EDGE_INSERT_BUTTON_SCALE = 0.95;
+const MAX_EDGE_INSERT_BUTTON_SCALE = 2.2;
+
+function getEdgeInsertButtonScale(zoom: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    return 1;
+  }
+
+  const inverseZoom = 1 / zoom;
+  return Math.min(
+    MAX_EDGE_INSERT_BUTTON_SCALE,
+    Math.max(MIN_EDGE_INSERT_BUTTON_SCALE, inverseZoom),
+  );
+}
 
 export type DefaultEdgeInsertAnchor = {
   edgeId: string;
@@ -41,6 +57,7 @@ export default function DefaultEdge({
 }: DefaultEdgeProps) {
   const [isEdgeHovered, setIsEdgeHovered] = useState(false);
   const [isButtonHovered, setIsButtonHovered] = useState(false);
+  const { zoom } = useViewport();
 
   const [edgePath, labelX, labelY] = useMemo(
     () =>
@@ -58,6 +75,7 @@ export default function DefaultEdge({
   const resolvedEdgeId = edgeId ?? id;
   const canInsert = Boolean(onInsertClick) && !disabled;
   const isInsertVisible = canInsert && (isMenuOpen || isEdgeHovered || isButtonHovered);
+  const buttonScale = getEdgeInsertButtonScale(zoom);
 
   const handleInsertClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (!onInsertClick || disabled) {
@@ -97,9 +115,10 @@ export default function DefaultEdge({
           aria-label="Insert node"
           aria-hidden={!isInsertVisible}
           disabled={!canInsert}
-          className="nodrag nopan absolute h-7 w-7 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-opacity"
+          className="nodrag nopan absolute h-8 w-8 items-center justify-center rounded-full border-2 border-border/90 bg-background/95 text-foreground shadow-[0_2px_10px_rgba(0,0,0,0.28)] ring-1 ring-background/90 transition-opacity transition-shadow"
           style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) scale(${buttonScale})`,
+            transformOrigin: "center center",
             opacity: isInsertVisible ? 1 : 0,
             pointerEvents: isInsertVisible ? "all" : "none",
             display: "flex",
@@ -108,7 +127,7 @@ export default function DefaultEdge({
           onMouseLeave={() => setIsButtonHovered(false)}
           onClick={handleInsertClick}
         >
-          <Plus className="h-4 w-4" aria-hidden="true" />
+          <Plus className="h-[18px] w-[18px] stroke-[2.5]" aria-hidden="true" />
         </button>
       </EdgeLabelRenderer>
     </>

@@ -132,6 +132,16 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows mixer as render source", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "mixer",
+        targetType: "render",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
   it("describes unsupported crop source message", () => {
     expect(getCanvasConnectionValidationMessage("crop-source-invalid")).toBe(
       "Crop akzeptiert nur Bild-, Asset-, KI-Bild-, Video-, KI-Video-, Crop- oder Adjustment-Input.",

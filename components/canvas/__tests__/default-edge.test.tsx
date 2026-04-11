@@ -8,6 +8,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DefaultEdge from "@/components/canvas/edges/default-edge";
 
+const mockViewport = {
+  x: 0,
+  y: 0,
+  zoom: 1,
+};
+
 vi.mock("@xyflow/react", async () => {
   const actual = await vi.importActual<typeof import("@xyflow/react")>(
     "@xyflow/react",
@@ -18,6 +24,7 @@ vi.mock("@xyflow/react", async () => {
     EdgeLabelRenderer: ({ children }: { children: ReactNode }) => (
       <foreignObject>{children}</foreignObject>
     ),
+    useViewport: () => mockViewport,
   };
 });
 
@@ -95,6 +102,8 @@ describe("DefaultEdge", () => {
   let container: HTMLDivElement | null = null;
 
   afterEach(() => {
+    mockViewport.zoom = 1;
+
     if (root) {
       act(() => {
         root?.unmount();
@@ -184,5 +193,34 @@ describe("DefaultEdge", () => {
     const edgePath = container.querySelector("path.react-flow__edge-path");
     expect(edgePath).not.toBeNull();
     expect(edgePath?.getAttribute("d")).toBeTruthy();
+  });
+
+  it("applies zoom-aware scaling with clamps to keep the plus legible", () => {
+    const onInsertClick = vi.fn<(anchor: EdgeInsertAnchor) => void>();
+
+    mockViewport.zoom = 0.2;
+    ({ container, root } = renderEdge({ onInsertClick, isMenuOpen: true }));
+    const insertButton = getInsertButton(container);
+    expect(insertButton.style.transform).toContain("scale(2.2)");
+
+    mockViewport.zoom = 4;
+    act(() => {
+      root?.render(
+        <svg>
+          <DefaultEdgeComponent {...baseProps} onInsertClick={onInsertClick} isMenuOpen />
+        </svg>,
+      );
+    });
+    expect(insertButton.style.transform).toContain("scale(0.95)");
+  });
+
+  it("uses stronger visual styling for distant zoom visibility", () => {
+    const onInsertClick = vi.fn<(anchor: EdgeInsertAnchor) => void>();
+    ({ container, root } = renderEdge({ onInsertClick, isMenuOpen: true }));
+
+    const insertButton = getInsertButton(container);
+    expect(insertButton.className).toContain("border-2");
+    expect(insertButton.className).toContain("ring-1");
+    expect(insertButton.className).toContain("shadow");
   });
 });
