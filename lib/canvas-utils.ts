@@ -179,6 +179,27 @@ export function canvasHandleAccentRgb(args: {
   return SOURCE_NODE_GLOW_RGB[nodeType] ?? CONNECTION_LINE_FALLBACK_RGB;
 }
 
+export function canvasHandleAccentColor(args: {
+  nodeType: string | undefined;
+  handleId?: string | null;
+  handleType: "source" | "target";
+}): string {
+  const [r, g, b] = canvasHandleAccentRgb(args);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+export function canvasHandleAccentColorWithAlpha(
+  args: {
+    nodeType: string | undefined;
+    handleId?: string | null;
+    handleType: "source" | "target";
+  },
+  alpha: number,
+): string {
+  const [r, g, b] = canvasHandleAccentRgb(args);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /**
  * RGB für die temporäre Verbindungslinie (Quell-Node + optional Handle, z. B. Reconnect).
  */
