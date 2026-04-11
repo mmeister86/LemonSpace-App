@@ -78,6 +78,8 @@ import { useCanvasEdgeTypes } from "./use-canvas-edge-types";
 import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
+import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
+import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -675,6 +677,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             panOnDrag={flowPanOnDrag}
             selectionOnDrag={flowSelectionOnDrag}
             panActivationKeyCode="Space"
+            connectionRadius={HANDLE_GLOW_RADIUS_PX}
+            reconnectRadius={24}
+            edgesReconnectable
             proOptions={{ hideAttribution: true }}
             colorMode={resolvedTheme === "dark" ? "dark" : "light"}
             className={cn(
@@ -709,7 +714,9 @@ interface CanvasProps {
 export default function Canvas({ canvasId }: CanvasProps) {
   return (
     <ReactFlowProvider>
-      <CanvasInner canvasId={canvasId} />
+      <CanvasConnectionMagnetismProvider>
+        <CanvasInner canvasId={canvasId} />
+      </CanvasConnectionMagnetismProvider>
     </ReactFlowProvider>
   );
 }

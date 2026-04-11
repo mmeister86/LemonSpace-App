@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 import { Palette } from "lucide-react";
 
@@ -29,6 +29,7 @@ import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { COLOR_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type ColorAdjustNodeData = ColorAdjustData & {
   _status?: string;
@@ -191,7 +192,9 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
       statusMessage={data._statusMessage}
       className="min-w-[300px] border-cyan-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="color-adjust"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-background !bg-cyan-500"
@@ -268,7 +271,9 @@ export default function ColorAdjustNode({ id, data, selected, width }: NodeProps
         />
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="color-adjust"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !border-background !bg-cyan-500"

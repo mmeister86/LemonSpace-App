@@ -35,9 +35,20 @@ app/(app)/canvas/[canvasId]/page.tsx
 | `canvas-scissors.ts` | Hook für Scherenmodus (K/Esc Toggle, Click-Cut, Stroke-Cut) |
 | `canvas-delete-handlers.ts` | Hook für `onBeforeDelete`, `onNodesDelete`, `onEdgesDelete` inkl. Bridge-Edges |
 | `canvas-reconnect.ts` | Hook für Edge-Reconnect (`onReconnectStart`, `onReconnect`, `onReconnectEnd`) |
+| `canvas-connection-magnetism.ts` | Pure Magnet-Resolver für Handle-Proximity (`resolveCanvasMagnetTarget`) inkl. Glow/Snap-Radien |
+| `canvas-connection-magnetism-context.tsx` | Transienter Client-State für aktives Magnet-Target während Connect/Reconnect-Drags |
 | `canvas-media-utils.ts` | Media-Helfer wie `getImageDimensions(file)` |
 | `use-canvas-data.ts` | Hook: Bündelt Canvas-Graph-Query, Storage-URL-Auflösung und Auth-State in einer einzigen Abstraktion |
 | `canvas-graph-query-cache.ts` | Optimistic Store Helper für `canvasGraph.get` (getNodes, getEdges, setNodes, setEdges) |
+
+### Connection Magnetism (client-only)
+
+- Magnetism ist eine rein clientseitige UX-Schicht über dem bestehenden React-Flow-Connect-Flow; Persistenz, Edge-Schema und Convex-Mutations bleiben unverändert.
+- `HANDLE_GLOW_RADIUS_PX = 56` und `HANDLE_SNAP_RADIUS_PX = 40` liegen zentral in `canvas-connection-magnetism.ts` und werden von Resolver, Handle-Glow und Connection-Line gemeinsam genutzt.
+- `resolveCanvasMagnetTarget(...)` sucht LemonSpace-eigene Handle-DOM-Kandidaten über `data-node-id` / `data-handle-id` / `data-handle-type`, berechnet die Distanz zum Pointer und wählt stabil das nächste gültige Handle.
+- `CanvasConnectionMagnetismProvider` (in `canvas.tsx`) stellt `activeTarget` und `setActiveTarget` für `CustomConnectionLine`, `CanvasHandle` und Connect/Reconnect-Hooks bereit; der State ist transient und wird nach Drag-Ende geleert.
+- `CanvasHandle` ist der gemeinsame Wrapper für alle Node-Handles (statt direktes `<Handle>` pro Node), rendert `idle|near|snapped` Glow-States und exportiert stabile `data-*` Attribute für die Geometrie-Lookups.
+- Connectability bleibt strikt policy-getrieben: Magnet-Targets werden nur akzeptiert, wenn `validateCanvasConnectionPolicy(...)` bzw. die bestehende Validierungslogik die Verbindung erlaubt.
 
 ---
 

@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -30,6 +30,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type AiImageNodeData = {
   storageId?: string;
@@ -194,7 +195,9 @@ export default function AiImageNode({
       ]}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="ai-image"
         type="target"
         position={Position.Left}
         id="prompt-in"
@@ -331,7 +334,9 @@ export default function AiImageNode({
         </div>
       )}
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="ai-image"
         type="source"
         position={Position.Right}
         id="image-out"

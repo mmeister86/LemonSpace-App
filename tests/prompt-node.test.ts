@@ -135,6 +135,7 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
 vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
+  useConnection: () => ({ inProgress: false }),
   useStore: (selector: (state: { edges: typeof mocks.edges; nodes: typeof mocks.nodes }) => unknown) =>
     selector({ edges: mocks.edges, nodes: mocks.nodes }),
   useReactFlow: () => ({

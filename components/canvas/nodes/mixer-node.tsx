@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Position, type NodeProps } from "@xyflow/react";
 
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
@@ -12,6 +12,7 @@ import {
   type MixerBlendMode,
 } from "@/lib/canvas-mixer-preview";
 import type { Id } from "@/convex/_generated/dataModel";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 const BLEND_MODE_OPTIONS: MixerBlendMode[] = ["normal", "multiply", "screen", "overlay"];
 
@@ -56,21 +57,27 @@ export default function MixerNode({ id, data, selected }: NodeProps) {
 
   return (
     <BaseNodeWrapper nodeType="mixer" selected={selected} className="p-0">
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
         type="target"
         position={Position.Left}
         id="base"
         style={{ top: "35%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
         type="target"
         position={Position.Left}
         id="overlay"
         style={{ top: "58%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-pink-500"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
         type="source"
         position={Position.Right}
         id="mixer-out"

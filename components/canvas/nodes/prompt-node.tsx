@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Handle,
   Position,
   useReactFlow,
   useStore,
@@ -45,6 +44,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { classifyError } from "@/lib/ai-errors";
 import { normalizePublicTier } from "@/lib/tier-credits";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type PromptNodeData = {
   prompt?: string;
@@ -353,7 +353,9 @@ export default function PromptNode({
       statusMessage={nodeData._statusMessage}
       className="min-w-[240px] border-violet-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="prompt"
         type="target"
         position={Position.Left}
         id="image-in"
@@ -489,7 +491,9 @@ export default function PromptNode({
         </div>
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="prompt"
         type="source"
         position={Position.Right}
         id="prompt-out"

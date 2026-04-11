@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 import { Sun } from "lucide-react";
 
@@ -29,6 +29,7 @@ import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { LIGHT_PRESETS } from "@/lib/image-pipeline/presets";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type LightAdjustNodeData = LightAdjustData & {
   _status?: string;
@@ -213,7 +214,9 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
       statusMessage={data._statusMessage}
       className="min-w-[300px] border-amber-500/30"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="light-adjust"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-background !bg-amber-500"
@@ -292,7 +295,9 @@ export default function LightAdjustNode({ id, data, selected, width }: NodeProps
         />
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="light-adjust"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !border-background !bg-amber-500"

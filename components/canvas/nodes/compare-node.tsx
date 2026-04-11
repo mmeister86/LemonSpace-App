@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Position, type NodeProps } from "@xyflow/react";
 import { ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CompareSurface from "./compare-surface";
@@ -15,6 +15,7 @@ import {
   resolveMixerPreviewFromGraph,
   type MixerPreviewState,
 } from "@/lib/canvas-mixer-preview";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 interface CompareNodeData {
   leftUrl?: string;
@@ -242,21 +243,27 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
 
   return (
     <BaseNodeWrapper nodeType="compare" selected={selected} className="p-0">
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="compare"
         type="target"
         position={Position.Left}
         id="left"
         style={{ top: "35%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-blue-500"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="compare"
         type="target"
         position={Position.Left}
         id="right"
         style={{ top: "55%" }}
         className="!h-3 !w-3 !border-2 !border-background !bg-emerald-500"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="compare"
         type="source"
         position={Position.Right}
         id="compare-out"

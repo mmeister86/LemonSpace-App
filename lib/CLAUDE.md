@@ -68,6 +68,7 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 - `NODE_DEFAULTS` — Default-Größen und Daten per Node-Typ (inkl. `video-prompt` und `ai-video`)
 - `NODE_HANDLE_MAP` — Handle-IDs pro Node-Typ (inkl. `video-prompt-out/in` und `video-out/in`)
 - `SOURCE_NODE_GLOW_RGB` — Edge-Glow-Farben pro Source-Node-Typ (inkl. `video-prompt` und `ai-video`)
+- `canvasHandleAccentRgb`, `canvasHandleAccentColor`, `canvasHandleAccentColorWithAlpha` — gemeinsame Handle-Akzentfarben (inkl. Spezialfälle für `compare.left/right/compare-out` und `mixer.base/overlay/mixer-out`)
 - `agent` ist als input-only Node enthalten (`NODE_HANDLE_MAP.agent = { target: "agent-in" }`)
 - `computeBridgeCreatesForDeletedNodes` — Kanten-Reconnect nach Node-Löschung
 - `computeMediaNodeSize` — Dynamische Node-Größe basierend auf Bild-Dimensionen

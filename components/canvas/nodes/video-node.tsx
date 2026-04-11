@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
+import { Position, useStore, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import { Play } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
@@ -12,6 +12,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type VideoNodeData = {
   canvasId?: string;
@@ -150,7 +151,9 @@ export default function VideoNode({
 
   return (
     <BaseNodeWrapper nodeType="video" selected={selected}>
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="video"
         type="target"
         position={Position.Left}
         className="h-3! w-3! border-2! border-background! bg-primary!"
@@ -245,7 +248,9 @@ export default function VideoNode({
         />
       ) : null}
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="video"
         type="source"
         position={Position.Right}
         className="h-3! w-3! border-2! border-background! bg-primary!"

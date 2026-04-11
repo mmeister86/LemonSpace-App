@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type NoteNodeData = {
   content?: string;
@@ -53,7 +54,9 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
 
   return (
     <BaseNodeWrapper nodeType="note" selected={selected} className="p-3">
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="note"
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !bg-primary !border-2 !border-background"
@@ -85,7 +88,9 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
         </div>
       )}
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="note"
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !bg-primary !border-2 !border-background"

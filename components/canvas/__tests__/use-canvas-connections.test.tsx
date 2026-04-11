@@ -6,9 +6,11 @@ import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "@/convex/_generated/dataModel";
+import type { CanvasMagnetTarget } from "@/components/canvas/canvas-connection-magnetism";
 
 const mocks = vi.hoisted(() => ({
   resolveDroppedConnectionTarget: vi.fn(),
+  resolveCanvasMagnetTarget: vi.fn(),
 }));
 
 vi.mock("@/components/canvas/canvas-helpers", async () => {
@@ -22,8 +24,23 @@ vi.mock("@/components/canvas/canvas-helpers", async () => {
   };
 });
 
+vi.mock("@/components/canvas/canvas-connection-magnetism", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/components/canvas/canvas-connection-magnetism")
+  >("@/components/canvas/canvas-connection-magnetism");
+
+  return {
+    ...actual,
+    resolveCanvasMagnetTarget: mocks.resolveCanvasMagnetTarget,
+  };
+});
+
 import { useCanvasConnections } from "@/components/canvas/use-canvas-connections";
 import type { DroppedConnectionTarget } from "@/components/canvas/canvas-helpers";
+import {
+  CanvasConnectionMagnetismProvider,
+  useCanvasConnectionMagnetism,
+} from "@/components/canvas/canvas-connection-magnetism-context";
 import { nodeTypes } from "@/components/canvas/node-types";
 import { NODE_CATALOG } from "@/lib/canvas-node-catalog";
 import { CANVAS_NODE_TEMPLATES } from "@/lib/canvas-node-templates";
@@ -33,6 +50,14 @@ const asCanvasId = (id: string): Id<"canvases"> => id as Id<"canvases">;
 
 const latestHandlersRef: {
   current: ReturnType<typeof useCanvasConnections> | null;
+} = { current: null };
+
+const latestMagnetTargetRef: {
+  current: CanvasMagnetTarget | null;
+} = { current: null };
+
+const latestSetActiveTargetRef: {
+  current: ((target: CanvasMagnetTarget | null) => void) | null;
 } = { current: null };
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,9 +72,12 @@ type HookHarnessProps = {
   setEdgesMock?: ReturnType<typeof vi.fn>;
   nodes?: RFNode[];
   edges?: RFEdge[];
+  initialMagnetTarget?: CanvasMagnetTarget | null;
 };
 
-function HookHarness({
+type HookHarnessInnerProps = HookHarnessProps;
+
+function HookHarnessInner({
   helperResult,
   runCreateEdgeMutation = vi.fn(async () => undefined),
   runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined),
@@ -59,7 +87,10 @@ function HookHarness({
   setEdgesMock,
   nodes: providedNodes,
   edges: providedEdges,
-}: HookHarnessProps) {
+  initialMagnetTarget,
+}: HookHarnessInnerProps) {
+  const { activeTarget, setActiveTarget } = useCanvasConnectionMagnetism();
+  const didInitializeMagnetTargetRef = useRef(false);
   const [nodes] = useState<RFNode[]>(
     providedNodes ?? [
       { id: "node-source", type: "image", position: { x: 0, y: 0 }, data: {} },
@@ -88,6 +119,17 @@ function HookHarness({
     mocks.resolveDroppedConnectionTarget.mockReturnValue(helperResult);
   }, [helperResult]);
 
+  useEffect(() => {
+    mocks.resolveCanvasMagnetTarget.mockReturnValue(null);
+  }, []);
+
+  useEffect(() => {
+    if (!didInitializeMagnetTargetRef.current && initialMagnetTarget !== undefined) {
+      didInitializeMagnetTargetRef.current = true;
+      setActiveTarget(initialMagnetTarget);
+    }
+  }, [initialMagnetTarget, setActiveTarget]);
+
   const handlers = useCanvasConnections({
     canvasId: asCanvasId("canvas-1"),
     nodes,
@@ -115,7 +157,26 @@ function HookHarness({
     latestHandlersRef.current = handlers;
   }, [handlers]);
 
+  useEffect(() => {
+    latestMagnetTargetRef.current = activeTarget;
+  }, [activeTarget]);
+
+  useEffect(() => {
+    latestSetActiveTargetRef.current = setActiveTarget;
+    return () => {
+      latestSetActiveTargetRef.current = null;
+    };
+  }, [setActiveTarget]);
+
   return null;
+}
+
+function HookHarness(props: HookHarnessProps) {
+  return (
+    <CanvasConnectionMagnetismProvider>
+      <HookHarnessInner {...props} />
+    </CanvasConnectionMagnetismProvider>
+  );
 }
 
 describe("useCanvasConnections", () => {
@@ -124,6 +185,8 @@ describe("useCanvasConnections", () => {
 
   afterEach(async () => {
     latestHandlersRef.current = null;
+    latestMagnetTargetRef.current = null;
+    latestSetActiveTargetRef.current = null;
     vi.clearAllMocks();
     if (root) {
       await act(async () => {
@@ -1252,5 +1315,242 @@ describe("useCanvasConnections", () => {
 
     expect(runSwapMixerInputsMutation).not.toHaveBeenCalled();
     expect(showConnectionRejectedToast).toHaveBeenCalledWith("self-loop");
+  });
+
+  it("falls back to active magnet target when direct drop resolution misses", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={null}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          initialMagnetTarget={{
+            nodeId: "node-target",
+            handleId: "base",
+            handleType: "target",
+            centerX: 320,
+            centerY: 180,
+            distancePx: 12,
+          }}
+          nodes={[
+            { id: "node-source", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-target", type: "mixer", position: { x: 300, y: 200 }, data: {} },
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 400, clientY: 260 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-source", type: "image" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 400, y: 260 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runCreateEdgeMutation).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      sourceNodeId: "node-source",
+      targetNodeId: "node-target",
+      sourceHandle: undefined,
+      targetHandle: "base",
+    });
+    expect(latestMagnetTargetRef.current).toBeNull();
+  });
+
+  it("rejects invalid active magnet target and clears transient state", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+    const showConnectionRejectedToast = vi.fn();
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={null}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          showConnectionRejectedToast={showConnectionRejectedToast}
+          initialMagnetTarget={{
+            nodeId: "node-source",
+            handleType: "target",
+            centerX: 100,
+            centerY: 100,
+            distancePx: 10,
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 120, clientY: 120 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-source", type: "image" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 120, y: 120 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).toHaveBeenCalledWith("self-loop");
+    expect(latestMagnetTargetRef.current).toBeNull();
+  });
+
+  it("clears transient magnet state when dropping on background opens menu", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={null}
+          initialMagnetTarget={{
+            nodeId: "node-target",
+            handleType: "target",
+            centerX: 200,
+            centerY: 220,
+            distancePx: 14,
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-source",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 500, clientY: 460 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-source", type: "image" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 500, y: 460 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(latestHandlersRef.current?.connectionDropMenu).toEqual(
+      expect.objectContaining({
+        screenX: 500,
+        screenY: 460,
+      }),
+    );
+    expect(latestMagnetTargetRef.current).toBeNull();
+  });
+
+  it("clears transient magnet state when reconnect drag ends", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={null}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          edges={[
+            {
+              id: "edge-1",
+              source: "node-source",
+              target: "node-target",
+              targetHandle: "base",
+            },
+          ]}
+          nodes={[
+            { id: "node-source", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-target", type: "mixer", position: { x: 300, y: 200 }, data: {} },
+          ]}
+          initialMagnetTarget={{
+            nodeId: "node-target",
+            handleType: "target",
+            handleId: "overlay",
+            centerX: 300,
+            centerY: 180,
+            distancePx: 11,
+          }}
+        />,
+      );
+    });
+
+    const oldEdge = {
+      id: "edge-1",
+      source: "node-source",
+      target: "node-target",
+      targetHandle: "base",
+    } as RFEdge;
+
+    await act(async () => {
+      latestHandlersRef.current?.onReconnectStart();
+      latestHandlersRef.current?.onReconnect(oldEdge, {
+        source: "node-source",
+        target: "node-target",
+        sourceHandle: null,
+        targetHandle: "overlay",
+      });
+      latestHandlersRef.current?.onReconnectEnd({} as MouseEvent, oldEdge);
+      await Promise.resolve();
+    });
+
+    expect(runCreateEdgeMutation).toHaveBeenCalled();
+    expect(latestMagnetTargetRef.current).toBeNull();
   });
 });

@@ -17,6 +17,31 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
 }));
 
+vi.mock("@/components/canvas/canvas-handle", () => ({
+  default: ({
+    id,
+    type,
+    nodeId,
+    nodeType,
+    style,
+  }: {
+    id?: string;
+    type: "source" | "target";
+    nodeId: string;
+    nodeType?: string;
+    style?: React.CSSProperties;
+  }) => (
+    <div
+      data-canvas-handle="true"
+      data-handle-id={id ?? ""}
+      data-handle-type={type}
+      data-node-id={nodeId}
+      data-node-type={nodeType ?? ""}
+      data-top={typeof style?.top === "string" ? style.top : ""}
+    />
+  ),
+}));
+
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
   useCanvasSync: () => ({
     queueNodeDataUpdate: mocks.queueNodeDataUpdate,
@@ -222,8 +247,20 @@ describe("MixerNode", () => {
   it("renders expected mixer handles", async () => {
     await renderNode();
 
-    expect(container?.querySelector('[data-handle-id="base"][data-handle-type="target"]')).toBeTruthy();
-    expect(container?.querySelector('[data-handle-id="overlay"][data-handle-type="target"]')).toBeTruthy();
-    expect(container?.querySelector('[data-handle-id="mixer-out"][data-handle-type="source"]')).toBeTruthy();
+    expect(
+      container?.querySelector(
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="base"][data-handle-type="target"][data-top="35%"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      container?.querySelector(
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="overlay"][data-handle-type="target"][data-top="58%"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      container?.querySelector(
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="mixer-out"][data-handle-type="source"]',
+      ),
+    ).toBeTruthy();
   });
 });

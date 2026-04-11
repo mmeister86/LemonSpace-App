@@ -142,6 +142,7 @@ vi.mock("next-intl", () => ({
 vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
+  useConnection: () => ({ inProgress: false }),
 }));
 
 import AgentNode from "@/components/canvas/nodes/agent-node";

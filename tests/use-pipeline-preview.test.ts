@@ -691,6 +691,7 @@ describe("preview histogram call sites", () => {
     vi.doMock("@xyflow/react", () => ({
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
+      useConnection: () => ({ inProgress: false }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -754,6 +755,8 @@ describe("preview histogram call sites", () => {
     }));
     vi.doMock("@/lib/canvas-utils", () => ({
       resolveMediaAspectRatio: () => null,
+      canvasHandleAccentColor: () => "rgb(13, 148, 136)",
+      canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),
@@ -875,6 +878,7 @@ describe("preview histogram call sites", () => {
     vi.doMock("@xyflow/react", () => ({
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
+      useConnection: () => ({ inProgress: false }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -935,6 +939,8 @@ describe("preview histogram call sites", () => {
     }));
     vi.doMock("@/lib/canvas-utils", () => ({
       resolveMediaAspectRatio: () => null,
+      canvasHandleAccentColor: () => "rgb(13, 148, 136)",
+      canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),
@@ -1063,6 +1069,7 @@ describe("preview histogram call sites", () => {
     vi.doMock("@xyflow/react", () => ({
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
+      useConnection: () => ({ inProgress: false }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -1126,6 +1133,8 @@ describe("preview histogram call sites", () => {
     }));
     vi.doMock("@/lib/canvas-utils", () => ({
       resolveMediaAspectRatio: () => null,
+      canvasHandleAccentColor: () => "rgb(13, 148, 136)",
+      canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),

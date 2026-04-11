@@ -28,6 +28,31 @@ vi.mock("@xyflow/react", () => ({
   useStore: (selector: (state: StoreState) => unknown) => selector(storeState),
 }));
 
+vi.mock("@/components/canvas/canvas-handle", () => ({
+  default: ({
+    id,
+    type,
+    nodeId,
+    nodeType,
+    style,
+  }: {
+    id?: string;
+    type: "source" | "target";
+    nodeId: string;
+    nodeType?: string;
+    style?: React.CSSProperties;
+  }) => (
+    <div
+      data-canvas-handle="true"
+      data-handle-id={id ?? ""}
+      data-handle-type={type}
+      data-node-id={nodeId}
+      data-node-type={nodeType ?? ""}
+      data-top={typeof style?.top === "string" ? style.top : ""}
+    />
+  ),
+}));
+
 vi.mock("../nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
@@ -260,5 +285,36 @@ describe("CompareNode render preview inputs", () => {
         offsetY: -4,
       },
     });
+  });
+
+  it("renders compare handles through CanvasHandle with preserved ids and positions", () => {
+    const markup = renderCompareNode({
+      id: "compare-1",
+      data: {},
+      selected: false,
+      dragging: false,
+      zIndex: 0,
+      isConnectable: true,
+      type: "compare",
+      xPos: 0,
+      yPos: 0,
+      width: 500,
+      height: 380,
+      sourcePosition: undefined,
+      targetPosition: undefined,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    });
+
+    expect(markup).toContain('data-canvas-handle="true"');
+    expect(markup).toContain('data-node-id="compare-1"');
+    expect(markup).toContain('data-node-type="compare"');
+    expect(markup).toContain('data-handle-id="left"');
+    expect(markup).toContain('data-handle-id="right"');
+    expect(markup).toContain('data-handle-id="compare-out"');
+    expect(markup).toContain('data-handle-type="target"');
+    expect(markup).toContain('data-handle-type="source"');
+    expect(markup).toContain('data-top="35%"');
+    expect(markup).toContain('data-top="55%"');
   });
 });

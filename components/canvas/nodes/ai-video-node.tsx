@@ -5,7 +5,7 @@ import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { useTranslations } from "next-intl";
 import { AlertCircle, Download, Loader2, RefreshCw, Video } from "lucide-react";
-import { Handle, Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
+import { Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -14,6 +14,7 @@ import { classifyError } from "@/lib/ai-errors";
 import { getVideoModel, type VideoModelDurationSeconds } from "@/lib/ai-video-models";
 import { toast } from "@/lib/toast";
 import BaseNodeWrapper from "./base-node-wrapper";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type AiVideoNodeData = {
   prompt?: string;
@@ -160,7 +161,9 @@ export default function AiVideoNode({ id, data, selected }: NodeProps<AiVideoNod
       statusMessage={nodeData._statusMessage}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="ai-video"
         type="target"
         position={Position.Left}
         id="video-in"
@@ -240,7 +243,9 @@ export default function AiVideoNode({ id, data, selected }: NodeProps<AiVideoNod
         ) : null}
       </div>
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="ai-video"
         type="source"
         position={Position.Right}
         id="video-out"

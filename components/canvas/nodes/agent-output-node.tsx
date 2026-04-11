@@ -1,9 +1,10 @@
 "use client";
 
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 
 import BaseNodeWrapper from "./base-node-wrapper";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type AgentOutputNodeData = {
   isSkeleton?: boolean;
@@ -186,7 +187,7 @@ function partitionSections(
   };
 }
 
-export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutputNodeType>) {
+export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentOutputNodeType>) {
   const t = useTranslations("agentOutputNode");
   const nodeData = data as AgentOutputNodeData;
   const isSkeleton = nodeData.isSkeleton === true;
@@ -240,7 +241,9 @@ export default function AgentOutputNode({ data, selected }: NodeProps<AgentOutpu
       statusMessage={nodeData._statusMessage}
       className={`min-w-[300px] border-amber-500/30 ${isSkeleton ? "opacity-80" : ""}`}
     >
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="agent-output"
         type="target"
         position={Position.Left}
         id="agent-output-in"

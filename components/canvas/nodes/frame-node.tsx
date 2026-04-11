@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Position, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import { useTranslations } from "next-intl";
 import { Download, Loader2 } from "lucide-react";
@@ -11,6 +11,7 @@ import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { toast } from "@/lib/toast";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import CanvasHandle from "@/components/canvas/canvas-handle";
 
 interface FrameNodeData {
   label?: string;
@@ -125,13 +126,17 @@ export default function FrameNode({ id, data, selected, width, height }: NodePro
 
       <div className="nodrag h-full w-full" />
 
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="frame"
         type="target"
         position={Position.Left}
         id="frame-in"
         className="!h-3 !w-3 !border-2 !border-background !bg-orange-500"
       />
-      <Handle
+      <CanvasHandle
+        nodeId={id}
+        nodeType="frame"
         type="source"
         position={Position.Right}
         id="frame-out"
