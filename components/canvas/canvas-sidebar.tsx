@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { CanvasUserMenu } from "@/components/canvas/canvas-user-menu";
+import { ProgressiveBlur } from "@/components/ui/progressive-blur";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -240,15 +241,13 @@ export default function CanvasSidebar({
             </>
           )}
         </div>
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 z-10",
-            railMode
-              ? "h-16 bg-gradient-to-t from-black via-black/80 to-transparent"
-              : "h-24 bg-gradient-to-t from-black via-black/80 to-transparent",
-          )}
-        />
+        <div aria-hidden="true">
+          <ProgressiveBlur
+            position="bottom"
+            height={railMode ? "4rem" : "6rem"}
+            blurLevels={[0.5, 1, 2, 4, 8, 12, 16, 24]}
+          />
+        </div>
       </div>
 
       <div className="relative z-20 bg-background">
