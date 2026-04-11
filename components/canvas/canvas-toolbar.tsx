@@ -8,6 +8,7 @@ import {
   Plus,
   Redo2,
   Scissors,
+  Star,
   Undo2,
 } from "lucide-react";
 
@@ -40,12 +41,18 @@ interface CanvasToolbarProps {
   canvasName?: string;
   activeTool: CanvasNavTool;
   onToolChange: (tool: CanvasNavTool) => void;
+  favoriteFilterActive?: boolean;
+  onFavoriteFilterChange?: (active: boolean) => void;
+  favoriteCount?: number;
 }
 
 export default function CanvasToolbar({
   canvasName,
   activeTool,
   onToolChange,
+  favoriteFilterActive = false,
+  onFavoriteFilterChange,
+  favoriteCount,
 }: CanvasToolbarProps) {
   const { createNodeWithIntersection } = useCanvasPlacement();
   const getCenteredPosition = useCenteredFlowNodePosition();
@@ -66,6 +73,10 @@ export default function CanvasToolbar({
 
   const byCategory = catalogEntriesByCategory();
   const resolvedCanvasName = canvasName?.trim() || "Unbenannter Canvas";
+  const favoritesLabel =
+    typeof favoriteCount === "number"
+      ? `Favoriten hervorheben (${favoriteCount})`
+      : "Favoriten hervorheben";
 
   const toolBtn = (tool: CanvasNavTool, icon: React.ReactNode, label: string) => (
     <Button
@@ -143,6 +154,21 @@ export default function CanvasToolbar({
         "Hand (H) — schwenken: Leertaste gedrückt halten und ziehen oder linke Maustaste",
       )}
       {toolBtn("scissor", <Scissors className="size-4" />, "Schere (K) — Verbindungen kappen")}
+
+      {onFavoriteFilterChange ? (
+        <Button
+          type="button"
+          size="icon"
+          variant={favoriteFilterActive ? "secondary" : "ghost"}
+          className="size-9 shrink-0"
+          aria-label={favoritesLabel}
+          title={favoritesLabel}
+          aria-pressed={favoriteFilterActive}
+          onClick={() => onFavoriteFilterChange(!favoriteFilterActive)}
+        >
+          <Star className={favoriteFilterActive ? "size-4 fill-current" : "size-4"} />
+        </Button>
+      ) : null}
 
       <Button
         type="button"

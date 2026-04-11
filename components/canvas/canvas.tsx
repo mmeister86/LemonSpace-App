@@ -80,6 +80,7 @@ import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-p
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
 import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
 import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
+import { projectCanvasFavoritesVisibility } from "./canvas-favorites-visibility";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -168,6 +169,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     { x: number; y: number }[] | null
   >(null);
   const [navTool, setNavTool] = useState<CanvasNavTool>("select");
+  const [focusFavorites, setFocusFavorites] = useState(false);
 
   useCanvasLocalSnapshotPersistence<RFNode, RFEdge>({
     canvasId: canvasId as string,
@@ -206,6 +208,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         className: edge.className ?? undefined,
       })),
     [edges],
+  );
+
+  const favoriteProjection = useMemo(
+    () =>
+        projectCanvasFavoritesVisibility({
+          nodes,
+          edges,
+          favoritesOnly: focusFavorites,
+        }),
+    [edges, nodes, focusFavorites],
   );
 
   const pendingRemovedEdgeIds = useMemo(
@@ -582,6 +594,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           canvasName={canvas?.name}
           activeTool={navTool}
           onToolChange={handleNavToolChange}
+          favoriteFilterActive={focusFavorites}
+          onFavoriteFilterChange={setFocusFavorites}
+          favoriteCount={favoriteProjection.favoriteCount}
         />
         <CanvasAppMenu canvasId={canvasId} />
         <CanvasCommandPalette />
@@ -643,8 +658,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         <CanvasGraphProvider nodes={canvasGraphNodes} edges={canvasGraphEdges}>
           <ReactFlow
             style={edgeInsertReflowStyle}
-            nodes={nodes}
-            edges={edges}
+            nodes={favoriteProjection.nodes}
+            edges={favoriteProjection.edges}
             onlyRenderVisibleElements
             defaultEdgeOptions={defaultEdgeOptions}
             connectionLineComponent={CustomConnectionLine}
