@@ -17,6 +17,13 @@ const sourceLoaderMocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/image-pipeline/source-loader", () => ({
   loadSourceBitmap: sourceLoaderMocks.loadSourceBitmap,
+  loadRenderSourceBitmap: ({ sourceUrl }: { sourceUrl?: string }) => {
+    if (!sourceUrl) {
+      throw new Error("Render source is required.");
+    }
+
+    return sourceLoaderMocks.loadSourceBitmap(sourceUrl);
+  },
 }));
 
 function createPreviewPixels(): Uint8ClampedArray {

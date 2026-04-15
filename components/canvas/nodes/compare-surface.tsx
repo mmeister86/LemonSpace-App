@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
@@ -7,8 +9,20 @@ import {
   type RenderPreviewInput,
 } from "@/lib/canvas-render-preview";
 import type { MixerPreviewState } from "@/lib/canvas-mixer-preview";
+import {
+  computeMixerCompareOverlayImageStyle,
+  computeMixerFrameRectInSurface,
+  isMixerCropImageReady,
+} from "@/lib/mixer-crop-layout";
 
 const EMPTY_STEPS: RenderPreviewInput["steps"] = [];
+const ZERO_SIZE = { width: 0, height: 0 };
+
+type LoadedImageState = {
+  url: string | null;
+  width: number;
+  height: number;
+};
 
 type CompareSurfaceProps = {
   finalUrl?: string;
@@ -16,6 +30,7 @@ type CompareSurfaceProps = {
   previewInput?: RenderPreviewInput;
   mixerPreviewState?: MixerPreviewState;
   nodeWidth: number;
+  nodeHeight: number;
   clipWidthPercent?: number;
   preferPreview?: boolean;
 };
@@ -26,12 +41,22 @@ export default function CompareSurface({
   previewInput,
   mixerPreviewState,
   nodeWidth,
+  nodeHeight,
   clipWidthPercent,
   preferPreview,
 }: CompareSurfaceProps) {
   const graph = useCanvasGraph();
+  const [baseImageState, setBaseImageState] = useState<LoadedImageState>({
+    url: null,
+    ...ZERO_SIZE,
+  });
+  const [overlayImageState, setOverlayImageState] = useState<LoadedImageState>({
+    url: null,
+    ...ZERO_SIZE,
+  });
   const usePreview = Boolean(previewInput && (preferPreview || !finalUrl));
   const previewSourceUrl = usePreview ? previewInput?.sourceUrl ?? null : null;
+  const previewSourceComposition = usePreview ? previewInput?.sourceComposition : undefined;
   const previewSteps = usePreview ? previewInput?.steps ?? EMPTY_STEPS : EMPTY_STEPS;
   const visibleFinalUrl = usePreview ? undefined : finalUrl;
   const previewDebounceMs = shouldFastPathPreviewPipeline(
@@ -43,6 +68,7 @@ export default function CompareSurface({
 
   const { canvasRef, isRendering, error } = usePipelinePreview({
     sourceUrl: previewSourceUrl,
+    sourceComposition: previewSourceComposition,
     steps: previewSteps,
     nodeWidth,
     includeHistogram: false,
@@ -63,6 +89,35 @@ export default function CompareSurface({
           WebkitClipPath: `inset(0 ${100 - clipWidthPercent}% 0 0)`,
         }
       : undefined;
+
+  const baseNaturalSize =
+    mixerPreviewState?.baseUrl && mixerPreviewState.baseUrl === baseImageState.url
+      ? { width: baseImageState.width, height: baseImageState.height }
+      : ZERO_SIZE;
+  const overlayNaturalSize =
+    mixerPreviewState?.overlayUrl && mixerPreviewState.overlayUrl === overlayImageState.url
+      ? { width: overlayImageState.width, height: overlayImageState.height }
+      : ZERO_SIZE;
+
+  const mixerCropReady = isMixerCropImageReady({
+    currentOverlayUrl: mixerPreviewState?.overlayUrl,
+    loadedOverlayUrl: overlayImageState.url,
+    sourceWidth: overlayNaturalSize.width,
+    sourceHeight: overlayNaturalSize.height,
+  });
+  const mixerFrameRect = hasMixerPreview
+    ? computeMixerFrameRectInSurface({
+        surfaceWidth: nodeWidth,
+        surfaceHeight: nodeHeight,
+        baseWidth: baseNaturalSize.width,
+        baseHeight: baseNaturalSize.height,
+        overlayX: mixerPreviewState.overlayX,
+        overlayY: mixerPreviewState.overlayY,
+        overlayWidth: mixerPreviewState.overlayWidth,
+        overlayHeight: mixerPreviewState.overlayHeight,
+        fit: "contain",
+      })
+    : null;
 
   return (
     <div className="pointer-events-none absolute inset-0" style={clipStyle}>
@@ -87,19 +142,62 @@ export default function CompareSurface({
             alt={label ?? "Comparison image"}
             className="absolute inset-0 h-full w-full object-contain"
             draggable={false}
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={mixerPreviewState.overlayUrl}
-            alt={label ?? "Comparison image"}
-            className="absolute inset-0 h-full w-full object-contain"
-            draggable={false}
-            style={{
-              mixBlendMode: mixerPreviewState.blendMode,
-              opacity: mixerPreviewState.opacity / 100,
-              transform: `translate(${mixerPreviewState.offsetX}px, ${mixerPreviewState.offsetY}px)`,
+            onLoad={(event) => {
+              setBaseImageState({
+                url: event.currentTarget.currentSrc || event.currentTarget.src,
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              });
             }}
           />
+          {mixerFrameRect ? (
+            <div
+              className="absolute overflow-hidden"
+              style={{
+                mixBlendMode: mixerPreviewState.blendMode,
+                opacity: mixerPreviewState.opacity / 100,
+                left: `${mixerFrameRect.x * 100}%`,
+                top: `${mixerFrameRect.y * 100}%`,
+                width: `${mixerFrameRect.width * 100}%`,
+                height: `${mixerFrameRect.height * 100}%`,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={mixerPreviewState.overlayUrl}
+                alt={label ?? "Comparison image"}
+                className="absolute max-w-none"
+                draggable={false}
+                onLoad={(event) => {
+                  setOverlayImageState({
+                    url: event.currentTarget.currentSrc || event.currentTarget.src,
+                    width: event.currentTarget.naturalWidth,
+                    height: event.currentTarget.naturalHeight,
+                  });
+                }}
+                style={
+                  mixerCropReady
+                    ? computeMixerCompareOverlayImageStyle({
+                      surfaceWidth: nodeWidth,
+                      surfaceHeight: nodeHeight,
+                      baseWidth: baseNaturalSize.width,
+                      baseHeight: baseNaturalSize.height,
+                      overlayX: mixerPreviewState.overlayX,
+                      overlayY: mixerPreviewState.overlayY,
+                      overlayWidth: mixerPreviewState.overlayWidth,
+                      overlayHeight: mixerPreviewState.overlayHeight,
+                      sourceWidth: overlayNaturalSize.width,
+                      sourceHeight: overlayNaturalSize.height,
+                      cropLeft: mixerPreviewState.cropLeft,
+                      cropTop: mixerPreviewState.cropTop,
+                      cropRight: mixerPreviewState.cropRight,
+                      cropBottom: mixerPreviewState.cropBottom,
+                    })
+                    : { visibility: "hidden" }
+                }
+              />
+            </div>
+          ) : null}
         </>
       ) : null}
 

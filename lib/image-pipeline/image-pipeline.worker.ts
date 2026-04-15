@@ -2,21 +2,26 @@ import { renderFull } from "@/lib/image-pipeline/bridge";
 import { renderPreview } from "@/lib/image-pipeline/preview-renderer";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
-import type { RenderFullOptions, RenderFullResult } from "@/lib/image-pipeline/render-types";
+import type {
+  RenderFullOptions,
+  RenderFullResult,
+  RenderSourceComposition,
+} from "@/lib/image-pipeline/render-types";
 import {
   IMAGE_PIPELINE_BACKEND_FLAG_KEYS,
   type BackendFeatureFlags,
 } from "@/lib/image-pipeline/backend/feature-flags";
 
 type PreviewWorkerPayload = {
-  sourceUrl: string;
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   previewWidth: number;
   includeHistogram?: boolean;
   featureFlags?: BackendFeatureFlags;
 };
 
-type FullWorkerPayload = RenderFullOptions & {
+type FullWorkerPayload = Omit<RenderFullOptions, "signal"> & {
   featureFlags?: BackendFeatureFlags;
 };
 
@@ -112,6 +117,7 @@ async function handlePreviewRequest(requestId: number, payload: PreviewWorkerPay
     applyWorkerFeatureFlags(payload.featureFlags);
     const result = await renderPreview({
       sourceUrl: payload.sourceUrl,
+      sourceComposition: payload.sourceComposition,
       steps: payload.steps,
       previewWidth: payload.previewWidth,
       includeHistogram: payload.includeHistogram,
@@ -161,6 +167,7 @@ async function handleFullRequest(requestId: number, payload: FullWorkerPayload):
     applyWorkerFeatureFlags(payload.featureFlags);
     const result = await renderFull({
       sourceUrl: payload.sourceUrl,
+      sourceComposition: payload.sourceComposition,
       steps: payload.steps,
       render: payload.render,
       signal: controller.signal,

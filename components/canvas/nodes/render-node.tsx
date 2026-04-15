@@ -464,11 +464,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   );
 
   const sourceUrl = renderPreviewInput.sourceUrl;
+  const sourceComposition = renderPreviewInput.sourceComposition;
 
   useEffect(() => {
     logRenderDebug("node-data-updated", {
       nodeId: id,
       hasSourceUrl: typeof sourceUrl === "string" && sourceUrl.length > 0,
+      hasSourceComposition: Boolean(sourceComposition),
       storageId: data.storageId ?? null,
       lastUploadStorageId: data.lastUploadStorageId ?? null,
       hasResolvedUrl: typeof data.url === "string" && data.url.length > 0,
@@ -485,6 +487,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     data.url,
     id,
     sourceUrl,
+    sourceComposition,
   ]);
 
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
@@ -526,9 +529,12 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   );
 
   const currentPipelineHash = useMemo(() => {
-    if (!sourceUrl) return null;
-    return hashPipeline({ sourceUrl, render: renderFingerprint }, steps);
-  }, [renderFingerprint, sourceUrl, steps]);
+    if (!sourceUrl && !sourceComposition) return null;
+    return hashPipeline(
+      { source: sourceComposition ?? sourceUrl, render: renderFingerprint },
+      steps,
+    );
+  }, [renderFingerprint, sourceComposition, sourceUrl, steps]);
 
   const isRenderCurrent =
     Boolean(currentPipelineHash) && localData.lastRenderedHash === currentPipelineHash;
@@ -558,7 +564,8 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     error: "Error",
   };
 
-  const hasSource = typeof sourceUrl === "string" && sourceUrl.length > 0;
+  const hasSource =
+    (typeof sourceUrl === "string" && sourceUrl.length > 0) || Boolean(sourceComposition);
   const previewNodeWidth = Math.max(260, Math.round(width ?? 320));
 
   const {
@@ -569,6 +576,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     error: previewError,
   } = usePipelinePreview({
     sourceUrl,
+    sourceComposition,
     steps,
     nodeWidth: previewNodeWidth,
     debounceMs: previewDebounceMs,
@@ -586,6 +594,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     error: fullscreenPreviewError,
   } = usePipelinePreview({
     sourceUrl: isFullscreenOpen && sourceUrl ? sourceUrl : null,
+    sourceComposition: isFullscreenOpen ? sourceComposition : undefined,
     steps,
     nodeWidth: fullscreenPreviewWidth,
     includeHistogram: false,
@@ -720,11 +729,12 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   };
 
   const handleRender = async (mode: "download" | "upload") => {
-    if (!sourceUrl || !currentPipelineHash) {
+    if ((!sourceUrl && !sourceComposition) || !currentPipelineHash) {
       logRenderDebug("render-aborted-prerequisites", {
         nodeId: id,
         mode,
         hasSourceUrl: Boolean(sourceUrl),
+        hasSourceComposition: Boolean(sourceComposition),
         hasPipelineHash: Boolean(currentPipelineHash),
         isOffline: status.isOffline,
       });
@@ -769,7 +779,8 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       });
 
       const renderResult = await renderFullWithWorkerFallback({
-        sourceUrl,
+        sourceUrl: sourceUrl ?? undefined,
+        sourceComposition,
         steps,
         render: {
           resolution: activeData.outputResolution,

@@ -218,8 +218,10 @@ describe("useCanvasConnections", () => {
         defaultData: {
           blendMode: "normal",
           opacity: 100,
-          offsetX: 0,
-          offsetY: 0,
+          overlayX: 0,
+          overlayY: 0,
+          overlayWidth: 1,
+          overlayHeight: 1,
         },
       }),
     );
@@ -232,8 +234,10 @@ describe("useCanvasConnections", () => {
         data: {
           blendMode: "normal",
           opacity: 100,
-          offsetX: 0,
-          offsetY: 0,
+          overlayX: 0,
+          overlayY: 0,
+          overlayWidth: 1,
+          overlayHeight: 1,
         },
       }),
     );

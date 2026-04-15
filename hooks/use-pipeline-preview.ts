@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import { emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
+import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
 import {
   isPipelineAbortError,
   renderPreviewWithWorkerFallback,
@@ -12,6 +13,7 @@ import {
 
 type UsePipelinePreviewOptions = {
   sourceUrl: string | null;
+  sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   nodeWidth: number;
   includeHistogram?: boolean;
@@ -54,6 +56,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
   const stableRenderInputRef = useRef<{
     pipelineHash: string;
     sourceUrl: string | null;
+    sourceComposition?: RenderSourceComposition;
     steps: readonly PipelineStep[];
   } | null>(null);
 
@@ -95,11 +98,11 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
   );
 
   const pipelineHash = useMemo(() => {
-    if (!options.sourceUrl) {
+    if (!options.sourceUrl && !options.sourceComposition) {
       return "no-source";
     }
-    return hashPipeline(options.sourceUrl, options.steps);
-  }, [options.sourceUrl, options.steps]);
+    return hashPipeline(options.sourceComposition ?? options.sourceUrl, options.steps);
+  }, [options.sourceComposition, options.sourceUrl, options.steps]);
 
   useEffect(() => {
     if (stableRenderInputRef.current?.pipelineHash === pipelineHash) {
@@ -109,13 +112,15 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     stableRenderInputRef.current = {
       pipelineHash,
       sourceUrl: options.sourceUrl,
+      sourceComposition: options.sourceComposition,
       steps: options.steps,
     };
-  }, [pipelineHash, options.sourceUrl, options.steps]);
+  }, [pipelineHash, options.sourceComposition, options.sourceUrl, options.steps]);
 
   useEffect(() => {
     const sourceUrl = stableRenderInputRef.current?.sourceUrl ?? null;
-    if (!sourceUrl) {
+    const sourceComposition = stableRenderInputRef.current?.sourceComposition;
+    if (!sourceUrl && !sourceComposition) {
       const frameId = window.requestAnimationFrame(() => {
         setHistogram(emptyHistogram());
         setError(null);
@@ -133,8 +138,10 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     const timer = window.setTimeout(() => {
       setIsRendering(true);
       setError(null);
+      const resolvedSourceUrl = sourceUrl ?? undefined;
       void renderPreviewWithWorkerFallback({
-        sourceUrl,
+        sourceUrl: resolvedSourceUrl,
+        sourceComposition,
         steps: stableRenderInputRef.current?.steps ?? [],
         previewWidth,
         includeHistogram: options.includeHistogram,
@@ -168,7 +175,8 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
           if (process.env.NODE_ENV !== "production") {
             console.error("[usePipelinePreview] render failed", {
               message,
-              sourceUrl,
+              sourceUrl: resolvedSourceUrl,
+              sourceComposition,
               pipelineHash,
               previewWidth,
               includeHistogram: options.includeHistogram,
@@ -194,7 +202,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
     canvasRef,
     histogram,
     isRendering,
-    hasSource: Boolean(options.sourceUrl),
+    hasSource: Boolean(options.sourceUrl || options.sourceComposition),
     previewAspectRatio,
     error,
   };

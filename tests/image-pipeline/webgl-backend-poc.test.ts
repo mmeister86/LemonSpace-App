@@ -341,6 +341,7 @@ describe("webgl backend poc", () => {
 
     vi.doMock("@/lib/image-pipeline/source-loader", () => ({
       loadSourceBitmap: vi.fn().mockResolvedValue({ width: 2, height: 2 }),
+      loadRenderSourceBitmap: vi.fn().mockResolvedValue({ width: 2, height: 2 }),
     }));
 
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({

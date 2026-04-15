@@ -58,7 +58,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 | `video-prompt` | `content`, `modelId`, `durationSeconds` | KI-Video-Steuer-Node (Eingabe) |
 | `ai-video` | `storageId`, `prompt`, `model`, `modelLabel`, `durationSeconds`, `creditCost`, `generatedAt`, `taskId` (transient) | Generiertes KI-Video (System-Output) |
 | `compare` | `leftNodeId`, `rightNodeId`, `sliderPosition` | Vergleichs-Node |
-| `mixer` | `blendMode`, `opacity`, `offsetX`, `offsetY` | V1 Merge-Control-Node mit pseudo-image Output (kein Storage-Write) |
+| `mixer` | `blendMode`, `opacity`, `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` | V1 Merge-Control-Node mit pseudo-image Output (kein Storage-Write) |
 | `frame` | `label`, `exportWidth`, `exportHeight`, `backgroundColor` | Artboard |
 | `group` | `label`, `collapsed` | Container-Node |
 | `note` | `content`, `color` | Anmerkung |
@@ -338,6 +338,8 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `mixer` ist ein Control-Node mit pseudo-image Semantik, nicht mit persistiertem Medien-Output.
 - Keine zusaetzlichen Convex-Tabellen oder Storage-Flows fuer Mixer-Vorschauen.
 - Validierung laeuft client- und serverseitig ueber dieselbe Policy (`validateCanvasConnectionPolicy`); `edges.ts` delegiert darauf fuer Paritaet.
+- Offizieller Bake-Pfad fuer Mixer ist `mixer -> render` (Render verarbeitet die Mixer-Komposition in Preview/Render-Pipeline).
+- `mixer -> adjustments -> render` ist derzeit bewusst deferred und nicht Teil des offiziell supporteten Flows.
 
 ---
 

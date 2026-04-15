@@ -19,8 +19,14 @@ export type MixerPreviewState = {
   overlayUrl?: string;
   blendMode: MixerBlendMode;
   opacity: number;
-  offsetX: number;
-  offsetY: number;
+  overlayX: number;
+  overlayY: number;
+  overlayWidth: number;
+  overlayHeight: number;
+  cropLeft: number;
+  cropTop: number;
+  cropRight: number;
+  cropBottom: number;
   error?: MixerPreviewError;
 };
 
@@ -35,9 +41,18 @@ const DEFAULT_BLEND_MODE: MixerBlendMode = "normal";
 const DEFAULT_OPACITY = 100;
 const MIN_OPACITY = 0;
 const MAX_OPACITY = 100;
-const DEFAULT_OFFSET = 0;
-const MIN_OFFSET = -2048;
-const MAX_OFFSET = 2048;
+const DEFAULT_OVERLAY_X = 0;
+const DEFAULT_OVERLAY_Y = 0;
+const DEFAULT_OVERLAY_WIDTH = 1;
+const DEFAULT_OVERLAY_HEIGHT = 1;
+const DEFAULT_CROP_LEFT = 0;
+const DEFAULT_CROP_TOP = 0;
+const DEFAULT_CROP_RIGHT = 0;
+const DEFAULT_CROP_BOTTOM = 0;
+const MIN_OVERLAY_POSITION = 0;
+const MAX_OVERLAY_POSITION = 1;
+const MIN_OVERLAY_SIZE = 0.1;
+const MAX_OVERLAY_SIZE = 1;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -65,18 +80,165 @@ function normalizeOpacity(value: unknown): number {
   return clamp(parsed, MIN_OPACITY, MAX_OPACITY);
 }
 
-function normalizeOffset(value: unknown): number {
+function normalizeOverlayNumber(value: unknown, fallback: number): number {
   const parsed = parseNumeric(value);
   if (parsed === null) {
-    return DEFAULT_OFFSET;
+    return fallback;
   }
 
-  return clamp(parsed, MIN_OFFSET, MAX_OFFSET);
+  return parsed;
+}
+
+function normalizeUnitRect(args: {
+  x: unknown;
+  y: unknown;
+  width: unknown;
+  height: unknown;
+  defaults: { x: number; y: number; width: number; height: number };
+}): { x: number; y: number; width: number; height: number } {
+  const x = clamp(
+    normalizeOverlayNumber(args.x, args.defaults.x),
+    MIN_OVERLAY_POSITION,
+    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+  );
+  const y = clamp(
+    normalizeOverlayNumber(args.y, args.defaults.y),
+    MIN_OVERLAY_POSITION,
+    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+  );
+  const width = clamp(
+    normalizeOverlayNumber(args.width, args.defaults.width),
+    MIN_OVERLAY_SIZE,
+    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - x),
+  );
+  const height = clamp(
+    normalizeOverlayNumber(args.height, args.defaults.height),
+    MIN_OVERLAY_SIZE,
+    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - y),
+  );
+
+  return { x, y, width, height };
+}
+
+function normalizeOverlayRect(record: Record<string, unknown>): Pick<
+  MixerPreviewState,
+  "overlayX" | "overlayY" | "overlayWidth" | "overlayHeight"
+> {
+  const hasLegacyOffset = record.offsetX !== undefined || record.offsetY !== undefined;
+  const hasOverlayRectField =
+    record.overlayX !== undefined ||
+    record.overlayY !== undefined ||
+    record.overlayWidth !== undefined ||
+    record.overlayHeight !== undefined;
+
+  if (hasLegacyOffset && !hasOverlayRectField) {
+    return {
+      overlayX: DEFAULT_OVERLAY_X,
+      overlayY: DEFAULT_OVERLAY_Y,
+      overlayWidth: DEFAULT_OVERLAY_WIDTH,
+      overlayHeight: DEFAULT_OVERLAY_HEIGHT,
+    };
+  }
+
+  const normalized = normalizeUnitRect({
+    x: record.overlayX,
+    y: record.overlayY,
+    width: record.overlayWidth,
+    height: record.overlayHeight,
+    defaults: {
+      x: DEFAULT_OVERLAY_X,
+      y: DEFAULT_OVERLAY_Y,
+      width: DEFAULT_OVERLAY_WIDTH,
+      height: DEFAULT_OVERLAY_HEIGHT,
+    },
+  });
+
+  return {
+    overlayX: normalized.x,
+    overlayY: normalized.y,
+    overlayWidth: normalized.width,
+    overlayHeight: normalized.height,
+  };
+}
+
+function normalizeCropEdges(record: Record<string, unknown>): Pick<
+  MixerPreviewState,
+  "cropLeft" | "cropTop" | "cropRight" | "cropBottom"
+> {
+  const hasCropField =
+    record.cropLeft !== undefined ||
+    record.cropTop !== undefined ||
+    record.cropRight !== undefined ||
+    record.cropBottom !== undefined;
+  const hasLegacyContentRectField =
+    record.contentX !== undefined ||
+    record.contentY !== undefined ||
+    record.contentWidth !== undefined ||
+    record.contentHeight !== undefined;
+
+  if (!hasCropField && hasLegacyContentRectField) {
+    const legacyRect = normalizeUnitRect({
+      x: record.contentX,
+      y: record.contentY,
+      width: record.contentWidth,
+      height: record.contentHeight,
+      defaults: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      },
+    });
+
+    return {
+      cropLeft: legacyRect.x,
+      cropTop: legacyRect.y,
+      cropRight: 1 - (legacyRect.x + legacyRect.width),
+      cropBottom: 1 - (legacyRect.y + legacyRect.height),
+    };
+  }
+
+  const cropLeft = clamp(
+    normalizeOverlayNumber(record.cropLeft, DEFAULT_CROP_LEFT),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropTop = clamp(
+    normalizeOverlayNumber(record.cropTop, DEFAULT_CROP_TOP),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropRight = clamp(
+    normalizeOverlayNumber(record.cropRight, DEFAULT_CROP_RIGHT),
+    0,
+    1 - cropLeft - MIN_OVERLAY_SIZE,
+  );
+  const cropBottom = clamp(
+    normalizeOverlayNumber(record.cropBottom, DEFAULT_CROP_BOTTOM),
+    0,
+    1 - cropTop - MIN_OVERLAY_SIZE,
+  );
+
+  return {
+    cropLeft,
+    cropTop,
+    cropRight,
+    cropBottom,
+  };
 }
 
 export function normalizeMixerPreviewData(data: unknown): Pick<
   MixerPreviewState,
-  "blendMode" | "opacity" | "offsetX" | "offsetY"
+  | "blendMode"
+  | "opacity"
+  | "overlayX"
+  | "overlayY"
+  | "overlayWidth"
+  | "overlayHeight"
+  | "cropLeft"
+  | "cropTop"
+  | "cropRight"
+  | "cropBottom"
 > {
   const record = (data ?? {}) as Record<string, unknown>;
   const blendMode = MIXER_BLEND_MODES.has(record.blendMode as MixerBlendMode)
@@ -86,8 +248,8 @@ export function normalizeMixerPreviewData(data: unknown): Pick<
   return {
     blendMode,
     opacity: normalizeOpacity(record.opacity),
-    offsetX: normalizeOffset(record.offsetX),
-    offsetY: normalizeOffset(record.offsetY),
+    ...normalizeOverlayRect(record),
+    ...normalizeCropEdges(record),
   };
 }
 
@@ -119,6 +281,17 @@ function resolveSourceUrlFromNode(args: {
   }
 
   if (args.sourceNode.type === "render") {
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: args.sourceNode.id,
+      graph: args.graph,
+    });
+    if (preview.sourceComposition) {
+      return undefined;
+    }
+    if (preview.sourceUrl) {
+      return preview.sourceUrl;
+    }
+
     const renderData = (args.sourceNode.data ?? {}) as Record<string, unknown>;
     const renderOutputUrl =
       typeof renderData.lastUploadUrl === "string" && renderData.lastUploadUrl.length > 0
@@ -133,11 +306,7 @@ function resolveSourceUrlFromNode(args: {
       return directRenderUrl;
     }
 
-    const preview = resolveRenderPreviewInputFromGraph({
-      nodeId: args.sourceNode.id,
-      graph: args.graph,
-    });
-    return preview.sourceUrl ?? undefined;
+    return undefined;
   }
 
   return resolveNodeImageUrl(args.sourceNode.data) ?? undefined;
@@ -172,6 +341,8 @@ export function resolveMixerPreviewFromGraph(args: {
   if (base.duplicate || overlay.duplicate) {
     return {
       status: "error",
+      baseUrl: undefined,
+      overlayUrl: undefined,
       ...normalized,
       error: "duplicate-handle-edge",
     };

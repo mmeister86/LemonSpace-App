@@ -1,3 +1,6 @@
+import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
+import { computeVisibleMixerContentRect } from "@/lib/mixer-crop-layout";
+
 export const SOURCE_BITMAP_CACHE_MAX_ENTRIES = 32;
 
 type CacheEntry = {
@@ -9,6 +12,12 @@ type CacheEntry = {
 const imageBitmapCache = new Map<string, CacheEntry>();
 
 type LoadSourceBitmapOptions = {
+  signal?: AbortSignal;
+};
+
+type LoadRenderSourceBitmapOptions = {
+  sourceUrl?: string;
+  sourceComposition?: RenderSourceComposition;
   signal?: AbortSignal;
 };
 
@@ -214,4 +223,220 @@ export async function loadSourceBitmap(
 
   const promise = getOrCreateSourceBitmapPromise(sourceUrl);
   return await awaitWithLocalAbort(promise, options.signal);
+}
+
+function createWorkingCanvas(width: number, height: number):
+  | HTMLCanvasElement
+  | OffscreenCanvas {
+  if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  }
+
+  if (typeof OffscreenCanvas !== "undefined") {
+    return new OffscreenCanvas(width, height);
+  }
+
+  throw new Error("Canvas rendering is not available in this environment.");
+}
+
+function mixerBlendModeToCompositeOperation(
+  blendMode: RenderSourceComposition["blendMode"],
+): GlobalCompositeOperation {
+  if (blendMode === "normal") {
+    return "source-over";
+  }
+
+  return blendMode;
+}
+
+function normalizeCompositionOpacity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.max(0, Math.min(100, value)) / 100;
+}
+
+function normalizeRatio(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return value;
+}
+
+function normalizeMixerRect(source: RenderSourceComposition): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const overlayX = Math.max(0, Math.min(0.9, normalizeRatio(source.overlayX, 0)));
+  const overlayY = Math.max(0, Math.min(0.9, normalizeRatio(source.overlayY, 0)));
+  const overlayWidth = Math.max(
+    0.1,
+    Math.min(1, normalizeRatio(source.overlayWidth, 1), 1 - overlayX),
+  );
+  const overlayHeight = Math.max(
+    0.1,
+    Math.min(1, normalizeRatio(source.overlayHeight, 1), 1 - overlayY),
+  );
+
+  return {
+    x: overlayX,
+    y: overlayY,
+    width: overlayWidth,
+    height: overlayHeight,
+  };
+}
+
+function normalizeMixerCropEdges(source: RenderSourceComposition): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+} {
+  const legacySource = source as RenderSourceComposition & {
+    contentX?: number;
+    contentY?: number;
+    contentWidth?: number;
+    contentHeight?: number;
+  };
+  const hasLegacyContentRect =
+    legacySource.contentX !== undefined ||
+    legacySource.contentY !== undefined ||
+    legacySource.contentWidth !== undefined ||
+    legacySource.contentHeight !== undefined;
+
+  if (hasLegacyContentRect) {
+    const contentX = Math.max(
+      0,
+      Math.min(0.9, normalizeRatio(legacySource.contentX ?? Number.NaN, 0)),
+    );
+    const contentY = Math.max(
+      0,
+      Math.min(0.9, normalizeRatio(legacySource.contentY ?? Number.NaN, 0)),
+    );
+    const contentWidth = Math.max(
+      0.1,
+      Math.min(1, normalizeRatio(legacySource.contentWidth ?? Number.NaN, 1), 1 - contentX),
+    );
+    const contentHeight = Math.max(
+      0.1,
+      Math.min(1, normalizeRatio(legacySource.contentHeight ?? Number.NaN, 1), 1 - contentY),
+    );
+
+    return {
+      left: contentX,
+      top: contentY,
+      right: 1 - (contentX + contentWidth),
+      bottom: 1 - (contentY + contentHeight),
+    };
+  }
+
+  const cropLeft = Math.max(0, Math.min(0.9, normalizeRatio(source.cropLeft, 0)));
+  const cropTop = Math.max(0, Math.min(0.9, normalizeRatio(source.cropTop, 0)));
+  const cropRight = Math.max(0, Math.min(1 - cropLeft - 0.1, normalizeRatio(source.cropRight, 0)));
+  const cropBottom = Math.max(
+    0,
+    Math.min(1 - cropTop - 0.1, normalizeRatio(source.cropBottom, 0)),
+  );
+
+  return {
+    left: cropLeft,
+    top: cropTop,
+    right: cropRight,
+    bottom: cropBottom,
+  };
+}
+
+async function loadMixerCompositionBitmap(
+  sourceComposition: RenderSourceComposition,
+  signal?: AbortSignal,
+): Promise<ImageBitmap> {
+  const [baseBitmap, overlayBitmap] = await Promise.all([
+    loadSourceBitmap(sourceComposition.baseUrl, { signal }),
+    loadSourceBitmap(sourceComposition.overlayUrl, { signal }),
+  ]);
+
+  throwIfAborted(signal);
+
+  const canvas = createWorkingCanvas(baseBitmap.width, baseBitmap.height);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("Render composition could not create a 2D context.");
+  }
+
+  context.clearRect(0, 0, baseBitmap.width, baseBitmap.height);
+  context.drawImage(baseBitmap, 0, 0, baseBitmap.width, baseBitmap.height);
+
+  const rect = normalizeMixerRect(sourceComposition);
+  const frameX = rect.x * baseBitmap.width;
+  const frameY = rect.y * baseBitmap.height;
+  const frameWidth = rect.width * baseBitmap.width;
+  const frameHeight = rect.height * baseBitmap.height;
+  const cropEdges = normalizeMixerCropEdges(sourceComposition);
+  const sourceX = cropEdges.left * overlayBitmap.width;
+  const sourceY = cropEdges.top * overlayBitmap.height;
+  const sourceWidth = (1 - cropEdges.left - cropEdges.right) * overlayBitmap.width;
+  const sourceHeight = (1 - cropEdges.top - cropEdges.bottom) * overlayBitmap.height;
+  const visibleRect = computeVisibleMixerContentRect({
+    frameAspectRatio: frameHeight > 0 ? frameWidth / frameHeight : 1,
+    sourceWidth: overlayBitmap.width,
+    sourceHeight: overlayBitmap.height,
+    cropLeft: cropEdges.left,
+    cropTop: cropEdges.top,
+    cropRight: cropEdges.right,
+    cropBottom: cropEdges.bottom,
+  });
+  const destX = frameX + (visibleRect?.x ?? 0) * frameWidth;
+  const destY = frameY + (visibleRect?.y ?? 0) * frameHeight;
+  const destWidth = (visibleRect?.width ?? 1) * frameWidth;
+  const destHeight = (visibleRect?.height ?? 1) * frameHeight;
+
+  context.globalCompositeOperation = mixerBlendModeToCompositeOperation(
+    sourceComposition.blendMode,
+  );
+  context.globalAlpha = normalizeCompositionOpacity(sourceComposition.opacity);
+  context.save();
+  context.beginPath();
+  context.rect(frameX, frameY, frameWidth, frameHeight);
+  context.clip();
+  context.drawImage(
+    overlayBitmap,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    destX,
+    destY,
+    destWidth,
+    destHeight,
+  );
+  context.restore();
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+
+  return await createImageBitmap(canvas);
+}
+
+export async function loadRenderSourceBitmap(
+  options: LoadRenderSourceBitmapOptions,
+): Promise<ImageBitmap> {
+  if (options.sourceComposition) {
+    if (options.sourceComposition.kind !== "mixer") {
+      throw new Error(`Unsupported source composition '${options.sourceComposition.kind}'.`);
+    }
+
+    return await loadMixerCompositionBitmap(options.sourceComposition, options.signal);
+  }
+
+  if (!options.sourceUrl) {
+    throw new Error("Render source is required.");
+  }
+
+  return await loadSourceBitmap(options.sourceUrl, { signal: options.signal });
 }
