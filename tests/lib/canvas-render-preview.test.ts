@@ -313,10 +313,9 @@ describe("mixer crop layout parity", () => {
     });
   });
 
-  it("returns compare image styles that letterbox instead of stretching", () => {
+  it("returns compare image styles that stretch to fill the frame", () => {
     expect(
       computeMixerCropImageStyle({
-        frameAspectRatio: 1,
         sourceWidth: 200,
         sourceHeight: 100,
         cropLeft: 0,
@@ -326,9 +325,9 @@ describe("mixer crop layout parity", () => {
       }),
     ).toEqual({
       left: "0%",
-      top: "25%",
+      top: "0%",
       width: "100%",
-      height: "50%",
+      height: "100%",
     });
   });
 
@@ -351,9 +350,9 @@ describe("mixer crop layout parity", () => {
         cropBottom: 0,
       }),
     ).toEqual({
-      left: "0%",
+      left: "-12.5%",
       top: "0%",
-      width: "100%",
+      width: "125%",
       height: "100%",
     });
   });
