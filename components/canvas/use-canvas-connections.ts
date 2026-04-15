@@ -414,7 +414,7 @@ export function useCanvasConnections({
                 !isOptimisticEdgeId(edge.id),
             );
             const incomingEdge = incomingEdges.length === 1 ? incomingEdges[0] : undefined;
-            const splitValidationError =
+            const shouldAttemptAutoSplit =
               validationError === "adjustment-incoming-limit" &&
               droppedConnection.sourceNodeId === fromNode.id &&
               fromHandle.type === "source" &&
@@ -424,16 +424,31 @@ export function useCanvasConnections({
               hasHandleKey(splitHandles, "target") &&
               incomingEdge !== undefined &&
               incomingEdge.source !== fullFromNode.id &&
-              incomingEdge.target !== fullFromNode.id
-                ? validateCanvasEdgeSplit({
-                    nodes: nodesRef.current,
-                    edges: edgesRef.current,
-                    splitEdge: incomingEdge,
-                    middleNode: fullFromNode,
-                  })
-                : null;
+              incomingEdge.target !== fullFromNode.id;
+            const splitValidationError = shouldAttemptAutoSplit
+              ? validateCanvasEdgeSplit({
+                  nodes: nodesRef.current,
+                  edges: edgesRef.current,
+                  splitEdge: incomingEdge,
+                  middleNode: fullFromNode,
+                })
+              : null;
 
-            if (!splitValidationError && incomingEdge && fullFromNode && splitHandles) {
+            logCanvasConnectionDebug("connect:end-auto-split-eval", {
+              point: pt,
+              flow,
+              droppedConnection,
+              validationError,
+              shouldAttemptAutoSplit,
+              splitValidationError,
+              fromNodeId: fromNode.id,
+              fromNodeType: fullFromNode?.type ?? null,
+              incomingEdgeId: incomingEdge?.id ?? null,
+              incomingEdgeSourceNodeId: incomingEdge?.source ?? null,
+              incomingEdgeTargetNodeId: incomingEdge?.target ?? null,
+            });
+
+            if (shouldAttemptAutoSplit && !splitValidationError && incomingEdge && fullFromNode && splitHandles) {
               logCanvasConnectionDebug("connect:end-auto-split", {
                 point: pt,
                 flow,

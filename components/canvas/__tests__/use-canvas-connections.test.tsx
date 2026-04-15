@@ -543,6 +543,74 @@ describe("useCanvasConnections", () => {
     expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
   });
 
+  it("rejects self-drops on a note instead of auto-splitting its incoming edge", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const showConnectionRejectedToast = vi.fn();
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          helperResult={{
+            sourceNodeId: "node-note",
+            targetNodeId: "node-note",
+            sourceHandle: undefined,
+            targetHandle: undefined,
+          }}
+          runCreateEdgeMutation={runCreateEdgeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          showConnectionRejectedToast={showConnectionRejectedToast}
+          nodes={[
+            { id: "node-image", type: "image", position: { x: 0, y: 0 }, data: {} },
+            { id: "node-note", type: "note", position: { x: 240, y: 120 }, data: {} },
+          ]}
+          edges={[
+            {
+              id: "edge-image-note",
+              source: "node-image",
+              target: "node-note",
+            },
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onConnectStart?.(
+        {} as MouseEvent,
+        {
+          nodeId: "node-note",
+          handleId: null,
+          handleType: "source",
+        } as never,
+      );
+      latestHandlersRef.current?.onConnectEnd(
+        { clientX: 260, clientY: 160 } as MouseEvent,
+        {
+          isValid: false,
+          from: { x: 0, y: 0 },
+          fromNode: { id: "node-note", type: "note" },
+          fromHandle: { id: null, type: "source" },
+          fromPosition: null,
+          to: { x: 260, y: 160 },
+          toHandle: null,
+          toNode: null,
+          toPosition: null,
+          pointer: null,
+        } as never,
+      );
+    });
+
+    expect(runSplitEdgeAtExistingNodeMutation).not.toHaveBeenCalled();
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).toHaveBeenCalledWith("self-loop");
+    expect(latestHandlersRef.current?.connectionDropMenu).toBeNull();
+  });
+
   it("rejects text to ai-video body drops", async () => {
     const runCreateEdgeMutation = vi.fn(async () => undefined);
     const showConnectionRejectedToast = vi.fn();
