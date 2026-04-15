@@ -83,6 +83,10 @@ describe("image-pipeline.worker full render", () => {
       overlayY: 16,
       overlayWidth: 128,
       overlayHeight: 64,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     };
 
     workerScope.onmessage?.({

@@ -1,3 +1,6 @@
+import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
+import { computeVisibleMixerContentRect } from "@/lib/mixer-crop-layout";
+
 export const SOURCE_BITMAP_CACHE_MAX_ENTRIES = 32;
 
 type CacheEntry = {
@@ -10,18 +13,6 @@ const imageBitmapCache = new Map<string, CacheEntry>();
 
 type LoadSourceBitmapOptions = {
   signal?: AbortSignal;
-};
-
-type RenderSourceComposition = {
-  kind: "mixer";
-  baseUrl: string;
-  overlayUrl: string;
-  blendMode: "normal" | "multiply" | "screen" | "overlay";
-  opacity: number;
-  overlayX: number;
-  overlayY: number;
-  overlayWidth: number;
-  overlayHeight: number;
 };
 
 type LoadRenderSourceBitmapOptions = {
@@ -302,61 +293,63 @@ function normalizeMixerRect(source: RenderSourceComposition): {
   };
 }
 
-function computeObjectCoverSourceRect(args: {
-  sourceWidth: number;
-  sourceHeight: number;
-  destinationWidth: number;
-  destinationHeight: number;
-}): {
-  sourceX: number;
-  sourceY: number;
-  sourceWidth: number;
-  sourceHeight: number;
+function normalizeMixerCropEdges(source: RenderSourceComposition): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 } {
-  const { sourceWidth, sourceHeight, destinationWidth, destinationHeight } = args;
+  const legacySource = source as RenderSourceComposition & {
+    contentX?: number;
+    contentY?: number;
+    contentWidth?: number;
+    contentHeight?: number;
+  };
+  const hasLegacyContentRect =
+    legacySource.contentX !== undefined ||
+    legacySource.contentY !== undefined ||
+    legacySource.contentWidth !== undefined ||
+    legacySource.contentHeight !== undefined;
 
-  if (
-    sourceWidth <= 0 ||
-    sourceHeight <= 0 ||
-    destinationWidth <= 0 ||
-    destinationHeight <= 0
-  ) {
+  if (hasLegacyContentRect) {
+    const contentX = Math.max(
+      0,
+      Math.min(0.9, normalizeRatio(legacySource.contentX ?? Number.NaN, 0)),
+    );
+    const contentY = Math.max(
+      0,
+      Math.min(0.9, normalizeRatio(legacySource.contentY ?? Number.NaN, 0)),
+    );
+    const contentWidth = Math.max(
+      0.1,
+      Math.min(1, normalizeRatio(legacySource.contentWidth ?? Number.NaN, 1), 1 - contentX),
+    );
+    const contentHeight = Math.max(
+      0.1,
+      Math.min(1, normalizeRatio(legacySource.contentHeight ?? Number.NaN, 1), 1 - contentY),
+    );
+
     return {
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth,
-      sourceHeight,
+      left: contentX,
+      top: contentY,
+      right: 1 - (contentX + contentWidth),
+      bottom: 1 - (contentY + contentHeight),
     };
   }
 
-  const sourceAspectRatio = sourceWidth / sourceHeight;
-  const destinationAspectRatio = destinationWidth / destinationHeight;
+  const cropLeft = Math.max(0, Math.min(0.9, normalizeRatio(source.cropLeft, 0)));
+  const cropTop = Math.max(0, Math.min(0.9, normalizeRatio(source.cropTop, 0)));
+  const cropRight = Math.max(0, Math.min(1 - cropLeft - 0.1, normalizeRatio(source.cropRight, 0)));
+  const cropBottom = Math.max(
+    0,
+    Math.min(1 - cropTop - 0.1, normalizeRatio(source.cropBottom, 0)),
+  );
 
-  if (!Number.isFinite(sourceAspectRatio) || !Number.isFinite(destinationAspectRatio)) {
-    return {
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth,
-      sourceHeight,
-    };
-  }
-
-  if (sourceAspectRatio > destinationAspectRatio) {
-    const croppedWidth = sourceHeight * destinationAspectRatio;
-    return {
-      sourceX: (sourceWidth - croppedWidth) / 2,
-      sourceY: 0,
-      sourceWidth: croppedWidth,
-      sourceHeight,
-    };
-  }
-
-  const croppedHeight = sourceWidth / destinationAspectRatio;
   return {
-    sourceX: 0,
-    sourceY: (sourceHeight - croppedHeight) / 2,
-    sourceWidth,
-    sourceHeight: croppedHeight,
+    left: cropLeft,
+    top: cropTop,
+    right: cropRight,
+    bottom: cropBottom,
   };
 }
 
@@ -381,32 +374,49 @@ async function loadMixerCompositionBitmap(
   context.drawImage(baseBitmap, 0, 0, baseBitmap.width, baseBitmap.height);
 
   const rect = normalizeMixerRect(sourceComposition);
-  const destinationX = rect.x * baseBitmap.width;
-  const destinationY = rect.y * baseBitmap.height;
-  const destinationWidth = rect.width * baseBitmap.width;
-  const destinationHeight = rect.height * baseBitmap.height;
-  const sourceRect = computeObjectCoverSourceRect({
+  const frameX = rect.x * baseBitmap.width;
+  const frameY = rect.y * baseBitmap.height;
+  const frameWidth = rect.width * baseBitmap.width;
+  const frameHeight = rect.height * baseBitmap.height;
+  const cropEdges = normalizeMixerCropEdges(sourceComposition);
+  const sourceX = cropEdges.left * overlayBitmap.width;
+  const sourceY = cropEdges.top * overlayBitmap.height;
+  const sourceWidth = (1 - cropEdges.left - cropEdges.right) * overlayBitmap.width;
+  const sourceHeight = (1 - cropEdges.top - cropEdges.bottom) * overlayBitmap.height;
+  const visibleRect = computeVisibleMixerContentRect({
+    frameAspectRatio: frameHeight > 0 ? frameWidth / frameHeight : 1,
     sourceWidth: overlayBitmap.width,
     sourceHeight: overlayBitmap.height,
-    destinationWidth,
-    destinationHeight,
+    cropLeft: cropEdges.left,
+    cropTop: cropEdges.top,
+    cropRight: cropEdges.right,
+    cropBottom: cropEdges.bottom,
   });
+  const destX = frameX + (visibleRect?.x ?? 0) * frameWidth;
+  const destY = frameY + (visibleRect?.y ?? 0) * frameHeight;
+  const destWidth = (visibleRect?.width ?? 1) * frameWidth;
+  const destHeight = (visibleRect?.height ?? 1) * frameHeight;
 
   context.globalCompositeOperation = mixerBlendModeToCompositeOperation(
     sourceComposition.blendMode,
   );
   context.globalAlpha = normalizeCompositionOpacity(sourceComposition.opacity);
+  context.save();
+  context.beginPath();
+  context.rect(frameX, frameY, frameWidth, frameHeight);
+  context.clip();
   context.drawImage(
     overlayBitmap,
-    sourceRect.sourceX,
-    sourceRect.sourceY,
-    sourceRect.sourceWidth,
-    sourceRect.sourceHeight,
-    destinationX,
-    destinationY,
-    destinationWidth,
-    destinationHeight,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    destX,
+    destY,
+    destWidth,
+    destHeight,
   );
+  context.restore();
   context.globalCompositeOperation = "source-over";
   context.globalAlpha = 1;
 

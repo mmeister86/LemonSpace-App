@@ -22,6 +22,25 @@ function logNodeDataDebug(event: string, payload: Record<string, unknown>): void
   console.info("[Canvas node debug]", event, payload);
 }
 
+function diffNodeData(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Record<string, { before: unknown; after: unknown }> {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  const diff: Record<string, { before: unknown; after: unknown }> = {};
+
+  for (const key of keys) {
+    if (before[key] !== after[key]) {
+      diff[key] = {
+        before: before[key],
+        after: after[key],
+      };
+    }
+  }
+
+  return diff;
+}
+
 export function useNodeLocalData<T>({
   nodeId,
   data,
@@ -54,6 +73,16 @@ export function useNodeLocalData<T>({
   const queueSave = useDebouncedCallback(() => {
     const savedValue = localDataRef.current;
     const savedVersion = localChangeVersionRef.current;
+
+    logNodeDataDebug("queue-save-flush", {
+      nodeId,
+      nodeType: debugLabel,
+      savedVersion,
+      changedFields: diffNodeData(
+        acceptedPersistedDataRef.current as Record<string, unknown>,
+        savedValue as Record<string, unknown>,
+      ),
+    });
 
     Promise.resolve(onSave(savedValue))
       .then(() => {
@@ -144,7 +173,17 @@ export function useNodeLocalData<T>({
 
   const updateLocalData = useCallback(
     (updater: (current: T) => T) => {
-      const next = updater(localDataRef.current);
+      const previous = localDataRef.current;
+      const next = updater(previous);
+
+      logNodeDataDebug("local-update", {
+        nodeId,
+        nodeType: debugLabel,
+        changedFields: diffNodeData(
+          previous as Record<string, unknown>,
+          next as Record<string, unknown>,
+        ),
+      });
 
       localChangeVersionRef.current += 1;
       hasPendingLocalChangesRef.current = true;
@@ -153,7 +192,7 @@ export function useNodeLocalData<T>({
       setPreviewNodeDataOverride(nodeId, next);
       queueSave();
     },
-    [nodeId, queueSave, setPreviewNodeDataOverride],
+    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
   );
 
   return {

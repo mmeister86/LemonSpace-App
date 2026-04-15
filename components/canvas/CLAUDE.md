@@ -133,9 +133,10 @@ render:      300 × 420    mixer:        360 × 320
 - **Handles:** genau zwei Inputs links (`base`, `overlay`) und ein Output rechts (`mixer-out`).
 - **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`.
 - **Connection-Limits:** maximal 2 eingehende Kanten insgesamt, davon pro Handle genau 1.
-- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` (normierte 0..1-Rect-Werte).
+- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` (Frame-Rect, normiert 0..1) plus `contentX`, `contentY`, `contentWidth`, `contentHeight` (Content-Framing innerhalb des Overlay-Frames, ebenfalls normiert 0..1).
 - **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
-- **UI/Interaction:** Overlay ist im Preview direkt per Drag verschiebbar und ueber Corner-Handles frei resizable; numerische Inline-Controls bleiben als Feineinstellung erhalten.
+- **UI/Interaction:** Zwei Modi im Preview: `Frame resize` (Overlay-Frame verschieben + ueber Corner-Handles resizen) und `Content framing` (Overlay-Inhalt innerhalb des Frames verschieben). Numerische Inline-Controls bleiben als Feineinstellung erhalten.
+- **Sizing/Crop-Verhalten:** Der Overlay-Inhalt wird `object-cover`-aehnlich in den Content-Rect eingepasst; bei abweichenden Seitenverhaeltnissen wird zentriert gecroppt.
 
 ### Compare-Integration (V1)
 
@@ -321,6 +322,7 @@ useCanvasData (use-canvas-data.ts)
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
 - **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
 - **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Offizielle Consumer sind `compare` und der direkte Bake-Pfad `mixer -> render`; `mixer -> adjustments -> render` bleibt vorerst deferred.
+- **Mixer Legacy-Daten:** Alte `offsetX`/`offsetY`-Mixer-Daten werden beim Lesen auf den Full-Frame-Fallback (`overlay* = 0/0/1/1`) normalisiert; Content-Framing defaults auf `content* = 0/0/1/1`.
 - **Agent-Flow:** `agent` akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`) als Input; ausgehende Kanten sind fuer `agent -> agent-output` vorgesehen.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.
 - **Canvas Graph Query:** Der Canvas nutzt `canvasGraph.get` (aus `convex/canvasGraph.ts`) statt separater `nodes.list`/`edges.list` Queries. Optimistic Updates laufen über `canvas-graph-query-cache.ts`.

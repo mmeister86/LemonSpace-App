@@ -55,6 +55,10 @@ export const CANVAS_NODE_TEMPLATES = [
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     },
   },
   {

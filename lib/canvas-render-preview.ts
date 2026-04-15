@@ -32,6 +32,10 @@ export type RenderPreviewSourceComposition = {
   overlayY: number;
   overlayWidth: number;
   overlayHeight: number;
+  cropLeft: number;
+  cropTop: number;
+  cropRight: number;
+  cropBottom: number;
 };
 
 export type CanvasGraphNodeLike = {
@@ -161,6 +165,10 @@ const DEFAULT_OVERLAY_X = 0;
 const DEFAULT_OVERLAY_Y = 0;
 const DEFAULT_OVERLAY_WIDTH = 1;
 const DEFAULT_OVERLAY_HEIGHT = 1;
+const DEFAULT_CROP_LEFT = 0;
+const DEFAULT_CROP_TOP = 0;
+const DEFAULT_CROP_RIGHT = 0;
+const DEFAULT_CROP_BOTTOM = 0;
 const MIN_OVERLAY_POSITION = 0;
 const MAX_OVERLAY_POSITION = 1;
 const MIN_OVERLAY_SIZE = 0.1;
@@ -247,6 +255,80 @@ function normalizeMixerCompositionRect(data: Record<string, unknown>): Pick<
     overlayY,
     overlayWidth,
     overlayHeight,
+  };
+}
+
+function normalizeMixerCompositionCropEdges(data: Record<string, unknown>): Pick<
+  RenderPreviewSourceComposition,
+  "cropLeft" | "cropTop" | "cropRight" | "cropBottom"
+> {
+  const hasCropField =
+    data.cropLeft !== undefined ||
+    data.cropTop !== undefined ||
+    data.cropRight !== undefined ||
+    data.cropBottom !== undefined;
+  const hasLegacyContentRectField =
+    data.contentX !== undefined ||
+    data.contentY !== undefined ||
+    data.contentWidth !== undefined ||
+    data.contentHeight !== undefined;
+
+  if (!hasCropField && hasLegacyContentRectField) {
+    const contentX = clamp(
+      normalizeOverlayNumber(data.contentX, 0),
+      MIN_OVERLAY_POSITION,
+      MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+    );
+    const contentY = clamp(
+      normalizeOverlayNumber(data.contentY, 0),
+      MIN_OVERLAY_POSITION,
+      MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
+    );
+    const contentWidth = clamp(
+      normalizeOverlayNumber(data.contentWidth, 1),
+      MIN_OVERLAY_SIZE,
+      Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - contentX),
+    );
+    const contentHeight = clamp(
+      normalizeOverlayNumber(data.contentHeight, 1),
+      MIN_OVERLAY_SIZE,
+      Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - contentY),
+    );
+
+    return {
+      cropLeft: contentX,
+      cropTop: contentY,
+      cropRight: 1 - (contentX + contentWidth),
+      cropBottom: 1 - (contentY + contentHeight),
+    };
+  }
+
+  const cropLeft = clamp(
+    normalizeOverlayNumber(data.cropLeft, DEFAULT_CROP_LEFT),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropTop = clamp(
+    normalizeOverlayNumber(data.cropTop, DEFAULT_CROP_TOP),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropRight = clamp(
+    normalizeOverlayNumber(data.cropRight, DEFAULT_CROP_RIGHT),
+    0,
+    1 - cropLeft - MIN_OVERLAY_SIZE,
+  );
+  const cropBottom = clamp(
+    normalizeOverlayNumber(data.cropBottom, DEFAULT_CROP_BOTTOM),
+    0,
+    1 - cropTop - MIN_OVERLAY_SIZE,
+  );
+
+  return {
+    cropLeft,
+    cropTop,
+    cropRight,
+    cropBottom,
   };
 }
 
@@ -379,11 +461,6 @@ function resolveMixerSourceUrlFromNode(args: {
   }
 
   if (args.node.type === "render") {
-    const directRenderUrl = resolveRenderOutputUrl(args.node);
-    if (directRenderUrl) {
-      return directRenderUrl;
-    }
-
     const preview = resolveRenderPreviewInputFromGraph({
       nodeId: args.node.id,
       graph: args.graph,
@@ -391,8 +468,16 @@ function resolveMixerSourceUrlFromNode(args: {
     if (preview.sourceComposition) {
       return null;
     }
+    if (preview.sourceUrl) {
+      return preview.sourceUrl;
+    }
 
-    return preview.sourceUrl;
+    const directRenderUrl = resolveRenderOutputUrl(args.node);
+    if (directRenderUrl) {
+      return directRenderUrl;
+    }
+
+    return null;
   }
 
   return resolveNodeImageUrl(args.node.data);
@@ -443,6 +528,7 @@ function resolveRenderMixerCompositionFromGraph(args: {
     blendMode,
     opacity: normalizeOpacity(data.opacity),
     ...normalizeMixerCompositionRect(data),
+    ...normalizeMixerCompositionCropEdges(data),
   };
 }
 

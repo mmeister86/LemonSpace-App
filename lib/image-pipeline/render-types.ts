@@ -34,6 +34,10 @@ export type RenderSourceComposition = {
   overlayY: number;
   overlayWidth: number;
   overlayHeight: number;
+  cropLeft: number;
+  cropTop: number;
+  cropRight: number;
+  cropBottom: number;
 };
 
 export type ResolvedRenderSize = {

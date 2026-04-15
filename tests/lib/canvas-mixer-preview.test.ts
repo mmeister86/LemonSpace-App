@@ -4,7 +4,7 @@ import { buildGraphSnapshot } from "@/lib/canvas-render-preview";
 import { resolveMixerPreviewFromGraph } from "@/lib/canvas-mixer-preview";
 
 describe("resolveMixerPreviewFromGraph", () => {
-  it("resolves base and overlay URLs by target handle", () => {
+  it("resolves base and overlay URLs by target handle while keeping frame and crop trims independent", () => {
     const graph = buildGraphSnapshot(
       [
         {
@@ -32,6 +32,10 @@ describe("resolveMixerPreviewFromGraph", () => {
             overlayY: 0.2,
             overlayWidth: 0.6,
             overlayHeight: 0.5,
+            cropLeft: 0.08,
+            cropTop: 0.15,
+            cropRight: 0.22,
+            cropBottom: 0.1,
           },
         },
       ],
@@ -52,10 +56,110 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0.2,
       overlayWidth: 0.6,
       overlayHeight: 0.5,
+      cropLeft: 0.08,
+      cropTop: 0.15,
+      cropRight: 0.22,
+      cropBottom: 0.1,
     });
   });
 
-  it("prefers render output URL over upstream preview source when available", () => {
+  it("preserves crop trims when frame resize data changes", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            overlayX: 0.2,
+            overlayY: 0.1,
+            overlayWidth: 0.6,
+            overlayHeight: 0.3,
+            cropLeft: 0.15,
+            cropTop: 0.05,
+            cropRight: 0.4,
+            cropBottom: 0.25,
+          },
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-asset", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual(
+      expect.objectContaining({
+        overlayX: 0.2,
+        overlayY: 0.1,
+        overlayWidth: 0.6,
+        overlayHeight: 0.3,
+        cropLeft: 0.15,
+        cropTop: 0.05,
+        cropRight: 0.4,
+        cropBottom: 0.25,
+      }),
+    );
+  });
+
+  it("preserves overlayWidth and overlayHeight when crop trims change", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            overlayX: 0.05,
+            overlayY: 0.25,
+            overlayWidth: 0.55,
+            overlayHeight: 0.35,
+            cropLeft: 0.4,
+            cropTop: 0.1,
+            cropRight: 0.3,
+            cropBottom: 0.1,
+          },
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-asset", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual(
+      expect.objectContaining({
+        overlayX: 0.05,
+        overlayY: 0.25,
+        overlayWidth: 0.55,
+        overlayHeight: 0.35,
+        cropLeft: 0.4,
+        cropTop: 0.1,
+        cropRight: 0.3,
+        cropBottom: 0.1,
+      }),
+    );
+  });
+
+  it("prefers live render preview URL over stale baked render output", () => {
     const graph = buildGraphSnapshot(
       [
         {
@@ -91,13 +195,79 @@ describe("resolveMixerPreviewFromGraph", () => {
     expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual({
       status: "ready",
       baseUrl: "https://cdn.example.com/base.png",
-      overlayUrl: "https://cdn.example.com/render-output.png",
+      overlayUrl: "https://cdn.example.com/upstream.png",
       blendMode: "normal",
       opacity: 100,
       overlayX: 0,
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+    });
+  });
+
+  it("does not reuse stale baked render output when only live sourceComposition exists", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-image",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "overlay-base",
+          type: "image",
+          data: { url: "https://cdn.example.com/overlay-base.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay-asset.png" },
+        },
+        {
+          id: "upstream-mixer",
+          type: "mixer",
+          data: {},
+        },
+        {
+          id: "render-overlay",
+          type: "render",
+          data: {
+            lastUploadUrl: "https://cdn.example.com/stale-render-output.png",
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+      ],
+      [
+        { source: "overlay-base", target: "upstream-mixer", targetHandle: "base" },
+        { source: "overlay-asset", target: "upstream-mixer", targetHandle: "overlay" },
+        { source: "upstream-mixer", target: "render-overlay" },
+        { source: "base-image", target: "mixer-1", targetHandle: "base" },
+        { source: "render-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual({
+      status: "partial",
+      baseUrl: "https://cdn.example.com/base.png",
+      overlayUrl: undefined,
+      blendMode: "normal",
+      opacity: 100,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     });
   });
 
@@ -128,10 +298,14 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     });
   });
 
-  it("normalizes rect values and clamps", () => {
+  it("normalizes crop trims and clamps", () => {
     const graph = buildGraphSnapshot(
       [
         {
@@ -154,6 +328,10 @@ describe("resolveMixerPreviewFromGraph", () => {
             overlayY: "1.4",
             overlayWidth: 2,
             overlayHeight: 0,
+            cropLeft: "0.95",
+            cropTop: -2,
+            cropRight: "4",
+            cropBottom: "0",
           },
         },
       ],
@@ -173,6 +351,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0.9,
       overlayWidth: 1,
       overlayHeight: 0.1,
+      cropLeft: 0.9,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     });
   });
 
@@ -214,6 +396,57 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+    });
+  });
+
+  it("maps legacy content rect fields into crop trims during normalization", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-ai",
+          type: "ai-image",
+          data: { url: "https://cdn.example.com/base-ai.png" },
+        },
+        {
+          id: "overlay-asset",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay-asset.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            contentX: 0.2,
+            contentY: 0.1,
+            contentWidth: 0.5,
+            contentHeight: 0.6,
+          },
+        },
+      ],
+      [
+        { source: "base-ai", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-asset", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toEqual({
+      status: "ready",
+      baseUrl: "https://cdn.example.com/base-ai.png",
+      overlayUrl: "https://cdn.example.com/overlay-asset.png",
+      blendMode: "normal",
+      opacity: 100,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
+      cropLeft: 0.2,
+      cropTop: 0.1,
+      cropRight: 0.30000000000000004,
+      cropBottom: 0.30000000000000004,
     });
   });
 
@@ -255,6 +488,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
     });
   });
 
@@ -293,6 +530,10 @@ describe("resolveMixerPreviewFromGraph", () => {
       overlayY: 0,
       overlayWidth: 1,
       overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
       error: "duplicate-handle-edge",
     });
   });

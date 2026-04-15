@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ImageIcon } from "lucide-react";
 import BaseNodeWrapper from "./base-node-wrapper";
@@ -35,12 +35,18 @@ type CompareSideState = {
 
 type CompareDisplayMode = "render" | "preview";
 
-export default function CompareNode({ id, data, selected, width }: NodeProps) {
+type CompareSurfaceSize = {
+  width: number;
+  height: number;
+};
+
+export default function CompareNode({ id, data, selected, width, height }: NodeProps) {
   const nodeData = data as CompareNodeData;
   const graph = useCanvasGraph();
   const [sliderX, setSliderX] = useState(50);
   const [manualDisplayMode, setManualDisplayMode] = useState<CompareDisplayMode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [surfaceSize, setSurfaceSize] = useState<CompareSurfaceSize | null>(null);
   const incomingEdges = useMemo(
     () => graph.incomingEdgesByTarget.get(id) ?? [],
     [graph, id],
@@ -73,11 +79,17 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
           graph,
         });
 
-        if (preview.sourceUrl) {
-          previewInput = {
-            sourceUrl: preview.sourceUrl,
-            steps: preview.steps,
-          };
+        if (preview.sourceUrl || preview.sourceComposition) {
+          previewInput = preview.sourceComposition
+            ? {
+                sourceUrl: null,
+                sourceComposition: preview.sourceComposition,
+                steps: preview.steps,
+              }
+            : {
+                sourceUrl: preview.sourceUrl,
+                steps: preview.steps,
+              };
 
           const sourceLastUploadedHash =
             typeof sourceData.lastUploadedHash === "string"
@@ -91,6 +103,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
             sourceLastUploadedHash ?? sourceLastRenderedHash;
           const sourceCurrentHash = resolveRenderPipelineHash({
             sourceUrl: preview.sourceUrl,
+            sourceComposition: preview.sourceComposition,
             steps: preview.steps,
             data: sourceData,
           });
@@ -172,7 +185,60 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
     resolvedSides.right.isStaleRenderOutput;
   const effectiveDisplayMode =
     manualDisplayMode ?? (shouldDefaultToPreview ? "preview" : "render");
-  const previewNodeWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));
+  const fallbackSurfaceWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));
+  const fallbackSurfaceHeight = Math.max(180, Math.min(720, Math.round(height ?? 380)));
+  const previewNodeWidth = Math.max(
+    1,
+    Math.round(surfaceSize?.width ?? fallbackSurfaceWidth),
+  );
+  const previewNodeHeight = Math.max(
+    1,
+    Math.round(surfaceSize?.height ?? fallbackSurfaceHeight),
+  );
+
+  useEffect(() => {
+    const surfaceElement = containerRef.current;
+    if (!surfaceElement) {
+      return;
+    }
+
+    const updateSurfaceSize = (nextWidth: number, nextHeight: number) => {
+      const roundedWidth = Math.max(1, Math.round(nextWidth));
+      const roundedHeight = Math.max(1, Math.round(nextHeight));
+
+      setSurfaceSize((current) =>
+        current?.width === roundedWidth && current?.height === roundedHeight
+          ? current
+          : {
+              width: roundedWidth,
+              height: roundedHeight,
+            },
+      );
+    };
+
+    const measureSurface = () => {
+      const rect = surfaceElement.getBoundingClientRect();
+      updateSurfaceSize(rect.width, rect.height);
+    };
+
+    measureSurface();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+
+      updateSurfaceSize(entry.contentRect.width, entry.contentRect.height);
+    });
+
+    observer.observe(surfaceElement);
+    return () => observer.disconnect();
+  }, []);
 
   const setSliderPercent = useCallback((value: number) => {
     setSliderX(Math.max(0, Math.min(100, value)));
@@ -314,6 +380,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
               previewInput={resolvedSides.right.previewInput}
               mixerPreviewState={resolvedSides.right.mixerPreviewState}
               nodeWidth={previewNodeWidth}
+              nodeHeight={previewNodeHeight}
               preferPreview={effectiveDisplayMode === "preview"}
             />
           )}
@@ -325,6 +392,7 @@ export default function CompareNode({ id, data, selected, width }: NodeProps) {
               previewInput={resolvedSides.left.previewInput}
               mixerPreviewState={resolvedSides.left.mixerPreviewState}
               nodeWidth={previewNodeWidth}
+              nodeHeight={previewNodeHeight}
               clipWidthPercent={sliderX}
               preferPreview={effectiveDisplayMode === "preview"}
             />
