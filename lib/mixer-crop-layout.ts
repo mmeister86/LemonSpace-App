@@ -100,6 +100,7 @@ export function computeVisibleMixerContentRect(args: {
   cropTop: number;
   cropRight: number;
   cropBottom: number;
+  fit?: MixerSurfaceFit;
 }): { x: number; y: number; width: number; height: number } | null {
   if (args.sourceWidth <= 0 || args.sourceHeight <= 0) {
     return null;
@@ -116,6 +117,7 @@ export function computeVisibleMixerContentRect(args: {
     boundsY: 0,
     boundsWidth: frameAspectRatio,
     boundsHeight: 1,
+    fit: args.fit,
   });
 
   return {
@@ -127,6 +129,7 @@ export function computeVisibleMixerContentRect(args: {
 }
 
 export function computeMixerCropImageStyle(args: {
+  frameAspectRatio: number;
   sourceWidth: number;
   sourceHeight: number;
   cropLeft: number;
@@ -136,11 +139,34 @@ export function computeMixerCropImageStyle(args: {
 }) {
   const safeWidth = Math.max(1 - args.cropLeft - args.cropRight, MIN_CROP_REMAINING_SIZE);
   const safeHeight = Math.max(1 - args.cropTop - args.cropBottom, MIN_CROP_REMAINING_SIZE);
+  const visibleRect = computeVisibleMixerContentRect({
+    frameAspectRatio: args.frameAspectRatio,
+    sourceWidth: args.sourceWidth,
+    sourceHeight: args.sourceHeight,
+    cropLeft: args.cropLeft,
+    cropTop: args.cropTop,
+    cropRight: args.cropRight,
+    cropBottom: args.cropBottom,
+    fit: "cover",
+  });
+
+  if (!visibleRect) {
+    return {
+      left: formatPercent((-args.cropLeft / safeWidth) * 100),
+      top: formatPercent((-args.cropTop / safeHeight) * 100),
+      width: formatPercent((1 / safeWidth) * 100),
+      height: formatPercent((1 / safeHeight) * 100),
+    } as const;
+  }
+
+  const imageWidth = visibleRect.width / safeWidth;
+  const imageHeight = visibleRect.height / safeHeight;
+
   return {
-    left: formatPercent((-args.cropLeft / safeWidth) * 100),
-    top: formatPercent((-args.cropTop / safeHeight) * 100),
-    width: formatPercent((1 / safeWidth) * 100),
-    height: formatPercent((1 / safeHeight) * 100),
+    left: formatPercent((visibleRect.x - (args.cropLeft / safeWidth) * visibleRect.width) * 100),
+    top: formatPercent((visibleRect.y - (args.cropTop / safeHeight) * visibleRect.height) * 100),
+    width: formatPercent(imageWidth * 100),
+    height: formatPercent(imageHeight * 100),
   } as const;
 }
 
@@ -160,7 +186,26 @@ export function computeMixerCompareOverlayImageStyle(args: {
   cropRight: number;
   cropBottom: number;
 }) {
+  const frameRect = computeMixerFrameRectInSurface({
+    surfaceWidth: args.surfaceWidth,
+    surfaceHeight: args.surfaceHeight,
+    baseWidth: args.baseWidth,
+    baseHeight: args.baseHeight,
+    overlayX: args.overlayX,
+    overlayY: args.overlayY,
+    overlayWidth: args.overlayWidth,
+    overlayHeight: args.overlayHeight,
+  });
+
+  const frameAspectRatio =
+    frameRect && frameRect.width > 0 && frameRect.height > 0
+      ? (frameRect.width * args.surfaceWidth) / (frameRect.height * args.surfaceHeight)
+      : args.overlayWidth > 0 && args.overlayHeight > 0
+        ? args.overlayWidth / args.overlayHeight
+        : 1;
+
   return computeMixerCropImageStyle({
+    frameAspectRatio,
     sourceWidth: args.sourceWidth,
     sourceHeight: args.sourceHeight,
     cropLeft: args.cropLeft,

@@ -356,7 +356,7 @@ describe("loadSourceBitmap", () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:video-source");
   });
 
-  it("renders non-square mixer overlays by stretching to the frame", async () => {
+  it("renders non-square mixer overlays with cover-style AR preservation", async () => {
     const baseBlob = new Blob(["base"]);
     const overlayBlob = new Blob(["overlay"]);
     const baseBitmap = { width: 100, height: 100 } as ImageBitmap;
@@ -458,9 +458,9 @@ describe("loadSourceBitmap", () => {
     expect(overlayDrawArgs?.[2]).toBe(0);
     expect(overlayDrawArgs?.[3]).toBe(200);
     expect(overlayDrawArgs?.[4]).toBe(100);
-    expect(overlayDrawArgs?.[5]).toBe(10);
+    expect(overlayDrawArgs?.[5]).toBeCloseTo(-27.5, 10);
     expect(overlayDrawArgs?.[6]).toBe(20);
-    expect(overlayDrawArgs?.[7]).toBe(25);
+    expect(overlayDrawArgs?.[7]).toBe(100);
     expect(overlayDrawArgs?.[8]).toBe(50);
   });
 
@@ -691,7 +691,7 @@ describe("loadSourceBitmap", () => {
     expect(overlayDrawArgs?.[8]).toBeCloseTo(30, 10);
   });
 
-  it("fills the overlay frame with a cropped wide source during bake", async () => {
+  it("uses cover placement for cropped wide sources during bake", async () => {
     const baseBlob = new Blob(["base"]);
     const overlayBlob = new Blob(["overlay"]);
     const baseBitmap = { width: 100, height: 100 } as ImageBitmap;
@@ -792,9 +792,9 @@ describe("loadSourceBitmap", () => {
     expect(overlayDrawArgs?.[2]).toBe(25);
     expect(overlayDrawArgs?.[3]).toBe(200);
     expect(overlayDrawArgs?.[4]).toBe(50);
-    expect(overlayDrawArgs?.[5]).toBe(10);
+    expect(overlayDrawArgs?.[5]).toBeCloseTo(-50, 10);
     expect(overlayDrawArgs?.[6]).toBe(20);
-    expect(overlayDrawArgs?.[7]).toBe(40);
+    expect(overlayDrawArgs?.[7]).toBeCloseTo(160, 10);
     expect(overlayDrawArgs?.[8]).toBe(40);
   });
 });

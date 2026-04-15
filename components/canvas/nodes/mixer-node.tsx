@@ -84,6 +84,25 @@ function computeAspectRatio(width: number, height: number): number | null {
   return Number.isFinite(ratio) ? ratio : null;
 }
 
+function resolveDisplayedRectAspectRatio(args: {
+  rect: { width: number; height: number } | null;
+  surfaceWidth: number;
+  surfaceHeight: number;
+  fallback: number;
+}): number {
+  if (args.rect && args.rect.width > 0 && args.rect.height > 0) {
+    const ratio = computeAspectRatio(
+      args.rect.width * args.surfaceWidth,
+      args.rect.height * args.surfaceHeight,
+    );
+    if (ratio) {
+      return ratio;
+    }
+  }
+
+  return args.fallback;
+}
+
 function readPositiveNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -433,6 +452,7 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
             cropTop: localData.cropTop,
             cropRight: localData.cropRight,
             cropBottom: localData.cropBottom,
+            fit: "cover",
           })
         : null;
     const visibleContentRectPx =
@@ -768,6 +788,15 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
     overlayWidth: localData.overlayWidth,
     overlayHeight: localData.overlayHeight,
   });
+  const displayedOverlayFrameAspectRatio = resolveDisplayedRectAspectRatio({
+    rect: displayedOverlayFrameRect,
+    surfaceWidth: effectivePreviewSurfaceWidth,
+    surfaceHeight: effectivePreviewSurfaceHeight,
+    fallback:
+      localData.overlayWidth > 0 && localData.overlayHeight > 0
+        ? localData.overlayWidth / localData.overlayHeight
+        : 1,
+  });
   const resizeHandleRect = displayedOverlayFrameRect
     ? {
         left: displayedOverlayFrameRect.x,
@@ -791,6 +820,7 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
   } as const;
 
   const overlayContentStyle = computeMixerCropImageStyle({
+    frameAspectRatio: displayedOverlayFrameAspectRatio,
     sourceWidth: overlayNaturalSize.width,
     sourceHeight: overlayNaturalSize.height,
     cropLeft: localData.cropLeft,

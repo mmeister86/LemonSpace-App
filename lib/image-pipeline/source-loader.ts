@@ -1,4 +1,5 @@
 import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
+import { computeVisibleMixerContentRect } from "@/lib/mixer-crop-layout";
 
 export const SOURCE_BITMAP_CACHE_MAX_ENTRIES = 32;
 
@@ -382,10 +383,20 @@ async function loadMixerCompositionBitmap(
   const sourceY = cropEdges.top * overlayBitmap.height;
   const sourceWidth = (1 - cropEdges.left - cropEdges.right) * overlayBitmap.width;
   const sourceHeight = (1 - cropEdges.top - cropEdges.bottom) * overlayBitmap.height;
-  const destX = frameX;
-  const destY = frameY;
-  const destWidth = frameWidth;
-  const destHeight = frameHeight;
+  const visibleRect = computeVisibleMixerContentRect({
+    frameAspectRatio: frameHeight > 0 ? frameWidth / frameHeight : 1,
+    sourceWidth: overlayBitmap.width,
+    sourceHeight: overlayBitmap.height,
+    cropLeft: cropEdges.left,
+    cropTop: cropEdges.top,
+    cropRight: cropEdges.right,
+    cropBottom: cropEdges.bottom,
+    fit: "cover",
+  });
+  const destX = frameX + (visibleRect?.x ?? 0) * frameWidth;
+  const destY = frameY + (visibleRect?.y ?? 0) * frameHeight;
+  const destWidth = (visibleRect?.width ?? 1) * frameWidth;
+  const destHeight = (visibleRect?.height ?? 1) * frameHeight;
 
   context.globalCompositeOperation = mixerBlendModeToCompositeOperation(
     sourceComposition.blendMode,
