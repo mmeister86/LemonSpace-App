@@ -40,6 +40,19 @@ app/(app)/canvas/[canvasId]/page.tsx
 | `canvas-media-utils.ts` | Media-Helfer wie `getImageDimensions(file)` |
 | `use-canvas-data.ts` | Hook: Bündelt Canvas-Graph-Query, Storage-URL-Auflösung und Auth-State in einer einzigen Abstraktion |
 | `canvas-graph-query-cache.ts` | Optimistic Store Helper für `canvasGraph.get` (getNodes, getEdges, setNodes, setEdges) |
+| `canvas-connection-validation.ts` | Edge-Validierungs-Helpers für Connection-Policy (Client-Seite) |
+| `canvas-favorites-visibility.ts` | Node-Favoriten-Sichtbarkeit und Persistierung |
+| `canvas-flow-reconciliation-helpers.ts` | Helper für Flow-Reconciliation (Server-State vs. Client-State) |
+| `canvas-graph-context.tsx` | React Context für Canvas-Graph-Zugang (Nodes, Edges) |
+| `canvas-sync-context.tsx` | React Context für Canvas-Sync-Engine (Queue, Retry, Online-Status) |
+| `use-canvas-connections.ts` | Hook für Canvas-Connection-Management (Validierung, Creation) |
+| `use-canvas-drop.ts` | Hook für Drag-and-Drop auf den Canvas (Node-Erstellung bei Drop) |
+| `use-canvas-edge-insertions.ts` | Hook für automatische Edge-Insertions bei Node-Erstellung |
+| `use-canvas-edge-types.tsx` | Edge-Type-Konfiguration und Rendering |
+| `use-canvas-flow-reconciliation.ts` | Hook für Flow-Reconciliation zwischen Convex und React Flow State |
+| `use-canvas-local-snapshot-persistence.ts` | Hook für lokale Snapshot-Persistierung (Auto-Save, Recovery) |
+| `use-canvas-node-interactions.ts` | Hook für Node-Interaktionen (Drag, Resize, Select) |
+| `use-canvas-sync-engine.ts` | Hook für die Sync-Engine (Op-Queue-Verarbeitung, Online/Offline) |
 
 ### Connection Magnetism (client-only)
 
@@ -52,7 +65,7 @@ app/(app)/canvas/[canvasId]/page.tsx
 
 ---
 
-## Node-Taxonomie (Phase 1)
+## Node-Taxonomie
 
 Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 
@@ -63,10 +76,10 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | **source** (Quelle) | `image`, `text`, `video`, `asset`, `color`, `ai-video` | Input-Quellen für den Workflow |
 | **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text` | KI-generierte Inhalte |
 | **agents** (Agents) | `agent`, `agent-output` | Agent-Orchestrierung und Agent-Outputs |
-| **transform** (Transformation) | `crop`, `bg-remove`, `upscale` | Bildbearbeitung-Transformationen |
-| **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust` | Preset-basierte Adjustments |
-| **control** (Steuerung & Flow) | `condition`, `loop`, `parallel`, `switch`, `mixer` | Kontrollfluss-Elemente |
-| **layout** (Canvas & Layout) | `group`, `frame`, `note`, `compare` | Layout-Elemente |
+| **transform** (Transformation) | `crop`, `bg-remove`, `upscale`, `style-transfer`, `face-restore` | Bildbearbeitung-Transformationen |
+| **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust`, `render` | Preset-basierte Adjustments und Render |
+| **control** (Steuerung & Flow) | `splitter`, `loop`, `mixer`, `switch` | Kontrollfluss-Elemente |
+| **layout** (Canvas & Layout) | `group`, `frame`, `note`, `text-overlay`, `compare`, `comment`, `presentation` | Layout-Elemente |
 
 ### Node-Typen im Detail
 
@@ -74,26 +87,36 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 |-----|-------|---------------|-----------|---------|
 | `image` | 1 | ✅ | source | source (default), target (default) |
 | `text` | 1 | ✅ | source | source (default), target (default) |
-| `video` | 1 | ✅ | source | source (default), target (default) |
-| `asset` | 1 | ✅ | source | source (default), target (default) |
-| `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
-| `video-prompt` | 2 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
-| `ai-text` | 2 | 🔲 | ai-output | source: `text-out`, target: `text-in` |
+| `video` | 2 | ✅ | source | source (default), target (default) |
+| `asset` | 2 | ✅ | source | source (default), target (default) |
+| `color` | 2 | 🔲 | source | 🔲 |
 | `ai-video` | 2 | ✅ (systemOutput) | source | source: `video-out`, target: `video-in` |
+| `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
+| `video-prompt` | 1 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
+| `ai-text` | 2 | 🔲 (systemOutput) | ai-output | source: `text-out`, target: `text-in` |
 | `agent` | 2 | ✅ | agents | target: `agent-in`, source (default) |
 | `agent-output` | 2 | ✅ (systemOutput) | agents | target: `agent-output-in` |
-| `crop` | 2 | 🔲 | transform | 🔲 |
+| `crop` | 2 | ✅ | transform | 🔲 |
 | `bg-remove` | 2 | 🔲 | transform | 🔲 |
 | `upscale` | 2 | 🔲 | transform | 🔲 |
-| `curves` | 1 | ✅ | image-edit | Preset-basiert (nicht standalone) |
-| `color-adjust` | 1 | ✅ | image-edit | Preset-basiert |
-| `light-adjust` | 1 | ✅ | image-edit | Preset-basiert |
-| `detail-adjust` | 1 | ✅ | image-edit | Preset-basiert |
+| `style-transfer` | 3 | 🔲 | transform | 🔲 |
+| `face-restore` | 3 | 🔲 | transform | 🔲 |
+| `curves` | 2 | ✅ | image-edit | Preset-basiert (nicht standalone) |
+| `color-adjust` | 2 | ✅ | image-edit | Preset-basiert |
+| `light-adjust` | 2 | ✅ | image-edit | Preset-basiert |
+| `detail-adjust` | 2 | ✅ | image-edit | Preset-basiert |
+| `render` | 2 | ✅ | image-edit | 🔲 |
+| `splitter` | 2 | 🔲 | control | 🔲 |
+| `loop` | 2 | 🔲 | control | 🔲 |
+| `mixer` | 1 | ✅ | control | source: `mixer-out`, targets: `base`, `overlay` |
+| `switch` | 3 | 🔲 | control | 🔲 |
 | `group` | 1 | ✅ | layout | source (default), target (default) |
 | `frame` | 1 | ✅ | layout | source: `frame-out`, target: `frame-in` |
 | `note` | 1 | ✅ | layout | source (default), target (default) |
+| `text-overlay` | 2 | 🔲 | layout | 🔲 |
 | `compare` | 1 | ✅ | layout | source: `compare-out`, targets: `left`, `right` |
-| `mixer` | 1 | ✅ | control | source: `mixer-out`, targets: `base`, `overlay` |
+| `comment` | 3 | 🔲 | layout | 🔲 |
+| `presentation` | 3 | 🔲 | layout | 🔲 |
 
 > `implemented: false` (🔲) bedeutet Phase-2/3 Node, der noch nicht implementiert ist. **Hinweis:** Phase-2/3 Nodes müssen im Schema (`convex/node_type_validator.ts`) vordeklariert werden, damit das System nicht bei jeder Phasenübergang neu migriert werden muss. Die UI filtert Nodes nach Phase.
 
@@ -242,15 +265,28 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `export-button.tsx` | Export-Button mit Format-Auswahl |
 | `connection-banner.tsx` | Offline-Banner bei Convex-Verbindungsverlust |
 | `custom-connection-line.tsx` | Angepasste temporäre Verbindungslinie |
-| `default-edge.tsx` | Standard Edge-Rendering |
 | `node-error-boundary.tsx` | Error-Boundary für Node-Fehler |
 | `adjustment-preview.tsx` | Vorschau für Adjustment-Presets |
 | `adjustment-controls.tsx` | UI-Controls für Adjustments |
+
+### Edge-Komponenten (`edges/`)
+
+Edge-Rendering liegt im Unterverzeichnis `edges/`.
+
+| Datei | Zweck |
+|-------|-------|
+| `edges/default-edge.tsx` | Standard Edge-Rendering |
 
 ### Node-Komponenten (`nodes/`)
 
 | Datei | Zweck |
 |-------|-------|
+| `base-node-wrapper.tsx` | Gemeinsamer Wrapper für alle Nodes (Chrome, Handles, Status) |
+| `compare-surface.tsx` | Render-Oberfläche für Compare-Slider |
+| `crop-node.tsx` | Crop/Resize-Node mit interaktivem Crop-Overlay und Aspect-Ratio-Lock |
+| `video-node.tsx` | Video-Node für Videodateien auf dem Canvas |
+| `asset-node.tsx` | Asset-Node für Stock-Assets |
+| `use-node-local-data.ts` | Hook für lokale Node-Data mit Optimistic-Updates |
 | `prompt-node.tsx` | KI-Bild-Steuer-Node mit Modell-Selector und Generate-Button |
 | `ai-image-node.tsx` | KI-Bild-Output-Node mit Bildvorschau, Metadaten, Retry |
 | `video-prompt-node.tsx` | KI-Video-Steuer-Node mit Modell-/Dauer-Selector, Credit-Anzeige, Generate-Button |

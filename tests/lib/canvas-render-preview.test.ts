@@ -313,7 +313,7 @@ describe("mixer crop layout parity", () => {
     });
   });
 
-  it("returns compare image styles that preserve AR with cover behavior", () => {
+  it("returns compare image styles that preserve AR with width-priority behavior", () => {
     expect(
       computeMixerCropImageStyle({
         frameAspectRatio: 1,
@@ -325,14 +325,14 @@ describe("mixer crop layout parity", () => {
         cropBottom: 0,
       }),
     ).toEqual({
-      left: "-50%",
-      top: "0%",
-      width: "200%",
-      height: "100%",
+      left: "0%",
+      top: "25%",
+      width: "100%",
+      height: "50%",
     });
   });
 
-  it("uses the actual base-aware frame pixel ratio for compare crop math", () => {
+  it("uses the actual base-aware frame pixel ratio for width-priority compare crop math", () => {
     expect(
       computeMixerCompareOverlayImageStyle({
         surfaceWidth: 500,

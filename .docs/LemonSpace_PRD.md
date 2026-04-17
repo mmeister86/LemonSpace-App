@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v2.1 | Draft | April 2026 | lemonspace.app |
+| v2.2 | Draft | April 2026 | lemonspace.app |
 
 ---
 
@@ -28,6 +28,7 @@
 | v1.5 | Stage 3 Offline Sync: Local-First Canvas mit IndexedDB Queue, Optimistic Updates, ID-Remapping. Magic Link Auth via Better Auth Plugin. react-resizable-panels für Sidebar Resizing. Canvas Modularisierung, Dashboard Dialoge, Auth Race-Härtung.|
 | v2.0 | **Phase-1-Umfang erweitert:** Video- und Asset-Nodes vorgezogen (Phase 2→1). Bildbearbeitungs-Nodes (Kurven, Farbe, Licht, Detail, Render) vorgezogen (Phase 2→1). Vollständige WebGL-basierte Image-Pipeline implementiert (`lib/image-pipeline/`). Node-Taxonomie hat 6 Kategorien mit 27 Node-Typen. Phase-1-Status-Tabelle aktualisiert. |
 | v2.1 | **Alle 9 Image-Modelle aktiviert (Phase 2→1):** Vollständige OpenRouter Image Gen Integration mit serverseitigem Tier-Enforcement und modellspezifischen Request-Modalities. Tier-aware Model Selector im Prompt-Node. AI-Modularisierung: `ai_errors.ts`, `ai_node_data.ts`, `ai_retry.ts` aus `ai.ts` extrahiert. Dashboard Snapshot Cache (`convex/dashboard.ts`): Gebündelte Query mit localStorage-Cache (`lib/dashboard-snapshot-cache.ts`). Credits Activity Analytics: `lib/credits-activity.ts` + `CreditsActivityChart` (Recharts). Canvas Graph Query Cache (`convex/canvasGraph.ts` + `canvas-graph-query-cache.ts`): Performance-Optimierung durch separaten Graph-Endpunkt mit Optimistic Store. Neuer Hook `use-dashboard-snapshot.ts`. ShadCN Chart-Komponente (`components/ui/chart.tsx`) + Recharts 3.8. |
+| v2.2 | **Codebase-Aktualisierung:** Crop-Node implementiert (Phase 2). Agent-Modelle: GPT-5.4 Nano/Mini/Pro (statt Claude 3.5 Sonnet). Schema: `mediaItems`-, `webhookIdempotencyEvents`-, `userSettings`-Tabellen. Image Pipeline: `crop-node-data.ts`, `geometry-transform.ts`. Neue Lib-Dateien: `agent-models.ts`, `canvas-render-preview.ts`, `canvas-node-favorite.ts`, `media-archive.ts`, `mixer-crop-layout.ts`. Canvas Modularisierung: 13 neue Hooks/Contexts für Flow-Reconciliation, Sync-Engine, Drop, Edge-Insertions. Convex: `media.ts`, `migrations.ts`, `polar_utils.ts`, `presets.ts`, `users.ts`. |
 
 ---
 
@@ -85,8 +86,8 @@ Quelle-Nodes bringen Inhalte in den Canvas.
 |------|--------------|-------|---------------|
 | Bild | Upload eigener Bilder (PNG, JPG, WebP) oder Einbindung per URL. Basis-Asset für alle weiteren Operationen. | 1 | ✅ |
 | Text | Freitextfeld mit Markdown-Support. Enthält Inhalte (Copy, Brief, Beschreibung) — semantisch verschieden vom Prompt-Node. | 1 | ✅ |
-| Video | Upload von Videodateien oder Einbindung per Link. Darstellung als Thumbnail-Node, Playback im Panel. | 1 | ✅ |
-| Asset | Stock-Assets (Fotos, Vektoren, Icons), direkt aus dem Asset Browser auf den Canvas gezogen. | 1 | ✅ |
+| Video | Upload von Videodateien oder Einbindung per Link. Darstellung als Thumbnail-Node, Playback im Panel. | 2 | ✅ |
+| Asset | Stock-Assets (Fotos, Vektoren, Icons), direkt aus dem Asset Browser auf den Canvas gezogen. | 2 | ✅ |
 | Farbe / Palette | Definiert Farben oder Farbpaletten als Style-Referenz. Kann an KI-Nodes oder Style-Transfer übergeben werden. | 2 | ☐ |
 | Prompt | Dedizierter Node für Modellinstruktionen. Verbindet sich ausschließlich mit KI-Nodes. Kategorie: KI-Ausgabe. | 1 | ✅ |
 
@@ -105,7 +106,7 @@ KI-Ausgabe-Nodes sind das Ergebnis einer Modell-Operation. Sie werden vom System
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
-| Crop / Resize | Freie Bildausschnitt-Auswahl direkt auf dem Canvas, mit Aspect-Ratio-Lock. | 2 | ☐ |
+| Crop / Resize | Freie Bildausschnitt-Auswahl direkt auf dem Canvas, mit Aspect-Ratio-Lock. | 2 | ✅ |
 | BG entfernen | Hintergrundentfernung via rembg. Output ist ein freigestelltes Bild. Batch-Modus möglich. | 2 | ☐ |
 | Upscale | Hochskalierung via Real-ESRGAN. Unterstützt Faktoren 2×, 4×, 8×. | 2 | ☐ |
 | Style Transfer | Überträgt visuellen Stil eines Referenzbildes auf einen anderen Input. | 3 | ☐ |
@@ -123,6 +124,8 @@ Die Bildbearbeitung nutzt eine vollständige WebGL-Pipeline für hardwarebeschle
 lib/image-pipeline/
 ├── adjustment-types.ts    ← Typen und Default-Werte für alle Adjustments
 ├── contracts.ts           ← Pipeline-Schnittstellen
+├── crop-node-data.ts      ← Crop-Node Daten-Typen und Normalisierung
+├── geometry-transform.ts  ← Geometrische Transformationen
 ├── render-core.ts         ← Kern-Rendering-Logik
 ├── render-types.ts        ← Render-Typen
 ├── render-size.ts         ← Größenberechnung
@@ -163,11 +166,11 @@ Bild-Node (Original)
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
-| Kurven | Tonwert-Kurven (RGB + Einzelkanäle). Kontrollpunkte per Drag auf der Kurve. Presets: Kontrast, Aufhellen, Abdunkeln, Film-Look, Cross-Process. | 1 | ✅ |
-| Farbe | HSL-Regler (Hue, Saturation, Luminance — global + pro Farbbereich). Color Balance. Temperature/Tint. Presets. | 1 | ✅ |
-| Licht | Brightness, Contrast, Exposure, Highlights, Shadows, Whites, Blacks. HDR-Tone-Mapping. Vignette. Presets. | 1 | ✅ |
-| Detail | Unscharf maskieren (Amount, Radius, Threshold). Clarity / Structure. Denoise. Grain. Presets. | 1 | ✅ |
-| Render | Materialisierer: Wendet den gesamten Adjustment-Stack an und erzeugt ein neues Bild (in Convex Storage). Unterstützt Ausgabe-Auflösung und Format. | 1 | ✅ |
+| Kurven | Tonwert-Kurven (RGB + Einzelkanäle). Kontrollpunkte per Drag auf der Kurve. Presets: Kontrast, Aufhellen, Abdunkeln, Film-Look, Cross-Process. | 2 | ✅ |
+| Farbe | HSL-Regler (Hue, Saturation, Luminance — global + pro Farbbereich). Color Balance. Temperature/Tint. Presets. | 2 | ✅ |
+| Licht | Brightness, Contrast, Exposure, Highlights, Shadows, Whites, Blacks. HDR-Tone-Mapping. Vignette. Presets. | 2 | ✅ |
+| Detail | Unscharf maskieren (Amount, Radius, Threshold). Clarity / Structure. Denoise. Grain. Presets. | 2 | ✅ |
+| Render | Materialisierer: Wendet den gesamten Adjustment-Stack an und erzeugt ein neues Bild (in Convex Storage). Unterstützt Ausgabe-Auflösung und Format. | 2 | ✅ |
 
 > **Credits:** Alle Adjustment-Nodes sind **credit-frei** — die Verarbeitung läuft vollständig im Browser (WebGL). Nur der Render-Node erzeugt serverseitig ein finales Bild (ebenfalls credit-frei).
 
@@ -219,7 +222,7 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 
 | Bereich | Technologie | Version / Hinweis |
 |---------|-------------|-------------------|
-| Frontend Framework | Next.js | 16.1.1 — App Router, Server Components |
+| Frontend Framework | Next.js | 16.2.1 — App Router, Server Components |
 | Styling | Tailwind CSS | v4 |
 | UI Komponenten | ShadCN/UI | Aktuelle stabile Version |
 | Backend / Realtime | Convex | Self-hosted via convex-backend |
@@ -240,6 +243,11 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Offline Sync | IndexedDB + localStorage | Canvas-Sync-Queue, Snapshot-Persistenz, Optimistic Updates |
 | Package Manager | pnpm | Je Repo |
 | Charts / Visualization | Recharts + ShadCN Chart | v3.8.0 — Dashboard Credits Activity Chart |
+| Server-Side Canvas | @napi-rs/canvas | Server-side Canvas Rendering für Export |
+| Image Processing | Jimp | Bildverarbeitung (Resize, Konvertierung) |
+| ZIP Export | JSZip | ZIP-Archiv-Generierung für Batch-Export |
+| Internationalisierung | next-intl | i18n (de/en) |
+| Animationen | Framer Motion | UI-Animationen und Transitions |
 
 ### Zwei-Repo-Strategie
 
@@ -280,7 +288,7 @@ Dokumentierter Migrationspfad bei Skalierung: Convex Cloud mit EU-Standort. Conv
 
 | Rolle | Zweck | Beispielmodelle | Aufgerufen von |
 |-------|-------|-----------------|----------------|
-| Text / Reasoning | Agent-Logik, Planung, Clarification, Copywriting | Claude 3.5 Sonnet, GPT-4o | Agent Node |
+| Text / Reasoning | Agent-Logik, Planung, Clarification, Copywriting | GPT-5.4 Nano, GPT-5.4 Mini, GPT-5.4, GPT-5.4 Pro | Agent Node |
 | Image Generation | Bildgenerierung auf dem Canvas | Gemini 2.5 Flash Image, Flux.1 Pro, GPT-5 Image | Canvas-Aktionen + Agent Node |
 
 ### OpenRouter — Image Generation
@@ -430,6 +438,46 @@ AdjustmentPreset
 └── createdAt
 ```
 
+### Media Library
+
+```
+MediaItem
+├── id, ownerId
+├── kind              // image | video | asset
+├── source            // upload | ai-image | ai-video | freepik-asset | pexels-video
+├── dedupeKey         // Deduplication-Key
+├── title?, filename?, mimeType?
+├── storageId?, previewStorageId?
+├── originalUrl?, previewUrl?, sourceUrl?
+├── providerAssetId?
+├── width?, height?, durationSeconds?
+├── metadata?
+├── firstSourceCanvasId?, firstSourceNodeId?
+├── createdAt, updatedAt, lastUsedAt
+```
+
+### Webhook Idempotency
+
+```
+WebhookIdempotencyEvent
+├── id
+├── provider          // polar
+├── scope             // topup_paid | subscription_activated_cycle | subscription_revoked
+├── idempotencyKey
+├── userId
+├── polarOrderId?, polarSubscriptionId?
+├── createdAt
+```
+
+### User Settings
+
+```
+UserSettings
+├── id, userId
+├── locale?           // de | en
+├── createdAt, updatedAt
+```
+
 ---
 
 ## 9. Pricing & Credit-System
@@ -487,9 +535,10 @@ Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup
 | Bildgenerierung (Premium) | Riverflow V2 Pro | ~€0,12 | 1× | 12 Cr | Ab Starter |
 | Bildgenerierung (Premium) | Gemini 3 Pro Image | ~€0,13 | 1× | 13 Cr | Ab Starter |
 | Bildgenerierung (Ultra) | GPT-5 Image | ~€0,15 | 1× | 15 Cr | Ab Starter |
-| Agent Reasoning (leicht) | Claude Sonnet | ~€0,03 | 3× | 9 Cr | Ab Starter |
-| Agent Reasoning (mittel) | Claude Sonnet | ~€0,06 | 2,5× | 15 Cr | Ab Starter |
-| Agent-Run (komplex) | Multi-Step Workflow | ~€0,15 | 2,5× | 38 Cr | Ab Starter |
+| Agent Reasoning (Nano) | GPT-5.4 Nano | ~€0,02 | 3× | 6 Cr | Ab Starter |
+| Agent Reasoning (Mini) | GPT-5.4 Mini | ~€0,05 | 3× | 15 Cr | Ab Starter |
+| Agent Reasoning (Standard) | GPT-5.4 | ~€0,13 | 3× | 38 Cr | Ab Starter |
+| Agent Reasoning (Pro) | GPT-5.4 Pro | ~€0,60 | 3× | 180 Cr | Ab Max |
 | BG-Entfernung | rembg (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
 | Upscaling | Real-ESRGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
 | Face Restoration | GFPGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
@@ -575,9 +624,9 @@ Agent Status: analyzing
 ### Phase 1 — Foundation (MVP)
 
 **Nodes (15 implementiert):**
-- Quelle: Bild ✅, Text ✅, Video ✅, Asset ✅
+- Quelle: Bild ✅, Text ✅, Video ✅ (Phase 2 vorgezogen), Asset ✅ (Phase 2 vorgezogen)
 - KI-Ausgabe: Prompt ✅, KI-Bild (`ai-image`) ✅
-- Bildbearbeitung: Kurven ✅, Farbe ✅, Licht ✅, Detail ✅, Render ✅
+- Bildbearbeitung: Kurven ✅ (Phase 2 vorgezogen), Farbe ✅ (Phase 2 vorgezogen), Licht ✅ (Phase 2 vorgezogen), Detail ✅ (Phase 2 vorgezogen), Render ✅ (Phase 2 vorgezogen)
 - Canvas & Layout: Gruppe ✅, Frame ✅, Notiz ✅, Compare ✅
 
 **Infrastruktur & Features:**
@@ -618,7 +667,7 @@ Agent Status: analyzing
 **Nodes:**
 - Quelle: Farbe / Palette
 - KI-Ausgabe: KI-Text, KI-Video
-- Transformation: Crop / Resize, BG entfernen, Upscale
+- Transformation: Crop / Resize ✅ (implementiert), BG entfernen, Upscale
 - Steuerung: Splitter, Loop, Agent
 - Canvas & Layout: Text-Overlay
 
@@ -626,7 +675,7 @@ Agent Status: analyzing
 
 | Task | Status |
 |------|--------|
-| OpenRouter Text/Reasoning Integration (Claude 3.5 Sonnet) | ☐ Offen |
+| OpenRouter Text/Reasoning Integration (GPT-5.4 Nano/Mini/Pro) | ☐ Offen |
 | Agent Node: Analyse, Clarification, Execution, Output | ☐ Offen |
 | Skeleton-Nodes: Platzierung nach Plan-Erstellung | ☐ Offen |
 | Browser Notifications API (opt-in, Tab-Wechsel) | ☐ Offen |
@@ -684,7 +733,8 @@ Agent Status: analyzing
 | Agent Template Format | ⏳ Markdown-Datei vs. strukturiertes JSON-Schema |
 | Weiche: Bedingungslogik | ⏳ Visueller Rule-Builder vs. Ausdruckssprache |
 | Mixer: Blend Modes | ⏳ min. Normal, Multiply, Screen, Overlay |
-| Canvas-Export | ⏳ PNG, PDF, ZIP (Phase 3, Library TBD) |
+| OpenRouter Text/Reasoning | ✅ GPT-5.4 Nano/Mini/Pro als Agent-Modelle (via `agent-models.ts`) |
+| Canvas-Export | ✅ PNG, ZIP (via @napi-rs/canvas + JSZip) |
 
 ---
 
@@ -707,11 +757,11 @@ Agent Status: analyzing
 ## 14. Nächste Schritte
 
 1. docker-compose.yml + .env.example + Setup-README ausarbeiten
-2. Vollständige OpenRouter Integration (alle 9 Modelle + Modellauswahl-UI)
-3. Agent Node: Analyse, Clarification, Execution, Output
-4. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN)
-5. Transformation-Nodes (Crop/Resize, BG entfernen, Upscale)
-6. Echtzeit-Kollaboration via Convex Subscriptions
+2. Agent Node: Analyse, Clarification, Execution, Output
+3. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN)
+4. Transformation-Nodes (BG entfernen, Upscale)
+5. Echtzeit-Kollaboration via Convex Subscriptions
+6. Weitere KI-Modelle (KI-Text, KI-Video)
 
 ---
 
@@ -740,4 +790,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v2.1 — April 2026*
+*LemonSpace PRD v2.2 — April 2026*

@@ -13,7 +13,10 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `canvas-node-types.ts` | TypeScript-Typen und Union-Typen für Canvas-Nodes |
 | `canvas-node-templates.ts` | Default-Daten für neue Nodes (beim Einfügen aus Palette) |
 | `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
+| `canvas-node-favorite.ts` | Node-Favoriten-Persistierung (preserve/restore bei Node-Updates) |
+| `canvas-render-preview.ts` | Render-Preview-Pipeline: Graph-Traversal, Pipeline-Assembly, Fast-Path-Optimierung |
 | `agent-definitions.ts` | Runtime-Registry fuer Agent-Definitionen (Struktur, Regeln, Blueprints, Docs-Pfad) |
+| `agent-models.ts` | Agent-Modell-Registry: GPT-5.4 Nano/Mini/Pro mit Credit-Kosten und Tier-Zugang |
 | `agent-templates.ts` | UI-Projektion auf Agent-Metadaten aus `agent-definitions.ts` |
 | `agent-prompting.ts` | Pure Prompt-Builder (`summarizeIncomingContext`, `buildAnalyzeMessages`, `buildExecuteMessages`) |
 | `agent-run-contract.ts` | Normalisierung fuer Clarifications, Execution Plan und strukturierte Agent-Outputs |
@@ -23,6 +26,8 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `video-poll-logging.ts` | Log-Volumen-Steuerung für Video-Polling (vermeidet excessive Konsolenausgabe) |
 | `tier-credits.ts` | Tier-Normalisierung (`normalizePublicTier`) für Video-Modell-Tier-Checks |
 | `image-formats.ts` | Aspect-Ratio-Strings, Node-Chrome-Höhen (`AI_IMAGE_NODE_HEADER_PX` etc.) |
+| `media-archive.ts` | Media-Archiv-Utilities: Deduplication, Archivierung von Canvas-Media-Items |
+| `mixer-crop-layout.ts` | Crop-Layout-Berechnung für Mixer-Overlay |
 | `auth.ts` | Better Auth Server-Instanz |
 | `auth-server.ts` | Server-Helper: `getAuthUser()`, `getToken()` |
 | `auth-client.ts` | Client-Helper: `authClient` |
@@ -36,7 +41,6 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `rate-limit.ts` | Rate-Limiting-Utilities (Redis-backed) |
 | `redis.ts` | Redis-Client-Initialisierung |
 | `topup-calculator.ts` | Bonus-Staffel-Berechnung für Credit-Top-Ups |
-| `format-time.ts` | Zeitformatierung (relative Zeitangaben) |
 | `utils.ts` | `cn()` (clsx + tailwind-merge), allgemeine Utilities |
 | `credits-activity.ts` | Credits-Aktivitäts-Analytics: Transaktions-Priorisierung, Activity-Series, Usage-Domain-Berechnung |
 | `dashboard-snapshot-cache.ts` | localStorage-Cache für Dashboard-Snapshots (12h TTL, versioniert) |
@@ -55,6 +59,30 @@ Wichtig:
 - `convex/agents.ts` liest nur die generierte TS-Datei, nicht Raw-Markdown.
 - Nur markierte `AGENT_PROMPT_SEGMENT`-Bloecke beeinflussen Analyze/Execute-Prompts.
 - `agent-templates.ts` ist bewusst nur eine UI-Projektion aus `agent-definitions.ts`.
+
+---
+
+## `agent-models.ts` — Agent-Modell-Registry
+
+Zentrale Definition der für Agent-Runs verfügbaren LLM-Modelle.
+
+```typescript
+export type AgentModelId = "openai/gpt-5.4-nano" | "openai/gpt-5.4-mini" | "openai/gpt-5.4" | "openai/gpt-5.4-pro"
+export type AgentModelMinTier = "starter" | "max"
+
+export const AGENT_MODELS: Record<AgentModelId, AgentModel>
+```
+
+**Agent-Modelle:**
+
+| ID | Label | Tier | Credits | Beschreibung |
+|---|---|---|---|---|
+| `openai/gpt-5.4-nano` | GPT-5.4 Nano | starter | 6 Cr | Schnellste Option für leichte Agent-Runs |
+| `openai/gpt-5.4-mini` | GPT-5.4 Mini | starter | 15 Cr | Balance aus Qualität und Latenz |
+| `openai/gpt-5.4` | GPT-5.4 | starter | 38 Cr | Höhere Reasoning-Qualität für komplexe Tasks |
+| `openai/gpt-5.4-pro` | GPT-5.4 Pro | max | TBD | Premium-Modell für anspruchsvolle Orchestrations |
+
+**Sync-Pflicht:** `creditCost` muss mit dem Credit-System in Convex übereinstimmen.
 
 ---
 
@@ -163,6 +191,19 @@ Regeln für erlaubte Verbindungen zwischen Node-Typen.
 
 ---
 
+## `canvas-render-preview.ts` — Render-Preview-Pipeline
+
+Utilities für die clientseitige Render-Preview-Generierung.
+
+**Kernfunktionen:**
+- `getSourceImageFromGraph(nodes, edges, nodeId)` — Findet das Quellbild für einen Node im Graph
+- `collectPipelineFromGraph(nodes, edges, nodeId)` — Sammelt alle Pipeline-Schritte (Adjustments, Mixer, Crop) vom Quellbild zum Ziel-Node
+- `shouldFastPathPreviewPipeline(pipeline)` — Entscheided ob Fast-Path-Preview möglich ist
+
+Wird von `render-node.tsx` und `crop-node.tsx` verwendet.
+
+---
+
 ## `ai-models.ts` — Sync-Pflicht
 
 ```typescript
@@ -171,7 +212,7 @@ export const IMAGE_MODELS: AiModel[]
 export const DEFAULT_MODEL_ID: string
 ```
 
-**Achtung:** Diese Datei und `convex/openrouter.ts` müssen immer synchron gehalten werden. Bei neuen Modellen beide Dateien gleichzeitig aktualisieren. `creditCost` muss übereinstimmen — sonst stimmt die angezeigte Kostenvorschau nicht mit dem tatsächlichen Abzug überein.
+**Achtung:** Diese Datei und `convex/openrouter.ts` müssen immer synchron gehalten werden. Bei neuen Modellen beide Dateien gleichzeitig aktualisieren. `creditCost` muss übereinstimmen — sonst stimmt die angezeigte Kostenvorschau nicht mit dem tatsächlichen Abzug übereinstimmt.
 
 ---
 
@@ -324,4 +365,4 @@ authClient     // Better Auth Client-Instanz für signIn, signUp, signOut etc.
 - Keine React-Imports in `lib/` — reines TypeScript
 - `utils.ts` für generische Helpers (`cn`, `clamp`, etc.)
 - Typen, die sowohl Frontend als auch Convex betreffen, gehören in `lib/`, nicht in `convex/`
-- Modell-Registrys (`ai-models.ts`, `ai-video-models.ts`) müssen immer mit den Backend-Äquivalenten synchron gehalten werden
+- Modell-Registrys (`ai-models.ts`, `ai-video-models.ts`, `agent-models.ts`) müssen immer mit den Backend-Äquivalenten synchron gehalten werden

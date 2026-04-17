@@ -33,12 +33,17 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `ai_errors.ts` | Error-Kategorisierung und User-facing Fehlermeldungen (aus `ai.ts` extrahiert) |
 | `ai_node_data.ts` | Node-Data-Helpers (z. B. `getNodeDataRecord`) |
 | `ai_retry.ts` | Retry-Logik für AI-Generierung (`generateImageWithAutoRetry`, aus `ai.ts` extrahiert) |
+| `media.ts` | Media-Archivierung: Persistierung von Media-Items (Bilder, Videos, Assets) mit Deduplication und Preview-Generierung |
+| `migrations.ts` | Schema-Migrations-Helpers für Convex |
+| `polar_utils.ts` | Gemeinsame Polar.sh Utilities für Subscription- und TopUp-Handling |
+| `presets.ts` | Adjustment-Preset CRUD (list, save, remove) |
+| `users.ts` | User-Management (Settings, Locale) |
 
 ---
 
 ## Schema (`schema.ts`)
 
-Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `nodeTypeValidator` (Phase 1+), `adjustmentNodeTypeValidator`, und `adjustmentPresetNodeTypeValidator`.
+Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `nodeTypeValidator` (Phase 1+), `adjustmentNodeTypeValidator`, und `adjustmentPresetNodeTypeValidator`. Die Validators werden aus den Konstanten in `lib/canvas-node-types.ts` via `buildNodeTypeUnion` erzeugt.
 
 ### Phase-Struktur
 
@@ -85,9 +90,15 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 
 **`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`. Optionale Felder: `provider` (`openrouter` | `freepik`), `videoMeta` (`model`, `durationSeconds`, `hasAudio`).
 
-**`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`.
+**`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`. Feld `cancelAtPeriodEnd` markiert zum Periodenende gekündigte Subscriptions. Legacy-Felder `lemonSqueezySubscriptionId` und `lemonSqueezyCustomerId` existieren für Abwärtskompatibilität.
 
 **`dailyUsage`** — Täglicher Zähler pro User für Abuse-Prevention. Key: `userId + date (ISO)`.
+
+**`mediaItems`** — Persistierte Media-Library pro User. Felder: `ownerId`, `kind` (`image|video|asset`), `source` (`upload|ai-image|ai-video|freepik-asset|pexels-video`), `dedupeKey`, `title`, `filename`, `mimeType`, `storageId`, `previewStorageId`, `originalUrl`, `previewUrl`, `sourceUrl`, `providerAssetId`, `width`, `height`, `durationSeconds`, `metadata`, `firstSourceCanvasId`, `firstSourceNodeId`, `createdAt`, `updatedAt`, `lastUsedAt`. Index: `by_owner_updated`, `by_owner_kind_updated`, `by_owner_dedupe`.
+
+**`webhookIdempotencyEvents`** — Idempotenz-Layer für Webhook-Events. Felder: `provider` (`polar`), `scope` (`topup_paid|subscription_activated_cycle|subscription_revoked`), `idempotencyKey`, `userId`, `polarOrderId?`, `polarSubscriptionId?`, `createdAt`. Index: `by_provider_key`, `by_user`.
+
+**`userSettings`** — User-Einstellungen (z. B. Locale). Felder: `userId`, `locale?` (`de|en`), `createdAt`, `updatedAt`. Index: `by_user`.
 
 ---
 

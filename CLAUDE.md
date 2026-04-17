@@ -14,6 +14,7 @@ Jeder Ordner hat eine eigene CLAUDE.md als Single Source of Truth:
 | Next.js Routing | [app/CLAUDE.md](app/CLAUDE.md) |
 | Utilities & Shared Logic | [lib/CLAUDE.md](lib/CLAUDE.md) |
 | Custom Hooks | [hooks/CLAUDE.md](hooks/CLAUDE.md) |
+| Agents (Specs & Prompts) | [components/agents/CLAUDE.md](components/agents/CLAUDE.md) |
 
 ---
 

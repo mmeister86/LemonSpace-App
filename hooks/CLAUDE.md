@@ -48,45 +48,6 @@ const debouncedUpdate = useDebouncedCallback(() => {
 
 ---
 
-### `use-ai-generation-status.ts`
-
-Hook für AI-Generation-Status-Tracking. Überwacht Node-Status-Änderungen und zeigt Toasts bei Fehlern.
-
-**Features:**
-- Schwellenwert-basiertes Fehler-Tracking
-- Auto-Hiding Toasts nach 5 Sekunden
-- Fehler-Kategorisierung (Credits, Timeout, Provider, etc.)
-
-**Verwendung:**
-```typescript
-const { status, statusMessage } = useAiGenerationStatus()
-```
-
----
-
-### `use-adjustment-presets.ts`
-
-Hook für Adjustment-Preset-Management. Bündelt Preset-Queries und bietet helper-Funktionen für Preset-Validierung.
-
-**Verwendung:**
-```typescript
-const { presets, isLoading } = useAdjustmentPresets(nodeType)
-const savePreset = (name, params) => { /* ... */ }
-```
-
----
-
-### `use-canvas-sync-status.ts`
-
-Hook für Canvas-Sync-Status (Online/Offline). Zeigt Banner oder Icons basierend auf der Verbindungsqualität.
-
-**Verwendung:**
-```typescript
-const { isOnline, pendingOps, syncStatus } = useCanvasSyncStatus()
-```
-
----
-
 ### `use-dashboard-snapshot.ts`
 
 Hook für gebündeltes Dashboard-Datenladen mit localStorage-Cache. Ersetzt separate Queries für Balance, Subscription, UsageStats, Transactions und Canvases.
@@ -111,6 +72,23 @@ const { snapshot, source } = useDashboardSnapshot(userId)
 
 ---
 
+### `use-pipeline-preview.ts`
+
+Hook für die clientseitige Pipeline-Preview-Generierung. Nutzt `canvas-render-preview.ts` um den Pipeline-Graph zu traversieren und WebGL-basierte Previews zu erzeugen.
+
+**Features:**
+- Automatische Pipeline-Erkennung aus Canvas-Graph
+- WebGL-basierte Echtzeit-Preview
+- Fast-Path-Optimierung für einfache Pipelines
+- Debounced Re-Rendering bei Parameter-Änderungen
+
+**Verwendung:**
+```typescript
+const { previewUrl, isProcessing } = usePipelinePreview(nodeId)
+```
+
+---
+
 ## Konventionen
 
 - Hooks immer mit `use-` Prefix im Dateinamen
@@ -124,61 +102,8 @@ const { snapshot, source } = useDashboardSnapshot(userId)
 
 ## Best Practices
 
-1. **Keine Side Effects außerhalb von useEffect:** Alle Nebeneffekte in useEffect oder custom hooks implementieren
-2. **Type Safety:** Hook-Props und Return-Werte immer typisieren
-3. **Performance:** useMemo und useCallback für teure Berechnungen nutzen
-4. **Error Handling:** Hooks sollten keine Exceptions werfen, sondern Fehler via Callbacks propagieren
-5. **Dependencies:** useMemo/useCallback Dependencies immer korrekt angeben
-6. **Testing:** Hooks sollen unit-testbar sein (keine React-Abhängigkeiten außer Callbacks)
-
----
-
-## Examples
-
-### Custom Hook für Node-Resizing
-
-```typescript
-// hooks/use-node-resize.ts
-export function useNodeResize(nodeId, updateNode) {
-  const debouncedUpdate = useDebouncedCallback(
-    (newData) => updateNode(nodeId, newData),
-    200
-  )
-
-  const handleResize = (newDimensions) => {
-    debouncedUpdate({
-      width: newDimensions.width,
-      height: newDimensions.height,
-    })
-  }
-
-  return { handleResize }
-}
-```
-
-### Custom Hook für LocalStorage-Backups
-
-```typescript
-// hooks/use-local-storage.ts
-export function useLocalStorage<T>(key: string, initialValue: T) {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    try {
-      const item = window.localStorage.getItem(key)
-      return item ? JSON.parse(item) : initialValue
-    } catch (error) {
-      return initialValue
-    }
-  })
-
-  const setValue = (value: T) => {
-    try {
-      setStoredValue(value)
-      window.localStorage.setItem(key, JSON.stringify(value))
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  return [storedValue, setValue] as const
-}
-```
+1. **Debounce statt Throttle:** Teure Operationen (Canvas-Snapshots, Convex-Mutations) immer mit `useDebouncedCallback` entkoppeln — nicht bei jedem Event feuern
+2. **Auth-first Queries:** Convex-Queries mit `requireAuth` immer über `useAuthQuery` laufen lassen, nie direkt `useQuery`
+3. **Cache-Strategie:** Daten die selten ändern (Dashboard, Snapshots) im localStorage cachen mit TTL — sofortige Anzeige, dann Live-Daten
+4. **Kein direkter State in Hooks:** Hooks sollen keine React-Abhängigkeiten einführen außer `useState`/`useEffect`/`useCallback`/`useMemo` — externe Libraries bleiben in Komponenten
+5. **Return-Typen explizit:** Hook-Return-Werte immer als benannten Typ exportieren, nicht inline

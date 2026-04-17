@@ -452,7 +452,7 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
             cropTop: localData.cropTop,
             cropRight: localData.cropRight,
             cropBottom: localData.cropBottom,
-            fit: "cover",
+            fit: "width",
           })
         : null;
     const visibleContentRectPx =

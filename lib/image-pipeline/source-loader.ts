@@ -391,7 +391,7 @@ async function loadMixerCompositionBitmap(
     cropTop: cropEdges.top,
     cropRight: cropEdges.right,
     cropBottom: cropEdges.bottom,
-    fit: "cover",
+    fit: "width",
   });
   const destX = frameX + (visibleRect?.x ?? 0) * frameWidth;
   const destY = frameY + (visibleRect?.y ?? 0) * frameHeight;

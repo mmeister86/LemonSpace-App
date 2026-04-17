@@ -1,6 +1,6 @@
 const MIN_CROP_REMAINING_SIZE = 0.1;
 
-type MixerSurfaceFit = "contain" | "cover";
+type MixerSurfaceFit = "contain" | "cover" | "width";
 
 function formatPercent(value: number): string {
   const normalized = Math.abs(value) < 1e-10 ? 0 : value;
@@ -38,7 +38,9 @@ function computeFittedRect(args: {
   const scale =
     fit === "cover"
       ? Math.max(boundsWidth / sourceWidth, boundsHeight / sourceHeight)
-      : Math.min(boundsWidth / sourceWidth, boundsHeight / sourceHeight);
+      : fit === "width"
+        ? boundsWidth / sourceWidth
+        : Math.min(boundsWidth / sourceWidth, boundsHeight / sourceHeight);
   if (!Number.isFinite(scale) || scale <= 0) {
     return {
       x: boundsX,
@@ -147,7 +149,7 @@ export function computeMixerCropImageStyle(args: {
     cropTop: args.cropTop,
     cropRight: args.cropRight,
     cropBottom: args.cropBottom,
-    fit: "cover",
+    fit: "width",
   });
 
   if (!visibleRect) {
