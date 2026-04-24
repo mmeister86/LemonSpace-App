@@ -464,6 +464,119 @@ describe("loadSourceBitmap", () => {
     expect(overlayDrawArgs?.[8]).toBeCloseTo(12.5, 10);
   });
 
+  it("rasterizes rich text mixer layers before compositing", async () => {
+    const overlayBlob = new Blob(["overlay"]);
+    const textBitmap = { width: 180, height: 90 } as ImageBitmap;
+    const overlayBitmap = { width: 100, height: 100 } as ImageBitmap;
+    const composedBitmap = { width: 180, height: 90 } as ImageBitmap;
+
+    const fillText = vi.fn();
+    const textContext = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      fillText,
+      measureText: vi.fn((text: string) => ({ width: text.length * 7 })),
+      fillStyle: "",
+      font: "",
+      textBaseline: "alphabetic" as CanvasTextBaseline,
+    };
+    const drawImage = vi.fn();
+    const compositionContext = {
+      clearRect: vi.fn(),
+      drawImage,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      globalCompositeOperation: "source-over" as GlobalCompositeOperation,
+      globalAlpha: 1,
+    };
+    const textCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(textContext),
+    } as unknown as HTMLCanvasElement;
+    const compositionCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(compositionContext),
+    } as unknown as HTMLCanvasElement;
+    const canvases = [textCanvas, compositionCanvas];
+
+    const nativeCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      if (tagName.toLowerCase() === "canvas") {
+        return canvases.shift() ?? compositionCanvas;
+      }
+
+      return nativeCreateElement(tagName);
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: vi.fn().mockReturnValue("image/png") },
+        blob: vi.fn().mockResolvedValue(overlayBlob),
+      }),
+    );
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockImplementation(async (input: unknown) => {
+        if (input === overlayBlob) {
+          return overlayBitmap;
+        }
+        if (input === textCanvas) {
+          return textBitmap;
+        }
+        if (input === compositionCanvas) {
+          return composedBitmap;
+        }
+
+        throw new Error("Unexpected createImageBitmap input in mixer text-layer test.");
+      }),
+    );
+
+    const { loadRenderSourceBitmap } = await importSubject();
+
+    await expect(
+      loadRenderSourceBitmap({
+        sourceComposition: {
+          kind: "mixer",
+          baseSource: {
+            kind: "text",
+            content: "Launch headline",
+            richText: {
+              format: "editorjs",
+              version: 1,
+              blocks: [{ type: "header", data: { text: "Launch <b>headline</b>" } }],
+            },
+            width: 180,
+            height: 90,
+          },
+          overlayUrl: "https://cdn.example.com/overlay.png",
+          blendMode: "normal",
+          opacity: 100,
+          overlayX: 0,
+          overlayY: 0,
+          overlayWidth: 1,
+          overlayHeight: 1,
+          cropLeft: 0,
+          cropTop: 0,
+          cropRight: 0,
+          cropBottom: 0,
+        },
+      }),
+    ).resolves.toBe(composedBitmap);
+
+    expect(fillText).toHaveBeenCalledWith("Launch headline", 12, 12);
+    expect(drawImage).toHaveBeenNthCalledWith(1, textBitmap, 0, 0, 180, 90);
+    expect(drawImage.mock.calls[1]?.[0]).toBe(overlayBitmap);
+  });
+
   it("applies mixer crop framing by trimming source edges while leaving the displayed frame size untouched", async () => {
     const baseBlob = new Blob(["base"]);
     const overlayBlob = new Blob(["overlay"]);

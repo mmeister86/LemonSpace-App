@@ -152,6 +152,17 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows text as mixer source", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "mixer",
+        targetIncomingCount: 0,
+        targetHandle: "overlay",
+      }),
+    ).toBeNull();
+  });
+
   it("describes unsupported crop source message", () => {
     expect(getCanvasConnectionValidationMessage("crop-source-invalid")).toBe(
       "Crop akzeptiert nur Bild-, Asset-, KI-Bild-, Video-, KI-Video-, Crop- oder Adjustment-Input.",

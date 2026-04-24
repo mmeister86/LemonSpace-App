@@ -2,6 +2,12 @@ import {
   hashPipeline,
   type PipelineStep,
 } from "@/lib/image-pipeline/contracts";
+import {
+  editorJsDataToPlainText,
+  normalizeTextNodeRichText,
+  toPersistedEditorJsRichText,
+  type EditorJsRichTextData,
+} from "@/lib/canvas-rich-text";
 
 export type RenderPreviewGraphNode = {
   id: string;
@@ -22,10 +28,27 @@ export type RenderPreviewInput = {
 
 export type MixerBlendMode = "normal" | "multiply" | "screen" | "overlay";
 
+export type MixerImageLayerSource = {
+  kind: "image";
+  url: string;
+};
+
+export type MixerTextLayerSource = {
+  kind: "text";
+  content: string;
+  richText: EditorJsRichTextData;
+  width: number;
+  height: number;
+};
+
+export type MixerLayerSource = MixerImageLayerSource | MixerTextLayerSource;
+
 export type RenderPreviewSourceComposition = {
   kind: "mixer";
-  baseUrl: string;
-  overlayUrl: string;
+  baseUrl?: string;
+  overlayUrl?: string;
+  baseSource?: MixerLayerSource;
+  overlaySource?: MixerLayerSource;
   blendMode: MixerBlendMode;
   opacity: number;
   overlayX: number;
@@ -42,6 +65,16 @@ export type CanvasGraphNodeLike = {
   id: string;
   type: string;
   data?: unknown;
+  width?: number | null;
+  height?: number | null;
+  measured?: {
+    width?: number | null;
+    height?: number | null;
+  } | null;
+  style?: {
+    width?: number | string | null;
+    height?: number | string | null;
+  } | null;
 };
 
 export type CanvasGraphEdgeLike = {
@@ -157,7 +190,7 @@ export const RENDER_PREVIEW_PIPELINE_TYPES = new Set([
   "detail-adjust",
 ]);
 
-const MIXER_SOURCE_NODE_TYPES = new Set(["image", "asset", "ai-image", "render"]);
+const MIXER_SOURCE_NODE_TYPES = new Set(["image", "asset", "ai-image", "render", "text"]);
 const MIXER_BLEND_MODES = new Set<MixerBlendMode>([
   "normal",
   "multiply",
@@ -180,6 +213,8 @@ const MIN_OVERLAY_POSITION = 0;
 const MAX_OVERLAY_POSITION = 1;
 const MIN_OVERLAY_SIZE = 0.1;
 const MAX_OVERLAY_SIZE = 1;
+const DEFAULT_TEXT_SOURCE_WIDTH = 256;
+const DEFAULT_TEXT_SOURCE_HEIGHT = 120;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -214,6 +249,45 @@ function normalizeOverlayNumber(value: unknown, fallback: number): number {
   }
 
   return parsed;
+}
+
+function resolvePositiveDimension(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
+function resolveNodeDimension(
+  node: CanvasGraphNodeLike,
+  key: "width" | "height",
+  fallback: number,
+): number {
+  return (
+    resolvePositiveDimension(node[key]) ??
+    resolvePositiveDimension(node.measured?.[key]) ??
+    resolvePositiveDimension(node.style?.[key]) ??
+    fallback
+  );
+}
+
+export function resolveTextLayerSource(node: CanvasGraphNodeLike): MixerTextLayerSource {
+  const data = (node.data ?? {}) as { content?: string; richText?: unknown };
+  const normalizedRichText = normalizeTextNodeRichText(data);
+  const richText = toPersistedEditorJsRichText(normalizedRichText);
+  const content =
+    typeof data.content === "string" && data.content.length > 0
+      ? data.content
+      : editorJsDataToPlainText(normalizedRichText);
+
+  return {
+    kind: "text",
+    content,
+    richText,
+    width: resolveNodeDimension(node, "width", DEFAULT_TEXT_SOURCE_WIDTH),
+    height: resolveNodeDimension(node, "height", DEFAULT_TEXT_SOURCE_HEIGHT),
+  };
 }
 
 function normalizeMixerCompositionRect(data: Record<string, unknown>): Pick<
@@ -459,12 +533,16 @@ function resolveMixerHandleEdge(args: {
   return filtered[0] ?? null;
 }
 
-function resolveMixerSourceUrlFromNode(args: {
+function resolveMixerLayerSourceFromNode(args: {
   node: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
-}): string | null {
+}): MixerLayerSource | null {
   if (!MIXER_SOURCE_NODE_TYPES.has(args.node.type)) {
     return null;
+  }
+
+  if (args.node.type === "text") {
+    return resolveTextLayerSource(args.node);
   }
 
   if (args.node.type === "render") {
@@ -476,24 +554,25 @@ function resolveMixerSourceUrlFromNode(args: {
       return null;
     }
     if (preview.sourceUrl) {
-      return preview.sourceUrl;
+      return { kind: "image", url: preview.sourceUrl };
     }
 
     const directRenderUrl = resolveRenderOutputUrl(args.node);
     if (directRenderUrl) {
-      return directRenderUrl;
+      return { kind: "image", url: directRenderUrl };
     }
 
     return null;
   }
 
-  return resolveNodeImageUrl(args.node.data);
+  const url = resolveNodeImageUrl(args.node.data);
+  return url ? { kind: "image", url } : null;
 }
 
-function resolveMixerSourceUrlFromEdge(args: {
+function resolveMixerLayerSourceFromEdge(args: {
   edge: CanvasGraphEdgeLike | null;
   graph: CanvasGraphSnapshot;
-}): string | null {
+}): MixerLayerSource | null {
   if (!args.edge) {
     return null;
   }
@@ -503,7 +582,7 @@ function resolveMixerSourceUrlFromEdge(args: {
     return null;
   }
 
-  return resolveMixerSourceUrlFromNode({
+  return resolveMixerLayerSourceFromNode({
     node: sourceNode,
     graph: args.graph,
   });
@@ -516,10 +595,10 @@ function resolveRenderMixerCompositionFromGraph(args: {
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.node.id) ?? [];
   const baseEdge = resolveMixerHandleEdge({ incomingEdges, handle: "base" });
   const overlayEdge = resolveMixerHandleEdge({ incomingEdges, handle: "overlay" });
-  const baseUrl = resolveMixerSourceUrlFromEdge({ edge: baseEdge, graph: args.graph });
-  const overlayUrl = resolveMixerSourceUrlFromEdge({ edge: overlayEdge, graph: args.graph });
+  const baseSource = resolveMixerLayerSourceFromEdge({ edge: baseEdge, graph: args.graph });
+  const overlaySource = resolveMixerLayerSourceFromEdge({ edge: overlayEdge, graph: args.graph });
 
-  if (!baseUrl || !overlayUrl) {
+  if (!baseSource || !overlaySource) {
     return null;
   }
 
@@ -530,8 +609,10 @@ function resolveRenderMixerCompositionFromGraph(args: {
 
   return {
     kind: "mixer",
-    baseUrl,
-    overlayUrl,
+    ...(baseSource.kind === "image" ? { baseUrl: baseSource.url } : { baseSource }),
+    ...(overlaySource.kind === "image"
+      ? { overlayUrl: overlaySource.url }
+      : { overlaySource }),
     blendMode,
     opacity: normalizeOpacity(data.opacity),
     ...normalizeMixerCompositionRect(data),

@@ -81,6 +81,62 @@ describe("resolveRenderPreviewInputFromGraph", () => {
     });
   });
 
+  it("resolves text mixer layers for renderable mixer compositions", () => {
+    const richText = {
+      format: "editorjs",
+      version: 1,
+      blocks: [{ type: "paragraph", data: { text: "Overlay <b>copy</b>" } }],
+      time: 7,
+    };
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-text",
+          type: "text",
+          data: { content: "Overlay copy", richText },
+          measured: { width: 280, height: 160 },
+        },
+        {
+          id: "overlay-image",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "base-text", target: "mixer-1", targetHandle: "base" },
+        { source: "overlay-image", target: "mixer-1", targetHandle: "overlay" },
+        { source: "mixer-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceComposition).toMatchObject({
+      kind: "mixer",
+      baseSource: {
+        kind: "text",
+        content: "Overlay copy",
+        richText,
+        width: 280,
+        height: 160,
+      },
+      overlayUrl: "https://cdn.example.com/overlay.png",
+    });
+  });
+
   it("normalizes mixer composition values for render input", () => {
     const graph = buildGraphSnapshot(
       [

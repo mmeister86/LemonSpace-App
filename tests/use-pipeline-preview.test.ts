@@ -757,6 +757,7 @@ describe("preview histogram call sites", () => {
       resolveMediaAspectRatio: () => null,
       canvasHandleAccentColor: () => "rgb(13, 148, 136)",
       canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
+      canvasHandleGlowShadow: () => "none",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),
@@ -941,6 +942,7 @@ describe("preview histogram call sites", () => {
       resolveMediaAspectRatio: () => null,
       canvasHandleAccentColor: () => "rgb(13, 148, 136)",
       canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
+      canvasHandleGlowShadow: () => "none",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),
@@ -1135,6 +1137,7 @@ describe("preview histogram call sites", () => {
       resolveMediaAspectRatio: () => null,
       canvasHandleAccentColor: () => "rgb(13, 148, 136)",
       canvasHandleAccentColorWithAlpha: () => "rgba(13, 148, 136, 0.4)",
+      canvasHandleGlowShadow: () => "none",
     }));
     vi.doMock("@/lib/image-formats", () => ({
       parseAspectRatioString: () => ({ w: 1, h: 1 }),

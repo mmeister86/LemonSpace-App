@@ -63,6 +63,52 @@ describe("resolveMixerPreviewFromGraph", () => {
     });
   });
 
+  it("resolves text nodes as rich-text mixer layer sources", () => {
+    const richText = {
+      format: "editorjs",
+      version: 1,
+      time: 42,
+      blocks: [{ type: "header", data: { text: "Rich headline", level: 2 } }],
+    };
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "text-overlay",
+          type: "text",
+          data: { content: "Plain fallback", richText },
+          width: 300,
+          height: 140,
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "text-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      status: "ready",
+      baseUrl: "https://cdn.example.com/base.png",
+      overlaySource: {
+        kind: "text",
+        content: "Plain fallback",
+        richText,
+        width: 300,
+        height: 140,
+      },
+    });
+  });
+
   it("preserves crop trims when frame resize data changes", () => {
     const graph = buildGraphSnapshot(
       [

@@ -338,7 +338,7 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - Ziel: `ai-image`, `ai-video`, `compare` → Target-Ports
 - `video-prompt` → `ai-video` ✅ (einzige gültige Kombination für Video-Flow)
 - `ai-video` als Source für andere Nodes → ❌ (nur Compare)
-- `mixer` akzeptiert nur `image|asset|ai-image|render` als Source-Typ
+- `mixer` akzeptiert nur `image|asset|ai-image|render|text` als Source-Typ
 - `mixer` akzeptiert nur Target-Handles `base` und `overlay`
 - `mixer` erlaubt max. eine eingehende Kante pro Handle und max. zwei insgesamt
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges

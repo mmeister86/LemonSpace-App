@@ -20,8 +20,10 @@ import {
   resolveMixerPreviewFromGraph,
   type MixerBlendMode,
 } from "@/lib/canvas-mixer-preview";
+import type { MixerLayerSource } from "@/lib/canvas-render-preview";
 import type { Id } from "@/convex/_generated/dataModel";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { RichTextCard } from "./rich-text-card";
 import {
   computeMixerCropImageStyle,
   computeMixerFrameRectInSurface,
@@ -123,6 +125,29 @@ function resolveSourceImageSize(data: unknown): PreviewSurfaceSize {
   }
 
   return { width, height };
+}
+
+function imageLayerSource(url: string | undefined): MixerLayerSource | undefined {
+  return url ? { kind: "image", url } : undefined;
+}
+
+function resolveLayerSize(args: {
+  source: MixerLayerSource | undefined;
+  loadedImageSize: LoadedImageSize;
+  fallbackImageSize: PreviewSurfaceSize;
+}): PreviewSurfaceSize {
+  if (args.source?.kind === "text") {
+    return { width: args.source.width, height: args.source.height };
+  }
+
+  if (args.source?.kind === "image" && args.source.url === args.loadedImageSize.url) {
+    return {
+      width: args.loadedImageSize.width,
+      height: args.loadedImageSize.height,
+    };
+  }
+
+  return args.fallbackImageSize;
 }
 
 function roundDiagnosticNumber(value: number | null): number | null {
@@ -359,8 +384,14 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
     () => resolveSourceImageSize(baseSourceNode?.data),
     [baseSourceNode?.data],
   );
-  const overlayImageUrl = previewState.status === "ready" ? previewState.overlayUrl : null;
-  const baseImageUrl = previewState.status === "ready" ? previewState.baseUrl : null;
+  const baseLayerSource =
+    previewState.status === "ready"
+      ? (previewState.baseSource ?? imageLayerSource(previewState.baseUrl))
+      : undefined;
+  const overlayLayerSource =
+    previewState.status === "ready"
+      ? (previewState.overlaySource ?? imageLayerSource(previewState.overlayUrl))
+      : undefined;
 
   useEffect(() => {
     const previewElement = previewRef.current;
@@ -400,20 +431,16 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
     return () => observer.disconnect();
   }, []);
 
-  const overlayNaturalSize =
-    overlayImageUrl && overlayImageUrl === overlayImageSize.url
-      ? {
-          width: overlayImageSize.width,
-          height: overlayImageSize.height,
-        }
-      : { width: 0, height: 0 };
-  const baseNaturalSize =
-    baseImageUrl && baseImageUrl === baseImageSize.url
-      ? {
-          width: baseImageSize.width,
-          height: baseImageSize.height,
-        }
-      : baseSourceSize;
+  const overlayNaturalSize = resolveLayerSize({
+    source: overlayLayerSource,
+    loadedImageSize: overlayImageSize,
+    fallbackImageSize: ZERO_SURFACE_SIZE,
+  });
+  const baseNaturalSize = resolveLayerSize({
+    source: baseLayerSource,
+    loadedImageSize: baseImageSize,
+    fallbackImageSize: baseSourceSize,
+  });
 
   const emitMixerDiagnostics = (reason: string, extra?: Record<string, unknown>) => {
     if (!MIXER_DIAGNOSTICS_ENABLED) {
@@ -880,31 +907,51 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
         >
           {showReadyPreview ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewState.baseUrl}
-                alt="Mixer base"
-                className={displayedBaseRect ? "absolute max-w-none" : "absolute inset-0 h-full w-full object-contain"}
-                draggable={false}
-                onLoad={(event) => {
-                  setBaseImageSize({
-                    url: event.currentTarget.currentSrc || event.currentTarget.src,
-                    width: event.currentTarget.naturalWidth,
-                    height: event.currentTarget.naturalHeight,
-                  });
-                }}
-                onError={() => setHasImageLoadError(true)}
-                style={
-                  displayedBaseRect
-                    ? {
-                        left: `${displayedBaseRect.x * 100}%`,
-                        top: `${displayedBaseRect.y * 100}%`,
-                        width: `${displayedBaseRect.width * 100}%`,
-                        height: `${displayedBaseRect.height * 100}%`,
-                      }
-                    : undefined
-                }
-              />
+              {baseLayerSource?.kind === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={baseLayerSource.url}
+                  alt="Mixer base"
+                  className={displayedBaseRect ? "absolute max-w-none" : "absolute inset-0 h-full w-full object-contain"}
+                  draggable={false}
+                  onLoad={(event) => {
+                    setBaseImageSize({
+                      url: event.currentTarget.currentSrc || event.currentTarget.src,
+                      width: event.currentTarget.naturalWidth,
+                      height: event.currentTarget.naturalHeight,
+                    });
+                  }}
+                  onError={() => setHasImageLoadError(true)}
+                  style={
+                    displayedBaseRect
+                      ? {
+                          left: `${displayedBaseRect.x * 100}%`,
+                          top: `${displayedBaseRect.y * 100}%`,
+                          width: `${displayedBaseRect.width * 100}%`,
+                          height: `${displayedBaseRect.height * 100}%`,
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
+              {baseLayerSource?.kind === "text" ? (
+                <div
+                  data-testid="mixer-base-text"
+                  className="absolute overflow-hidden"
+                  style={
+                    displayedBaseRect
+                      ? {
+                          left: `${displayedBaseRect.x * 100}%`,
+                          top: `${displayedBaseRect.y * 100}%`,
+                          width: `${displayedBaseRect.width * 100}%`,
+                          height: `${displayedBaseRect.height * 100}%`,
+                        }
+                      : { inset: 0 }
+                  }
+                >
+                  <RichTextCard data={baseLayerSource.richText} />
+                </div>
+              ) : null}
               <div
                 data-testid="mixer-overlay"
                 data-interaction-role="frame"
@@ -915,27 +962,40 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
                 }}
                 style={overlayFrameStyle}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewState.overlayUrl}
-                  alt="Mixer overlay"
-                  data-testid="mixer-overlay-content"
-                  data-interaction-role="content"
-                  data-anchor-source="frame"
-                  ref={overlayImageRef}
-                  className="absolute max-w-none nodrag nopan cursor-default"
-                  draggable={false}
-                  onLoad={(event) => {
-                    setOverlayImageSize({
-                      url: event.currentTarget.currentSrc || event.currentTarget.src,
-                      width: event.currentTarget.naturalWidth,
-                      height: event.currentTarget.naturalHeight,
-                    });
-                    emitMixerDiagnostics("overlay-image-loaded");
-                  }}
-                  onError={() => setHasImageLoadError(true)}
-                  style={overlayContentStyle}
-                />
+                {overlayLayerSource?.kind === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={overlayLayerSource.url}
+                    alt="Mixer overlay"
+                    data-testid="mixer-overlay-content"
+                    data-interaction-role="content"
+                    data-anchor-source="frame"
+                    ref={overlayImageRef}
+                    className="absolute max-w-none nodrag nopan cursor-default"
+                    draggable={false}
+                    onLoad={(event) => {
+                      setOverlayImageSize({
+                        url: event.currentTarget.currentSrc || event.currentTarget.src,
+                        width: event.currentTarget.naturalWidth,
+                        height: event.currentTarget.naturalHeight,
+                      });
+                      emitMixerDiagnostics("overlay-image-loaded");
+                    }}
+                    onError={() => setHasImageLoadError(true)}
+                    style={overlayContentStyle}
+                  />
+                ) : null}
+                {overlayLayerSource?.kind === "text" ? (
+                  <div
+                    data-testid="mixer-overlay-content"
+                    data-interaction-role="content"
+                    data-anchor-source="frame"
+                    className="absolute max-w-none nodrag nopan cursor-default"
+                    style={overlayContentStyle}
+                  >
+                    <RichTextCard data={overlayLayerSource.richText} />
+                  </div>
+                ) : null}
               </div>
 
               {overlayResizeHandles.map(({ corner, cursor }) => (
@@ -980,7 +1040,7 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
 
           {previewState.status === "empty" && !showPreviewError ? (
             <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-xs text-muted-foreground">
-              Connect base and overlay images
+              Connect base and overlay inputs
             </div>
           ) : null}
 

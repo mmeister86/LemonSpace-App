@@ -2,9 +2,11 @@ import {
   buildGraphSnapshot,
   resolveNodeImageUrl,
   resolveRenderPreviewInputFromGraph,
+  resolveTextLayerSource,
   type CanvasGraphEdgeLike,
   type CanvasGraphNodeLike,
   type CanvasGraphSnapshot,
+  type MixerLayerSource,
 } from "@/lib/canvas-render-preview";
 
 export type MixerBlendMode = "normal" | "multiply" | "screen" | "overlay";
@@ -17,6 +19,8 @@ export type MixerPreviewState = {
   status: MixerPreviewStatus;
   baseUrl?: string;
   overlayUrl?: string;
+  baseSource?: MixerLayerSource;
+  overlaySource?: MixerLayerSource;
   blendMode: MixerBlendMode;
   opacity: number;
   overlayX: number;
@@ -30,7 +34,7 @@ export type MixerPreviewState = {
   error?: MixerPreviewError;
 };
 
-const MIXER_SOURCE_NODE_TYPES = new Set(["image", "asset", "ai-image", "render"]);
+const MIXER_SOURCE_NODE_TYPES = new Set(["image", "asset", "ai-image", "render", "text"]);
 const MIXER_BLEND_MODES = new Set<MixerBlendMode>([
   "normal",
   "multiply",
@@ -272,12 +276,16 @@ function resolveHandleEdge(args: {
   return { edge: edges[0] ?? null, duplicate: false };
 }
 
-function resolveSourceUrlFromNode(args: {
+function resolveLayerSourceFromNode(args: {
   sourceNode: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
-}): string | undefined {
+}): MixerLayerSource | undefined {
   if (!MIXER_SOURCE_NODE_TYPES.has(args.sourceNode.type)) {
     return undefined;
+  }
+
+  if (args.sourceNode.type === "text") {
+    return resolveTextLayerSource(args.sourceNode);
   }
 
   if (args.sourceNode.type === "render") {
@@ -289,7 +297,7 @@ function resolveSourceUrlFromNode(args: {
       return undefined;
     }
     if (preview.sourceUrl) {
-      return preview.sourceUrl;
+      return { kind: "image", url: preview.sourceUrl };
     }
 
     const renderData = (args.sourceNode.data ?? {}) as Record<string, unknown>;
@@ -298,24 +306,25 @@ function resolveSourceUrlFromNode(args: {
         ? renderData.lastUploadUrl
         : undefined;
     if (renderOutputUrl) {
-      return renderOutputUrl;
+      return { kind: "image", url: renderOutputUrl };
     }
 
     const directRenderUrl = resolveNodeImageUrl(args.sourceNode.data);
     if (directRenderUrl) {
-      return directRenderUrl;
+      return { kind: "image", url: directRenderUrl };
     }
 
     return undefined;
   }
 
-  return resolveNodeImageUrl(args.sourceNode.data) ?? undefined;
+  const url = resolveNodeImageUrl(args.sourceNode.data);
+  return url ? { kind: "image", url } : undefined;
 }
 
-function resolveSourceUrlFromEdge(args: {
+function resolveLayerSourceFromEdge(args: {
   edge: CanvasGraphEdgeLike | null;
   graph: CanvasGraphSnapshot;
-}): string | undefined {
+}): MixerLayerSource | undefined {
   if (!args.edge) {
     return undefined;
   }
@@ -325,7 +334,7 @@ function resolveSourceUrlFromEdge(args: {
     return undefined;
   }
 
-  return resolveSourceUrlFromNode({ sourceNode, graph: args.graph });
+  return resolveLayerSourceFromNode({ sourceNode, graph: args.graph });
 }
 
 export function resolveMixerPreviewFromGraph(args: {
@@ -348,24 +357,28 @@ export function resolveMixerPreviewFromGraph(args: {
     };
   }
 
-  const baseUrl = resolveSourceUrlFromEdge({ edge: base.edge, graph: args.graph });
-  const overlayUrl = resolveSourceUrlFromEdge({ edge: overlay.edge, graph: args.graph });
+  const baseSource = resolveLayerSourceFromEdge({ edge: base.edge, graph: args.graph });
+  const overlaySource = resolveLayerSourceFromEdge({ edge: overlay.edge, graph: args.graph });
+  const baseUrl = baseSource?.kind === "image" ? baseSource.url : undefined;
+  const overlayUrl = overlaySource?.kind === "image" ? overlaySource.url : undefined;
 
-  if (baseUrl && overlayUrl) {
+  if (baseSource && overlaySource) {
     return {
       status: "ready",
       ...normalized,
-      baseUrl,
-      overlayUrl,
+      ...(baseUrl ? { baseUrl } : { baseSource }),
+      ...(overlayUrl ? { overlayUrl } : { overlaySource }),
     };
   }
 
-  if (baseUrl || overlayUrl) {
+  if (baseSource || overlaySource) {
     return {
       status: "partial",
       ...normalized,
       baseUrl,
       overlayUrl,
+      ...(baseSource ? (baseSource.kind === "image" ? {} : { baseSource }) : {}),
+      ...(overlaySource ? (overlaySource.kind === "image" ? {} : { overlaySource }) : {}),
     };
   }
 

@@ -1,4 +1,5 @@
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
+import type { MixerLayerSource } from "@/lib/canvas-render-preview";
 
 export const RENDER_FORMAT_TO_MIME = {
   png: "image/png",
@@ -26,8 +27,10 @@ export type RenderSizeLimits = {
 
 export type RenderSourceComposition = {
   kind: "mixer";
-  baseUrl: string;
-  overlayUrl: string;
+  baseUrl?: string;
+  overlayUrl?: string;
+  baseSource?: MixerLayerSource;
+  overlaySource?: MixerLayerSource;
   blendMode: "normal" | "multiply" | "screen" | "overlay";
   opacity: number;
   overlayX: number;
