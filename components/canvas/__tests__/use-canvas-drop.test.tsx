@@ -14,7 +14,10 @@ import {
 } from "@/lib/dashboard-snapshot-cache";
 import { toast } from "@/lib/toast";
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
-import { createCompressedImagePreview } from "@/components/canvas/canvas-media-utils";
+import {
+  createCompressedImagePreview,
+  getVideoMetadata,
+} from "@/components/canvas/canvas-media-utils";
 
 const mocks = vi.hoisted(() => ({
   getNode: vi.fn(),
@@ -35,6 +38,11 @@ vi.mock("@/lib/toast", () => ({
 
 vi.mock("@/components/canvas/canvas-media-utils", () => ({
   getImageDimensions: vi.fn(async () => ({ width: 1600, height: 900 })),
+  getVideoMetadata: vi.fn(async () => ({
+    width: 1920,
+    height: 1080,
+    durationSeconds: 12,
+  })),
   createCompressedImagePreview: vi.fn(async () => ({
     blob: new Blob(["preview"], { type: "image/webp" }),
     width: 640,
@@ -59,6 +67,7 @@ type HookHarnessProps = {
   isSyncOnline?: boolean;
   generateUploadUrl?: ReturnType<typeof vi.fn>;
   registerUploadedImageMedia?: ReturnType<typeof vi.fn>;
+  registerUploadedVideoMedia?: ReturnType<typeof vi.fn>;
   runCreateNodeOnlineOnly?: ReturnType<typeof vi.fn>;
   runCreateNodeWithEdgeSplitOnlineOnly?: ReturnType<typeof vi.fn>;
   notifyOfflineUnsupported?: ReturnType<typeof vi.fn>;
@@ -73,6 +82,7 @@ function HookHarness({
   isSyncOnline = true,
   generateUploadUrl = vi.fn(async () => "https://upload.test"),
   registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const })),
+  registerUploadedVideoMedia = vi.fn(async () => ({ ok: true as const })),
   runCreateNodeOnlineOnly = vi.fn(async () => "node-1"),
   runCreateNodeWithEdgeSplitOnlineOnly = vi.fn(async () => "node-1"),
   notifyOfflineUnsupported = vi.fn(),
@@ -90,6 +100,7 @@ function HookHarness({
     screenToFlowPosition,
     generateUploadUrl,
     registerUploadedImageMedia,
+    registerUploadedVideoMedia,
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
@@ -297,6 +308,116 @@ describe("useCanvasDrop", () => {
     });
     expect(invalidateDashboardSnapshotForLastSignedInUser).toHaveBeenCalledTimes(1);
     expect(emitDashboardSnapshotCacheInvalidationSignal).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a video node from a dropped video file and registers it", async () => {
+    const generateUploadUrl = vi.fn(async () => "https://upload.test");
+    const registerUploadedVideoMedia = vi.fn(async () => ({ ok: true as const }));
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-video");
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+    const queueNodeResize = vi.fn(async () => undefined);
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+    const file = new File(["video-bytes"], "clip.mp4", { type: "video/mp4" });
+    const resized = computeMediaNodeSize("video", {
+      intrinsicWidth: 1920,
+      intrinsicHeight: 1080,
+    });
+
+    vi.mocked(getVideoMetadata).mockResolvedValueOnce({
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ storageId: "video-storage-1" }),
+      }),
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          generateUploadUrl={generateUploadUrl}
+          registerUploadedVideoMedia={registerUploadedVideoMedia}
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          queueNodeDataUpdate={queueNodeDataUpdate}
+          queueNodeResize={queueNodeResize}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 240,
+        clientY: 180,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(generateUploadUrl).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("https://upload.test", {
+      method: "POST",
+      headers: { "Content-Type": "video/mp4" },
+      body: file,
+    });
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      type: "video",
+      positionX: 240,
+      positionY: 180,
+      width: NODE_DEFAULTS.video.width,
+      height: NODE_DEFAULTS.video.height,
+      data: {
+        filename: "clip.mp4",
+        mimeType: "video/mp4",
+        canvasId: "canvas-1",
+        _uploadState: "uploading",
+      },
+      clientRequestId: "req-1",
+    });
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: {
+        storageId: "video-storage-1",
+        filename: "clip.mp4",
+        mimeType: "video/mp4",
+        canvasId: "canvas-1",
+        width: 1920,
+        height: 1080,
+        durationSeconds: 12,
+        _uploadState: "resolving-url",
+      },
+    });
+    expect(queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      width: resized.width,
+      height: resized.height,
+    });
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith(
+      "req-1",
+      "node-video",
+    );
+    expect(registerUploadedVideoMedia).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      nodeId: "node-video",
+      storageId: "video-storage-1",
+      filename: "clip.mp4",
+      mimeType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+    });
   });
 
   it("registers dropped image media when node creation fails", async () => {

@@ -116,6 +116,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   note: [13, 148, 136],
   asset: [13, 148, 136],
   video: [13, 148, 136],
+  "asset-video": [13, 148, 136],
   group: [100, 116, 139],
   frame: [249, 115, 22],
   compare: [100, 116, 139],
@@ -366,6 +367,7 @@ export const NODE_HANDLE_MAP: Record<
   compare: { source: "compare-out", target: "left" },
   asset: { source: undefined, target: undefined },
   video: { source: undefined, target: undefined },
+  "asset-video": { source: undefined, target: undefined },
   curves: { source: undefined, target: undefined },
   "color-adjust": { source: undefined, target: undefined },
   "light-adjust": { source: undefined, target: undefined },
@@ -433,6 +435,7 @@ export const NODE_DEFAULTS: Record<
   compare: { width: 500, height: 380, data: {} },
   asset: { width: 260, height: 240, data: {} },
   video: { width: 320, height: 180, data: {} },
+  "asset-video": { width: 320, height: 180, data: {} },
   curves: { width: 320, height: 660, data: DEFAULT_CURVES_DATA },
   "color-adjust": { width: 320, height: 800, data: DEFAULT_COLOR_ADJUST_DATA },
   "light-adjust": { width: 320, height: 920, data: DEFAULT_LIGHT_ADJUST_DATA },
@@ -482,7 +485,7 @@ export const NODE_DEFAULTS: Record<
   },
 };
 
-type MediaNodeKind = "asset" | "image";
+type MediaNodeKind = "asset" | "image" | "video";
 
 const MEDIA_NODE_CONFIG: Record<
   MediaNodeKind,
@@ -502,6 +505,12 @@ const MEDIA_NODE_CONFIG: Record<
   image: {
     width: 280,
     chromeHeight: 52,
+    minPreviewHeight: 120,
+    maxPreviewHeight: 320,
+  },
+  video: {
+    width: 320,
+    chromeHeight: 42,
     minPreviewHeight: 120,
     maxPreviewHeight: 320,
   },

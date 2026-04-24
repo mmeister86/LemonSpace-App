@@ -69,6 +69,13 @@ type RunMoveNodeMutation = (args: {
   positionY: number;
 }) => Promise<void>;
 
+type RunSetNodeParentMutation = (args: {
+  nodeId: Id<"nodes">;
+  parentId?: Id<"nodes">;
+  positionX: number;
+  positionY: number;
+}) => Promise<void>;
+
 type RunBatchRemoveNodesMutation = (args: {
   nodeIds: Id<"nodes">[];
 }) => Promise<void>;
@@ -217,6 +224,9 @@ export function createCanvasSyncEngineController({
   const pendingLocalNodeSizeUntilConvexMatchesRef = {
     current: new Map<string, { width: number; height: number }>(),
   };
+  const pendingLocalNodeParentUntilConvexMatchesRef = {
+    current: new Map<string, { parentId?: string; x: number; y: number }>(),
+  };
   const preferLocalPositionNodeIdsRef = { current: new Set<string>() };
 
   const flushPendingResizeForClientRequest = async (
@@ -265,6 +275,29 @@ export function createCanvasSyncEngineController({
                 width: size.width,
                 height: size.height,
               },
+            }
+          : node,
+      ),
+    );
+  };
+
+  const pinNodeParentLocally = (
+    nodeId: string,
+    pin: { parentId?: string; x: number; y: number },
+  ): void => {
+    pendingLocalNodeParentUntilConvexMatchesRef.current.set(nodeId, pin);
+    pendingLocalPositionUntilConvexMatchesRef.current.set(nodeId, {
+      x: pin.x,
+      y: pin.y,
+    });
+    const setNodes = getSetNodes?.();
+    setNodes?.((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              parentId: pin.parentId,
+              position: { x: pin.x, y: pin.y },
             }
           : node,
       ),
@@ -354,6 +387,21 @@ export function createCanvasSyncEngineController({
     if (clientRequestId) {
       pendingDataAfterCreateRef.current.set(clientRequestId, args.data);
     }
+  };
+
+  const queueNodeParentUpdate = async (args: {
+    nodeId: Id<"nodes">;
+    parentId?: Id<"nodes">;
+    positionX: number;
+    positionY: number;
+  }): Promise<void> => {
+    const rawNodeId = args.nodeId as string;
+    pinNodeParentLocally(rawNodeId, {
+      parentId: args.parentId as string | undefined,
+      x: args.positionX,
+      y: args.positionY,
+    });
+    await getEnqueueSyncMutation()("setNodeParent", args);
   };
 
   const syncPendingMoveForClientRequest = async (
@@ -522,16 +570,18 @@ export function createCanvasSyncEngineController({
     pendingDeleteAfterCreateClientRequestIdsRef,
     pendingConnectionCreatesRef,
     pendingLocalPositionUntilConvexMatchesRef,
-    pendingLocalNodeDataUntilConvexMatchesRef,
-    pendingLocalNodeSizeUntilConvexMatchesRef,
-    preferLocalPositionNodeIdsRef,
+      pendingLocalNodeDataUntilConvexMatchesRef,
+      pendingLocalNodeSizeUntilConvexMatchesRef,
+      pendingLocalNodeParentUntilConvexMatchesRef,
+      preferLocalPositionNodeIdsRef,
     flushPendingResizeForClientRequest,
     flushPendingDataForClientRequest,
-    queueNodeResize,
-    queueNodeDataUpdate,
-    syncPendingMoveForClientRequest,
-  };
-}
+      queueNodeResize,
+      queueNodeDataUpdate,
+      queueNodeParentUpdate,
+      syncPendingMoveForClientRequest,
+    };
+  }
 
 export function useCanvasSyncEngine({
   canvasId,
@@ -545,6 +595,7 @@ export function useCanvasSyncEngine({
   const moveNode = useMutation(api.nodes.move);
   const resizeNode = useMutation(api.nodes.resize);
   const updateNodeData = useMutation(api.nodes.updateData);
+  const setNodeParent = useMutation(api.nodes.setParent);
   const connectionState = useConvexConnectionState();
   const syncInFlightRef = useRef(false);
   const lastOfflineUnsupportedToastAtRef = useRef(0);
@@ -574,6 +625,9 @@ export function useCanvasSyncEngine({
 
   const enqueueSyncMutationRef = useRef<QueueSyncMutation>(async () => undefined);
   const runMoveNodeMutationRef = useRef<RunMoveNodeMutation>(async () => undefined);
+  const runSetNodeParentMutationRef = useRef<RunSetNodeParentMutation>(
+    async () => undefined,
+  );
   const runBatchRemoveNodesMutationRef = useRef<RunBatchRemoveNodesMutation>(
     async () => {},
   );
@@ -863,6 +917,14 @@ export function useCanvasSyncEngine({
     });
   }
   const controller = controllerRef.current;
+
+  const runSetNodeParentMutation = useCallback<RunSetNodeParentMutation>(
+    async (args) => {
+      await controller.queueNodeParentUpdate(args);
+    },
+    [controller],
+  );
+  runSetNodeParentMutationRef.current = runSetNodeParentMutation;
 
   const trackPendingNodeCreate = useCallback(
     (
@@ -1703,6 +1765,8 @@ export function useCanvasSyncEngine({
             setEdgeSyncNonce((value) => value + 1);
           } else if (op.type === "moveNode") {
             await moveNode(op.payload);
+          } else if (op.type === "setNodeParent") {
+            await setNodeParent(op.payload);
           } else if (op.type === "resizeNode") {
             if (process.env.NODE_ENV !== "production") {
               console.info("[Canvas sync debug] resizeNode enqueue->flush", {
@@ -1780,6 +1844,10 @@ export function useCanvasSyncEngine({
             controller.pendingLocalNodeDataUntilConvexMatchesRef.current.delete(
               op.payload.nodeId as string,
             );
+          } else if (op.type === "setNodeParent") {
+            controller.pendingLocalNodeParentUntilConvexMatchesRef.current.delete(
+              op.payload.nodeId as string,
+            );
           }
           await ackCanvasSyncOp(op.id);
           resolveCanvasOp(canvasId as string, op.id);
@@ -1815,6 +1883,7 @@ export function useCanvasSyncEngine({
     removeEdgeRaw,
     removeOptimisticCreateLocally,
     resizeNode,
+    setNodeParent,
     setEdgeSyncNonce,
     splitEdgeAtExistingNodeRaw,
     updateNodeData,
@@ -1897,6 +1966,8 @@ export function useCanvasSyncEngine({
         controller.pendingLocalNodeDataUntilConvexMatchesRef,
       pendingLocalNodeSizeUntilConvexMatchesRef:
         controller.pendingLocalNodeSizeUntilConvexMatchesRef,
+      pendingLocalNodeParentUntilConvexMatchesRef:
+        controller.pendingLocalNodeParentUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef: controller.preferLocalPositionNodeIdsRef,
       pendingCreatePromiseByClientRequestRef,
     },
@@ -1907,6 +1978,7 @@ export function useCanvasSyncEngine({
       createNodeWithEdgeSplit: runCreateNodeWithEdgeSplitOnlineOnly,
       moveNode: runMoveNodeMutation,
       batchMoveNodes: runBatchMoveNodesMutation,
+      setNodeParent: runSetNodeParentMutation,
       resizeNode: controller.queueNodeResize,
       updateNodeData: controller.queueNodeDataUpdate,
       batchRemoveNodes: runBatchRemoveNodesMutation,

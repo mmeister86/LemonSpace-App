@@ -13,8 +13,11 @@ import {
   upsertMediaItemByOwnerAndDedupe,
 } from "@/convex/media";
 import { listMediaLibrary } from "@/convex/dashboard";
-import { verifyOwnedStorageIds } from "@/convex/storage";
-import { registerUploadedImageMedia } from "@/convex/storage";
+import {
+  registerUploadedImageMedia,
+  registerUploadedVideoMedia,
+  verifyOwnedStorageIds,
+} from "@/convex/storage";
 import { buildStoredMediaDedupeKey } from "@/lib/media-archive";
 import { optionalAuth, requireAuth } from "@/convex/helpers";
 
@@ -26,6 +29,13 @@ type MockMediaItem = {
   source: "upload" | "ai-image" | "ai-video" | "freepik-asset" | "pexels-video";
   storageId?: Id<"_storage">;
   previewStorageId?: Id<"_storage">;
+  filename?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  firstSourceCanvasId?: Id<"canvases">;
+  firstSourceNodeId?: Id<"nodes">;
   createdAt: number;
   updatedAt: number;
   lastUsedAt: number;
@@ -377,6 +387,99 @@ describe("media archive", () => {
       mimeType: "image/png",
       width: 1920,
       height: 1080,
+      firstSourceCanvasId: canvasId,
+      firstSourceNodeId: nodeId,
+    });
+  });
+
+  it("registerUploadedVideoMedia persists upload archive entry", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ userId: "user_1" } as never);
+
+    const rows: MockMediaItem[] = [];
+    const canvasId = "canvas_1" as Id<"canvases">;
+    const nodeId = "node_video_1" as Id<"nodes">;
+    const storageId = "storage_video_upload_1" as Id<"_storage">;
+
+    const docs = new Map<string, unknown>([
+      [canvasId, { _id: canvasId, ownerId: "user_1" }],
+      [nodeId, { _id: nodeId, canvasId }],
+    ]);
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        return rows.find((row) => row._id === id) ?? docs.get(id) ?? null;
+      }),
+      query: vi.fn((table: "mediaItems") => {
+        expect(table).toBe("mediaItems");
+        return {
+          withIndex: vi.fn(
+            (
+              index: "by_owner_dedupe",
+              apply: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              expect(index).toBe("by_owner_dedupe");
+              const clauses: Array<{ field: string; value: unknown }> = [];
+              const queryBuilder = {
+                eq(field: string, value: unknown) {
+                  clauses.push({ field, value });
+                  return this;
+                },
+              };
+              apply(queryBuilder);
+              return {
+                unique: async () => {
+                  const ownerId = clauses.find((clause) => clause.field === "ownerId")?.value;
+                  const dedupeKey = clauses.find((clause) => clause.field === "dedupeKey")?.value;
+                  return rows.find((row) => row.ownerId === ownerId && row.dedupeKey === dedupeKey) ?? null;
+                },
+              };
+            },
+          ),
+        };
+      }),
+      insert: vi.fn(async (_table: "mediaItems", value: Omit<MockMediaItem, "_id">) => {
+        const inserted = {
+          _id: `media_${rows.length + 1}` as Id<"mediaItems">,
+          ...value,
+        };
+        rows.push(inserted);
+        return inserted._id;
+      }),
+      patch: vi.fn(async (id: Id<"mediaItems">, patch: Partial<MockMediaItem>) => {
+        const row = rows.find((entry) => entry._id === id);
+        if (!row) throw new Error("row missing");
+        Object.assign(row, patch);
+      }),
+    };
+
+    await (registerUploadedVideoMedia as unknown as {
+      _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+    })._handler(
+      { db } as never,
+      {
+        canvasId,
+        nodeId,
+        storageId,
+        filename: "clip.mp4",
+        mimeType: "video/mp4",
+        width: 1920,
+        height: 1080,
+        durationSeconds: 12.4,
+      },
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      ownerId: "user_1",
+      kind: "video",
+      source: "upload",
+      dedupeKey: buildStoredMediaDedupeKey(storageId),
+      storageId,
+      filename: "clip.mp4",
+      mimeType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12.4,
       firstSourceCanvasId: canvasId,
       firstSourceNodeId: nodeId,
     });

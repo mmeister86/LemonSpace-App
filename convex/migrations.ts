@@ -22,6 +22,11 @@ export type MediaArchiveBackfillBatchResult = {
   done: boolean;
 };
 
+export type PexelsVideoNodeMigrationResult = {
+  scannedNodeCount: number;
+  migratedNodeCount: number;
+};
+
 function normalizeBatchSize(batchSize: number | undefined): number {
   if (typeof batchSize !== "number" || !Number.isFinite(batchSize)) {
     return MEDIA_BACKFILL_DEFAULT_BATCH_SIZE;
@@ -105,5 +110,45 @@ export const backfillMediaArchiveBatchInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     return await backfillMediaArchiveBatch(ctx, args);
+  },
+});
+
+export async function migratePexelsVideoNodesToAssetVideo(
+  ctx: MutationCtx,
+): Promise<PexelsVideoNodeMigrationResult> {
+  const nodes = (await ctx.db.query("nodes").collect()).filter(
+    (node) => node.type === "video",
+  );
+  let migratedNodeCount = 0;
+
+  for (const node of nodes) {
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    const hasPexelsShape =
+      data.pexelsId !== undefined ||
+      typeof data.mp4Url === "string" ||
+      typeof data.thumbnailUrl === "string" ||
+      data.attribution !== undefined;
+    const hasStoredUpload = typeof data.storageId === "string" && data.storageId.length > 0;
+
+    if (!hasPexelsShape || hasStoredUpload) {
+      continue;
+    }
+
+    await ctx.db.patch(node._id, {
+      type: "asset-video",
+    });
+    migratedNodeCount += 1;
+  }
+
+  return {
+    scannedNodeCount: nodes.length,
+    migratedNodeCount,
+  };
+}
+
+export const migratePexelsVideoNodesToAssetVideoInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    return await migratePexelsVideoNodesToAssetVideo(ctx);
   },
 });

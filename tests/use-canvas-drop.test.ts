@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 
 const getImageDimensionsMock = vi.hoisted(() => vi.fn());
+const getVideoMetadataMock = vi.hoisted(() => vi.fn());
 const createCompressedImagePreviewMock = vi.hoisted(() => vi.fn());
 const invalidateDashboardSnapshotForLastSignedInUserMock = vi.hoisted(() => vi.fn());
 const emitDashboardSnapshotCacheInvalidationSignalMock = vi.hoisted(() => vi.fn());
@@ -14,6 +15,7 @@ const getNodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/components/canvas/canvas-media-utils", () => ({
   getImageDimensions: getImageDimensionsMock,
+  getVideoMetadata: getVideoMetadataMock,
   createCompressedImagePreview: createCompressedImagePreviewMock,
 }));
 
@@ -97,6 +99,7 @@ describe("useCanvasDrop image upload path", () => {
     root = null;
     latestHandlers.current = null;
     getImageDimensionsMock.mockReset();
+    getVideoMetadataMock.mockReset();
     createCompressedImagePreviewMock.mockReset();
     getNodeMock.mockReset();
     getNodeMock.mockReturnValue(undefined);

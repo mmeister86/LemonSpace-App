@@ -291,6 +291,74 @@ export const registerUploadedImageMedia = mutation({
   },
 });
 
+export const registerUploadedVideoMedia = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.optional(v.id("nodes")),
+    storageId: v.id("_storage"),
+    filename: v.optional(v.string()),
+    mimeType: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    durationSeconds: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    await assertCanvasOwner(ctx, args.canvasId, user.userId);
+
+    if (args.nodeId) {
+      const node = await ctx.db.get(args.nodeId);
+      if (!node) {
+        console.warn("[storage.registerUploadedVideoMedia] node not found", {
+          userId: user.userId,
+          canvasId: args.canvasId,
+          nodeId: args.nodeId,
+          storageId: args.storageId,
+        });
+      } else if (node.canvasId !== args.canvasId) {
+        console.warn("[storage.registerUploadedVideoMedia] node/canvas mismatch", {
+          userId: user.userId,
+          canvasId: args.canvasId,
+          nodeId: args.nodeId,
+          nodeCanvasId: node.canvasId,
+          storageId: args.storageId,
+        });
+      }
+    }
+
+    await upsertMediaItemByOwnerAndDedupe(ctx, {
+      ownerId: user.userId,
+      input: {
+        kind: "video",
+        source: "upload",
+        dedupeKey: buildStoredMediaDedupeKey(args.storageId),
+        storageId: args.storageId,
+        filename: args.filename,
+        mimeType: args.mimeType,
+        width: args.width,
+        height: args.height,
+        durationSeconds: args.durationSeconds,
+        firstSourceCanvasId: args.canvasId,
+        firstSourceNodeId: args.nodeId,
+      },
+    });
+
+    console.info("[storage.registerUploadedVideoMedia] acknowledged", {
+      userId: user.userId,
+      canvasId: args.canvasId,
+      nodeId: args.nodeId,
+      storageId: args.storageId,
+      filename: args.filename,
+      mimeType: args.mimeType,
+      width: args.width,
+      height: args.height,
+      durationSeconds: args.durationSeconds,
+    });
+
+    return { ok: true as const };
+  },
+});
+
 async function listNodesForCanvas(
   ctx: QueryCtx | MutationCtx,
   canvasId: Id<"canvases">,

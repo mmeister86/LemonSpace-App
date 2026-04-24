@@ -28,6 +28,7 @@ type MediaPreviewItem = {
   height?: number;
   previewWidth?: number;
   previewHeight?: number;
+  durationSeconds?: number;
   sourceCanvasId?: Id<"canvases">;
   sourceNodeId?: Id<"nodes">;
   createdAt: number;
@@ -50,6 +51,7 @@ function readArchivedMediaPreview(item: Doc<"mediaItems">): MediaPreviewItem | n
     mimeType: item.mimeType,
     width: item.width,
     height: item.height,
+    durationSeconds: item.durationSeconds,
     sourceCanvasId: item.firstSourceCanvasId,
     sourceNodeId: item.firstSourceNodeId,
     createdAt: item.updatedAt,

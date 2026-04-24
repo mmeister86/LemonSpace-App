@@ -190,7 +190,7 @@ describe("resolveRenderPreviewInputFromGraph", () => {
       [
         {
           id: "video-1",
-          type: "video",
+          type: "asset-video",
           data: { mp4Url },
         },
         {

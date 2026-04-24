@@ -127,19 +127,7 @@ export const msg = {
   },
   export: {
     frameExported: (t: ToastTranslations) => ({ title: t('export.frameExported') }),
-    exportingFrames: (t: ToastTranslations) => ({ title: t('export.exportingFrames') }),
-    zipReady: (t: ToastTranslations) => ({ title: t('export.zipReady') }),
     exportFailed: (t: ToastTranslations) => ({ title: t('export.exportFailed') }),
-    frameEmpty: (t: ToastTranslations) => ({
-      title: t('export.frameEmptyTitle'),
-      desc: t('export.frameEmptyDesc'),
-    }),
-    noFramesOnCanvas: (t: ToastTranslations) => ({
-      title: t('export.noFramesOnCanvasTitle'),
-      desc: t('export.noFramesOnCanvasDesc'),
-    }),
-    download: (t: ToastTranslations) => t('export.download'),
-    downloaded: (t: ToastTranslations) => t('export.downloaded'),
   },
   auth: {
     welcomeBack: (t: ToastTranslations) => ({ title: t('auth.welcomeBack') }),

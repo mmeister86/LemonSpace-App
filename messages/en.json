@@ -401,15 +401,7 @@
     },
     "export": {
       "frameExported": "Frame exported",
-      "exportingFrames": "Exporting frames…",
-      "zipReady": "ZIP ready",
-      "exportFailed": "Export failed",
-      "frameEmptyTitle": "Export failed",
-      "frameEmptyDesc": "Frame has no visible content.",
-      "noFramesOnCanvasTitle": "Export failed",
-      "noFramesOnCanvasDesc": "No frames on canvas — create one first.",
-      "download": "Download",
-      "downloaded": "Downloaded!"
+      "exportFailed": "Export failed"
     },
     "auth": {
       "welcomeBack": "Welcome back",

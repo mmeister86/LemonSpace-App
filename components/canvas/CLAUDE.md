@@ -251,7 +251,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | Datei | Zweck |
 |-------|-------|
 | `canvas-shell.tsx` | Client-Layout-Wrapper für Sidebar/Main inkl. Resizing, Auto-Collapse und Rail-Mode-Umschaltung |
-| `canvas-toolbar.tsx` | Werkzeug-Leiste (Select, Pan, Zoom-Controls) inkl. Canvas-Name im rechten Cluster neben Credits/Export |
+| `canvas-toolbar.tsx` | Werkzeug-Leiste (Select, Pan, Zoom-Controls) inkl. Canvas-Name im rechten Cluster neben Credits |
 | `canvas-app-menu.tsx` | App-Menü oben rechts (Umbenennen, Löschen, Theme) |
 | `canvas-sidebar.tsx` | Node-Palette links; zeigt im Full-Mode das LemonSpace-Wordmark, im Rail-Mode einen kompakten Header und vor dem User-Menü einen visuellen Bottom-Fade |
 | `canvas-command-palette.tsx` | Cmd+K Command Palette |
@@ -262,7 +262,7 @@ Im **Light Mode** wird der eigentliche Edge-`stroke` ebenfalls aus dieser Akzent
 | `video-browser-panel.tsx` | Video-Asset-Browser |
 | `canvas-user-menu.tsx` | User-Avatar und Menü |
 | `credit-display.tsx` | Credit-Balance Anzeige in der Toolbar (nur `credits.getBalance`, kein Tier-Badge) |
-| `export-button.tsx` | Export-Button mit Format-Auswahl |
+| `frame-jpeg-export.ts` | Clientseitiger Frame-Screenshot-Export als JPEG via `html-to-image`; blendet Editor-Chrome aus und cropt auf die Frame-Grenzen |
 | `connection-banner.tsx` | Offline-Banner bei Convex-Verbindungsverlust |
 | `custom-connection-line.tsx` | Angepasste temporäre Verbindungslinie |
 | `node-error-boundary.tsx` | Error-Boundary für Node-Fehler |
@@ -359,6 +359,7 @@ useCanvasData (use-canvas-data.ts)
 
 - **`data.url` vs `storageId`:** Node-Komponenten erhalten `data.url` (aufgelöste HTTP-URL), nicht `storageId` direkt. Die URL wird von `convexNodeDocWithMergedStorageUrl` injiziert. Bei neuen Node-Typen mit Bild immer diesen Flow prüfen.
 - **Video-Node `data.url`:** Gleiches Prinzip wie bei `ai-image` — Convex Storage URL wird über `batchGetUrlsForCanvas` aufgelöst. Video wird mit `<video src={data.url}>` abgespielt.
+- **Frame-Export:** Frame-Nodes exportieren clientseitig als JPEG-Screenshot des sichtbaren Canvas-Inhalts innerhalb der Frame-Grenzen. Kein Convex/Jimp-Backend-Export und kein ZIP-Toolbar-Export.
 - **Adjustment-Presets:** `curves`, `color-adjust`, `light-adjust` und `detail-adjust` dürfen keine eigene `presets.list`-Query feuern. Immer `CanvasPresetsProvider` + `useCanvasAdjustmentPresets(...)` verwenden.
 - **Min-Zoom:** `CANVAS_MIN_ZOOM = 0.5 / 3` — dreimal weiter raus als React-Flow-Default.
 - **Parent-Nodes:** `parentId` zeigt auf einen Group- oder Frame-Node. React Flow erwartet, dass Parent-Nodes vor Child-Nodes in der `nodes`-Array stehen.

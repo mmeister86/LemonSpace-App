@@ -17,6 +17,7 @@ export const CANVAS_NODE_TYPES = [
   "video-prompt",
   "color",
   "video",
+  "asset-video",
   "asset",
   "ai-image",
   "ai-text",

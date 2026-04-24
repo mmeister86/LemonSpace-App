@@ -26,7 +26,6 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `agents.ts` | Agent-Orchestrierung: Analyze/Execute-Flow, Clarifications, strukturierte Outputs, Scheduler/Credits-Integration |
 | `ai_utils.ts` | Gemeinsame Helpers für AI-Pipeline (z. B. `assertNodeBelongsToCanvasOrThrow`) |
 | `storage.ts` | Convex File Storage Helpers + gebündelte Canvas-URL-Auflösung |
-| `export.ts` | Canvas-Export-Logik |
 | `http.ts` | HTTP-Endpunkte (Webhooks) |
 | `dashboard.ts` | Gebündelte Dashboard-Snapshot-Query (Balance, Subscription, Usage, Transactions, Canvases in einem Call) |
 | `canvasGraph.ts` | Canvas Graph Query — Performance-optimierte Query für Nodes+Edges in einem Call |

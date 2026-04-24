@@ -21,7 +21,6 @@ import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
 import type * as dashboard from "../dashboard.js";
 import type * as edges from "../edges.js";
-import type * as export_ from "../export.js";
 import type * as freepik from "../freepik.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
@@ -57,7 +56,6 @@ declare const fullApi: ApiFromModules<{
   credits: typeof credits;
   dashboard: typeof dashboard;
   edges: typeof edges;
-  export: typeof export_;
   freepik: typeof freepik;
   helpers: typeof helpers;
   http: typeof http;

@@ -28,6 +28,7 @@ type HarnessProps = {
   edges: RFEdge[];
   runMoveNodeMutation: ReturnType<typeof vi.fn>;
   runBatchMoveNodesMutation: ReturnType<typeof vi.fn>;
+  runSetNodeParentMutation?: ReturnType<typeof vi.fn>;
   runResizeNodeMutation: ReturnType<typeof vi.fn>;
   runSplitEdgeAtExistingNodeMutation: ReturnType<typeof vi.fn>;
   onInvalidConnection: ReturnType<typeof vi.fn<(reason: CanvasConnectionValidationReason) => void>>;
@@ -38,11 +39,12 @@ type HarnessProps = {
 const latestHandlersRef: {
   current: ReturnType<typeof useCanvasNodeInteractions> | null;
 } = { current: null };
+const latestNodesRef: { current: RFNode[] } = { current: [] };
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function HookHarness(props: HarnessProps) {
-  const [, setNodes] = useState<RFNode[]>(props.nodes);
+  const [nodes, setNodes] = useState<RFNode[]>(props.nodes);
   const [edges, setEdges] = useState<RFEdge[]>(props.edges);
   const isDragging = useRef(false);
   const isResizing = useRef(false);
@@ -56,7 +58,7 @@ function HookHarness(props: HarnessProps) {
 
   const handlers = useCanvasNodeInteractions({
     canvasId: asCanvasId("canvas-1"),
-    nodes: props.nodes,
+    nodes,
     edges,
     setNodes,
     setEdges,
@@ -72,6 +74,7 @@ function HookHarness(props: HarnessProps) {
     runResizeNodeMutation: props.runResizeNodeMutation,
     runMoveNodeMutation: props.runMoveNodeMutation,
     runBatchMoveNodesMutation: props.runBatchMoveNodesMutation,
+    runSetNodeParentMutation: props.runSetNodeParentMutation ?? vi.fn(async () => undefined),
     runSplitEdgeAtExistingNodeMutation: props.runSplitEdgeAtExistingNodeMutation,
     onInvalidConnection: props.onInvalidConnection,
     syncPendingMoveForClientRequest: props.syncPendingMoveForClientRequest,
@@ -79,7 +82,8 @@ function HookHarness(props: HarnessProps) {
 
   useEffect(() => {
     latestHandlersRef.current = handlers;
-  }, [handlers]);
+    latestNodesRef.current = nodes;
+  }, [handlers, nodes]);
 
   return null;
 }
@@ -90,6 +94,7 @@ describe("useCanvasNodeInteractions", () => {
 
   afterEach(async () => {
     latestHandlersRef.current = null;
+    latestNodesRef.current = [];
     vi.clearAllMocks();
     if (root) {
       await act(async () => {
@@ -99,6 +104,197 @@ describe("useCanvasNodeInteractions", () => {
     container?.remove();
     root = null;
     container = null;
+  });
+
+  it("groups a node on partial overlap with a group node", async () => {
+    const runMoveNodeMutation = vi.fn(async () => undefined);
+    const runBatchMoveNodesMutation = vi.fn(async () => undefined);
+    const runSetNodeParentMutation = vi.fn(async () => undefined);
+    const runResizeNodeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const onInvalidConnection = vi.fn<(reason: CanvasConnectionValidationReason) => void>();
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const draggedNode: RFNode = {
+      id: "node-image",
+      type: "image",
+      position: { x: 80, y: 80 },
+      style: { width: 100, height: 100 },
+      data: {},
+    };
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            {
+              id: "node-group",
+              type: "group",
+              position: { x: 100, y: 100 },
+              style: { width: 200, height: 200 },
+              data: {},
+            },
+            draggedNode,
+          ]}
+          edges={[]}
+          runMoveNodeMutation={runMoveNodeMutation}
+          runBatchMoveNodesMutation={runBatchMoveNodesMutation}
+          runSetNodeParentMutation={runSetNodeParentMutation}
+          runResizeNodeMutation={runResizeNodeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          onInvalidConnection={onInvalidConnection}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onNodeDrag({} as React.MouseEvent, draggedNode);
+      latestHandlersRef.current?.onNodeDragStop(
+        {} as React.MouseEvent,
+        draggedNode,
+        [draggedNode],
+      );
+    });
+
+    expect(runSetNodeParentMutation).toHaveBeenCalledWith({
+      nodeId: "node-image",
+      parentId: "node-group",
+      positionX: -20,
+      positionY: -20,
+    });
+    expect(runMoveNodeMutation).not.toHaveBeenCalled();
+    expect(latestNodesRef.current.find((node) => node.id === "node-image")).toMatchObject({
+      parentId: "node-group",
+      position: { x: -20, y: -20 },
+    });
+  });
+
+  it("ungroups a child node when it is dragged outside its group", async () => {
+    const runMoveNodeMutation = vi.fn(async () => undefined);
+    const runBatchMoveNodesMutation = vi.fn(async () => undefined);
+    const runSetNodeParentMutation = vi.fn(async () => undefined);
+    const runResizeNodeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const onInvalidConnection = vi.fn<(reason: CanvasConnectionValidationReason) => void>();
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const draggedNode: RFNode = {
+      id: "node-image",
+      type: "image",
+      parentId: "node-group",
+      position: { x: 260, y: 260 },
+      style: { width: 80, height: 80 },
+      data: {},
+    };
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            {
+              id: "node-group",
+              type: "group",
+              position: { x: 100, y: 100 },
+              style: { width: 200, height: 200 },
+              data: {},
+            },
+            draggedNode,
+          ]}
+          edges={[]}
+          runMoveNodeMutation={runMoveNodeMutation}
+          runBatchMoveNodesMutation={runBatchMoveNodesMutation}
+          runSetNodeParentMutation={runSetNodeParentMutation}
+          runResizeNodeMutation={runResizeNodeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          onInvalidConnection={onInvalidConnection}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onNodeDragStop(
+        {} as React.MouseEvent,
+        draggedNode,
+        [draggedNode],
+      );
+    });
+
+    expect(runSetNodeParentMutation).toHaveBeenCalledWith({
+      nodeId: "node-image",
+      parentId: undefined,
+      positionX: 360,
+      positionY: 360,
+    });
+    expect(runMoveNodeMutation).not.toHaveBeenCalled();
+    expect(latestNodesRef.current.find((node) => node.id === "node-image")).toMatchObject({
+      parentId: undefined,
+      position: { x: 360, y: 360 },
+    });
+  });
+
+  it("marks a group as an active drop target while a node overlaps it", async () => {
+    const runMoveNodeMutation = vi.fn(async () => undefined);
+    const runBatchMoveNodesMutation = vi.fn(async () => undefined);
+    const runSetNodeParentMutation = vi.fn(async () => undefined);
+    const runResizeNodeMutation = vi.fn(async () => undefined);
+    const runSplitEdgeAtExistingNodeMutation = vi.fn(async () => undefined);
+    const onInvalidConnection = vi.fn<(reason: CanvasConnectionValidationReason) => void>();
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const draggedNode: RFNode = {
+      id: "node-image",
+      type: "image",
+      position: { x: 120, y: 120 },
+      style: { width: 80, height: 80 },
+      data: {},
+    };
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          nodes={[
+            {
+              id: "node-group",
+              type: "group",
+              position: { x: 100, y: 100 },
+              style: { width: 200, height: 200 },
+              data: {},
+            },
+            draggedNode,
+          ]}
+          edges={[]}
+          runMoveNodeMutation={runMoveNodeMutation}
+          runBatchMoveNodesMutation={runBatchMoveNodesMutation}
+          runSetNodeParentMutation={runSetNodeParentMutation}
+          runResizeNodeMutation={runResizeNodeMutation}
+          runSplitEdgeAtExistingNodeMutation={runSplitEdgeAtExistingNodeMutation}
+          onInvalidConnection={onInvalidConnection}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestHandlersRef.current?.onNodeDrag({} as React.MouseEvent, draggedNode);
+    });
+
+    expect(latestNodesRef.current.find((node) => node.id === "node-group")?.data).toMatchObject({
+      _groupDropTarget: true,
+    });
   });
 
   it("does not call splitEdgeAtExistingNode for an invalid drag-split", async () => {

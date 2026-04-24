@@ -103,6 +103,8 @@ Alle Adapter-Funktionen zwischen Convex-Datenmodell und React Flow. Details in `
 
 **Wichtig:** `canvas-utils.ts` erzeugt keine Storage-Fallback-URLs mehr selbst. Die URL-Auflösung kommt aus dem Canvas-Layer (`storage.batchGetUrlsForCanvas`) und wird hier nur noch gemerged/cached.
 
+**Frame-Export:** Der Frame-JPEG-Export ist bewusst im Canvas-Client (`components/canvas/frame-jpeg-export.ts`) implementiert, weil er gerenderte DOM-Inhalte inklusive Text/Preview-Nodes abbildet. Es gibt keinen geteilten Backend-Compositor mehr.
+
 ---
 
 ## `canvas-node-types.ts` — TypeScript-Typen

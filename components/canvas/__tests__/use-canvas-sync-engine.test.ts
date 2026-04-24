@@ -219,4 +219,56 @@ describe("useCanvasSyncEngine", () => {
       height: 466,
     });
   });
+
+  it("pins local parent and relative position immediately when queueing a parent change", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+    let nodes = [
+      {
+        id: "node-group",
+        type: "group",
+        position: { x: 100, y: 100 },
+        data: {},
+      },
+      {
+        id: "node-1",
+        type: "image",
+        position: { x: 120, y: 120 },
+        data: {},
+      },
+    ];
+    const setNodes = (updater: (current: typeof nodes) => typeof nodes) => {
+      nodes = updater(nodes);
+      return nodes;
+    };
+
+    const controller = createCanvasSyncEngineController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+      getSetNodes: () => setNodes as never,
+    });
+
+    await controller.queueNodeParentUpdate({
+      nodeId: asNodeId("node-1"),
+      parentId: asNodeId("node-group"),
+      positionX: 20,
+      positionY: 20,
+    });
+
+    expect(nodes[1]).toMatchObject({
+      parentId: "node-group",
+      position: { x: 20, y: 20 },
+    });
+    expect(controller.pendingLocalNodeParentUntilConvexMatchesRef.current).toEqual(
+      new Map([["node-1", { parentId: "node-group", x: 20, y: 20 }]]),
+    );
+    expect(enqueueSyncMutation).toHaveBeenCalledWith("setNodeParent", {
+      nodeId: asNodeId("node-1"),
+      parentId: asNodeId("node-group"),
+      positionX: 20,
+      positionY: 20,
+    });
+  });
 });

@@ -32,12 +32,6 @@ vi.mock("@/components/canvas/credit-display", () => ({
   CreditDisplay: () => <div data-testid="credit-display" />,
 }));
 
-vi.mock("@/components/canvas/export-button", () => ({
-  ExportButton: ({ canvasName }: { canvasName: string }) => (
-    <button type="button">Export {canvasName}</button>
-  ),
-}));
-
 vi.mock("@/lib/canvas-node-catalog", () => ({
   NODE_CATEGORIES_ORDERED: [],
   NODE_CATEGORY_META: {},
@@ -87,6 +81,8 @@ describe("CanvasToolbar", () => {
 
     const favoriteButton = container?.querySelector('button[title="Favoriten hervorheben"]');
     expect(favoriteButton).not.toBeNull();
+    expect(container?.querySelector('[data-testid="credit-display"]')).not.toBeNull();
+    expect(container?.textContent).not.toContain("Export ZIP");
   });
 
   it("reflects active state via aria-pressed", async () => {

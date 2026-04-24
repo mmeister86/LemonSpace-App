@@ -218,6 +218,7 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
           node.type === "image" ||
           node.type === "ai-image" ||
           node.type === "asset" ||
+          node.type === "asset-video" ||
           node.type === "video" ||
           node.type === "ai-video",
         getSourceImageFromNode: (node) => {

@@ -28,6 +28,7 @@ const PROMPT_DATA_WHITELIST: Record<string, readonly string[]> = {
   image: ["url", "mimeType", "width", "height", "prompt"],
   asset: ["url", "mimeType", "width", "height", "title"],
   video: ["url", "durationSeconds", "width", "height"],
+  "asset-video": ["mp4Url", "thumbnailUrl", "duration", "width", "height"],
   text: ["content"],
   "ai-text-output": ["instruction", "inputText", "outputText", "modelId", "creditCost"],
   note: ["content", "color"],

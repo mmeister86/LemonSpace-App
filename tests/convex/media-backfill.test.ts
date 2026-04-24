@@ -10,12 +10,16 @@ import {
   backfillLegacyMediaForCanvas,
   mapLegacyNodeToMediaArchiveInput,
 } from "@/convex/media";
-import { backfillMediaArchiveBatch } from "@/convex/migrations";
+import {
+  backfillMediaArchiveBatch,
+  migratePexelsVideoNodesToAssetVideo,
+} from "@/convex/migrations";
 import {
   buildFreepikAssetDedupeKey,
   buildPexelsVideoDedupeKey,
   buildStoredMediaDedupeKey,
 } from "@/lib/media-archive";
+import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
 type MockCanvas = {
   _id: Id<"canvases">;
@@ -25,7 +29,7 @@ type MockCanvas = {
 type MockNode = {
   _id: Id<"nodes">;
   canvasId: Id<"canvases">;
-  type: string;
+  type: CanvasNodeType;
   data: Record<string, unknown>;
 };
 
@@ -227,7 +231,7 @@ describe("media backfill", () => {
       mapLegacyNodeToMediaArchiveInput({
         _id: "node_video" as Id<"nodes">,
         canvasId: "canvas_1" as Id<"canvases">,
-        type: "video",
+        type: "asset-video",
         data: {
           pexelsId: 987,
           mp4Url: "https://videos.pexels.com/video-files/987.mp4",
@@ -247,6 +251,32 @@ describe("media backfill", () => {
       previewUrl: "https://images.pexels.com/videos/987.jpg",
       sourceUrl: "https://www.pexels.com/video/987/",
       durationSeconds: 42,
+    });
+
+    expect(
+      mapLegacyNodeToMediaArchiveInput({
+        _id: "node_uploaded_video" as Id<"nodes">,
+        canvasId: "canvas_1" as Id<"canvases">,
+        type: "video",
+        data: {
+          storageId: "storage_uploaded_video_1" as Id<"_storage">,
+          filename: "clip.mp4",
+          mimeType: "video/mp4",
+          width: 1920,
+          height: 1080,
+          durationSeconds: 12,
+        },
+      }),
+    ).toMatchObject({
+      kind: "video",
+      source: "upload",
+      dedupeKey: buildStoredMediaDedupeKey("storage_uploaded_video_1"),
+      storageId: "storage_uploaded_video_1",
+      filename: "clip.mp4",
+      mimeType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
     });
   });
 
@@ -292,6 +322,51 @@ describe("media backfill", () => {
     expect(rows[0].updatedAt).toBe(1700000000100);
   });
 
+  it("migrates only Pexels-shaped legacy video nodes to asset-video", async () => {
+    const nodes: MockNode[] = [
+      {
+        _id: "node_pexels" as Id<"nodes">,
+        canvasId: "canvas_1" as Id<"canvases">,
+        type: "video",
+        data: { pexelsId: 987, mp4Url: "https://videos.pexels.com/987.mp4" },
+      },
+      {
+        _id: "node_upload" as Id<"nodes">,
+        canvasId: "canvas_1" as Id<"canvases">,
+        type: "video",
+        data: { storageId: "storage_video_1" },
+      },
+      {
+        _id: "node_asset" as Id<"nodes">,
+        canvasId: "canvas_1" as Id<"canvases">,
+        type: "asset-video",
+        data: { pexelsId: 654 },
+      },
+    ];
+    const patches: Array<{ id: Id<"nodes">; patch: Record<string, unknown> }> = [];
+    const db = {
+      query: (table: "nodes") => {
+        expect(table).toBe("nodes");
+        return {
+          collect: async () => nodes,
+        };
+      },
+      patch: async (id: Id<"nodes">, patch: Record<string, unknown>) => {
+        patches.push({ id, patch });
+      },
+    };
+
+    const result = await migratePexelsVideoNodesToAssetVideo({ db } as never);
+
+    expect(result).toEqual({ scannedNodeCount: 2, migratedNodeCount: 1 });
+    expect(patches).toEqual([
+      {
+        id: "node_pexels",
+        patch: { type: "asset-video" },
+      },
+    ]);
+  });
+
   it("supports resumable cursor progression across batches", async () => {
     const canvases: MockCanvas[] = [
       { _id: "canvas_1" as Id<"canvases">, ownerId: "user_1" },
@@ -331,9 +406,10 @@ describe("media backfill", () => {
     });
     expect(rows).toHaveLength(1);
 
+    expect(first.nextCursor).not.toBeNull();
     const second = await backfillMediaArchiveBatch(
       { db } as never,
-      { batchSize: 1, cursor: first.nextCursor, now: 1700000000100 },
+      { batchSize: 1, cursor: first.nextCursor ?? undefined, now: 1700000000100 },
     );
     expect(second).toMatchObject({
       processedCanvasCount: 1,
@@ -342,9 +418,10 @@ describe("media backfill", () => {
     });
     expect(rows).toHaveLength(2);
 
+    expect(second.nextCursor).not.toBeNull();
     const third = await backfillMediaArchiveBatch(
       { db } as never,
-      { batchSize: 1, cursor: second.nextCursor, now: 1700000000200 },
+      { batchSize: 1, cursor: second.nextCursor ?? undefined, now: 1700000000200 },
     );
     expect(third).toMatchObject({
       processedCanvasCount: 1,

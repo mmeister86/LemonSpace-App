@@ -82,6 +82,16 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows asset-video sources to crop", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset-video",
+        targetType: "crop",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
   it("allows ai-video sources to crop", () => {
     expect(
       validateCanvasConnectionPolicy({

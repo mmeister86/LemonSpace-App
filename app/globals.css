@@ -308,6 +308,21 @@
     will-change: transform;
   }
 
+  .react-flow.canvas-frame-exporting .react-flow__resize-control,
+  .react-flow.canvas-frame-exporting .react-flow__handle,
+  .react-flow.canvas-frame-exporting .react-flow__selection,
+  .react-flow.canvas-frame-exporting .react-flow__nodesselection-rect,
+  .react-flow.canvas-frame-exporting .react-flow__edgelabel-renderer button {
+    opacity: 0 !important;
+  }
+
+  .react-flow.canvas-frame-exporting .react-flow__edge-path {
+    stroke: var(--xy-edge-stroke) !important;
+    stroke-width: 2.5px !important;
+    stroke-opacity: 1 !important;
+    filter: none !important;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .react-flow.canvas-scissors-mode .react-flow__edge:not(.temp) .react-flow__edge-path {
       transition: none;

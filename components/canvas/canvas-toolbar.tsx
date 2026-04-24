@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 
 import { CreditDisplay } from "@/components/canvas/credit-display";
-import { ExportButton } from "@/components/canvas/export-button";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCenteredFlowNodePosition } from "@/hooks/use-centered-flow-node-position";
 import { Button } from "@/components/ui/button";
@@ -217,7 +216,6 @@ export default function CanvasToolbar({
           <span className="block truncate">{resolvedCanvasName}</span>
         </div>
         <CreditDisplay />
-        <ExportButton canvasName={canvasName ?? "canvas"} />
       </div>
     </div>
   );

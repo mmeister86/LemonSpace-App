@@ -94,6 +94,12 @@ export type CanvasSyncOpPayloadByType = {
     clientRequestId: string;
   };
   moveNode: { nodeId: Id<"nodes">; positionX: number; positionY: number };
+  setNodeParent: {
+    nodeId: Id<"nodes">;
+    parentId?: Id<"nodes">;
+    positionX: number;
+    positionY: number;
+  };
   resizeNode: { nodeId: Id<"nodes">; width: number; height: number };
   updateData: { nodeId: Id<"nodes">; data: unknown };
 };
@@ -251,6 +257,7 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
     type !== "batchRemoveNodes" &&
     type !== "splitEdgeAtExistingNode" &&
     type !== "moveNode" &&
+    type !== "setNodeParent" &&
     type !== "resizeNode" &&
     type !== "updateData"
   ) {
@@ -598,6 +605,33 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
   }
 
   if (
+    type === "setNodeParent" &&
+    typeof payload.nodeId === "string" &&
+    typeof payload.positionX === "number" &&
+    typeof payload.positionY === "number"
+  ) {
+    return {
+      id,
+      canvasId,
+      type,
+      payload: {
+        nodeId: payload.nodeId as Id<"nodes">,
+        parentId:
+          typeof payload.parentId === "string"
+            ? (payload.parentId as Id<"nodes">)
+            : undefined,
+        positionX: payload.positionX,
+        positionY: payload.positionY,
+      },
+      enqueuedAt,
+      attemptCount,
+      nextRetryAt,
+      expiresAt,
+      lastError,
+    };
+  }
+
+  if (
     type === "resizeNode" &&
     typeof payload.nodeId === "string" &&
     typeof payload.width === "number" &&
@@ -879,6 +913,21 @@ function remapNodeIdInPayload(
       payload: { ...op.payload, nodeId: toNodeId as Id<"nodes"> },
     };
   }
+  if (op.type === "setNodeParent") {
+    let changed = false;
+    const next = { ...op.payload };
+    if (next.nodeId === fromNodeId) {
+      next.nodeId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (next.parentId === fromNodeId) {
+      next.parentId = toNodeId as Id<"nodes">;
+      changed = true;
+    }
+    if (changed) {
+      return { ...op, payload: next };
+    }
+  }
   if (op.type === "resizeNode" && op.payload.nodeId === fromNodeId) {
     return {
       ...op,
@@ -956,8 +1005,18 @@ export async function remapCanvasSyncNodeId(
 }
 
 function opTouchesNodeId(op: CanvasSyncOp, nodeIdSet: ReadonlySet<string>): boolean {
-  if (op.type === "moveNode" || op.type === "resizeNode" || op.type === "updateData") {
+  if (
+    op.type === "moveNode" ||
+    op.type === "resizeNode" ||
+    op.type === "updateData"
+  ) {
     return nodeIdSet.has(op.payload.nodeId);
+  }
+  if (op.type === "setNodeParent") {
+    return (
+      nodeIdSet.has(op.payload.nodeId) ||
+      (op.payload.parentId !== undefined && nodeIdSet.has(op.payload.parentId))
+    );
   }
   if (op.type === "createEdge") {
     return (

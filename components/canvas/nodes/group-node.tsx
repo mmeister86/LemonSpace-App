@@ -9,6 +9,7 @@ import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type GroupNodeData = {
   label?: string;
+  _groupDropTarget?: boolean;
   _status?: string;
   _statusMessage?: string;
 };
@@ -19,6 +20,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
   const { queueNodeDataUpdate } = useCanvasSync();
   const [label, setLabel] = useState(data.label ?? "Gruppe");
   const [isEditing, setIsEditing] = useState(false);
+  const isDropTarget = data._groupDropTarget === true;
 
   useEffect(() => {
     if (!isEditing) {
@@ -46,7 +48,11 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
     <BaseNodeWrapper
       nodeType="group"
       selected={selected}
-      className="min-w-[200px] min-h-[150px] p-3 border-dashed"
+      className={`min-w-[200px] min-h-[150px] p-3 border-dashed ${
+        isDropTarget
+          ? "border-primary bg-primary/8 shadow-primary/20 ring-2 ring-primary/35"
+          : ""
+      }`}
     >
       <CanvasHandle
         nodeId={id}
@@ -71,6 +77,12 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
           className="text-xs font-medium text-muted-foreground cursor-text"
         >
           📁 {label}
+        </div>
+      )}
+
+      {isDropTarget && (
+        <div className="mt-2 w-fit rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
+          Ablegen zum Gruppieren
         </div>
       )}
 

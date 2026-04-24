@@ -104,6 +104,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
 
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const registerUploadedImageMedia = useMutation(api.storage.registerUploadedImageMedia);
+  const registerUploadedVideoMedia = useMutation(api.storage.registerUploadedVideoMedia);
   const runSwapMixerInputsMutation = useMutation(api.edges.swapMixerInputs);
   const convexNodeIdsSnapshotForEdgeCarryRef = useRef(new Set<string>());
   const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
@@ -125,6 +126,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef,
       pendingLocalNodeSizeUntilConvexMatchesRef,
+      pendingLocalNodeParentUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
     },
     actions: {
@@ -134,6 +136,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       createNodeWithEdgeSplit: runCreateNodeWithEdgeSplitOnlineOnly,
       moveNode: runMoveNodeMutation,
       batchMoveNodes: runBatchMoveNodesMutation,
+      setNodeParent: runSetNodeParentMutation,
       resizeNode: runResizeNodeMutation,
       updateNodeData: runUpdateNodeDataMutation,
       batchRemoveNodes: runBatchRemoveNodesMutation,
@@ -475,6 +478,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       pendingLocalPositionUntilConvexMatchesRef,
       pendingLocalNodeDataUntilConvexMatchesRef,
       pendingLocalNodeSizeUntilConvexMatchesRef,
+      pendingLocalNodeParentUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
       isDragging,
       isResizing,
@@ -517,6 +521,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runResizeNodeMutation,
     runMoveNodeMutation,
     runBatchMoveNodesMutation,
+    runSetNodeParentMutation,
     runSplitEdgeAtExistingNodeMutation,
     onInvalidConnection: showConnectionRejectedToast,
     syncPendingMoveForClientRequest,
@@ -539,6 +544,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     screenToFlowPosition,
     generateUploadUrl,
     registerUploadedImageMedia,
+    registerUploadedVideoMedia,
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,

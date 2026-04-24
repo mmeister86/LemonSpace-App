@@ -115,6 +115,13 @@ export const CANVAS_NODE_TEMPLATES = [
     defaultData: {},
   },
   {
+    type: "asset-video",
+    label: "Asset (Video)",
+    width: 320,
+    height: 180,
+    defaultData: {},
+  },
+  {
     type: "crop",
     label: "Crop / Resize",
     width: 340,

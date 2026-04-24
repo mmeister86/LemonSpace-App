@@ -24,6 +24,9 @@ type CanvasFlowReconciliationRefs = {
   pendingLocalNodeSizeUntilConvexMatchesRef: MutableRefObject<
     Map<string, { width: number; height: number }>
   >;
+  pendingLocalNodeParentUntilConvexMatchesRef: MutableRefObject<
+    Map<string, { parentId?: string; x: number; y: number }>
+  >;
   preferLocalPositionNodeIdsRef: MutableRefObject<Set<string>>;
   isDragging: MutableRefObject<boolean>;
   isResizing: MutableRefObject<boolean>;
@@ -60,6 +63,7 @@ export function useCanvasFlowReconciliation(args: {
     pendingLocalPositionUntilConvexMatchesRef,
     pendingLocalNodeDataUntilConvexMatchesRef,
     pendingLocalNodeSizeUntilConvexMatchesRef,
+    pendingLocalNodeParentUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     isDragging,
     isResizing,
@@ -141,6 +145,8 @@ export function useCanvasFlowReconciliation(args: {
           pendingLocalNodeDataUntilConvexMatchesRef.current,
         pendingLocalNodeSizePins:
           pendingLocalNodeSizeUntilConvexMatchesRef.current,
+        pendingLocalNodeParentPins:
+          pendingLocalNodeParentUntilConvexMatchesRef.current,
         pendingMovePins,
       });
 
@@ -152,6 +158,8 @@ export function useCanvasFlowReconciliation(args: {
         reconciliation.nextPendingLocalNodeDataPins;
       pendingLocalNodeSizeUntilConvexMatchesRef.current =
         reconciliation.nextPendingLocalNodeSizePins;
+      pendingLocalNodeParentUntilConvexMatchesRef.current =
+        reconciliation.nextPendingLocalNodeParentPins;
       for (const nodeId of reconciliation.clearedPreferLocalPositionNodeIds) {
         preferLocalPositionNodeIdsRef.current.delete(nodeId);
       }
@@ -171,6 +179,7 @@ export function useCanvasFlowReconciliation(args: {
     pendingLocalPositionUntilConvexMatchesRef,
     pendingLocalNodeDataUntilConvexMatchesRef,
     pendingLocalNodeSizeUntilConvexMatchesRef,
+    pendingLocalNodeParentUntilConvexMatchesRef,
     preferLocalPositionNodeIdsRef,
     resolvedRealIdByClientRequestRef,
   ]);

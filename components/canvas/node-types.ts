@@ -11,6 +11,7 @@ import FrameNode from "./nodes/frame-node";
 import NoteNode from "./nodes/note-node";
 import CompareNode from "./nodes/compare-node";
 import AssetNode from "./nodes/asset-node";
+import AssetVideoNode from "./nodes/asset-video-node";
 import VideoNode from "./nodes/video-node";
 import CurvesNode from "./nodes/curves-node";
 import ColorAdjustNode from "./nodes/color-adjust-node";
@@ -43,6 +44,7 @@ export const nodeTypes = {
   note: NoteNode,
   compare: CompareNode,
   asset: AssetNode,
+  "asset-video": AssetVideoNode,
   video: VideoNode,
   curves: CurvesNode,
   "color-adjust": ColorAdjustNode,

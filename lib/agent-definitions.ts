@@ -63,6 +63,7 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
       "image",
       "asset",
       "video",
+      "asset-video",
       "text",
       "note",
       "frame",

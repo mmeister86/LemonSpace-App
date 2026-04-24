@@ -40,7 +40,37 @@ export function buildIncomingCanvasFlowNodes(args: {
     convexNodeDocWithMergedStorageUrl(node, args.storageUrlsById, previousDataById),
   );
 
-  return withResolvedCompareData(enrichedNodes.map(convexNodeToRF), args.edges);
+  return sortParentNodesBeforeChildren(
+    withResolvedCompareData(enrichedNodes.map(convexNodeToRF), args.edges),
+  );
+}
+
+export function sortParentNodesBeforeChildren(nodes: RFNode[]): RFNode[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const orderById = new Map(nodes.map((node, index) => [node.id, index]));
+
+  const depthCache = new Map<string, number>();
+  const getDepth = (node: RFNode, visiting = new Set<string>()): number => {
+    const cached = depthCache.get(node.id);
+    if (cached !== undefined) return cached;
+    if (!node.parentId || !nodeById.has(node.parentId) || visiting.has(node.id)) {
+      depthCache.set(node.id, 0);
+      return 0;
+    }
+
+    visiting.add(node.id);
+    const parent = nodeById.get(node.parentId)!;
+    const depth = getDepth(parent, visiting) + 1;
+    visiting.delete(node.id);
+    depthCache.set(node.id, depth);
+    return depth;
+  };
+
+  return [...nodes].sort((a, b) => {
+    const depthDelta = getDepth(a) - getDepth(b);
+    if (depthDelta !== 0) return depthDelta;
+    return (orderById.get(a.id) ?? 0) - (orderById.get(b.id) ?? 0);
+  });
 }
 
 export function inferPendingConnectionNodeHandoff(args: {
@@ -397,6 +427,44 @@ function applyLocalNodeSizePins(args: {
   };
 }
 
+function applyLocalNodeParentPins(args: {
+  nodes: RFNode[];
+  pendingLocalNodeParentPins: ReadonlyMap<string, { parentId?: string; x: number; y: number }>;
+}): {
+  nodes: RFNode[];
+  nextPendingLocalNodeParentPins: Map<string, { parentId?: string; x: number; y: number }>;
+} {
+  const nodeIds = new Set(args.nodes.map((node) => node.id));
+  const nextPendingLocalNodeParentPins = new Map(
+    [...args.pendingLocalNodeParentPins].filter(([nodeId]) => nodeIds.has(nodeId)),
+  );
+  const nodes = args.nodes.map((node) => {
+    const pin = nextPendingLocalNodeParentPins.get(node.id);
+    if (!pin) return node;
+
+    const parentMatches = node.parentId === pin.parentId;
+    const positionMatches = positionsMatchPin(node.position, {
+      x: pin.x,
+      y: pin.y,
+    });
+    if (parentMatches && positionMatches) {
+      nextPendingLocalNodeParentPins.delete(node.id);
+      return node;
+    }
+
+    return {
+      ...node,
+      parentId: pin.parentId,
+      position: { x: pin.x, y: pin.y },
+    };
+  });
+
+  return {
+    nodes: sortParentNodesBeforeChildren(nodes),
+    nextPendingLocalNodeParentPins,
+  };
+}
+
 export function reconcileCanvasFlowNodes(args: {
   previousNodes: RFNode[];
   incomingNodes: RFNode[];
@@ -408,6 +476,7 @@ export function reconcileCanvasFlowNodes(args: {
   pendingLocalPositionPins: ReadonlyMap<string, { x: number; y: number }>;
   pendingLocalNodeDataPins?: ReadonlyMap<string, unknown>;
   pendingLocalNodeSizePins?: ReadonlyMap<string, { width: number; height: number }>;
+  pendingLocalNodeParentPins?: ReadonlyMap<string, { parentId?: string; x: number; y: number }>;
   pendingMovePins: ReadonlyMap<string, { x: number; y: number }>;
 }): {
   nodes: RFNode[];
@@ -415,6 +484,7 @@ export function reconcileCanvasFlowNodes(args: {
   nextPendingLocalPositionPins: Map<string, { x: number; y: number }>;
   nextPendingLocalNodeDataPins: Map<string, unknown>;
   nextPendingLocalNodeSizePins: Map<string, { width: number; height: number }>;
+  nextPendingLocalNodeParentPins: Map<string, { parentId?: string; x: number; y: number }>;
   clearedPreferLocalPositionNodeIds: string[];
 } {
   const inferredRealIdByClientRequest = inferPendingConnectionNodeHandoff({
@@ -441,14 +511,18 @@ export function reconcileCanvasFlowNodes(args: {
     nodes: dataPinnedNodes.nodes,
     pendingLocalNodeSizePins: args.pendingLocalNodeSizePins ?? new Map(),
   });
-  const pinnedNodes = applyLocalPositionPins({
+  const parentPinnedNodes = applyLocalNodeParentPins({
     nodes: sizePinnedNodes.nodes,
+    pendingLocalNodeParentPins: args.pendingLocalNodeParentPins ?? new Map(),
+  });
+  const pinnedNodes = applyLocalPositionPins({
+    nodes: parentPinnedNodes.nodes,
     pendingLocalPositionPins: args.pendingLocalPositionPins,
   });
-  const nodes = applyPinnedNodePositionsReadOnly(
+  const nodes = sortParentNodesBeforeChildren(applyPinnedNodePositionsReadOnly(
     pinnedNodes.nodes,
     args.pendingMovePins,
-  );
+  ));
 
   const incomingById = new Map(filteredIncomingNodes.map((node) => [node.id, node]));
   const clearedPreferLocalPositionNodeIds: string[] = [];
@@ -469,6 +543,8 @@ export function reconcileCanvasFlowNodes(args: {
     nextPendingLocalPositionPins: pinnedNodes.nextPendingLocalPositionPins,
     nextPendingLocalNodeDataPins: dataPinnedNodes.nextPendingLocalNodeDataPins,
     nextPendingLocalNodeSizePins: sizePinnedNodes.nextPendingLocalNodeSizePins,
+    nextPendingLocalNodeParentPins:
+      parentPinnedNodes.nextPendingLocalNodeParentPins,
     clearedPreferLocalPositionNodeIds,
   };
 }

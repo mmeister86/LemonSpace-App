@@ -88,6 +88,12 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     phase: 2,
   }),
   entry({
+    type: "asset-video",
+    label: "Asset (Video)",
+    category: "source",
+    phase: 2,
+  }),
+  entry({
     type: "ai-video",
     label: "KI-Video-Ausgabe",
     category: "source",

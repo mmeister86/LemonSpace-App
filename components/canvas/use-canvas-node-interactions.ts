@@ -63,6 +63,13 @@ type RunBatchMoveNodesMutation = (args: {
   }[];
 }) => Promise<void>;
 
+type RunSetNodeParentMutation = (args: {
+  nodeId: Id<"nodes">;
+  parentId?: Id<"nodes">;
+  positionX: number;
+  positionY: number;
+}) => Promise<void>;
+
 type RunSplitEdgeAtExistingNodeMutation = (args: {
   canvasId: Id<"canvases">;
   splitEdgeId: Id<"edges">;
@@ -87,6 +94,174 @@ type CanvasNodeInteractionRefs = {
   >;
 };
 
+type Rect = { x: number; y: number; width: number; height: number };
+type ParentChange = {
+  nodeId: string;
+  parentId?: string;
+  position: { x: number; y: number };
+};
+
+function getNodeDimension(node: RFNode, axis: "width" | "height"): number {
+  const styleValue = node.style?.[axis];
+  if (typeof styleValue === "number") return styleValue;
+  const measuredValue = (node as { measured?: Partial<Record<"width" | "height", number>> })
+    .measured?.[axis];
+  if (typeof measuredValue === "number") return measuredValue;
+  const directValue = (node as Partial<Record<"width" | "height", number>>)[axis];
+  return typeof directValue === "number" ? directValue : 0;
+}
+
+function getAbsoluteNodePosition(
+  node: RFNode,
+  nodeById: ReadonlyMap<string, RFNode>,
+  visiting = new Set<string>(),
+): { x: number; y: number } {
+  if (!node.parentId || visiting.has(node.id)) return node.position;
+  const parent = nodeById.get(node.parentId);
+  if (!parent) return node.position;
+
+  visiting.add(node.id);
+  const parentPosition = getAbsoluteNodePosition(parent, nodeById, visiting);
+  visiting.delete(node.id);
+  return {
+    x: parentPosition.x + node.position.x,
+    y: parentPosition.y + node.position.y,
+  };
+}
+
+function getNodeRect(node: RFNode, nodeById: ReadonlyMap<string, RFNode>): Rect {
+  const position = getAbsoluteNodePosition(node, nodeById);
+  return {
+    x: position.x,
+    y: position.y,
+    width: getNodeDimension(node, "width"),
+    height: getNodeDimension(node, "height"),
+  };
+}
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+function isDescendantOf(
+  candidateId: string,
+  ancestorId: string,
+  nodeById: ReadonlyMap<string, RFNode>,
+): boolean {
+  let current = nodeById.get(candidateId);
+  const visited = new Set<string>();
+  while (current?.parentId) {
+    if (current.parentId === ancestorId) return true;
+    if (visited.has(current.parentId)) return false;
+    visited.add(current.parentId);
+    current = nodeById.get(current.parentId);
+  }
+  return false;
+}
+
+function findOverlappingGroupTarget(
+  draggedNode: RFNode,
+  allNodes: RFNode[],
+): RFNode | null {
+  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+  const draggedRect = getNodeRect(draggedNode, nodeById);
+  const candidates = allNodes.filter((node) => {
+    if (node.id === draggedNode.id) return false;
+    if (node.type !== "group") return false;
+    if (draggedNode.type === "group" && isDescendantOf(node.id, draggedNode.id, nodeById)) {
+      return false;
+    }
+    return rectsOverlap(draggedRect, getNodeRect(node, nodeById));
+  });
+
+  candidates.sort((a, b) => {
+    const depthA = isDescendantOf(a.id, b.id, nodeById) ? 1 : 0;
+    const depthB = isDescendantOf(b.id, a.id, nodeById) ? 1 : 0;
+    if (depthA !== depthB) return depthB - depthA;
+    return (b.zIndex ?? 0) - (a.zIndex ?? 0);
+  });
+
+  return candidates[0] ?? null;
+}
+
+function clearGroupDropTargetData(nodes: RFNode[]): RFNode[] {
+  return nodes.map((node) => {
+    const data = node.data as Record<string, unknown> | undefined;
+    if (!data?._groupDropTarget) return node;
+    const { _groupDropTarget: _removed, ...nextData } = data;
+    void _removed;
+    return {
+      ...node,
+      data: nextData,
+    };
+  });
+}
+
+function markGroupDropTarget(nodes: RFNode[], targetId: string | null): RFNode[] {
+  return nodes.map((node) => {
+    const isTarget = node.id === targetId;
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    if (node.type !== "group" && !data._groupDropTarget) return node;
+    if (Boolean(data._groupDropTarget) === isTarget) return node;
+
+    if (!isTarget) {
+      const { _groupDropTarget: _removed, ...nextData } = data;
+      void _removed;
+      return { ...node, data: nextData };
+    }
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        _groupDropTarget: true,
+      },
+    };
+  });
+}
+
+function computeParentChangeForNode(
+  draggedNode: RFNode,
+  allNodes: RFNode[],
+): ParentChange | null {
+  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+  const absolutePosition = getAbsoluteNodePosition(draggedNode, nodeById);
+  const overlappingGroup = findOverlappingGroupTarget(draggedNode, allNodes);
+
+  if (overlappingGroup && draggedNode.parentId !== overlappingGroup.id) {
+    const groupPosition = getAbsoluteNodePosition(overlappingGroup, nodeById);
+    return {
+      nodeId: draggedNode.id,
+      parentId: overlappingGroup.id,
+      position: {
+        x: absolutePosition.x - groupPosition.x,
+        y: absolutePosition.y - groupPosition.y,
+      },
+    };
+  }
+
+  if (draggedNode.parentId) {
+    const currentParent = nodeById.get(draggedNode.parentId);
+    if (
+      currentParent?.type === "group" &&
+      !rectsOverlap(getNodeRect(draggedNode, nodeById), getNodeRect(currentParent, nodeById))
+    ) {
+      return {
+        nodeId: draggedNode.id,
+        parentId: undefined,
+        position: absolutePosition,
+      };
+    }
+  }
+
+  return null;
+}
+
 export function useCanvasNodeInteractions(args: {
   canvasId: Id<"canvases">;
   nodes: RFNode[];
@@ -97,6 +272,7 @@ export function useCanvasNodeInteractions(args: {
   runResizeNodeMutation: RunResizeNodeMutation;
   runMoveNodeMutation: RunMoveNodeMutation;
   runBatchMoveNodesMutation: RunBatchMoveNodesMutation;
+  runSetNodeParentMutation: RunSetNodeParentMutation;
   runSplitEdgeAtExistingNodeMutation: RunSplitEdgeAtExistingNodeMutation;
   onInvalidConnection: (reason: CanvasConnectionValidationReason) => void;
   syncPendingMoveForClientRequest: (
@@ -113,6 +289,7 @@ export function useCanvasNodeInteractions(args: {
     runResizeNodeMutation,
     runMoveNodeMutation,
     runBatchMoveNodesMutation,
+    runSetNodeParentMutation,
     runSplitEdgeAtExistingNodeMutation,
     onInvalidConnection,
     syncPendingMoveForClientRequest,
@@ -129,6 +306,7 @@ export function useCanvasNodeInteractions(args: {
 
   const overlappedEdgeRef = useRef<string | null>(null);
   const highlightedEdgeRef = useRef<string | null>(null);
+  const activeGroupDropTargetRef = useRef<string | null>(null);
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
     undefined,
   );
@@ -189,6 +367,22 @@ export function useCanvasNodeInteractions(args: {
     overlappedEdgeRef.current = null;
     setHighlightedIntersectionEdge(null);
   }, [setHighlightedIntersectionEdge]);
+
+  const setActiveGroupDropTarget = useCallback(
+    (targetId: string | null) => {
+      if (activeGroupDropTargetRef.current === targetId) {
+        return;
+      }
+      activeGroupDropTargetRef.current = targetId;
+      setNodes((currentNodes) => markGroupDropTarget(currentNodes, targetId));
+    },
+    [setNodes],
+  );
+
+  const clearActiveGroupDropTarget = useCallback(() => {
+    activeGroupDropTargetRef.current = null;
+    setNodes((currentNodes) => clearGroupDropTargetData(currentNodes));
+  }, [setNodes]);
 
   const getEffectiveSplitMiddleNode = useCallback(
     (node: RFNode): RFNode => {
@@ -274,15 +468,33 @@ export function useCanvasNodeInteractions(args: {
     (_event: ReactMouseEvent, _node: RFNode, draggedNodes: RFNode[]) => {
       isDragging.current = true;
       clearHighlightedIntersectionEdge();
+      clearActiveGroupDropTarget();
       for (const draggedNode of draggedNodes) {
         pendingLocalPositionUntilConvexMatchesRef.current.delete(draggedNode.id);
       }
     },
-    [clearHighlightedIntersectionEdge, isDragging, pendingLocalPositionUntilConvexMatchesRef],
+    [
+      clearActiveGroupDropTarget,
+      clearHighlightedIntersectionEdge,
+      isDragging,
+      pendingLocalPositionUntilConvexMatchesRef,
+    ],
   );
 
   const onNodeDrag = useCallback(
     (_event: ReactMouseEvent, node: RFNode) => {
+      const nodesWithDraggedNode = nodes.map((candidate) =>
+        candidate.id === node.id ? { ...candidate, ...node } : candidate,
+      );
+      const groupTarget = findOverlappingGroupTarget(node, nodesWithDraggedNode);
+      const actionableGroupTarget =
+        groupTarget && groupTarget.id !== node.parentId ? groupTarget : null;
+      setActiveGroupDropTarget(actionableGroupTarget?.id ?? null);
+      if (actionableGroupTarget) {
+        clearHighlightedIntersectionEdge();
+        return;
+      }
+
       const nodeCenter = getNodeCenterClientPosition(node.id);
       if (!nodeCenter) {
         clearHighlightedIntersectionEdge();
@@ -329,7 +541,9 @@ export function useCanvasNodeInteractions(args: {
       clearHighlightedIntersectionEdge,
       edges,
       getEffectiveSplitMiddleNode,
+      nodes,
       setHighlightedIntersectionEdge,
+      setActiveGroupDropTarget,
     ],
   );
 
@@ -356,8 +570,43 @@ export function useCanvasNodeInteractions(args: {
               )
             : undefined;
 
+          const finalDraggedNodes =
+            draggedNodes.length > 0
+              ? draggedNodes
+              : primaryNode
+                ? [primaryNode]
+                : [];
+          const nodeByDraggedId = new Map(
+            finalDraggedNodes.map((draggedNode) => [draggedNode.id, draggedNode]),
+          );
+          const nodesWithFinalDraggedPositions = nodes.map((candidate) => {
+            const draggedNode = nodeByDraggedId.get(candidate.id);
+            return draggedNode ? { ...candidate, ...draggedNode } : candidate;
+          }).concat(
+            finalDraggedNodes.filter(
+              (draggedNode) =>
+                !nodes.some((candidate) => candidate.id === draggedNode.id),
+            ),
+          );
+          const parentChanges = finalDraggedNodes
+            .map((draggedNode) => {
+              const finalNode =
+                nodesWithFinalDraggedPositions.find(
+                  (candidate) => candidate.id === draggedNode.id,
+                ) ?? draggedNode;
+              return computeParentChangeForNode(
+                finalNode,
+                nodesWithFinalDraggedPositions,
+              );
+            })
+            .filter((change): change is ParentChange => change !== null);
+          const parentChangedNodeIds = new Set(
+            parentChanges.map((change) => change.nodeId),
+          );
+
           const splitHandles = NODE_HANDLE_MAP[primaryNode.type ?? ""];
           const splitEligible =
+            parentChanges.length === 0 &&
             intersectedEdge !== undefined &&
             splitHandles !== undefined &&
             intersectedEdge.source !== effectivePrimaryNode.id &&
@@ -381,8 +630,43 @@ export function useCanvasNodeInteractions(args: {
 
           const canSplit = splitEligible && intersectedEdge && !splitValidationError;
 
+          if (parentChanges.length > 0) {
+            setNodes((currentNodes) =>
+              currentNodes.map((currentNode) => {
+                const parentChange = parentChanges.find(
+                  (change) => change.nodeId === currentNode.id,
+                );
+                if (!parentChange) return currentNode;
+                return {
+                  ...currentNode,
+                  parentId: parentChange.parentId,
+                  position: parentChange.position,
+                  data:
+                    currentNode.type === "group"
+                      ? ((currentNode.data ?? {}) as Record<string, unknown>)
+                      : currentNode.data,
+                };
+              }),
+            );
+
+            for (const parentChange of parentChanges) {
+              pendingLocalPositionUntilConvexMatchesRef.current.set(
+                parentChange.nodeId,
+                parentChange.position,
+              );
+              preferLocalPositionNodeIdsRef.current.add(parentChange.nodeId);
+              await runSetNodeParentMutation({
+                nodeId: parentChange.nodeId as Id<"nodes">,
+                parentId: parentChange.parentId as Id<"nodes"> | undefined,
+                positionX: parentChange.position.x,
+                positionY: parentChange.position.y,
+              });
+            }
+          }
+
           if (draggedNodes.length > 1) {
             for (const draggedNode of draggedNodes) {
+              if (parentChangedNodeIds.has(draggedNode.id)) continue;
               const clientRequestId = clientRequestIdFromOptimisticNodeId(
                 draggedNode.id,
               );
@@ -396,7 +680,9 @@ export function useCanvasNodeInteractions(args: {
             }
 
             const realMoves = draggedNodes.filter(
-              (draggedNode) => !isOptimisticNodeId(draggedNode.id),
+              (draggedNode) =>
+                !isOptimisticNodeId(draggedNode.id) &&
+                !parentChangedNodeIds.has(draggedNode.id),
             );
             if (realMoves.length > 0) {
               await runBatchMoveNodesMutation({
@@ -459,6 +745,9 @@ export function useCanvasNodeInteractions(args: {
             const singleClientRequestId = clientRequestIdFromOptimisticNodeId(
               primaryNode.id,
             );
+            if (parentChangedNodeIds.has(primaryNode.id)) {
+              return;
+            }
             if (singleClientRequestId) {
               pendingMoveAfterCreateRef.current.set(singleClientRequestId, {
                 positionX: primaryNode.position.x,
@@ -537,6 +826,7 @@ export function useCanvasNodeInteractions(args: {
           });
         } finally {
           clearHighlightedIntersectionEdge();
+          clearActiveGroupDropTarget();
           isDragging.current = false;
         }
       })();
@@ -544,6 +834,7 @@ export function useCanvasNodeInteractions(args: {
     [
       canvasId,
       clearHighlightedIntersectionEdge,
+      clearActiveGroupDropTarget,
       nodes,
       edges,
       isDragging,
@@ -554,8 +845,12 @@ export function useCanvasNodeInteractions(args: {
       resolvedRealIdByClientRequestRef,
       runBatchMoveNodesMutation,
       runMoveNodeMutation,
+      runSetNodeParentMutation,
       runSplitEdgeAtExistingNodeMutation,
       syncPendingMoveForClientRequest,
+      pendingLocalPositionUntilConvexMatchesRef,
+      preferLocalPositionNodeIdsRef,
+      setNodes,
     ],
   );
 

@@ -56,4 +56,26 @@ describe("canvas agent config", () => {
       templateId: "campaign-distributor",
     });
   });
+
+  it("registers uploaded video and asset-video node variants", () => {
+    expect(nodeTypes.video).toBeTypeOf("function");
+    expect(nodeTypes["asset-video"]).toBeTypeOf("function");
+    expect(CANVAS_NODE_TEMPLATES.find((template) => template.type === "video")?.label).toBe(
+      "Video",
+    );
+    expect(
+      CANVAS_NODE_TEMPLATES.find((template) => template.type === "asset-video")?.label,
+    ).toBe("Asset (Video)");
+    expect(NODE_CATALOG.find((entry) => entry.type === "video")?.label).toBe("Video");
+    expect(NODE_CATALOG.find((entry) => entry.type === "asset-video")?.label).toBe(
+      "Asset (Video)",
+    );
+    expect(NODE_HANDLE_MAP.video).toEqual({ source: undefined, target: undefined });
+    expect(NODE_HANDLE_MAP["asset-video"]).toEqual({
+      source: undefined,
+      target: undefined,
+    });
+    expect(NODE_DEFAULTS.video).toMatchObject({ width: 320, height: 180 });
+    expect(NODE_DEFAULTS["asset-video"]).toMatchObject({ width: 320, height: 180 });
+  });
 });

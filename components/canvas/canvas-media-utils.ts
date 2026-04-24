@@ -5,6 +5,50 @@ export async function getImageDimensions(
   return { width: image.naturalWidth, height: image.naturalHeight };
 }
 
+export async function getVideoMetadata(
+  file: File,
+): Promise<{ width: number; height: number; durationSeconds: number }> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement("video");
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+
+    video.onloadedmetadata = () => {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      const durationSeconds = video.duration;
+      cleanup();
+
+      if (!width || !height) {
+        reject(new Error("Could not read video dimensions"));
+        return;
+      }
+
+      resolve({
+        width,
+        height,
+        durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
+      });
+    };
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error("Could not decode video"));
+    };
+
+    video.src = objectUrl;
+  });
+}
+
 export type ImagePreviewOptions = {
   maxEdge?: number;
   format?: string;

@@ -1394,8 +1394,10 @@ export const setParent = mutation({
   args: {
     nodeId: v.id("nodes"),
     parentId: v.optional(v.id("nodes")),
+    positionX: v.optional(v.number()),
+    positionY: v.optional(v.number()),
   },
-  handler: async (ctx, { nodeId, parentId }) => {
+  handler: async (ctx, { nodeId, parentId, positionX, positionY }) => {
     const user = await requireAuth(ctx);
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
@@ -1408,9 +1410,16 @@ export const setParent = mutation({
       if (!parent || parent.canvasId !== node.canvasId) {
         throw new Error("Parent not found");
       }
+      if (parent.type !== "group" && parent.type !== "frame") {
+        throw new Error("Parent must be a group or frame node");
+      }
     }
 
-    await ctx.db.patch(nodeId, { parentId });
+    await ctx.db.patch(nodeId, {
+      parentId,
+      ...(positionX !== undefined ? { positionX } : {}),
+      ...(positionY !== undefined ? { positionY } : {}),
+    });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
   },
 });

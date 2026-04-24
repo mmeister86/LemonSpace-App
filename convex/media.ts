@@ -202,6 +202,25 @@ export function mapLegacyNodeToMediaArchiveInput(node: LegacyMediaBackfillNode):
   }
 
   if (node.type === "video") {
+    const storageId = toStorageId(data.storageId);
+    if (storageId) {
+      return {
+        kind: "video",
+        source: "upload",
+        dedupeKey: buildStoredMediaDedupeKey(storageId),
+        storageId,
+        filename: asNonEmptyString(data.filename),
+        mimeType: asNonEmptyString(data.mimeType),
+        width: asPositiveNumber(data.width),
+        height: asPositiveNumber(data.height),
+        durationSeconds: asPositiveNumber(data.durationSeconds),
+        firstSourceCanvasId,
+        firstSourceNodeId,
+      };
+    }
+  }
+
+  if (node.type === "asset-video" || node.type === "video") {
     const originalUrl = asNonEmptyString(data.mp4Url);
     const sourceUrl =
       asNonEmptyString((data.attribution as { videoUrl?: unknown } | undefined)?.videoUrl) ??

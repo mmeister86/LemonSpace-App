@@ -50,6 +50,7 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   "video-prompt": Video,
   color: Palette,
   video: Video,
+  "asset-video": Video,
   asset: Package,
   "ai-image": Sparkles,
   "ai-text": Type,

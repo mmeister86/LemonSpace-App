@@ -140,7 +140,14 @@ function sanitizeDimension(value: unknown): number | undefined {
   return rounded;
 }
 
-const SOURCE_NODE_TYPES = new Set(["image", "ai-image", "asset", "video", "ai-video"]);
+const SOURCE_NODE_TYPES = new Set([
+  "image",
+  "ai-image",
+  "asset",
+  "video",
+  "asset-video",
+  "ai-video",
+]);
 
 export const RENDER_PREVIEW_PIPELINE_TYPES = new Set([
   "crop",
@@ -402,14 +409,14 @@ export function resolveNodeImageUrl(data: unknown): string | null {
 function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
   const data = (node.data ?? {}) as Record<string, unknown>;
 
-  if (node.type === "video") {
+  if (node.type === "asset-video") {
     const mp4Url = typeof data.mp4Url === "string" ? data.mp4Url : null;
     if (mp4Url && mp4Url.length > 0) {
       return `/api/pexels-video?u=${encodeURIComponent(mp4Url)}`;
     }
   }
 
-  if (node.type === "ai-video") {
+  if (node.type === "video" || node.type === "ai-video") {
     const directUrl = typeof data.url === "string" ? data.url : null;
     if (directUrl && directUrl.length > 0) {
       return directUrl;
