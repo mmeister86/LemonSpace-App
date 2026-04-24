@@ -28,7 +28,7 @@ Dashboard
 ├── Arbeitsbereiche (Canvas Grid)
 ├── Credits Verlauf + Transaktionen (zwei-spaltig)
 │   ├── CreditsActivityChart (Recharts AreaChart)
-│   └── Recent Transactions (List)
+│   └── Recent Transactions (List, max. 5 + Link zu /dashboard/usage)
 ```
 
 ---
@@ -73,7 +73,7 @@ page-client.tsx
 |-----------|-------------|
 | `credit-overview.tsx` | `dashboardSnapshot.balance`, `dashboardSnapshot.subscription`, `dashboardSnapshot.usageStats` |
 | `credits-activity-chart.tsx` | `dashboardSnapshot.balance`, `dashboardSnapshot.recentTransactions` |
-| `recent-transactions.tsx` | `dashboardSnapshot.recentTransactions` |
+| `recent-transactions.tsx` | `dashboardSnapshot.recentTransactions` (Dashboard zeigt nur 5 Einträge) |
 | `canvas-card.tsx` | `dashboardSnapshot.canvases` |
 
 > Alle Daten kommen aus dem gebündelten Snapshot (`useDashboardSnapshot`). Keine separaten Queries mehr.
@@ -129,4 +129,5 @@ Recharts-basiertes AreaChart (via ShadCN `ChartContainer`) mit drei Datenseries:
 - Gebündelte Snapshot-Query statt 5+ separater Queries → weniger WebSocket-Last
 - localStorage-Cache mit 12h TTL → sofortige Anzeige bei wiederholtem Besuch
 - Canvas-Thumbnails werden über den Snapshot geladen (nur wenn vorhanden)
-- Transaktions-Liste ist auf 20 Einträge limitiert (priorisiert nach Typ)
+- Transaktions-Liste ist auf 5 Einträge limitiert (priorisiert nach Typ); vollständiger Audit-Trail liegt unter `/dashboard/usage`
+- `/dashboard/usage` lädt den Audit-Trail mit stabilen Convex-Query-Args und cached ihn lokal; UI-Filter, Sortierung und Pagination dürfen keine neuen Convex-Requests auslösen

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useFormatter, useLocale } from "next-intl";
 import { Activity, Coins } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { DashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
 import { formatCredits } from "@/lib/credits-activity";
 import { cn } from "@/lib/utils";
@@ -89,9 +91,14 @@ export function RecentTransactions({ recentTransactions }: RecentTransactionsPro
   if (recentTransactions === undefined) {
     return (
       <div className="rounded-xl border bg-card p-6 shadow-sm shadow-foreground/3">
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-            <Activity className="size-3.5 text-muted-foreground" />
-            Letzte Aktivität
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Activity className="size-3.5 text-muted-foreground" />
+              Letzte Aktivität
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" asChild>
+              <Link href="/dashboard/usage">Alle anzeigen</Link>
+            </Button>
           </div>
         <div className="divide-y">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -113,9 +120,14 @@ export function RecentTransactions({ recentTransactions }: RecentTransactionsPro
   if (transactions.length === 0) {
     return (
       <div className="rounded-xl border bg-card p-6 shadow-sm shadow-foreground/3">
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-            <Activity className="size-3.5 text-muted-foreground" />
-            Letzte Aktivität
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Activity className="size-3.5 text-muted-foreground" />
+              Letzte Aktivität
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" asChild>
+              <Link href="/dashboard/usage">Alle anzeigen</Link>
+            </Button>
           </div>
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <Coins className="mb-3 size-10 text-muted-foreground/40" />
@@ -133,9 +145,14 @@ export function RecentTransactions({ recentTransactions }: RecentTransactionsPro
   // ── Transaction List ───────────────────────────────────────────────────
   return (
     <div className="rounded-xl border bg-card shadow-sm shadow-foreground/3">
-      <div className="flex items-center gap-2 px-5 pt-5 pb-3 text-sm font-medium">
-        <Activity className="size-3.5 text-muted-foreground" />
-        Letzte Aktivität
+      <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Activity className="size-3.5 text-muted-foreground" />
+          Letzte Aktivität
+        </div>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" asChild>
+          <Link href="/dashboard/usage">Alle anzeigen</Link>
+        </Button>
       </div>
       <div className="divide-y">
         {transactions.map((t: NonNullable<typeof transactions>[number]) => {

@@ -312,7 +312,7 @@ export const getSnapshot = query({
         totalGenerations,
         monthlyCredits: MONTHLY_TIER_CREDITS[tier],
       },
-      recentTransactions: prioritizeRecentCreditTransactions(recentTransactionsRaw, 20),
+      recentTransactions: prioritizeRecentCreditTransactions(recentTransactionsRaw, 5),
       canvases,
       mediaPreview,
       generatedAt: Date.now(),

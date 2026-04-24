@@ -45,6 +45,7 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `utils.ts` | `cn()` (clsx + tailwind-merge), allgemeine Utilities |
 | `credits-activity.ts` | Credits-Aktivitäts-Analytics: Transaktions-Priorisierung, Activity-Series, Usage-Domain-Berechnung |
 | `dashboard-snapshot-cache.ts` | localStorage-Cache für Dashboard-Snapshots (12h TTL, versioniert) |
+| `credit-activity-cache.ts` | localStorage-Cache für `/dashboard/usage` Audit-Trail |
 
 ---
 
@@ -311,6 +312,23 @@ clearDashboardSnapshotCache(userId)              // Cache invalidieren
 - TTL: 12 Stunden (`DEFAULT_TTL_MS = 12 * 60 * 60 * 1000`)
 - Version: `CACHE_VERSION = 1` — Bumps invalidieren bestehende Caches
 - Alle Storage-Zugriffe defensiv (try-catch, quota handling)
+
+---
+
+## `credit-activity-cache.ts` — Credit Activity Cache
+
+localStorage-basierter Cache für die Verbrauchs-Detailseite `/dashboard/usage`.
+
+```typescript
+readCreditActivityCache<T>(userId, options?)  // Cached Audit-Trail lesen
+writeCreditActivityCache<T>(userId, activity) // Live-Audit-Trail speichern
+clearCreditActivityCache(userId)              // Cache invalidieren
+```
+
+**Konfiguration:**
+- Namespace: `lemonspace.credit-activity`
+- TTL: 12 Stunden
+- Pro User gespeichert; `/dashboard/usage` nutzt den Cache sofort und ersetzt ihn durch Live-Daten, sobald Convex echte Transaktionsänderungen liefert
 
 ---
 

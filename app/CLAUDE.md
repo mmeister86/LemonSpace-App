@@ -25,6 +25,7 @@ app/
 │   ├── auth/[...all]/            ← Better Auth API Handler
 │   └── pexels-video/             ← Pexels Video Proxy
 └── dashboard/                    ← Dashboard nach Login
+    └── usage/                    ← Verbrauch & Aktivitäten Detailseite
 ```
 
 ---
@@ -66,6 +67,7 @@ Server Component. Initialisiert:
 - Trusted Origins: `https://app.lemonspace.io`, `http://localhost:3000`
 - Sign-In unterstützt `email+password` **und** `magic link` (`authClient.signIn.magicLink`)
 - Dashboard-Route (`app/dashboard/page.tsx`) redirectet bei fehlender Session explizit nach `/auth/sign-in`, damit kein permanenter Loading-State entsteht
+- Verbrauchs-Route (`app/dashboard/usage/page.tsx`) nutzt denselben SSR-Auth-Redirect und rendert danach die filterbare Credit-Aktivitätsansicht; Filter, Sortierung und Pagination laufen lokal auf dem gecachten Datensatz
 
 ---
 

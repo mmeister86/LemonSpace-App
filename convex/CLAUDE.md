@@ -11,7 +11,7 @@ Convex ist das vollständige Backend von LemonSpace: Datenbank, Realtime-Subscri
 | `schema.ts` | Einzige Wahrheitsquelle für alle Tabellen und Typen |
 | `node_type_validator.ts` | Node-Typen Validator (Phase 1, Phase 2, Phase 3, Adjustment Presets) |
 | `ai.ts` | KI-Bild- und KI-Video-Generierungs-Pipeline |
-| `credits.ts` | Credit-System: Balance, Reservation+Commit, Tier-Config |
+| `credits.ts` | Credit-System: Balance, Reservation+Commit, Tier-Config, filterbarer Aktivitäts-Audit-Trail |
 | `nodes.ts` | CRUD für Canvas-Nodes |
 | `edges.ts` | CRUD für Canvas-Edges |
 | `canvases.ts` | CRUD für Canvases |
@@ -87,7 +87,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 
 **`creditBalances`** — Pro User: `balance`, `reserved`, `monthlyAllocation`. `available = balance - reserved` (computed, nicht gespeichert).
 
-**`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`. Optionale Felder: `provider` (`openrouter` | `freepik`), `videoMeta` (`model`, `durationSeconds`, `hasAudio`).
+**`creditTransactions`** — Jede Credit-Bewegung. Types: `subscription | topup | usage | reservation | refund`. Status: `committed | reserved | released | failed`. Optionale Felder: `provider` (`openrouter` | `freepik`), `videoMeta` (`model`, `durationSeconds`, `hasAudio`). `credits.listActivity` liefert den lokal cachebaren Rohdatensatz für `/dashboard/usage`; Filter, Sortierung und Pagination passieren dort clientseitig.
 
 **`subscriptions`** — Aktive Subscription. Tier: `free | starter | pro | max | business`. Feld `cancelAtPeriodEnd` markiert zum Periodenende gekündigte Subscriptions. Legacy-Felder `lemonSqueezySubscriptionId` und `lemonSqueezyCustomerId` existieren für Abwärtskompatibilität.
 

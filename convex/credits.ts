@@ -50,6 +50,137 @@ export const TIER_CONFIG = {
 export type Tier = keyof typeof TIER_CONFIG;
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+const ACTIVITY_DEFAULT_PAGE_SIZE = 25;
+const ACTIVITY_MIN_PAGE_SIZE = 1;
+const ACTIVITY_MAX_PAGE_SIZE = 1000;
+const ACTIVITY_DAY_MS = 24 * 60 * 60 * 1000;
+
+type ActivityDateRange = "all" | "7d" | "30d" | "month" | "custom";
+type ActivitySortBy = "date" | "amount" | "model";
+type ActivitySortDirection = "asc" | "desc";
+
+type ActivityTransaction = {
+  _creationTime: number;
+  amount: number;
+  type: "subscription" | "topup" | "usage" | "reservation" | "refund";
+  status: "committed" | "reserved" | "released" | "failed";
+  model?: string;
+  videoMeta?: {
+    model: string;
+  };
+};
+
+function normalizeActivityPage(page: number): number {
+  if (!Number.isFinite(page)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(page));
+}
+
+function normalizeActivityPageSize(pageSize: number | undefined): number {
+  if (!Number.isFinite(pageSize ?? Number.NaN)) {
+    return ACTIVITY_DEFAULT_PAGE_SIZE;
+  }
+
+  return Math.min(
+    ACTIVITY_MAX_PAGE_SIZE,
+    Math.max(ACTIVITY_MIN_PAGE_SIZE, Math.floor(pageSize!)),
+  );
+}
+
+function parseDateInput(value: string | undefined, endOfDay: boolean): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const isoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const timestamp = Date.parse(
+    isoDateOnly
+      ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`
+      : value,
+  );
+
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function getActivityDateBounds(
+  dateRange: ActivityDateRange,
+  startDate: string | undefined,
+  endDate: string | undefined,
+  nowMs = Date.now(),
+): { startMs: number | null; endMs: number | null } {
+  if (dateRange === "all") {
+    return { startMs: null, endMs: null };
+  }
+
+  if (dateRange === "7d") {
+    return { startMs: nowMs - 7 * ACTIVITY_DAY_MS, endMs: null };
+  }
+
+  if (dateRange === "30d") {
+    return { startMs: nowMs - 30 * ACTIVITY_DAY_MS, endMs: null };
+  }
+
+  if (dateRange === "month") {
+    const now = new Date(nowMs);
+    return {
+      startMs: Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+      endMs: null,
+    };
+  }
+
+  return {
+    startMs: parseDateInput(startDate, false),
+    endMs: parseDateInput(endDate, true),
+  };
+}
+
+function getActivityModel(transaction: ActivityTransaction): string | null {
+  const model = transaction.model?.trim() || transaction.videoMeta?.model?.trim();
+  return model && model.length > 0 ? model : null;
+}
+
+function compareActivityTransactions<T extends ActivityTransaction>(
+  left: T,
+  right: T,
+  sortBy: ActivitySortBy,
+  sortDirection: ActivitySortDirection,
+): number {
+  const direction = sortDirection === "asc" ? 1 : -1;
+
+  if (sortBy === "amount") {
+    const amountOrder = Math.abs(left.amount) - Math.abs(right.amount);
+    if (amountOrder !== 0) {
+      return amountOrder * direction;
+    }
+  } else if (sortBy === "model") {
+    const modelOrder = (getActivityModel(left) ?? "").localeCompare(
+      getActivityModel(right) ?? "",
+      "de",
+    );
+    if (modelOrder !== 0) {
+      return modelOrder * direction;
+    }
+  }
+
+  return (left._creationTime - right._creationTime) * direction;
+}
+
+function transactionMatchesDateRange<T extends ActivityTransaction>(
+  transaction: T,
+  bounds: { startMs: number | null; endMs: number | null },
+): boolean {
+  if (bounds.startMs !== null && transaction._creationTime < bounds.startMs) {
+    return false;
+  }
+
+  if (bounds.endMs !== null && transaction._creationTime > bounds.endMs) {
+    return false;
+  }
+
+  return true;
+}
 
 // ============================================================================
 // Queries
@@ -125,6 +256,110 @@ export const listTransactions = query({
       .withIndex("by_user", (q) => q.eq("userId", user.userId))
       .order("desc")
       .take(limit ?? 50);
+  },
+});
+
+/**
+ * Vollständiger Credit-Audit-Trail für die Detailseite.
+ */
+export const listActivity = query({
+  args: {
+    page: v.number(),
+    pageSize: v.optional(v.number()),
+    dateRange: v.union(
+      v.literal("all"),
+      v.literal("7d"),
+      v.literal("30d"),
+      v.literal("month"),
+      v.literal("custom"),
+    ),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    model: v.optional(v.string()),
+    sortBy: v.union(v.literal("date"), v.literal("amount"), v.literal("model")),
+    sortDirection: v.union(v.literal("asc"), v.literal("desc")),
+  },
+  handler: async (ctx, args) => {
+    const normalizedPage = normalizeActivityPage(args.page);
+    const normalizedPageSize = normalizeActivityPageSize(args.pageSize);
+    const user = await optionalAuth(ctx);
+
+    if (!user) {
+      return {
+        items: [],
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+        totalPages: 0,
+        totalCount: 0,
+        modelOptions: [],
+        summary: {
+          netCredits: 0,
+          usageCredits: 0,
+          entryCount: 0,
+        },
+      };
+    }
+
+    const transactions = await ctx.db
+      .query("creditTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .order("desc")
+      .collect();
+
+    const dateBounds = getActivityDateBounds(
+      args.dateRange,
+      args.startDate,
+      args.endDate,
+    );
+    const dateFiltered = transactions.filter((transaction) =>
+      transactionMatchesDateRange(transaction, dateBounds),
+    );
+    const modelOptions = Array.from(
+      new Set(
+        dateFiltered
+          .map(getActivityModel)
+          .filter((model): model is string => model !== null),
+      ),
+    ).sort((left, right) => left.localeCompare(right, "de"));
+
+    const selectedModel = args.model?.trim();
+    const filtered =
+      selectedModel && selectedModel.length > 0
+        ? dateFiltered.filter((transaction) => getActivityModel(transaction) === selectedModel)
+        : dateFiltered;
+    const sorted = [...filtered].sort((left, right) =>
+      compareActivityTransactions(left, right, args.sortBy, args.sortDirection),
+    );
+
+    const totalCount = sorted.length;
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / normalizedPageSize) : 0;
+    const offset = (normalizedPage - 1) * normalizedPageSize;
+    const items = sorted.slice(offset, offset + normalizedPageSize);
+    const summary = filtered.reduce(
+      (acc, transaction) => {
+        acc.netCredits += transaction.amount;
+        if (transaction.type === "usage" && transaction.status === "committed") {
+          acc.usageCredits += Math.abs(transaction.amount);
+        }
+        acc.entryCount += 1;
+        return acc;
+      },
+      {
+        netCredits: 0,
+        usageCredits: 0,
+        entryCount: 0,
+      },
+    );
+
+    return {
+      items,
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalPages,
+      totalCount,
+      modelOptions,
+      summary,
+    };
   },
 });
 
