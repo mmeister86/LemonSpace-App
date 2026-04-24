@@ -98,8 +98,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
   const { screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
+  const [isCanvasDeletePending, setIsCanvasDeletePending] = useState(false);
   const { canvas, convexEdges, convexNodes, storageUrlsById } = useCanvasData({
     canvasId,
+    suppressQueries: isCanvasDeletePending,
   });
 
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
@@ -456,8 +458,6 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     scissorsMode,
     onInsertClick: handleEdgeInsertClick,
   });
-  const stableNodeTypesRef = useRef(nodeTypes);
-  const stableEdgeTypesRef = useRef(edgeTypes);
 
   useCanvasFlowReconciliation({
     convexNodes,
@@ -608,7 +608,11 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           onFavoriteFilterChange={setFocusFavorites}
           favoriteCount={favoriteProjection.favoriteCount}
         />
-        <CanvasAppMenu canvasId={canvasId} />
+        <CanvasAppMenu
+          canvasId={canvasId}
+          onDeleteStart={() => setIsCanvasDeletePending(true)}
+          onDeleteError={() => setIsCanvasDeletePending(false)}
+        />
         <CanvasCommandPalette />
         <CanvasConnectionDropMenu
           anchor={
@@ -673,8 +677,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             onlyRenderVisibleElements
             defaultEdgeOptions={defaultEdgeOptions}
             connectionLineComponent={CustomConnectionLine}
-            nodeTypes={stableNodeTypesRef.current}
-            edgeTypes={stableEdgeTypesRef.current}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStart={onNodeDragStart}

@@ -8,13 +8,17 @@ import { canvasGraphQuery } from "./canvas-graph-query-cache";
 
 type UseCanvasDataParams = {
   canvasId: Id<"canvases">;
+  suppressQueries?: boolean;
 };
 
-export function useCanvasData({ canvasId }: UseCanvasDataParams) {
+export function useCanvasData({
+  canvasId,
+  suppressQueries = false,
+}: UseCanvasDataParams) {
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
   const shouldSkipCanvasQueries =
-    isSessionPending || isAuthLoading || !isAuthenticated;
+    suppressQueries || isSessionPending || isAuthLoading || !isAuthenticated;
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;

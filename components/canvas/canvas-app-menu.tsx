@@ -41,9 +41,15 @@ import { useAuthQuery } from "@/hooks/use-auth-query";
 
 type CanvasAppMenuProps = {
   canvasId: Id<"canvases">;
+  onDeleteStart?: () => void;
+  onDeleteError?: () => void;
 };
 
-export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
+export function CanvasAppMenu({
+  canvasId,
+  onDeleteStart,
+  onDeleteError,
+}: CanvasAppMenuProps) {
   const t = useTranslations('toasts');
   const router = useRouter();
   const canvas = useAuthQuery(api.canvases.get, { canvasId });
@@ -87,6 +93,7 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
 
   const handleDelete = async () => {
     setDeleteBusy(true);
+    onDeleteStart?.();
     try {
       await removeCanvas({ canvasId });
       toast.success("Projekt gelöscht");
@@ -94,6 +101,7 @@ export function CanvasAppMenu({ canvasId }: CanvasAppMenuProps) {
       router.replace("/dashboard");
       router.refresh();
     } catch {
+      onDeleteError?.();
       toast.error("Löschen fehlgeschlagen");
     } finally {
       setDeleteBusy(false);
