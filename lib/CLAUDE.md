@@ -15,6 +15,7 @@ Geteilte Hilfsfunktionen, Typ-Definitionen und Konfiguration. Keine React-Kompon
 | `canvas-connection-policy.ts` | Validierungsregeln für Edge-Verbindungen zwischen Nodes |
 | `canvas-node-favorite.ts` | Node-Favoriten-Persistierung (preserve/restore bei Node-Updates) |
 | `canvas-render-preview.ts` | Render-Preview-Pipeline: Graph-Traversal, Pipeline-Assembly, Fast-Path-Optimierung |
+| `canvas-rich-text.ts` | EditorJS-Rich-Text-Normalisierung/Sanitizing fuer Text-Node und Mixer-Text-Layer |
 | `agent-definitions.ts` | Runtime-Registry fuer Agent-Definitionen (Struktur, Regeln, Blueprints, Docs-Pfad) |
 | `agent-models.ts` | Agent-Modell-Registry: GPT-5.4 Nano/Mini/Pro mit Credit-Kosten und Tier-Zugang |
 | `agent-templates.ts` | UI-Projektion auf Agent-Metadaten aus `agent-definitions.ts` |

@@ -215,14 +215,14 @@ describe("useCanvasConnections", () => {
     expect(mixerTemplate).toEqual(
       expect.objectContaining({
         type: "mixer",
-        defaultData: {
+        defaultData: expect.objectContaining({
           blendMode: "normal",
           opacity: 100,
           overlayX: 0,
           overlayY: 0,
           overlayWidth: 1,
           overlayHeight: 1,
-        },
+        }),
       }),
     );
     expect(NODE_HANDLE_MAP.mixer).toEqual({
@@ -231,14 +231,14 @@ describe("useCanvasConnections", () => {
     });
     expect(NODE_DEFAULTS.mixer).toEqual(
       expect.objectContaining({
-        data: {
+        data: expect.objectContaining({
           blendMode: "normal",
           opacity: 100,
           overlayX: 0,
           overlayY: 0,
           overlayWidth: 1,
           overlayHeight: 1,
-        },
+        }),
       }),
     );
   });

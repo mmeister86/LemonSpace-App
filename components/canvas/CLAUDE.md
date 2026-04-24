@@ -165,7 +165,7 @@ render:      300 × 420    mixer:        360 × 320
 `mixer` ist in V1 ein bewusst enger 2-Layer-Blend-Node.
 
 - **Handles:** genau zwei Inputs links (`base`, `overlay`) und ein Output rechts (`mixer-out`).
-- **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`.
+- **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`, `text` (Rich-Text-Karte als gerasterter Layer).
 - **Connection-Limits:** maximal 2 eingehende Kanten insgesamt, davon pro Handle genau 1.
 - **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` (Frame-Rect, normiert 0..1) plus `contentX`, `contentY`, `contentWidth`, `contentHeight` (Content-Framing innerhalb des Overlay-Frames, ebenfalls normiert 0..1).
 - **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
@@ -368,7 +368,7 @@ useCanvasData (use-canvas-data.ts)
 - **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
-- **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
+- **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render|text`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
 - **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Offizielle Consumer sind `compare` und der direkte Bake-Pfad `mixer -> render`; `mixer -> adjustments -> render` bleibt vorerst deferred.
 - **Mixer Legacy-Daten:** Alte `offsetX`/`offsetY`-Mixer-Daten werden beim Lesen auf den Full-Frame-Fallback (`overlay* = 0/0/1/1`) normalisiert; Content-Framing defaults auf `content* = 0/0/1/1`.
 - **Agent-Flow:** `agent` akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`) als Input; ausgehende Kanten sind fuer `agent -> agent-output` vorgesehen.

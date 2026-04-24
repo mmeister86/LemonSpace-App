@@ -62,6 +62,8 @@ type TestNode = {
   id: string;
   type: string;
   data?: unknown;
+  width?: number;
+  height?: number;
 };
 
 type TestEdge = {
@@ -220,7 +222,7 @@ describe("MixerNode", () => {
 
   it("renders empty state copy when no inputs are connected", async () => {
     await renderNode();
-    expect(container?.textContent).toContain("Connect base and overlay images");
+    expect(container?.textContent).toContain("Connect base and overlay inputs");
   });
 
   it("renders partial state copy when only one input is connected", async () => {
@@ -239,6 +241,36 @@ describe("MixerNode", () => {
     await renderNode({ nodes: readyNodes, edges: readyEdges });
     expect(container?.querySelector('img[alt="Mixer base"]')).toBeTruthy();
     expect(container?.querySelector('img[alt="Mixer overlay"]')).toBeTruthy();
+  });
+
+  it("renders a connected text node as rich text overlay content", async () => {
+    await renderNode({
+      nodes: [
+        { id: "image-base", type: "image", data: { url: "https://cdn.example.com/base.png" } },
+        {
+          id: "text-overlay",
+          type: "text",
+          data: {
+            content: "Plain fallback",
+            richText: {
+              format: "editorjs",
+              version: 1,
+              blocks: [{ type: "header", data: { text: "Rich <b>headline</b>", level: 2 } }],
+            },
+          },
+          width: 240,
+          height: 120,
+        },
+        readyNodes[2],
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { id: "edge-overlay", source: "text-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    });
+
+    expect(container?.querySelector('[data-testid="mixer-overlay-content"]')).toBeTruthy();
+    expect(container?.textContent).toContain("Rich headline");
   });
 
   it("anchors the preview overlay frame to the visible base contain rect", async () => {

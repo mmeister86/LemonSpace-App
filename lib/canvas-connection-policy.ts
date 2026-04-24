@@ -61,6 +61,7 @@ const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "asset",
   "ai-image",
   "render",
+  "text",
 ]);
 
 const MIXER_TARGET_HANDLES = new Set<string>(["base", "overlay"]);
@@ -251,7 +252,7 @@ export function getCanvasConnectionValidationMessage(
     case "agent-output-source-invalid":
       return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
     case "mixer-source-invalid":
-      return "Mixer akzeptiert nur Bild-, Asset-, KI-Bild- oder Render-Input.";
+      return "Mixer akzeptiert nur Text-, Bild-, Asset-, KI-Bild- oder Render-Input.";
     case "mixer-target-handle-invalid":
       return "Mixer akzeptiert nur die Ziel-Handles 'base' und 'overlay'.";
     case "mixer-handle-incoming-limit":
