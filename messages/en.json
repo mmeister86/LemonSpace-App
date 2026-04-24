@@ -165,6 +165,76 @@
     "insufficientCredits": "Not enough credits",
     "noPromptHint": "Enter a prompt or connect a text node"
   },
+  "textNode": {
+    "label": "Text",
+    "emptyHint": "Select, then click here",
+    "placeholder": "Enter text...",
+    "loading": "Loading editor...",
+    "editorJs": {
+      "ui": {
+        "popover": {
+          "filter": "Filter",
+          "nothingFound": "Nothing found",
+          "convertTo": "Convert to"
+        },
+        "toolbar": {
+          "toolbox": {
+            "add": "Add"
+          }
+        },
+        "inlineToolbar": {
+          "converter": {
+            "convertTo": "Convert to"
+          }
+        },
+        "blockTunes": {
+          "toggler": {
+            "clickToTune": "Click to tune",
+            "orDragToMove": "or drag to move"
+          }
+        }
+      },
+      "toolNames": {
+        "text": "Text",
+        "heading": "Heading",
+        "unorderedList": "Unordered List",
+        "orderedList": "Ordered List",
+        "checklist": "Checklist",
+        "link": "Link",
+        "bold": "Bold",
+        "italic": "Italic"
+      },
+      "tools": {
+        "link": {
+          "addLink": "Add a link"
+        },
+        "header": {
+          "heading2": "Heading 2",
+          "heading3": "Heading 3"
+        },
+        "list": {
+          "unordered": "Unordered",
+          "ordered": "Ordered",
+          "checklist": "Checklist",
+          "startWith": "Start with",
+          "counterType": "Counter type",
+          "numeric": "Numeric",
+          "lowerRoman": "Lower Roman",
+          "upperRoman": "Upper Roman",
+          "lowerAlpha": "Lower Alpha",
+          "upperAlpha": "Upper Alpha"
+        }
+      },
+      "blockTunes": {
+        "delete": {
+          "delete": "Delete",
+          "clickToDelete": "Click to delete"
+        },
+        "moveUp": "Move up",
+        "moveDown": "Move down"
+      }
+    }
+  },
   "aiVideoNode": {
     "label": "AI video output",
     "idleHint": "Connect an AI video node and start generation there.",

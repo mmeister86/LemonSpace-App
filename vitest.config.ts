@@ -29,6 +29,8 @@ export default defineConfig({
       "components/canvas/__tests__/custom-connection-line.test.tsx",
       "components/canvas/__tests__/canvas-media-utils.test.ts",
       "components/canvas/__tests__/base-node-wrapper.test.tsx",
+      "components/canvas/__tests__/text-node-richtext.test.ts",
+      "components/canvas/__tests__/text-node.test.tsx",
       "components/canvas/__tests__/frame-jpeg-export.test.ts",
       "components/canvas/__tests__/frame-node.test.tsx",
       "components/canvas/__tests__/image-node.test.tsx",
