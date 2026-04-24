@@ -158,7 +158,7 @@ export default function EditorJsTextEditor({
       onPointerDown={(event) => event.stopPropagation()}
       onPointerMove={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
-      onKeyDownCapture={(event) => {
+      onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Escape") {
           event.preventDefault();

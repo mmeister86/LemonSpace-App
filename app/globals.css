@@ -190,6 +190,64 @@
     z-index: 50;
   }
 
+  .react-flow__node:has(.text-node-editorjs) {
+    z-index: 1000 !important;
+  }
+
+  .text-node-editorjs .ce-toolbar,
+  .text-node-editorjs .ce-toolbar__actions,
+  .text-node-editorjs .ce-popover,
+  .text-node-editorjs .ce-popover__container,
+  .text-node-editorjs .ce-inline-toolbar,
+  .text-node-editorjs .ce-conversion-toolbar,
+  .text-node-editorjs .ce-settings {
+    z-index: 2000 !important;
+  }
+
+  .text-node-editorjs .ce-popover {
+    --max-height: min(420px, calc(100vh - 2rem));
+    position: relative;
+  }
+
+  .text-node-editorjs .ce-popover__container {
+    max-height: min(420px, calc(100vh - 2rem)) !important;
+    overflow: visible !important;
+  }
+
+  .text-node-editorjs .ce-popover__items {
+    max-height: min(340px, calc(100vh - 7rem)) !important;
+    overflow-y: auto !important;
+  }
+
+  .text-node-editorjs .ce-popover:has(.ce-popover--nested) > .ce-popover__container > .ce-popover__items,
+  .text-node-editorjs .ce-popover__items:has(.ce-popover--nested),
+  .text-node-editorjs .ce-popover__items:has([class*="ce-popover--nested-level"]) {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .text-node-editorjs .ce-popover--nested,
+  .text-node-editorjs [class*="ce-popover--nested-level"] {
+    position: relative;
+    z-index: 4000 !important;
+  }
+
+  .text-node-editorjs .ce-popover--nested > .ce-popover__container,
+  .text-node-editorjs [class*="ce-popover--nested-level"] > .ce-popover__container {
+    z-index: 4001 !important;
+    overflow: visible !important;
+  }
+
+  .text-node-editorjs .ce-popover--nested.ce-popover--opened > .ce-popover__container,
+  .text-node-editorjs [class*="ce-popover--nested-level"].ce-popover--opened > .ce-popover__container {
+    z-index: 4002 !important;
+  }
+
+  .text-node-editorjs .ce-popover--nested .ce-popover__container,
+  .text-node-editorjs [class*="ce-popover--nested-level"] .ce-popover__container {
+    max-height: min(420px, calc(100vh - 2rem)) !important;
+  }
+
   /* Reconnect-Anker immer pointer-interactive halten (Drag-Detach/Reconnect) */
   .react-flow__edgeupdater {
     pointer-events: all;
