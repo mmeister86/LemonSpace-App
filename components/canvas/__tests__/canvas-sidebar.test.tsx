@@ -74,4 +74,19 @@ describe("CanvasSidebar", () => {
     const allCategoryGrids = container?.querySelectorAll('[data-testid$="-grid"]');
     expect(allCategoryGrids?.length ?? 0).toBeGreaterThan(1);
   });
+
+  it("hides phase tags and system-generated output nodes", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasSidebar canvasId={"canvas-1" as Id<"canvases">} />,
+      );
+    });
+
+    const text = container?.textContent ?? "";
+    expect(text).not.toContain("P2");
+    expect(text).not.toContain("P3");
+    expect(text).not.toContain("KI-Video-Ausgabe");
+    expect(text).not.toContain("KI-Text-Ausgabe");
+    expect(text).not.toContain("Agent-Ausgabe");
+  });
 });

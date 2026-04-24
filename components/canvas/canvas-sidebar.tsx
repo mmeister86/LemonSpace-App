@@ -115,11 +115,6 @@ function SidebarRow({
     >
       <Icon className={cn("shrink-0 opacity-80", compact ? "size-[1.3rem]" : "size-4")} />
       {!compact ? <span className="min-w-0 flex-1 truncate">{entry.label}</span> : null}
-      {!compact && entry.phase > 1 ? (
-        <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground/80">
-          P{entry.phase}
-        </span>
-      ) : null}
       {compact ? <span className="sr-only">{entry.label}</span> : null}
     </div>
   );
@@ -204,7 +199,9 @@ export default function CanvasSidebar({
           {railMode ? (
             <div className="flex flex-col gap-3">
               {NODE_CATEGORIES_ORDERED.map((categoryId, index) => {
-                const entries = byCategory.get(categoryId) ?? [];
+                const entries = (byCategory.get(categoryId) ?? []).filter(
+                  (entry) => !entry.systemOutput,
+                );
                 if (entries.length === 0) return null;
                 return (
                   <section
@@ -229,7 +226,9 @@ export default function CanvasSidebar({
           ) : (
             <>
               {NODE_CATEGORIES_ORDERED.map((categoryId) => {
-                const entries = byCategory.get(categoryId) ?? [];
+                const entries = (byCategory.get(categoryId) ?? []).filter(
+                  (entry) => !entry.systemOutput,
+                );
                 if (entries.length === 0) return null;
                 const { label } = NODE_CATEGORY_META[categoryId];
                 const isCollapsed = collapsedByCategory[categoryId] ?? false;
