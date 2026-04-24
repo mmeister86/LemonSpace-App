@@ -51,6 +51,19 @@ function normalizeDuration(value: number | undefined): VideoModelDurationSeconds
   return value === 10 ? 10 : 5;
 }
 
+function getSourceTextValue(node: { type?: string; data?: unknown } | undefined): string {
+  if (!node || !node.data || typeof node.data !== "object") {
+    return "";
+  }
+
+  const data = node.data as { content?: string; outputText?: string };
+  if (node.type === "ai-text-output") {
+    return typeof data.outputText === "string" ? data.outputText : "";
+  }
+
+  return typeof data.content === "string" ? data.content : "";
+}
+
 export default function VideoPromptNode({
   id,
   data,
@@ -105,11 +118,11 @@ export default function VideoPromptNode({
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
-      if (sourceNode?.type !== "text") continue;
+      if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
       hasTextInput = true;
-      const sourceData = sourceNode.data as { content?: string };
-      if (typeof sourceData.content === "string") {
-        textPrompt = sourceData.content;
+      const textValue = getSourceTextValue(sourceNode);
+      if (textValue.trim().length > 0) {
+        textPrompt = textValue;
         break;
       }
     }

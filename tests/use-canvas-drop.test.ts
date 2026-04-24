@@ -10,6 +10,7 @@ const getImageDimensionsMock = vi.hoisted(() => vi.fn());
 const createCompressedImagePreviewMock = vi.hoisted(() => vi.fn());
 const invalidateDashboardSnapshotForLastSignedInUserMock = vi.hoisted(() => vi.fn());
 const emitDashboardSnapshotCacheInvalidationSignalMock = vi.hoisted(() => vi.fn());
+const getNodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/components/canvas/canvas-media-utils", () => ({
   getImageDimensions: getImageDimensionsMock,
@@ -28,6 +29,12 @@ vi.mock("@/lib/toast", () => ({
     error: vi.fn(),
     warning: vi.fn(),
   },
+}));
+
+vi.mock("@xyflow/react", () => ({
+  useReactFlow: () => ({
+    getNode: getNodeMock,
+  }),
 }));
 
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
@@ -58,6 +65,8 @@ function HookHarness({
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly: async () => "node_split_1" as Id<"nodes">,
     notifyOfflineUnsupported: () => {},
+    queueNodeDataUpdate: async () => {},
+    queueNodeResize: async () => {},
     syncPendingMoveForClientRequest: async () => {},
   });
 
@@ -89,6 +98,8 @@ describe("useCanvasDrop image upload path", () => {
     latestHandlers.current = null;
     getImageDimensionsMock.mockReset();
     createCompressedImagePreviewMock.mockReset();
+    getNodeMock.mockReset();
+    getNodeMock.mockReturnValue(undefined);
     invalidateDashboardSnapshotForLastSignedInUserMock.mockReset();
     emitDashboardSnapshotCacheInvalidationSignalMock.mockReset();
     vi.unstubAllGlobals();

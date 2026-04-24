@@ -66,6 +66,7 @@ const CORNERS = [
 const INTERNAL_FIELDS = new Set([
   "_status",
   "_statusMessage",
+  "_uploadState",
   "retryCount",
   "url",
   "canvasId",

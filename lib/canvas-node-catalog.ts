@@ -119,6 +119,12 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     label: "KI-Text",
     category: "ai-output",
     phase: 2,
+  }),
+  entry({
+    type: "ai-text-output",
+    label: "KI-Text-Ausgabe",
+    category: "ai-output",
+    phase: 2,
     systemOutput: true,
     disabledHint: "Wird von der KI erzeugt",
   }),

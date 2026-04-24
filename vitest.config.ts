@@ -29,6 +29,7 @@ export default defineConfig({
       "components/canvas/__tests__/custom-connection-line.test.tsx",
       "components/canvas/__tests__/canvas-media-utils.test.ts",
       "components/canvas/__tests__/base-node-wrapper.test.tsx",
+      "components/canvas/__tests__/image-node.test.tsx",
       "components/canvas/__tests__/use-node-local-data.test.tsx",
       "components/canvas/__tests__/use-canvas-sync-engine.test.ts",
       "components/canvas/__tests__/use-canvas-sync-engine-hook.test.tsx",

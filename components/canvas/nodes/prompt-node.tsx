@@ -57,6 +57,19 @@ type PromptNodeData = {
 
 export type PromptNode = Node<PromptNodeData, "prompt">;
 
+function getSourceTextValue(node: { type?: string; data?: unknown } | undefined): string {
+  if (!node || !node.data || typeof node.data !== "object") {
+    return "";
+  }
+
+  const data = node.data as { content?: string; outputText?: string };
+  if (node.type === "ai-text-output") {
+    return typeof data.outputText === "string" ? data.outputText : "";
+  }
+
+  return typeof data.content === "string" ? data.content : "";
+}
+
 export default function PromptNode({
   id,
   data,
@@ -103,12 +116,12 @@ export default function PromptNode({
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
-      if (sourceNode?.type !== "text") continue;
+      if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
 
       hasTextInput = true;
-      const sourceData = sourceNode.data as { content?: string };
-      if (typeof sourceData.content === "string") {
-        textPrompt = sourceData.content;
+      const textValue = getSourceTextValue(sourceNode);
+      if (textValue.trim().length > 0) {
+        textPrompt = textValue;
         break;
       }
     }
@@ -234,10 +247,10 @@ export default function PromptNode({
 
       for (const edge of incomingEdges) {
         const sourceNode = getNode(edge.source);
-        if (sourceNode?.type === "text") {
-          const srcData = sourceNode.data as { content?: string };
-          if (typeof srcData.content === "string") {
-            connectedTextPrompt = srcData.content;
+        if (sourceNode?.type === "text" || sourceNode?.type === "ai-text-output") {
+          const textValue = getSourceTextValue(sourceNode);
+          if (textValue.trim().length > 0) {
+            connectedTextPrompt = textValue;
           }
         }
         if (sourceNode?.type === "image") {

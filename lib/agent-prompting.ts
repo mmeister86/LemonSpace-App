@@ -29,6 +29,7 @@ const PROMPT_DATA_WHITELIST: Record<string, readonly string[]> = {
   asset: ["url", "mimeType", "width", "height", "title"],
   video: ["url", "durationSeconds", "width", "height"],
   text: ["content"],
+  "ai-text-output": ["instruction", "inputText", "outputText", "modelId", "creditCost"],
   note: ["content", "color"],
   frame: ["label", "exportWidth", "exportHeight", "backgroundColor"],
   compare: ["leftNodeId", "rightNodeId", "sliderPosition"],

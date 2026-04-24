@@ -58,6 +58,7 @@ type ImageNodeData = {
   height?: number;
   previewWidth?: number;
   previewHeight?: number;
+  _uploadState?: "uploading" | "resolving-url";
   _status?: string;
   _statusMessage?: string;
 };
@@ -138,10 +139,16 @@ export default function ImageNode({
     data.url.length > 0;
   const isWaitingForMediaLibrarySync =
     pendingMediaLibraryStorageId !== null && !isPendingMediaLibrarySynced;
+  const dropUploadState =
+    data._uploadState === "uploading" || data._uploadState === "resolving-url"
+      ? data._uploadState
+      : undefined;
+  const hasResolvedImageUrl = typeof data.url === "string" && data.url.length > 0;
+  const isDropUploadPending = dropUploadState !== undefined && !hasResolvedImageUrl;
   const isUploading = uploadPhase !== "idle" || isWaitingForCanvasSync;
   const isApplyingMediaLibrary =
     mediaLibraryPhase !== "idle" || isWaitingForMediaLibrarySync;
-  const isNodeLoading = isUploading || isApplyingMediaLibrary;
+  const isNodeLoading = isUploading || isApplyingMediaLibrary || isDropUploadPending;
 
   useEffect(() => {
     if (!isPendingUploadSynced) {
@@ -481,7 +488,8 @@ export default function ImageNode({
     fileInputRef.current?.click();
   }, [isNodeLoading]);
 
-  const showFilename = Boolean(data.filename && data.url);
+  const showFilename = Boolean(data.filename && (hasResolvedImageUrl || isNodeLoading));
+  const showsDeterminateProgress = isUploading || isApplyingMediaLibrary;
   const effectiveUploadProgress = isUploading
     ? isWaitingForCanvasSync
       ? 100
@@ -491,7 +499,11 @@ export default function ImageNode({
     ? isWaitingForCanvasSync
       ? "100% — wird synchronisiert…"
       : "Wird hochgeladen…"
-    : "Bild wird uebernommen…";
+    : isApplyingMediaLibrary
+      ? "Bild wird uebernommen…"
+      : dropUploadState === "uploading"
+        ? "Bild wird hochgeladen…"
+        : "Bild wird geladen…";
 
   return (
     <>
@@ -535,6 +547,25 @@ export default function ImageNode({
                 Ersetzen
             </button>
           )}
+          {!data.url && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isNodeLoading || !isNodeStable) {
+                  return;
+                }
+                setIsMediaLibraryOpen(true);
+              }}
+              disabled={isNodeLoading || !isNodeStable}
+              className="nodrag inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isNodeStable
+                ? tMedia("openButton")
+                : tMedia("preparingButton")}
+            </button>
+          )}
         </div>
 
         <div className="relative min-h-0 overflow-hidden rounded-lg bg-muted/30">
@@ -542,12 +573,20 @@ export default function ImageNode({
             <div className="flex h-full w-full items-center justify-center bg-muted">
               <div className="flex flex-col items-center gap-2">
                 <span className="text-xs text-muted-foreground">{uploadingLabel}</span>
-                <div className="w-40">
-                  <Progress value={effectiveUploadProgress} className="h-1.5" />
-                </div>
-                <span className="text-[11px] text-muted-foreground">
-                  {effectiveUploadProgress}%
-                </span>
+                {showsDeterminateProgress ? (
+                  <>
+                    <div className="w-40">
+                      <Progress value={effectiveUploadProgress} className="h-1.5" />
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {effectiveUploadProgress}%
+                    </span>
+                  </>
+                ) : (
+                  <div className="w-40 overflow-hidden rounded-full bg-muted-foreground/20">
+                    <div className="h-1.5 w-2/3 animate-pulse rounded-full bg-primary" />
+                  </div>
+                )}
               </div>
             </div>
           ) : data.url ? (
@@ -577,23 +616,6 @@ export default function ImageNode({
               <span className="mb-1 text-lg">📁</span>
               <span>Klicken oder hierhin ziehen</span>
               <span className="mt-0.5 text-xs">PNG, JPG, WebP</span>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (!isNodeStable) {
-                    return;
-                  }
-                  setIsMediaLibraryOpen(true);
-                }}
-                disabled={isNodeLoading || !isNodeStable}
-                className="nodrag mt-3 inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isNodeStable
-                  ? tMedia("openButton")
-                  : tMedia("preparingButton")}
-              </button>
             </div>
           )}
         </div>

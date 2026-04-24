@@ -220,6 +220,46 @@ describe("canvas connection policy", () => {
     ).toBe("agent-source-invalid");
   });
 
+  it("allows text to ai-text", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows ai-text-output to ai-text", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "ai-text-output",
+        targetType: "ai-text",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows ai-text to ai-text-output", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "ai-text",
+        targetType: "ai-text-output",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("limits ai-text to one incoming text source", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetIncomingCount: 1,
+      }),
+    ).toBe("ai-text-incoming-limit");
+  });
+
   it("describes invalid agent source message", () => {
     expect(
       getCanvasConnectionValidationMessage("agent-source-invalid"),

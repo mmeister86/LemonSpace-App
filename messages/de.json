@@ -176,6 +176,48 @@
     "creditMeta": "{credits} Credits",
     "errorFallback": "Video-Generierung fehlgeschlagen"
   },
+  "aiTextNode": {
+    "label": "KI-Text",
+    "instructionLabel": "Vorgaben",
+    "instructionPlaceholder": "Z. B. verbessere den Text, kürze ihn oder schreibe eine komplett neue Version im gewünschten Ton.",
+    "inputLabel": "Text / Rohfassung",
+    "inputPlaceholder": "Optional: Text direkt hier eingeben oder eine Text-Node verbinden.",
+    "connectedInputMeta": "{count} verbundene Textquelle(n) werden als Input genutzt.",
+    "inputFromTextNode": "Rohfassung aus verbundener Text-Node",
+    "connectedInputEmpty": "(Verbundene Text-Node ist leer)",
+    "modelLabel": "Modell",
+    "modelCreditMeta": "{model} - {credits} Cr",
+    "generateButton": "Text generieren",
+    "generating": "Text wird generiert...",
+    "generationQueuedTitle": "Textgenerierung gestartet",
+    "generationFailed": "Textgenerierung fehlgeschlagen",
+    "outputLabel": "Ergebnis",
+    "outputPlaceholder": "Hier erscheint der generierte Text.",
+    "generationQueuedDescription": "Der Text wird im Hintergrund generiert und erscheint automatisch.",
+    "insufficientCredits": "{needed} Credits benötigt, {available} verfügbar.",
+    "offlineTitle": "Offline derzeit nicht verfügbar",
+    "offlineDescription": "KI-Text benötigt eine aktive Verbindung.",
+    "missingCanvas": "Canvas-ID fehlt in der Node.",
+    "legacyOutputHint": "Dieser ältere KI-Text-Output bleibt erhalten. Neue Runs erscheinen als separate Ausgabe-Nodes."
+  },
+  "aiTextOutputNode": {
+    "label": "KI-Text-Ausgabe",
+    "generating": "Text wird generiert...",
+    "generationQueuedTitle": "Textgenerierung gestartet",
+    "generationFailed": "Textgenerierung fehlgeschlagen",
+    "emptyHint": "Text-Ausgabe wartet auf Generierung.",
+    "retryButton": "Erneut versuchen",
+    "copyButton": "Text kopieren",
+    "copiedTitle": "Text kopiert",
+    "copiedDescription": "Die Ausgabe wurde in die Zwischenablage kopiert.",
+    "copyFailedTitle": "Kopieren fehlgeschlagen",
+    "copyFailedDescription": "Die Zwischenablage ist derzeit nicht verfügbar.",
+    "modelMeta": "Modell: {model}",
+    "creditMeta": "{credits} Credits",
+    "errorFallback": "Textgenerierung fehlgeschlagen",
+    "offlineTitle": "Offline derzeit nicht verfügbar",
+    "offlineDescription": "KI-Text benötigt eine aktive Verbindung."
+  },
   "agentNode": {
     "templates": {
       "campaignDistributor": {

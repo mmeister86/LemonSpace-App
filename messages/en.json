@@ -176,6 +176,48 @@
     "creditMeta": "{credits} credits",
     "errorFallback": "Video generation failed"
   },
+  "aiTextNode": {
+    "label": "AI text",
+    "instructionLabel": "Instruction",
+    "instructionPlaceholder": "For example: improve the text, shorten it, or create a completely new version in a specific tone.",
+    "inputLabel": "Text / Draft",
+    "inputPlaceholder": "Optional: enter text here directly or connect a text node.",
+    "connectedInputMeta": "{count} connected text source(s) will be used as input.",
+    "inputFromTextNode": "Draft from connected text node",
+    "connectedInputEmpty": "(Connected text node is empty)",
+    "modelLabel": "Model",
+    "modelCreditMeta": "{model} - {credits} Cr",
+    "generateButton": "Generate text",
+    "generating": "Generating text...",
+    "generationQueuedTitle": "Text generation started",
+    "generationFailed": "Text generation failed",
+    "outputLabel": "Result",
+    "outputPlaceholder": "The generated text will appear here.",
+    "generationQueuedDescription": "The text is being generated in the background and will appear automatically.",
+    "insufficientCredits": "{needed} credits needed, {available} available.",
+    "offlineTitle": "Offline currently not available",
+    "offlineDescription": "AI text requires an active connection.",
+    "missingCanvas": "Canvas ID is missing on this node.",
+    "legacyOutputHint": "This older AI text output is preserved. New runs appear as separate output nodes."
+  },
+  "aiTextOutputNode": {
+    "label": "AI text output",
+    "generating": "Generating text...",
+    "generationQueuedTitle": "Text generation started",
+    "generationFailed": "Text generation failed",
+    "emptyHint": "Text output is waiting for generation.",
+    "retryButton": "Try again",
+    "copyButton": "Copy text",
+    "copiedTitle": "Text copied",
+    "copiedDescription": "The output was copied to the clipboard.",
+    "copyFailedTitle": "Copy failed",
+    "copyFailedDescription": "The clipboard is currently unavailable.",
+    "modelMeta": "Model: {model}",
+    "creditMeta": "{credits} credits",
+    "errorFallback": "Text generation failed",
+    "offlineTitle": "Offline currently not available",
+    "offlineDescription": "AI text requires an active connection."
+  },
   "agentNode": {
     "templates": {
       "campaignDistributor": {

@@ -62,8 +62,10 @@ export default function VideoNode({
     const incoming = edges.filter((e) => e.target === id);
     for (const edge of incoming) {
       const sourceNode = nodes.find((n) => n.id === edge.source);
-      if (sourceNode?.type !== "text") continue;
-      const content = (sourceNode.data as { content?: string }).content;
+      if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
+      const sourceData = sourceNode.data as { content?: string; outputText?: string };
+      const content =
+        sourceNode.type === "ai-text-output" ? sourceData.outputText : sourceData.content;
       if (typeof content === "string" && content.trim().length > 0) {
         return content.trim();
       }

@@ -29,6 +29,7 @@ import {
 const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
   image: Image,
   text: Type,
+  "ai-text": Sparkles,
   prompt: Sparkles,
   "video-prompt": Video,
   agent: Bot,
@@ -52,6 +53,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
 > = {
   image: ["image", "photo", "foto"],
   text: ["text", "typo"],
+  "ai-text": ["text", "ai-text", "rewrite", "copy", "ki-text", "copywriting"],
   prompt: ["prompt", "ai", "generate", "ki-bild", "ki", "bild"],
   "video-prompt": ["video", "ai", "ki-video", "ki", "prompt"],
   agent: ["agent", "campaign", "distribution", "social"],

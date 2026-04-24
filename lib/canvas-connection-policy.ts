@@ -43,6 +43,7 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "asset",
   "video",
   "text",
+  "ai-text-output",
   "note",
   "frame",
   "compare",
@@ -50,6 +51,8 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "ai-image",
   "ai-video",
 ]);
+
+const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
 const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
@@ -84,6 +87,10 @@ export type CanvasConnectionValidationReason =
   | "adjustment-target-forbidden"
   | "render-source-invalid"
   | "agent-source-invalid"
+  | "ai-text-source-invalid"
+  | "ai-text-incoming-limit"
+  | "ai-text-output-source-invalid"
+  | "ai-text-output-incoming-limit"
   | "agent-output-source-invalid"
   | "mixer-source-invalid"
   | "mixer-target-handle-invalid"
@@ -160,6 +167,24 @@ export function validateCanvasConnectionPolicy(args: {
     return "agent-source-invalid";
   }
 
+  if (targetType === "ai-text") {
+    if (!AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "ai-text-source-invalid";
+    }
+    if (targetIncomingCount >= 1) {
+      return "ai-text-incoming-limit";
+    }
+  }
+
+  if (targetType === "ai-text-output") {
+    if (sourceType !== "ai-text") {
+      return "ai-text-output-source-invalid";
+    }
+    if (targetIncomingCount >= 1) {
+      return "ai-text-output-incoming-limit";
+    }
+  }
+
   if (isAdjustmentNodeType(targetType) && targetType !== "render") {
     if (!ADJUSTMENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       return "adjustment-source-invalid";
@@ -213,6 +238,14 @@ export function getCanvasConnectionValidationMessage(
       return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Mixer-, Crop- oder Adjustment-Input.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
+    case "ai-text-source-invalid":
+      return "KI-Text akzeptiert nur Text- oder KI-Text-Ausgabe-Input.";
+    case "ai-text-incoming-limit":
+      return "KI-Text-Nodes erlauben genau eine eingehende Verbindung.";
+    case "ai-text-output-source-invalid":
+      return "KI-Text-Ausgabe akzeptiert nur Eingaben von KI-Text-Nodes.";
+    case "ai-text-output-incoming-limit":
+      return "KI-Text-Ausgabe-Nodes erlauben genau eine eingehende Verbindung.";
     case "agent-output-source-invalid":
       return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
     case "mixer-source-invalid":

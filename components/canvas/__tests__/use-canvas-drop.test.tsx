@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { CANVAS_NODE_DND_MIME } from "@/lib/canvas-connection-policy";
-import { NODE_DEFAULTS } from "@/lib/canvas-utils";
+import { computeMediaNodeSize, NODE_DEFAULTS } from "@/lib/canvas-utils";
 import {
   emitDashboardSnapshotCacheInvalidationSignal,
   invalidateDashboardSnapshotForLastSignedInUser,
@@ -15,6 +15,16 @@ import {
 import { toast } from "@/lib/toast";
 import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
 import { createCompressedImagePreview } from "@/components/canvas/canvas-media-utils";
+
+const mocks = vi.hoisted(() => ({
+  getNode: vi.fn(),
+}));
+
+vi.mock("@xyflow/react", () => ({
+  useReactFlow: () => ({
+    getNode: mocks.getNode,
+  }),
+}));
 
 vi.mock("@/lib/toast", () => ({
   toast: {
@@ -52,6 +62,8 @@ type HookHarnessProps = {
   runCreateNodeOnlineOnly?: ReturnType<typeof vi.fn>;
   runCreateNodeWithEdgeSplitOnlineOnly?: ReturnType<typeof vi.fn>;
   notifyOfflineUnsupported?: ReturnType<typeof vi.fn>;
+  queueNodeDataUpdate?: ReturnType<typeof vi.fn>;
+  queueNodeResize?: ReturnType<typeof vi.fn>;
   syncPendingMoveForClientRequest?: ReturnType<typeof vi.fn>;
   screenToFlowPosition?: (position: { x: number; y: number }) => { x: number; y: number };
   edges?: RFEdge[];
@@ -64,6 +76,8 @@ function HookHarness({
   runCreateNodeOnlineOnly = vi.fn(async () => "node-1"),
   runCreateNodeWithEdgeSplitOnlineOnly = vi.fn(async () => "node-1"),
   notifyOfflineUnsupported = vi.fn(),
+  queueNodeDataUpdate = vi.fn(async () => undefined),
+  queueNodeResize = vi.fn(async () => undefined),
   syncPendingMoveForClientRequest = vi.fn(async () => undefined),
   screenToFlowPosition = (position) => position,
   edges = [],
@@ -79,6 +93,8 @@ function HookHarness({
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
+    queueNodeDataUpdate,
+    queueNodeResize,
     syncPendingMoveForClientRequest,
   });
 
@@ -96,6 +112,8 @@ describe("useCanvasDrop", () => {
 
   beforeEach(() => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.getNode.mockReset();
+    mocks.getNode.mockReturnValue(undefined);
     vi.stubGlobal(
       "fetch",
       vi
@@ -180,8 +198,14 @@ describe("useCanvasDrop", () => {
     const generateUploadUrl = vi.fn(async () => "https://upload.test");
     const registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const }));
     const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+    const queueNodeResize = vi.fn(async () => undefined);
     const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
     const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+    const resized = computeMediaNodeSize("image", {
+      intrinsicWidth: 1600,
+      intrinsicHeight: 900,
+    });
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -193,6 +217,8 @@ describe("useCanvasDrop", () => {
           generateUploadUrl={generateUploadUrl}
           registerUploadedImageMedia={registerUploadedImageMedia}
           runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          queueNodeDataUpdate={queueNodeDataUpdate}
+          queueNodeResize={queueNodeResize}
           syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
         />,
       );
@@ -229,17 +255,32 @@ describe("useCanvasDrop", () => {
       width: NODE_DEFAULTS.image.width,
       height: NODE_DEFAULTS.image.height,
       data: {
+        filename: "photo.png",
+        mimeType: "image/png",
+        canvasId: "canvas-1",
+        _uploadState: "uploading",
+      },
+      clientRequestId: "req-1",
+    });
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: {
         storageId: "storage-1",
         previewStorageId: "preview-storage-1",
         filename: "photo.png",
         mimeType: "image/png",
+        canvasId: "canvas-1",
         width: 1600,
         height: 900,
         previewWidth: 640,
         previewHeight: 360,
-        canvasId: "canvas-1",
+        _uploadState: "resolving-url",
       },
-      clientRequestId: "req-1",
+    });
+    expect(queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      width: resized.width,
+      height: resized.height,
     });
     expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith(
       "req-1",
@@ -263,6 +304,8 @@ describe("useCanvasDrop", () => {
     const runCreateNodeOnlineOnly = vi.fn(async () => {
       throw new Error("create failed");
     });
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+    const queueNodeResize = vi.fn(async () => undefined);
     const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
     const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
 
@@ -275,6 +318,8 @@ describe("useCanvasDrop", () => {
         <HookHarness
           registerUploadedImageMedia={registerUploadedImageMedia}
           runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          queueNodeDataUpdate={queueNodeDataUpdate}
+          queueNodeResize={queueNodeResize}
           syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
         />,
       );
@@ -297,6 +342,22 @@ describe("useCanvasDrop", () => {
     });
 
     expect(syncPendingMoveForClientRequest).not.toHaveBeenCalled();
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: {
+        storageId: "storage-1",
+        previewStorageId: "preview-storage-1",
+        filename: "photo.png",
+        mimeType: "image/png",
+        canvasId: "canvas-1",
+        width: 1600,
+        height: 900,
+        previewWidth: 640,
+        previewHeight: 360,
+        _uploadState: "resolving-url",
+      },
+    });
+    expect(queueNodeResize).toHaveBeenCalledTimes(1);
     expect(registerUploadedImageMedia).toHaveBeenCalledWith({
       canvasId: "canvas-1",
       storageId: "storage-1",
@@ -376,6 +437,7 @@ describe("useCanvasDrop", () => {
 
     const generateUploadUrl = vi.fn(async () => "https://upload.test");
     const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
     const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
 
     container = document.createElement("div");
@@ -387,6 +449,7 @@ describe("useCanvasDrop", () => {
         <HookHarness
           generateUploadUrl={generateUploadUrl}
           runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          queueNodeDataUpdate={queueNodeDataUpdate}
         />,
       );
     });
@@ -408,17 +471,23 @@ describe("useCanvasDrop", () => {
     expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          storageId: "storage-1",
+          filename: "photo.png",
+          _uploadState: "uploading",
         }),
       }),
     );
-    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.not.objectContaining({
-          previewStorageId: expect.anything(),
-        }),
-      }),
-    );
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: {
+        storageId: "storage-1",
+        filename: "photo.png",
+        mimeType: "image/png",
+        canvasId: "canvas-1",
+        width: 1600,
+        height: 900,
+        _uploadState: "resolving-url",
+      },
+    });
   });
 
   it("splits an intersected persisted edge for sidebar node drops", async () => {
@@ -490,6 +559,8 @@ describe("useCanvasDrop", () => {
   it("shows an upload failure toast when the dropped file upload fails", async () => {
     const generateUploadUrl = vi.fn(async () => "https://upload.test");
     const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+    const queueNodeResize = vi.fn(async () => undefined);
     const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
     const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
 
@@ -510,6 +581,8 @@ describe("useCanvasDrop", () => {
         <HookHarness
           generateUploadUrl={generateUploadUrl}
           runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          queueNodeDataUpdate={queueNodeDataUpdate}
+          queueNodeResize={queueNodeResize}
           syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
         />,
       );
@@ -527,12 +600,122 @@ describe("useCanvasDrop", () => {
       } as unknown as React.DragEvent);
     });
 
-    expect(runCreateNodeOnlineOnly).not.toHaveBeenCalled();
-    expect(syncPendingMoveForClientRequest).not.toHaveBeenCalled();
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          filename: "photo.png",
+          _uploadState: "uploading",
+        }),
+      }),
+    );
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-image");
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: {
+        filename: "photo.png",
+        mimeType: "image/png",
+        canvasId: "canvas-1",
+      },
+    });
+    expect(queueNodeResize).not.toHaveBeenCalled();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to upload dropped file:",
       expect.any(Error),
     );
     expect(toast.error).toHaveBeenCalledWith("canvas.uploadFailed", "Upload failed");
+  });
+
+  it("creates the optimistic image node before the upload request resolves", async () => {
+    const fetchPromise = new Promise<Response>(() => {});
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-image");
+    const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+
+    vi.stubGlobal("fetch", vi.fn(() => fetchPromise));
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<HookHarness runCreateNodeOnlineOnly={runCreateNodeOnlineOnly} />);
+    });
+
+    await act(async () => {
+      void latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 240,
+        clientY: 180,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+      await Promise.resolve();
+    });
+
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      type: "image",
+      positionX: 240,
+      positionY: 180,
+      width: NODE_DEFAULTS.image.width,
+      height: NODE_DEFAULTS.image.height,
+      data: {
+        filename: "photo.png",
+        mimeType: "image/png",
+        canvasId: "canvas-1",
+        _uploadState: "uploading",
+      },
+      clientRequestId: "req-1",
+    });
+  });
+
+  it("merges existing optimistic node data when patching upload results", async () => {
+    const queueNodeDataUpdate = vi.fn(async () => undefined);
+    const file = new File(["image-bytes"], "photo.png", { type: "image/png" });
+
+    mocks.getNode.mockImplementation((nodeId: string) =>
+      nodeId === "optimistic_req-1"
+        ? {
+            id: nodeId,
+            data: {
+              filename: "photo.png",
+              mimeType: "image/png",
+              canvasId: "canvas-1",
+              isFavorite: true,
+              _uploadState: "uploading",
+            },
+          }
+        : undefined,
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<HookHarness queueNodeDataUpdate={queueNodeDataUpdate} />);
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 240,
+        clientY: 180,
+        dataTransfer: {
+          getData: vi.fn(() => ""),
+          files: [file],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "optimistic_req-1",
+      data: expect.objectContaining({
+        isFavorite: true,
+        storageId: "storage-1",
+        _uploadState: "resolving-url",
+      }),
+    });
   });
 });

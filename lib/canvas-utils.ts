@@ -108,6 +108,8 @@ const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   prompt: [139, 92, 246],
   "video-prompt": [124, 58, 237],
   "ai-image": [139, 92, 246],
+  "ai-text": [139, 92, 246],
+  "ai-text-output": [139, 92, 246],
   "ai-video": [124, 58, 237],
   image: [13, 148, 136],
   text: [13, 148, 136],
@@ -355,6 +357,8 @@ export const NODE_HANDLE_MAP: Record<
   prompt: { source: "prompt-out", target: "image-in" },
   "video-prompt": { source: "video-prompt-out", target: "video-prompt-in" },
   "ai-image": { source: "image-out", target: "prompt-in" },
+  "ai-text": { source: "ai-text-out", target: "ai-text-in" },
+  "ai-text-output": { source: "ai-text-output-out", target: "ai-text-output-in" },
   "ai-video": { source: "video-out", target: "video-in" },
   group: { source: undefined, target: undefined },
   frame: { source: "frame-out", target: "frame-in" },
@@ -399,6 +403,25 @@ export const NODE_DEFAULTS: Record<
   },
   // 1:1 viewport 320 + chrome 88 ≈ äußere Höhe (siehe lib/image-formats.ts)
   "ai-image": { width: 320, height: 408, data: {} },
+  "ai-text": {
+    width: 360,
+    height: 360,
+    data: {
+      instruction: "",
+      inputText: "",
+      modelId: DEFAULT_AGENT_MODEL_ID,
+    },
+  },
+  "ai-text-output": {
+    width: 360,
+    height: 280,
+    data: {
+      instruction: "",
+      inputText: "",
+      outputText: "",
+      modelId: DEFAULT_AGENT_MODEL_ID,
+    },
+  },
   "ai-video": { width: 360, height: 280, data: {} },
   group: { width: 400, height: 300, data: { label: "Gruppe" } },
   frame: {

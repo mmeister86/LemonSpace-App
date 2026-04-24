@@ -453,6 +453,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     scissorsMode,
     onInsertClick: handleEdgeInsertClick,
   });
+  const stableNodeTypesRef = useRef(nodeTypes);
+  const stableEdgeTypesRef = useRef(edgeTypes);
 
   useCanvasFlowReconciliation({
     convexNodes,
@@ -540,6 +542,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runCreateNodeOnlineOnly,
     runCreateNodeWithEdgeSplitOnlineOnly,
     notifyOfflineUnsupported,
+    queueNodeDataUpdate: runUpdateNodeDataMutation,
+    queueNodeResize: runResizeNodeMutation,
     syncPendingMoveForClientRequest,
   });
 
@@ -663,8 +667,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
             onlyRenderVisibleElements
             defaultEdgeOptions={defaultEdgeOptions}
             connectionLineComponent={CustomConnectionLine}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
+            nodeTypes={stableNodeTypesRef.current}
+            edgeTypes={stableEdgeTypesRef.current}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStart={onNodeDragStart}

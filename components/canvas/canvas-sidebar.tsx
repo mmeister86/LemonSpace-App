@@ -53,6 +53,7 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   asset: Package,
   "ai-image": Sparkles,
   "ai-text": Type,
+  "ai-text-output": Type,
   "ai-video": Video,
   "agent-output": Bot,
   crop: Crop,

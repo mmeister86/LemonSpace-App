@@ -35,6 +35,17 @@ export const CANVAS_NODE_TEMPLATES = [
     },
   },
   {
+    type: "ai-text",
+    label: "KI-Text",
+    width: 360,
+    height: 360,
+    defaultData: {
+      instruction: "",
+      inputText: "",
+      modelId: "openai/gpt-5.4-mini",
+    },
+  },
+  {
     type: "agent",
     label: "Campaign Distributor",
     width: 360,

@@ -44,6 +44,7 @@ describe("canvas agent config", () => {
       "prompt",
       "video-prompt",
       "ai-text",
+      "ai-text-output",
     ]);
     expect(NODE_CATALOG.find((entry) => entry.type === "ai-video")?.category).toBe("source");
   });

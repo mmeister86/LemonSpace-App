@@ -20,6 +20,7 @@ export const CANVAS_NODE_TYPES = [
   "asset",
   "ai-image",
   "ai-text",
+  "ai-text-output",
   "ai-video",
   "agent-output",
   "crop",
