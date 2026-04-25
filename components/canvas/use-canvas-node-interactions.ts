@@ -28,6 +28,12 @@ import {
 } from "./canvas-helpers";
 import { validateCanvasEdgeSplit } from "./canvas-connection-validation";
 import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
+import {
+  getAbsoluteNodePosition,
+  getNodeRect,
+  isDescendantOf,
+  rectsOverlap,
+} from "./canvas-grouping-helpers";
 
 type PositionPin = { x: number; y: number };
 type MovePin = { positionX: number; positionY: number };
@@ -94,75 +100,11 @@ type CanvasNodeInteractionRefs = {
   >;
 };
 
-type Rect = { x: number; y: number; width: number; height: number };
 type ParentChange = {
   nodeId: string;
   parentId?: string;
   position: { x: number; y: number };
 };
-
-function getNodeDimension(node: RFNode, axis: "width" | "height"): number {
-  const styleValue = node.style?.[axis];
-  if (typeof styleValue === "number") return styleValue;
-  const measuredValue = (node as { measured?: Partial<Record<"width" | "height", number>> })
-    .measured?.[axis];
-  if (typeof measuredValue === "number") return measuredValue;
-  const directValue = (node as Partial<Record<"width" | "height", number>>)[axis];
-  return typeof directValue === "number" ? directValue : 0;
-}
-
-function getAbsoluteNodePosition(
-  node: RFNode,
-  nodeById: ReadonlyMap<string, RFNode>,
-  visiting = new Set<string>(),
-): { x: number; y: number } {
-  if (!node.parentId || visiting.has(node.id)) return node.position;
-  const parent = nodeById.get(node.parentId);
-  if (!parent) return node.position;
-
-  visiting.add(node.id);
-  const parentPosition = getAbsoluteNodePosition(parent, nodeById, visiting);
-  visiting.delete(node.id);
-  return {
-    x: parentPosition.x + node.position.x,
-    y: parentPosition.y + node.position.y,
-  };
-}
-
-function getNodeRect(node: RFNode, nodeById: ReadonlyMap<string, RFNode>): Rect {
-  const position = getAbsoluteNodePosition(node, nodeById);
-  return {
-    x: position.x,
-    y: position.y,
-    width: getNodeDimension(node, "width"),
-    height: getNodeDimension(node, "height"),
-  };
-}
-
-function rectsOverlap(a: Rect, b: Rect): boolean {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-
-function isDescendantOf(
-  candidateId: string,
-  ancestorId: string,
-  nodeById: ReadonlyMap<string, RFNode>,
-): boolean {
-  let current = nodeById.get(candidateId);
-  const visited = new Set<string>();
-  while (current?.parentId) {
-    if (current.parentId === ancestorId) return true;
-    if (visited.has(current.parentId)) return false;
-    visited.add(current.parentId);
-    current = nodeById.get(current.parentId);
-  }
-  return false;
-}
 
 function findOverlappingGroupTarget(
   draggedNode: RFNode,

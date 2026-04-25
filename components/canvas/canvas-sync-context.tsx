@@ -17,6 +17,16 @@ type CanvasSyncContextValue = {
     width: number;
     height: number;
   }) => Promise<void>;
+  ungroupNodes?: (args: {
+    groupNodeIds: Id<"nodes">[];
+    childPositions: Array<{
+      nodeId: Id<"nodes">;
+      parentId?: Id<"nodes">;
+      positionX: number;
+      positionY: number;
+    }>;
+  }) => Promise<unknown>;
+  notifyOfflineUnsupported?: (label: string) => void;
   status: CanvasSyncStatus;
 };
 

@@ -1,48 +1,62 @@
 // @vitest-environment jsdom
 
-import React, { useEffect } from "react";
+import React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { useCanvasEdgeTypes } from "@/components/canvas/use-canvas-edge-types";
+const defaultEdgeMock = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}));
+
+vi.mock("@/components/canvas/edges/default-edge", () => ({
+  default: (props: Record<string, unknown>) => {
+    defaultEdgeMock.props = props;
+    return null;
+  },
+}));
+
+import {
+  CanvasEdgeTypesProvider,
+  canvasEdgeTypes,
+} from "@/components/canvas/use-canvas-edge-types";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-type HookHarnessProps = {
+type EdgeHarnessProps = {
   edgeInsertMenuEdgeId: string | null;
   scissorsMode: boolean;
   onInsertClick: ReturnType<typeof vi.fn>;
+  edgeId?: string;
 };
 
-const latestRef: {
-  current: ReturnType<typeof useCanvasEdgeTypes> | null;
-} = { current: null };
-
-function HookHarness({
+function EdgeHarness({
   edgeInsertMenuEdgeId,
   scissorsMode,
   onInsertClick,
-}: HookHarnessProps) {
-  const edgeTypes = useCanvasEdgeTypes({
-    edgeInsertMenuEdgeId,
-    scissorsMode,
-    onInsertClick,
-  });
+  edgeId = "edge-1",
+}: EdgeHarnessProps) {
+  const CanvasDefaultEdge = canvasEdgeTypes["canvas-default"] as React.ComponentType<{
+    id: string;
+  }>;
 
-  useEffect(() => {
-    latestRef.current = edgeTypes;
-  }, [edgeTypes]);
-
-  return null;
+  return (
+    <CanvasEdgeTypesProvider
+      edgeInsertMenuEdgeId={edgeInsertMenuEdgeId}
+      scissorsMode={scissorsMode}
+      onInsertClick={onInsertClick}
+    >
+      <CanvasDefaultEdge id={edgeId} />
+    </CanvasEdgeTypesProvider>
+  );
 }
 
-describe("useCanvasEdgeTypes", () => {
+describe("canvasEdgeTypes", () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
   afterEach(() => {
-    latestRef.current = null;
+    defaultEdgeMock.props = null;
     if (root) {
       act(() => {
         root?.unmount();
@@ -53,17 +67,18 @@ describe("useCanvasEdgeTypes", () => {
     container = null;
   });
 
-  it("keeps edgeTypes reference stable while using latest UI state", () => {
+  it("keeps the edgeTypes object stable while using latest UI state", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
 
     const onInsertClickA = vi.fn();
     const onInsertClickB = vi.fn();
+    const firstEdgeTypes = canvasEdgeTypes;
 
     act(() => {
       root?.render(
-        <HookHarness
+        <EdgeHarness
           edgeInsertMenuEdgeId={null}
           scissorsMode={false}
           onInsertClick={onInsertClickA}
@@ -71,33 +86,18 @@ describe("useCanvasEdgeTypes", () => {
       );
     });
 
-    const firstEdgeTypes = latestRef.current;
-    if (!firstEdgeTypes) {
-      throw new Error("edgeTypes not initialized");
-    }
-
-    const renderer = firstEdgeTypes["canvas-default"] as
-      | ((props: { id: string }) => React.JSX.Element)
-      | undefined;
-    if (!renderer) {
-      throw new Error("canvas-default edge renderer missing");
-    }
-
-    act(() => {
-      const renderedEdge = renderer({ id: "edge-1" });
-      expect(renderedEdge.props).toEqual(
-        expect.objectContaining({
-          edgeId: "edge-1",
-          isMenuOpen: false,
-          disabled: false,
-          onInsertClick: onInsertClickA,
-        }),
-      );
-    });
+    expect(defaultEdgeMock.props).toEqual(
+      expect.objectContaining({
+        edgeId: "edge-1",
+        isMenuOpen: false,
+        disabled: false,
+        onInsertClick: onInsertClickA,
+      }),
+    );
 
     act(() => {
       root?.render(
-        <HookHarness
+        <EdgeHarness
           edgeInsertMenuEdgeId="edge-1"
           scissorsMode
           onInsertClick={onInsertClickB}
@@ -105,18 +105,49 @@ describe("useCanvasEdgeTypes", () => {
       );
     });
 
-    expect(latestRef.current).toBe(firstEdgeTypes);
+    expect(canvasEdgeTypes).toBe(firstEdgeTypes);
+    expect(defaultEdgeMock.props).toEqual(
+      expect.objectContaining({
+        edgeId: "edge-1",
+        isMenuOpen: true,
+        disabled: true,
+        onInsertClick: onInsertClickB,
+      }),
+    );
+  });
+
+  it("keeps the edgeTypes object stable after remounting under the same provider", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const onInsertClick = vi.fn();
+    const firstEdgeTypes = canvasEdgeTypes;
 
     act(() => {
-      const renderedEdge = renderer({ id: "edge-1" });
-      expect(renderedEdge.props).toEqual(
-        expect.objectContaining({
-          edgeId: "edge-1",
-          isMenuOpen: true,
-          disabled: true,
-          onInsertClick: onInsertClickB,
-        }),
+      root?.render(
+        <EdgeHarness
+          edgeInsertMenuEdgeId={null}
+          scissorsMode={false}
+          onInsertClick={onInsertClick}
+        />,
       );
     });
+
+    act(() => {
+      root?.render(null);
+    });
+
+    act(() => {
+      root?.render(
+        <EdgeHarness
+          edgeInsertMenuEdgeId={null}
+          scissorsMode={false}
+          onInsertClick={onInsertClick}
+        />,
+      );
+    });
+
+    expect(canvasEdgeTypes).toBe(firstEdgeTypes);
   });
 });

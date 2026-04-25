@@ -129,6 +129,59 @@ export const CANVAS_NODE_TEMPLATES = [
     defaultData: DEFAULT_CROP_NODE_DATA,
   },
   {
+    type: "bg-remove",
+    label: "BG entfernen",
+    width: 300,
+    height: 260,
+    defaultData: {
+      operation: "bg-remove",
+      parameters: { type: "bg-remove" },
+    },
+  },
+  {
+    type: "upscale",
+    label: "Upscale",
+    width: 300,
+    height: 320,
+    defaultData: {
+      operation: "upscale",
+      parameters: {
+        type: "upscale",
+        scale: 2,
+        outputFormat: "png",
+        flavor: "photo",
+        sharpen: 7,
+        grain: 7,
+        ultraDetail: 30,
+      },
+    },
+  },
+  {
+    type: "style-transfer",
+    label: "Style Transfer",
+    width: 320,
+    height: 360,
+    defaultData: {
+      operation: "style-transfer",
+      parameters: {
+        type: "style-transfer",
+        prompt: "",
+        styleIntensity: 0.7,
+        preserveStructure: true,
+      },
+    },
+  },
+  {
+    type: "face-restore",
+    label: "Gesicht",
+    width: 300,
+    height: 300,
+    defaultData: {
+      operation: "face-restore",
+      parameters: { type: "face-restore", mode: "faithful" },
+    },
+  },
+  {
     type: "curves",
     label: "Kurven",
     width: 320,

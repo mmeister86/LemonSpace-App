@@ -58,6 +58,7 @@ type ImageNodeData = {
   height?: number;
   previewWidth?: number;
   previewHeight?: number;
+  source?: string;
   _uploadState?: "uploading" | "resolving-url";
   _status?: string;
   _statusMessage?: string;
@@ -149,6 +150,7 @@ export default function ImageNode({
   const isApplyingMediaLibrary =
     mediaLibraryPhase !== "idle" || isWaitingForMediaLibrarySync;
   const isNodeLoading = isUploading || isApplyingMediaLibrary || isDropUploadPending;
+  const shouldPreserveImageAspect = data.source === "freepik-transform";
 
   useEffect(() => {
     if (!isPendingUploadSynced) {
@@ -594,7 +596,9 @@ export default function ImageNode({
             <img
               src={data.url}
               alt={data.filename ?? "Bild"}
-              className="h-full w-full object-cover object-center"
+              className={`h-full w-full object-center ${
+                shouldPreserveImageAspect ? "object-contain" : "object-cover"
+              }`}
               draggable={false}
             />
           ) : (

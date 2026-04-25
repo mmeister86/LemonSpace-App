@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Position, type NodeProps, type Node } from "@xyflow/react";
+import { Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { FolderMinus } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { getDirectUngroupChildPositions } from "@/components/canvas/canvas-grouping-helpers";
 
 type GroupNodeData = {
   label?: string;
@@ -17,7 +19,13 @@ type GroupNodeData = {
 export type GroupNode = Node<GroupNodeData, "group">;
 
 export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) {
-  const { queueNodeDataUpdate } = useCanvasSync();
+  const {
+    queueNodeDataUpdate,
+    ungroupNodes,
+    notifyOfflineUnsupported,
+    status,
+  } = useCanvasSync();
+  const { getNodes, setNodes } = useReactFlow();
   const [label, setLabel] = useState(data.label ?? "Gruppe");
   const [isEditing, setIsEditing] = useState(false);
   const isDropTarget = data._groupDropTarget === true;
@@ -44,10 +52,63 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
     }
   }, [label, data, id, queueNodeDataUpdate]);
 
+  const handleUngroup = useCallback(() => {
+    if (status.isOffline) {
+      notifyOfflineUnsupported?.("Entgruppieren");
+      return;
+    }
+    if (!ungroupNodes) return;
+
+    const allNodes = getNodes();
+    const groupNode = allNodes.find((node) => node.id === id);
+    if (!groupNode) return;
+    const childPositions = getDirectUngroupChildPositions([groupNode], allNodes).map(
+      (position) => ({
+        nodeId: position.nodeId as Id<"nodes">,
+        parentId: position.parentId as Id<"nodes"> | undefined,
+        positionX: position.positionX,
+        positionY: position.positionY,
+      }),
+    );
+    if (childPositions.length === 0) return;
+
+    void ungroupNodes({
+      groupNodeIds: [id as Id<"nodes">],
+      childPositions,
+    }).then(() => {
+      const childPositionByNodeId = new Map(
+        childPositions.map((position) => [position.nodeId as string, position]),
+      );
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          const childPosition = childPositionByNodeId.get(node.id);
+          if (!childPosition) return node;
+          return {
+            ...node,
+            parentId: childPosition.parentId as string | undefined,
+            position: {
+              x: childPosition.positionX,
+              y: childPosition.positionY,
+            },
+          };
+        }),
+      );
+    });
+  }, [getNodes, id, notifyOfflineUnsupported, setNodes, status.isOffline, ungroupNodes]);
+
   return (
     <BaseNodeWrapper
       nodeType="group"
       selected={selected}
+      toolbarActions={[
+        {
+          id: "ungroup",
+          label: "Ungroup",
+          icon: <FolderMinus size={14} />,
+          onClick: handleUngroup,
+          disabled: status.isOffline,
+        },
+      ]}
       className={`min-w-[200px] min-h-[150px] p-3 border-dashed ${
         isDropTarget
           ? "border-primary bg-primary/8 shadow-primary/20 ring-2 ring-primary/35"

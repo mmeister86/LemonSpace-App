@@ -19,6 +19,10 @@ import LightAdjustNode from "./nodes/light-adjust-node";
 import DetailAdjustNode from "./nodes/detail-adjust-node";
 import RenderNode from "./nodes/render-node";
 import CropNode from "./nodes/crop-node";
+import BgRemoveNode from "./nodes/bg-remove-node";
+import UpscaleNode from "./nodes/upscale-node";
+import StyleTransferNode from "./nodes/style-transfer-node";
+import FaceRestoreNode from "./nodes/face-restore-node";
 import AgentNode from "./nodes/agent-node";
 import AgentOutputNode from "./nodes/agent-output-node";
 import MixerNode from "./nodes/mixer-node";
@@ -51,6 +55,10 @@ export const nodeTypes = {
   "light-adjust": LightAdjustNode,
   "detail-adjust": DetailAdjustNode,
   crop: CropNode,
+  "bg-remove": BgRemoveNode,
+  upscale: UpscaleNode,
+  "style-transfer": StyleTransferNode,
+  "face-restore": FaceRestoreNode,
   render: RenderNode,
   agent: AgentNode,
   mixer: MixerNode,

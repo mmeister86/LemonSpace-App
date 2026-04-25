@@ -373,6 +373,10 @@ export const NODE_HANDLE_MAP: Record<
   "light-adjust": { source: undefined, target: undefined },
   "detail-adjust": { source: undefined, target: undefined },
   crop: { source: undefined, target: undefined },
+  "bg-remove": { source: undefined, target: undefined },
+  upscale: { source: undefined, target: undefined },
+  "style-transfer": { source: undefined, target: undefined },
+  "face-restore": { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
   mixer: { source: "mixer-out", target: "base" },
@@ -441,6 +445,48 @@ export const NODE_DEFAULTS: Record<
   "light-adjust": { width: 320, height: 920, data: DEFAULT_LIGHT_ADJUST_DATA },
   "detail-adjust": { width: 320, height: 880, data: DEFAULT_DETAIL_ADJUST_DATA },
   crop: { width: 340, height: 620, data: DEFAULT_CROP_NODE_DATA },
+  "bg-remove": {
+    width: 300,
+    height: 260,
+    data: { operation: "bg-remove", parameters: { type: "bg-remove" } },
+  },
+  upscale: {
+    width: 300,
+    height: 320,
+    data: {
+      operation: "upscale",
+      parameters: {
+        type: "upscale",
+        scale: 2,
+        outputFormat: "png",
+        flavor: "photo",
+        sharpen: 7,
+        grain: 7,
+        ultraDetail: 30,
+      },
+    },
+  },
+  "style-transfer": {
+    width: 320,
+    height: 360,
+    data: {
+      operation: "style-transfer",
+      parameters: {
+        type: "style-transfer",
+        prompt: "",
+        styleIntensity: 0.7,
+        preserveStructure: true,
+      },
+    },
+  },
+  "face-restore": {
+    width: 300,
+    height: 300,
+    data: {
+      operation: "face-restore",
+      parameters: { type: "face-restore", mode: "faithful" },
+    },
+  },
   render: {
     width: 300,
     height: 420,

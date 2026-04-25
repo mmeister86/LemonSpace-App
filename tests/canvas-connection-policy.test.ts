@@ -112,6 +112,38 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows image sources to transform nodes", () => {
+    for (const targetType of ["bg-remove", "upscale", "style-transfer", "face-restore"]) {
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType: "image",
+          targetType,
+          targetIncomingCount: 0,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("limits transform nodes to one incoming source image", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "upscale",
+        targetIncomingCount: 1,
+      }),
+    ).toBe("transform-incoming-limit");
+  });
+
+  it("allows transform nodes to output normal image nodes", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "bg-remove",
+        targetType: "image",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
   it("blocks unsupported crop sources", () => {
     expect(
       validateCanvasConnectionPolicy({
@@ -161,6 +193,37 @@ describe("canvas connection policy", () => {
         targetHandle: "overlay",
       }),
     ).toBeNull();
+  });
+
+  it("does not allow splitter output to crop", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "splitter",
+        targetType: "crop",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("crop-source-invalid");
+  });
+
+  it("does not allow splitter output to render", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "splitter",
+        targetType: "render",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("render-source-invalid");
+  });
+
+  it("does not allow splitter output to mixer handles", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "splitter",
+        targetType: "mixer",
+        targetIncomingCount: 0,
+        targetHandle: "base",
+      }),
+    ).toBe("mixer-source-invalid");
   });
 
   it("describes unsupported crop source message", () => {

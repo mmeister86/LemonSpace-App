@@ -20,6 +20,16 @@ export interface FreepikVideoTaskStatusResponse {
   error?: string;
 }
 
+export type FreepikImageTransformTaskStatus = FreepikVideoTaskStatus;
+
+export interface FreepikImageTransformTaskStatusResponse {
+  status: FreepikImageTransformTaskStatus;
+  generated?: Array<{ url: string }>;
+  error?: string;
+}
+
+export type FreepikSkinEnhancerMode = "faithful" | "creative" | "flexible";
+
 export interface FreepikMappedError {
   code: "model_unavailable" | "timeout" | "transient" | "unknown";
   message: string;
@@ -244,6 +254,7 @@ async function freepikJsonRequest<TResponse>(params: {
   path: string;
   method: "GET" | "POST";
   body?: string;
+  contentType?: string;
   useApiKey?: boolean;
 }): Promise<TResponse> {
   const apiKey = params.useApiKey === false ? null : getFreepikApiKeyOrThrow();
@@ -258,7 +269,9 @@ async function freepikJsonRequest<TResponse>(params: {
         headers: {
           Accept: "application/json",
           ...(apiKey ? { "x-freepik-api-key": apiKey } : {}),
-          ...(params.body ? { "Content-Type": "application/json" } : {}),
+          ...(params.body
+            ? { "Content-Type": params.contentType ?? "application/json" }
+            : {}),
         },
         body: params.body,
         signal: controller.signal,
@@ -322,6 +335,107 @@ async function freepikJsonRequest<TResponse>(params: {
   });
 }
 
+function extractTaskId(result: unknown): string {
+  const taskId =
+    isRecord(result) && isRecord(result.data) && typeof result.data.task_id === "string"
+      ? result.data.task_id
+      : isRecord(result) && typeof result.task_id === "string"
+        ? result.task_id
+        : undefined;
+
+  if (typeof taskId !== "string" || taskId.trim().length === 0) {
+    throw new FreepikApiError({
+      code: "unknown",
+      message: "Freepik response missing task_id",
+      retryable: false,
+      body: result,
+    });
+  }
+
+  return taskId;
+}
+
+function normalizeGeneratedUrls(generatedRaw: unknown): Array<{ url: string }> | undefined {
+  if (!Array.isArray(generatedRaw)) {
+    return undefined;
+  }
+
+  const generated = generatedRaw
+    .map((entry) => {
+      const url =
+        typeof entry === "string"
+          ? entry
+          : isRecord(entry) && typeof entry.url === "string"
+            ? entry.url
+            : undefined;
+      if (!url) return null;
+      return { url };
+    })
+    .filter((entry): entry is { url: string } => entry !== null);
+
+  return generated.length > 0 ? generated : undefined;
+}
+
+function parseTaskStatusResponse(
+  result: {
+    data?: {
+      status?: string;
+      generated?: unknown;
+      error?: string;
+      message?: string;
+    };
+    status?: string;
+    generated?: unknown;
+    error?: string;
+    message?: string;
+  },
+  bodyForError: unknown,
+): FreepikImageTransformTaskStatusResponse {
+  const statusRaw =
+    typeof result.data?.status === "string"
+      ? result.data.status
+      : typeof result.status === "string"
+        ? result.status
+        : undefined;
+  const status =
+    statusRaw === "CREATED" ||
+    statusRaw === "IN_PROGRESS" ||
+    statusRaw === "COMPLETED" ||
+    statusRaw === "FAILED"
+      ? statusRaw
+      : null;
+
+  if (!status) {
+    throw new FreepikApiError({
+      code: "unknown",
+      message: "Freepik task status missing or invalid",
+      retryable: false,
+      body: bodyForError,
+    });
+  }
+
+  const generated = normalizeGeneratedUrls(
+    Array.isArray(result.data?.generated) ? result.data.generated : result.generated,
+  );
+
+  const error =
+    typeof result.data?.error === "string"
+      ? result.data.error
+      : typeof result.data?.message === "string"
+        ? result.data.message
+        : typeof result.error === "string"
+          ? result.error
+          : typeof result.message === "string"
+            ? result.message
+            : undefined;
+
+  return {
+    status,
+    ...(generated ? { generated } : {}),
+    ...(error ? { error } : {}),
+  };
+}
+
 function buildTaskStatusPath(statusEndpointPath: string, taskId: string): string {
   const trimmedTaskId = taskId.trim();
   if (!trimmedTaskId) {
@@ -373,22 +487,7 @@ export async function createVideoTask(params: {
     dataKeys: isRecord(result.data) ? Object.keys(result.data) : [],
   });
 
-  const taskId =
-    typeof result.data?.task_id === "string"
-      ? result.data.task_id
-      : typeof (result as { task_id?: unknown }).task_id === "string"
-        ? (result as { task_id: string }).task_id
-        : undefined;
-  if (typeof taskId !== "string" || taskId.trim().length === 0) {
-    throw new FreepikApiError({
-      code: "unknown",
-      message: "Freepik response missing task_id",
-      retryable: false,
-      body: result,
-    });
-  }
-
-  return { task_id: taskId };
+  return { task_id: extractTaskId(result) };
 }
 
 export async function getVideoTaskStatus(params: {
@@ -413,19 +512,9 @@ export async function getVideoTaskStatus(params: {
     method: "GET",
   });
 
-  const statusRaw =
-    typeof result.data?.status === "string"
-      ? result.data.status
-      : typeof result.status === "string"
-        ? result.status
-        : undefined;
-  const status =
-    statusRaw === "CREATED" ||
-    statusRaw === "IN_PROGRESS" ||
-    statusRaw === "COMPLETED" ||
-    statusRaw === "FAILED"
-      ? statusRaw
-      : null;
+  const parsed = parseTaskStatusResponse(result, result);
+  const status = parsed.status;
+  const statusRaw = result.data?.status ?? result.status;
 
   if (
     status &&
@@ -449,60 +538,152 @@ export async function getVideoTaskStatus(params: {
     });
   }
 
-  if (!status) {
-    console.warn("[freepik.getVideoTaskStatus] unexpected response", {
-      taskId: params.taskId,
-      statusPath,
-      result,
-    });
+  return parsed;
+}
+
+export async function removeImageBackground(params: {
+  imageUrl: string;
+}): Promise<{
+  url: string;
+  highResolutionUrl?: string;
+  previewUrl?: string;
+  originalUrl?: string;
+}> {
+  const body = new URLSearchParams({ image_url: params.imageUrl }).toString();
+  const result = await freepikJsonRequest<{
+    url?: string;
+    high_resolution?: string;
+    preview?: string;
+    original?: string;
+  }>({
+    path: "/v1/ai/beta/remove-background",
+    method: "POST",
+    body,
+    contentType: "application/x-www-form-urlencoded",
+  });
+
+  const url = result.url ?? result.high_resolution;
+  if (!url) {
     throw new FreepikApiError({
       code: "unknown",
-      message: "Freepik task status missing or invalid",
+      message: "Freepik background removal response missing URL",
       retryable: false,
       body: result,
     });
   }
 
-  const generatedRaw = Array.isArray(result.data?.generated)
-    ? result.data.generated
-    : Array.isArray(result.generated)
-      ? result.generated
-      : undefined;
-
-  const generated = Array.isArray(generatedRaw)
-    ? generatedRaw
-        .map((entry) => {
-          const url =
-            typeof entry === "string"
-              ? entry
-              : isRecord(entry) && typeof entry.url === "string"
-                ? entry.url
-                : undefined;
-          if (!url) return null;
-          return { url };
-        })
-        .filter((entry): entry is { url: string } => entry !== null)
-    : undefined;
-
-  const error =
-    typeof result.data?.error === "string"
-      ? result.data.error
-    : typeof result.data?.message === "string"
-        ? result.data.message
-        : typeof result.error === "string"
-          ? result.error
-          : typeof result.message === "string"
-            ? result.message
-        : undefined;
-
   return {
-    status,
-    ...(generated && generated.length > 0 ? { generated } : {}),
-    ...(error ? { error } : {}),
+    url,
+    ...(result.high_resolution ? { highResolutionUrl: result.high_resolution } : {}),
+    ...(result.preview ? { previewUrl: result.preview } : {}),
+    ...(result.original ? { originalUrl: result.original } : {}),
   };
 }
 
-export async function downloadVideoAsBlob(url: string): Promise<Blob> {
+export async function createImageTransformTask(params: {
+  endpoint: string;
+  payload: Record<string, unknown>;
+}): Promise<{ task_id: string }> {
+  const result = await freepikJsonRequest<unknown>({
+    path: params.endpoint,
+    method: "POST",
+    body: JSON.stringify(params.payload),
+  });
+
+  return { task_id: extractTaskId(result) };
+}
+
+export async function createSkinEnhancerTask(params: {
+  mode: FreepikSkinEnhancerMode;
+  imageUrl: string;
+  options?: Record<string, unknown>;
+}): Promise<{ task_id: string }> {
+  return createImageTransformTask({
+    endpoint: `/v1/ai/skin-enhancer/${params.mode}`,
+    payload: {
+      image_url: params.imageUrl,
+      ...(params.options ?? {}),
+    },
+  });
+}
+
+export async function createStyleTransferTaskOrRun(params: {
+  imageUrl: string;
+  styleReferenceUrl?: string;
+  prompt?: string;
+  styleIntensity?: number;
+  preserveStructure?: boolean;
+}): Promise<{ task_id: string } | { url: string }> {
+  const payload: Record<string, unknown> = {
+    image_url: params.imageUrl,
+  };
+  if (params.styleReferenceUrl) {
+    payload.style_reference_url = params.styleReferenceUrl;
+  }
+  if (params.prompt?.trim()) {
+    payload.prompt = params.prompt.trim();
+  }
+  if (params.styleIntensity !== undefined) {
+    payload.style_intensity = params.styleIntensity;
+  }
+  if (params.preserveStructure !== undefined) {
+    payload.preserve_structure = params.preserveStructure;
+  }
+
+  const result = await freepikJsonRequest<unknown>({
+    path: "/v1/ai/image-style-transfer",
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (isRecord(result)) {
+    const directUrl =
+      typeof result.transformed_image_url === "string"
+        ? result.transformed_image_url
+        : isRecord(result.data) && typeof result.data.transformed_image_url === "string"
+          ? result.data.transformed_image_url
+          : undefined;
+    if (directUrl) {
+      return { url: directUrl };
+    }
+  }
+
+  return { task_id: extractTaskId(result) };
+}
+
+export async function getImageTransformTaskStatus(params: {
+  taskId: string;
+  statusEndpointPath: string;
+}): Promise<FreepikImageTransformTaskStatusResponse> {
+  const statusPath = buildTaskStatusPath(params.statusEndpointPath, params.taskId);
+  const result = await freepikJsonRequest<{
+    data?: {
+      status?: string;
+      generated?: unknown;
+      error?: string;
+      message?: string;
+    };
+    status?: string;
+    generated?: unknown;
+    error?: string;
+    message?: string;
+  }>({
+    path: statusPath,
+    method: "GET",
+  });
+
+  return parseTaskStatusResponse(result, result);
+}
+
+export async function downloadImageAsBlob(url: string): Promise<Blob> {
+  return downloadFreepikBlob(url, "Freepik image transform download timeout", "Netzwerkfehler beim Bild-Download");
+}
+
+async function downloadFreepikBlob(
+  url: string,
+  timeoutMessage: string,
+  networkMessage: string,
+): Promise<Blob> {
   for (let attempt = 0; attempt <= FREEPIK_MAX_RETRIES; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FREEPIK_REQUEST_TIMEOUT_MS);
@@ -545,7 +726,7 @@ export async function downloadVideoAsBlob(url: string): Promise<Blob> {
       if (isTimeout) {
         throw new FreepikApiError({
           code: "timeout",
-          message: "Freepik video download timeout",
+          message: timeoutMessage,
           retryable: true,
         });
       }
@@ -555,7 +736,7 @@ export async function downloadVideoAsBlob(url: string): Promise<Blob> {
       if (isNetworkLikeError(error)) {
         throw new FreepikApiError({
           code: "transient",
-          message: error instanceof Error ? error.message : "Netzwerkfehler beim Video-Download",
+          message: error instanceof Error ? error.message : networkMessage,
           retryable: true,
         });
       }
@@ -567,9 +748,13 @@ export async function downloadVideoAsBlob(url: string): Promise<Blob> {
 
   throw new FreepikApiError({
     code: "unknown",
-    message: "Freepik video download failed",
+    message: "Freepik download failed",
     retryable: false,
   });
+}
+
+export async function downloadVideoAsBlob(url: string): Promise<Blob> {
+  return downloadFreepikBlob(url, "Freepik video download timeout", "Netzwerkfehler beim Video-Download");
 }
 
 export const search = action({

@@ -39,6 +39,25 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "detail-adjust",
 ]);
 
+const TRANSFORM_NODE_TYPES = new Set<string>([
+  "bg-remove",
+  "upscale",
+  "style-transfer",
+  "face-restore",
+]);
+
+const TRANSFORM_ALLOWED_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "ai-image",
+  "render",
+  "crop",
+  "bg-remove",
+  "upscale",
+  "style-transfer",
+  "face-restore",
+]);
+
 const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
@@ -89,6 +108,8 @@ export type CanvasConnectionValidationReason =
   | "compare-incoming-limit"
   | "adjustment-target-forbidden"
   | "render-source-invalid"
+  | "transform-source-invalid"
+  | "transform-incoming-limit"
   | "agent-source-invalid"
   | "ai-text-source-invalid"
   | "ai-text-incoming-limit"
@@ -155,6 +176,15 @@ export function validateCanvasConnectionPolicy(args: {
 
   if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
     return "render-source-invalid";
+  }
+
+  if (TRANSFORM_NODE_TYPES.has(targetType)) {
+    if (!TRANSFORM_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "transform-source-invalid";
+    }
+    if (targetIncomingCount >= 1) {
+      return "transform-incoming-limit";
+    }
   }
 
   if (targetType === "crop") {
@@ -239,6 +269,10 @@ export function getCanvasConnectionValidationMessage(
       return "Adjustment-Ausgaben koennen nicht an Prompt- oder KI-Bild-Nodes angeschlossen werden.";
     case "render-source-invalid":
       return "Render akzeptiert nur Bild-, Asset-, KI-Bild-, Mixer-, Crop- oder Adjustment-Input.";
+    case "transform-source-invalid":
+      return "Transform-Nodes akzeptieren nur Bild-, Asset-, KI-Bild-, Render-, Crop- oder Transform-Input.";
+    case "transform-incoming-limit":
+      return "Transform-Nodes erlauben genau eine eingehende Verbindung.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
     case "ai-text-source-invalid":

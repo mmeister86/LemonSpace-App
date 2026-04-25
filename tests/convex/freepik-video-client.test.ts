@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createImageTransformTask,
+  createSkinEnhancerTask,
   createVideoTask,
+  downloadImageAsBlob,
   downloadVideoAsBlob,
+  getImageTransformTaskStatus,
   getVideoTaskStatus,
+  removeImageBackground,
 } from "@/convex/freepik";
 
 type MockResponseInit = {
@@ -215,5 +220,162 @@ describe("freepik video client", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("freepik image transform client", () => {
+  const originalApiKey = process.env.FREEPIK_API_KEY;
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    process.env.FREEPIK_API_KEY = "test-key";
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env.FREEPIK_API_KEY = originalApiKey;
+  });
+
+  it("removes image backgrounds with form encoding and returns the durable download URL", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          high_resolution: "https://cdn.example.com/high.png",
+          url: "https://cdn.example.com/download.png",
+          preview: "https://cdn.example.com/preview.png",
+        },
+      }),
+    );
+
+    const result = await removeImageBackground({
+      imageUrl: "https://images.example.com/source.jpg",
+    });
+
+    expect(result.url).toBe("https://cdn.example.com/download.png");
+    expect(result.highResolutionUrl).toBe("https://cdn.example.com/high.png");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.freepik.com/v1/ai/beta/remove-background",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/x-www-form-urlencoded",
+          "x-freepik-api-key": "test-key",
+        }),
+        body: "image_url=https%3A%2F%2Fimages.example.com%2Fsource.jpg",
+      }),
+    );
+  });
+
+  it("creates an upscale image transform task with Precision V2 parameters", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: { data: { task_id: "upscale_task" } },
+      }),
+    );
+
+    const result = await createImageTransformTask({
+      endpoint: "/v1/ai/image-upscaler-precision-v2",
+      payload: {
+        image: "https://images.example.com/source.jpg",
+        scale_factor: 4,
+        flavor: "photo",
+        sharpen: 7,
+        smart_grain: 7,
+        ultra_detail: 30,
+      },
+    });
+
+    expect(result.task_id).toBe("upscale_task");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.freepik.com/v1/ai/image-upscaler-precision-v2",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          image: "https://images.example.com/source.jpg",
+          scale_factor: 4,
+          flavor: "photo",
+          sharpen: 7,
+          smart_grain: 7,
+          ultra_detail: 30,
+        }),
+      }),
+    );
+  });
+
+  it("creates a skin enhancer task for the selected mode", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: { task_id: "face_task" },
+      }),
+    );
+
+    const result = await createSkinEnhancerTask({
+      mode: "faithful",
+      imageUrl: "https://images.example.com/portrait.jpg",
+    });
+
+    expect(result.task_id).toBe("face_task");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.freepik.com/v1/ai/skin-enhancer/faithful",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          image_url: "https://images.example.com/portrait.jpg",
+        }),
+      }),
+    );
+  });
+
+  it("reads image transform task status from string and object generated entries", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          data: {
+            status: "COMPLETED",
+            generated: [
+              "https://cdn.example.com/generated-a.png",
+              { url: "https://cdn.example.com/generated-b.png" },
+            ],
+          },
+        },
+      }),
+    );
+
+    const result = await getImageTransformTaskStatus({
+      taskId: "task_123",
+      statusEndpointPath: "/v1/ai/skin-enhancer/{task-id}",
+    });
+
+    expect(result.status).toBe("COMPLETED");
+    expect(result.generated).toEqual([
+      { url: "https://cdn.example.com/generated-a.png" },
+      { url: "https://cdn.example.com/generated-b.png" },
+    ]);
+  });
+
+  it("downloads completed image transforms as blobs", async () => {
+    const blob = new Blob(["image-bytes"], { type: "image/png" });
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        blob,
+      }),
+    );
+
+    const result = await downloadImageAsBlob("https://cdn.example.com/image.png");
+
+    expect(result.type).toBe("image/png");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

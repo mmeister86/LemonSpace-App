@@ -56,11 +56,31 @@ async function getValidatedBatchNodesOrThrow(
   });
 }
 
+async function isNodeDescendantOf(
+  ctx: MutationCtx,
+  candidateId: Id<"nodes">,
+  ancestorId: Id<"nodes">,
+): Promise<boolean> {
+  if (candidateId === ancestorId) return true;
+  let current = await ctx.db.get(candidateId);
+  const visited = new Set<Id<"nodes">>();
+  while (current?.parentId) {
+    if (current.parentId === ancestorId) return true;
+    if (visited.has(current.parentId)) {
+      throw new Error("Invalid parent cycle");
+    }
+    visited.add(current.parentId);
+    current = await ctx.db.get(current.parentId);
+  }
+  return false;
+}
+
 type NodeCreateMutationName =
   | "nodes.create"
   | "nodes.createWithEdgeSplit"
   | "nodes.createWithEdgeFromSource"
-  | "nodes.createWithEdgeToTarget";
+  | "nodes.createWithEdgeToTarget"
+  | "nodes.createGroupFromSelection";
 
 const OPTIMISTIC_NODE_PREFIX = "optimistic_";
 const NODE_CREATE_MUTATIONS: NodeCreateMutationName[] = [
@@ -68,6 +88,7 @@ const NODE_CREATE_MUTATIONS: NodeCreateMutationName[] = [
   "nodes.createWithEdgeSplit",
   "nodes.createWithEdgeFromSource",
   "nodes.createWithEdgeToTarget",
+  "nodes.createGroupFromSelection",
 ];
 
 const DISALLOWED_ADJUSTMENT_DATA_KEYS = [
@@ -822,6 +843,135 @@ export const create = mutation({
 });
 
 /**
+ * Neue Gruppe um eine bestehende Auswahl erstellen und die ausgewählten Root-Nodes
+ * atomar als Kinder einhängen.
+ */
+export const createGroupFromSelection = mutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeIds: v.array(v.id("nodes")),
+    group: v.object({
+      positionX: v.number(),
+      positionY: v.number(),
+      width: v.number(),
+      height: v.number(),
+      label: v.optional(v.string()),
+      zIndex: v.optional(v.number()),
+      clientRequestId: v.optional(v.string()),
+    }),
+    childPositions: v.array(
+      v.object({
+        nodeId: v.id("nodes"),
+        positionX: v.number(),
+        positionY: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, { canvasId, nodeIds, group, childPositions }) => {
+    const user = await requireAuth(ctx);
+    await getCanvasOrThrow(ctx, canvasId, user.userId);
+
+    if (nodeIds.length < 2) {
+      throw new Error("At least two nodes are required to create a group");
+    }
+
+    const uniqueNodeIds = Array.from(new Set(nodeIds));
+    if (uniqueNodeIds.length !== nodeIds.length) {
+      throw new Error("Duplicate node ids are not allowed");
+    }
+
+    const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createGroupFromSelection",
+      clientRequestId: group.clientRequestId,
+      canvasId,
+    });
+    if (existingNodeId) {
+      return existingNodeId;
+    }
+
+    const { nodes: selectedNodes } = await getValidatedBatchNodesOrThrow(
+      ctx,
+      user.userId,
+      uniqueNodeIds,
+    );
+    if (selectedNodes.some((node) => node.canvasId !== canvasId)) {
+      throw new Error("All selected nodes must belong to the target canvas");
+    }
+    const selectedNodeIdSet = new Set(uniqueNodeIds);
+    for (const node of selectedNodes) {
+      let parentId = node.parentId;
+      const visited = new Set<Id<"nodes">>();
+      while (parentId) {
+        if (selectedNodeIdSet.has(parentId)) {
+          throw new Error("Selected descendants must be filtered before grouping");
+        }
+        if (visited.has(parentId)) {
+          throw new Error("Invalid parent cycle");
+        }
+        visited.add(parentId);
+        const parent = await ctx.db.get(parentId);
+        if (!parent || parent.canvasId !== canvasId) {
+          throw new Error("Invalid parent chain");
+        }
+        parentId = parent.parentId;
+      }
+    }
+
+    const childPositionByNodeId = new Map(
+      childPositions.map((position) => [position.nodeId, position]),
+    );
+    if (
+      childPositions.length !== uniqueNodeIds.length ||
+      childPositionByNodeId.size !== uniqueNodeIds.length
+    ) {
+      throw new Error("Child positions must match selected nodes");
+    }
+    for (const nodeId of uniqueNodeIds) {
+      if (!childPositionByNodeId.has(nodeId)) {
+        throw new Error("Missing child position for selected node");
+      }
+    }
+
+    const groupNodeId = await ctx.db.insert("nodes", {
+      canvasId,
+      type: "group",
+      positionX: group.positionX,
+      positionY: group.positionY,
+      width: group.width,
+      height: group.height,
+      status: "idle",
+      retryCount: 0,
+      data: normalizeNodeDataForWrite("group", {
+        label: group.label ?? "Gruppe",
+      }),
+      zIndex: group.zIndex,
+    });
+
+    for (const node of selectedNodes) {
+      const childPosition = childPositionByNodeId.get(node._id);
+      if (!childPosition) continue;
+      await ctx.db.patch(node._id, {
+        parentId: groupNodeId,
+        positionX: childPosition.positionX,
+        positionY: childPosition.positionY,
+      });
+    }
+
+    await ctx.db.patch(canvasId, { updatedAt: Date.now() });
+    await rememberIdempotentNodeCreateResult(ctx, {
+      userId: user.userId,
+      mutation: "nodes.createGroupFromSelection",
+      clientRequestId: group.clientRequestId,
+      canvasId,
+      nodeId: groupNodeId,
+    });
+
+    return groupNodeId;
+  },
+});
+
+/**
  * Neuen Node erzeugen und eine bestehende Kante in zwei Kanten aufteilen (ein Roundtrip).
  */
 export const createWithEdgeSplit = mutation({
@@ -1421,6 +1571,106 @@ export const setParent = mutation({
       ...(positionY !== undefined ? { positionY } : {}),
     });
     await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Direkte Kinder ausgewählter Gruppen aus der Gruppe herausheben. Die Gruppen
+ * selbst bleiben bestehen.
+ */
+export const ungroupNodes = mutation({
+  args: {
+    groupNodeIds: v.array(v.id("nodes")),
+    childPositions: v.array(
+      v.object({
+        nodeId: v.id("nodes"),
+        parentId: v.optional(v.id("nodes")),
+        positionX: v.number(),
+        positionY: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, { groupNodeIds, childPositions }) => {
+    const user = await requireAuth(ctx);
+    if (groupNodeIds.length === 0) return;
+
+    const uniqueGroupNodeIds = Array.from(new Set(groupNodeIds));
+    if (uniqueGroupNodeIds.length !== groupNodeIds.length) {
+      throw new Error("Duplicate group ids are not allowed");
+    }
+
+    const { nodes: groupNodes } = await getValidatedBatchNodesOrThrow(
+      ctx,
+      user.userId,
+      uniqueGroupNodeIds,
+    );
+    for (const groupNode of groupNodes) {
+      if (groupNode.type !== "group") {
+        throw new Error("Only group nodes can be ungrouped");
+      }
+    }
+
+    const groupNodeIdSet = new Set(uniqueGroupNodeIds);
+    if (
+      childPositions.length !==
+      new Set(childPositions.map((position) => position.nodeId)).size
+    ) {
+      throw new Error("Duplicate child positions are not allowed");
+    }
+
+    const childNodes = await Promise.all(
+      childPositions.map((position) => ctx.db.get(position.nodeId)),
+    );
+    const affectedCanvasIds = new Set<Id<"canvases">>();
+
+    for (let index = 0; index < childPositions.length; index += 1) {
+      const childPosition = childPositions[index];
+      const childNode = childNodes[index];
+      if (!childNode) {
+        throw new Error("Child node not found");
+      }
+      if (!groupNodeIdSet.has(childNode.parentId as Id<"nodes">)) {
+        throw new Error("Child node is not a direct child of an ungrouped group");
+      }
+
+      const groupNode = groupNodes.find((node) => node._id === childNode.parentId);
+      if (!groupNode) {
+        throw new Error("Group node not found");
+      }
+      if (childNode.canvasId !== groupNode.canvasId) {
+        throw new Error("Child and group must belong to the same canvas");
+      }
+
+      if (childPosition.parentId) {
+        if (childPosition.parentId === childNode._id) {
+          throw new Error("Parent cycle is not allowed");
+        }
+        const parent = await ctx.db.get(childPosition.parentId);
+        if (!parent || parent.canvasId !== childNode.canvasId) {
+          throw new Error("Parent not found");
+        }
+        if (parent.type !== "group" && parent.type !== "frame") {
+          throw new Error("Parent must be a group or frame node");
+        }
+        if (await isNodeDescendantOf(ctx, childPosition.parentId, childNode._id)) {
+          throw new Error("Parent cycle is not allowed");
+        }
+      }
+
+      await ctx.db.patch(childNode._id, {
+        parentId: childPosition.parentId,
+        positionX: childPosition.positionX,
+        positionY: childPosition.positionY,
+      });
+      affectedCanvasIds.add(childNode.canvasId);
+    }
+
+    for (const groupNode of groupNodes) {
+      affectedCanvasIds.add(groupNode.canvasId);
+    }
+    for (const canvasId of affectedCanvasIds) {
+      await ctx.db.patch(canvasId, { updatedAt: Date.now() });
+    }
   },
 });
 

@@ -89,4 +89,20 @@ describe("CanvasSidebar", () => {
     expect(text).not.toContain("KI-Text-Ausgabe");
     expect(text).not.toContain("Agent-Ausgabe");
   });
+
+  it("enables Freepik transform MVP nodes in the palette", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasSidebar canvasId={"canvas-1" as Id<"canvases">} />,
+      );
+    });
+
+    for (const label of ["BG entfernen", "Upscale", "Style Transfer", "Gesicht"]) {
+      const row = Array.from(container?.querySelectorAll("[draggable]") ?? []).find(
+        (element) => element.textContent?.includes(label),
+      );
+      expect(row?.getAttribute("draggable")).toBe("true");
+      expect(row?.getAttribute("title")).toContain("auf den Canvas ziehen");
+    }
+  });
 });

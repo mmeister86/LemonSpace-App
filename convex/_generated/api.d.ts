@@ -24,6 +24,8 @@ import type * as edges from "../edges.js";
 import type * as freepik from "../freepik.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
+import type * as image_transform_mutations from "../image_transform_mutations.js";
+import type * as image_transforms from "../image_transforms.js";
 import type * as media from "../media.js";
 import type * as migrations from "../migrations.js";
 import type * as node_type_validator from "../node_type_validator.js";
@@ -59,6 +61,8 @@ declare const fullApi: ApiFromModules<{
   freepik: typeof freepik;
   helpers: typeof helpers;
   http: typeof http;
+  image_transform_mutations: typeof image_transform_mutations;
+  image_transforms: typeof image_transforms;
   media: typeof media;
   migrations: typeof migrations;
   node_type_validator: typeof node_type_validator;
