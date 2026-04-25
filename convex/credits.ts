@@ -54,6 +54,8 @@ const ACTIVITY_DEFAULT_PAGE_SIZE = 25;
 const ACTIVITY_MIN_PAGE_SIZE = 1;
 const ACTIVITY_MAX_PAGE_SIZE = 1000;
 const ACTIVITY_DAY_MS = 24 * 60 * 60 * 1000;
+const STALE_RESERVATION_MAX_AGE_MS = ACTIVITY_DAY_MS;
+const STALE_RESERVATION_CLEANUP_LIMIT = 100;
 
 type ActivityDateRange = "all" | "7d" | "30d" | "month" | "custom";
 type ActivitySortBy = "date" | "amount" | "model";
@@ -939,6 +941,69 @@ export const release = mutation({
     return await ctx.runMutation(internal.credits.releaseInternal, {
       transactionId,
     });
+  },
+});
+
+/**
+ * Gibt reservierte Credits frei, wenn die Reservation deutlich älter ist als
+ * jeder reguläre Background-Job. Das repariert hängengebliebene Jobs, ohne
+ * normale Agent-, Bild- oder Video-Läufe aggressiv zu unterbrechen.
+ */
+export const releaseStaleReservations = internalMutation({
+  args: {
+    maxAgeMs: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const maxAgeMs =
+      Number.isFinite(args.maxAgeMs ?? Number.NaN) && args.maxAgeMs! > 0
+        ? args.maxAgeMs!
+        : STALE_RESERVATION_MAX_AGE_MS;
+    const cutoff = now - maxAgeMs;
+    const limit =
+      Number.isFinite(args.limit ?? Number.NaN) && args.limit! > 0
+        ? Math.min(STALE_RESERVATION_CLEANUP_LIMIT, Math.floor(args.limit!))
+        : STALE_RESERVATION_CLEANUP_LIMIT;
+
+    const reservedTransactions = await ctx.db
+      .query("creditTransactions")
+      .withIndex("by_status_type", (q) =>
+        q.eq("status", "reserved").eq("type", "reservation")
+      )
+      .take(limit);
+
+    let releasedCount = 0;
+    let releasedAmount = 0;
+
+    for (const transaction of reservedTransactions) {
+      if (transaction._creationTime > cutoff) {
+        continue;
+      }
+
+      const estimatedCost = Math.abs(transaction.amount);
+      const balance = await ctx.db
+        .query("creditBalances")
+        .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
+        .unique();
+
+      if (balance) {
+        await ctx.db.patch(balance._id, {
+          reserved: Math.max(0, balance.reserved - estimatedCost),
+          updatedAt: now,
+        });
+      }
+
+      await ctx.db.patch(transaction._id, {
+        status: "released",
+        description: `${transaction.description} (auto-released after stale reservation timeout)`,
+      });
+
+      releasedCount += 1;
+      releasedAmount += estimatedCost;
+    }
+
+    return { releasedCount, releasedAmount, cutoff };
   },
 });
 

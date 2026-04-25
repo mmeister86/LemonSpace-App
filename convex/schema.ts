@@ -274,6 +274,7 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_type", ["userId", "type"])
     .index("by_user_status", ["userId", "status"])
+    .index("by_status_type", ["status", "type"])
     .index("by_node", ["nodeId"]),
 
   // ==========================================================================

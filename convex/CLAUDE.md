@@ -242,6 +242,8 @@ pollVideoTask (internalAction, max 30 Versuche / 10 Min)
 3. `commitInternal()` — Zieht `actualCost` von `balance` ab, gibt `estimatedCost` aus `reserved` frei. Schreibt `type: "usage"`.
 4. Bei Fehler: `releaseInternal()` — Gibt `estimatedCost` aus `reserved` frei. `generationCount` bleibt erhöht (Versuch zählt).
 
+**Stale Reservation Cleanup:** `crons.ts` ruft stündlich `credits.releaseStaleReservations` auf. Reservierungen mit `type: "reservation"`, `status: "reserved"` und Alter > 24h werden automatisch released, damit hängengebliebene Background-Jobs keine Credits dauerhaft blockieren.
+
 **env-Flag:** `ALLOW_TEST_CREDIT_GRANT=true` — Aktiviert `grantTestCredits` Mutation (nur Dev/Staging).
 
 ---

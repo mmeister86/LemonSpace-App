@@ -19,6 +19,7 @@ import type * as batch_validation_utils from "../batch_validation_utils.js";
 import type * as canvasGraph from "../canvasGraph.js";
 import type * as canvases from "../canvases.js";
 import type * as credits from "../credits.js";
+import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as edges from "../edges.js";
 import type * as freepik from "../freepik.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   canvasGraph: typeof canvasGraph;
   canvases: typeof canvases;
   credits: typeof credits;
+  crons: typeof crons;
   dashboard: typeof dashboard;
   edges: typeof edges;
   freepik: typeof freepik;
