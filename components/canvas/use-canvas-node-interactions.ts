@@ -221,6 +221,7 @@ export function useCanvasNodeInteractions(args: {
     clientRequestId: string,
     realId?: Id<"nodes">,
   ) => Promise<void>;
+  onHistoryCapture?: () => void;
 }) {
   const {
     canvasId,
@@ -235,6 +236,7 @@ export function useCanvasNodeInteractions(args: {
     runSplitEdgeAtExistingNodeMutation,
     onInvalidConnection,
     syncPendingMoveForClientRequest,
+    onHistoryCapture,
   } = args;
   const {
     isDragging,
@@ -252,6 +254,7 @@ export function useCanvasNodeInteractions(args: {
   const highlightedEdgeOriginalStyleRef = useRef<RFEdge["style"] | undefined>(
     undefined,
   );
+  const resizeHistoryCapturedRef = useRef(false);
 
   const setHighlightedIntersectionEdge = useCallback(
     (edgeId: string | null) => {
@@ -352,9 +355,14 @@ export function useCanvasNodeInteractions(args: {
       for (const change of changes) {
         if (change.type === "dimensions") {
           if (change.resizing === true) {
+            if (!resizeHistoryCapturedRef.current) {
+              resizeHistoryCapturedRef.current = true;
+              onHistoryCapture?.();
+            }
             isResizing.current = true;
           } else if (change.resizing === false) {
             isResizing.current = false;
+            resizeHistoryCapturedRef.current = false;
           }
         }
       }
@@ -403,11 +411,13 @@ export function useCanvasNodeInteractions(args: {
       preferLocalPositionNodeIdsRef,
       runResizeNodeMutation,
       setNodes,
+      onHistoryCapture,
     ],
   );
 
   const onNodeDragStart = useCallback(
     (_event: ReactMouseEvent, _node: RFNode, draggedNodes: RFNode[]) => {
+      onHistoryCapture?.();
       isDragging.current = true;
       clearHighlightedIntersectionEdge();
       clearActiveGroupDropTarget();
@@ -419,6 +429,7 @@ export function useCanvasNodeInteractions(args: {
       clearActiveGroupDropTarget,
       clearHighlightedIntersectionEdge,
       isDragging,
+      onHistoryCapture,
       pendingLocalPositionUntilConvexMatchesRef,
     ],
   );

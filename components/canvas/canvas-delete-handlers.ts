@@ -65,8 +65,6 @@ function isRetryableBridgeCreateError(error: unknown): boolean {
 type UseCanvasDeleteHandlersParams = {
   t: ToastTranslations;
   canvasId: Id<"canvases">;
-  nodes: RFNode[];
-  edges: RFEdge[];
   nodesRef: MutableRefObject<RFNode[]>;
   edgesRef: MutableRefObject<RFEdge[]>;
   deletingNodeIds: MutableRefObject<Set<string>>;
@@ -80,13 +78,12 @@ type UseCanvasDeleteHandlersParams = {
     targetHandle?: string;
   }) => Promise<unknown>;
   runRemoveEdgeMutation: (args: { edgeId: Id<"edges"> }) => Promise<unknown>;
+  onHistoryCapture?: () => void;
 };
 
 export function useCanvasDeleteHandlers({
   t,
   canvasId,
-  nodes,
-  edges,
   nodesRef,
   edgesRef,
   deletingNodeIds,
@@ -94,6 +91,7 @@ export function useCanvasDeleteHandlers({
   runBatchRemoveNodesMutation,
   runCreateEdgeMutation,
   runRemoveEdgeMutation,
+  onHistoryCapture,
 }: UseCanvasDeleteHandlersParams): {
   onBeforeDelete: OnBeforeDelete<RFNode, RFEdge>;
   onNodesDelete: (deletedNodes: RFNode[]) => void;
@@ -114,6 +112,9 @@ export function useCanvasDeleteHandlers({
       edges: RFEdge[];
     }) => {
       if (matchingNodes.length === 0) {
+        if (matchingEdges.some((edge) => edge.className !== "temp")) {
+          onHistoryCapture?.();
+        }
         return true;
       }
 
@@ -146,15 +147,17 @@ export function useCanvasDeleteHandlers({
             : t('canvas.nodeDeleteBlockedPartialSuffixOther', { count: blocked.length });
         const desc = `${whyDesc} ${suffix}`;
         toast.warning(title, desc);
+        onHistoryCapture?.();
         return {
           nodes: allowed,
           edges: getConnectedEdges(allowed, matchingEdges),
         };
       }
 
+      onHistoryCapture?.();
       return true;
     },
-    [t],
+    [onHistoryCapture, t],
   );
 
   const onNodesDelete = useCallback(
@@ -367,9 +370,7 @@ export function useCanvasDeleteHandlers({
       canvasId,
       deletingNodeIds,
       edgeKey,
-      edges,
       edgesRef,
-      nodes,
       nodesRef,
       runBatchRemoveNodesMutation,
       runCreateEdgeMutation,

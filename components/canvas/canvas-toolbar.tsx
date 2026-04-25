@@ -59,6 +59,10 @@ interface CanvasToolbarProps {
   favoriteFilterActive?: boolean;
   onFavoriteFilterChange?: (active: boolean) => void;
   favoriteCount?: number;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 type ToolbarDockSide = "free" | "top" | "right" | "bottom" | "left";
@@ -266,6 +270,10 @@ export default function CanvasToolbar({
   favoriteFilterActive = false,
   onFavoriteFilterChange,
   favoriteCount,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: CanvasToolbarProps) {
   const { createNodeWithIntersection } = useCanvasPlacement();
   const getCenteredPosition = useCenteredFlowNodePosition();
@@ -657,11 +665,12 @@ export default function CanvasToolbar({
         size="icon"
         variant="ghost"
         className="size-9 shrink-0"
-        disabled
-        aria-label="Rückgängig (folgt)"
-        title="Rückgängig — folgt"
+        disabled={!canUndo}
+        aria-label="Rückgängig"
+        title="Rückgängig"
+        onClick={onUndo}
       >
-        <Undo2 className="size-4 opacity-50" />
+        <Undo2 className={cn("size-4", !canUndo && "opacity-50")} />
       </Button>
 
       <Button
@@ -669,11 +678,12 @@ export default function CanvasToolbar({
         size="icon"
         variant="ghost"
         className="size-9 shrink-0"
-        disabled
-        aria-label="Wiederholen (folgt)"
-        title="Wiederholen — folgt"
+        disabled={!canRedo}
+        aria-label="Wiederholen"
+        title="Wiederholen"
+        onClick={onRedo}
       >
-        <Redo2 className="size-4 opacity-50" />
+        <Redo2 className={cn("size-4", !canRedo && "opacity-50")} />
       </Button>
 
       <div

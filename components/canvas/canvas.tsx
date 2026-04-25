@@ -82,6 +82,7 @@ import {
 import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
+import { useCanvasHistory } from "./use-canvas-history";
 import { useCanvasGroupingMutations } from "./use-canvas-grouping-mutations";
 import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
 import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
@@ -166,6 +167,95 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdgeSyncNonce,
     deletingNodeIds,
   });
+
+  const canvasHistory = useCanvasHistory({
+    canvasId,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    disabled: !isSyncOnline,
+  });
+
+  const runCreateNodeWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateNodeOnlineOnly>) => {
+      canvasHistory.capture();
+      return await runCreateNodeOnlineOnly(...args);
+    },
+    [canvasHistory, runCreateNodeOnlineOnly],
+  );
+
+  const runCreateNodeWithEdgeFromSourceWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateNodeWithEdgeFromSourceOnlineOnly>) => {
+      canvasHistory.capture();
+      return await runCreateNodeWithEdgeFromSourceOnlineOnly(...args);
+    },
+    [canvasHistory, runCreateNodeWithEdgeFromSourceOnlineOnly],
+  );
+
+  const runCreateNodeWithEdgeToTargetWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateNodeWithEdgeToTargetOnlineOnly>) => {
+      canvasHistory.capture();
+      return await runCreateNodeWithEdgeToTargetOnlineOnly(...args);
+    },
+    [canvasHistory, runCreateNodeWithEdgeToTargetOnlineOnly],
+  );
+
+  const runCreateNodeWithEdgeSplitWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateNodeWithEdgeSplitOnlineOnly>) => {
+      canvasHistory.capture();
+      return await runCreateNodeWithEdgeSplitOnlineOnly(...args);
+    },
+    [canvasHistory, runCreateNodeWithEdgeSplitOnlineOnly],
+  );
+
+  const runCreateEdgeWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateEdgeMutation>) => {
+      canvasHistory.capture();
+      return await runCreateEdgeMutation(...args);
+    },
+    [canvasHistory, runCreateEdgeMutation],
+  );
+
+  const runRemoveEdgeWithHistory = useCallback(
+    async (...args: Parameters<typeof runRemoveEdgeMutation>) => {
+      canvasHistory.capture();
+      return await runRemoveEdgeMutation(...args);
+    },
+    [canvasHistory, runRemoveEdgeMutation],
+  );
+
+  const runCreateGroupFromSelectionWithHistory = useCallback(
+    async (...args: Parameters<typeof runCreateGroupFromSelectionMutation>) => {
+      canvasHistory.capture();
+      return await runCreateGroupFromSelectionMutation(...args);
+    },
+    [canvasHistory, runCreateGroupFromSelectionMutation],
+  );
+
+  const runUngroupNodesWithHistory = useCallback(
+    async (...args: Parameters<typeof runUngroupNodesMutation>) => {
+      canvasHistory.capture();
+      return await runUngroupNodesMutation(...args);
+    },
+    [canvasHistory, runUngroupNodesMutation],
+  );
+
+  const runUpdateNodeDataWithHistory = useCallback(
+    async (...args: Parameters<typeof runUpdateNodeDataMutation>) => {
+      canvasHistory.capture();
+      return await runUpdateNodeDataMutation(...args);
+    },
+    [canvasHistory, runUpdateNodeDataMutation],
+  );
+
+  const runResizeNodeWithHistory = useCallback(
+    async (...args: Parameters<typeof runResizeNodeMutation>) => {
+      canvasHistory.capture();
+      return await runResizeNodeMutation(...args);
+    },
+    [canvasHistory, runResizeNodeMutation],
+  );
 
   const hasPresetAwareNodes = useMemo(
     () =>
@@ -283,6 +373,27 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [handleNavToolChange]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(e.target)) return;
+      const isUndo = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z";
+      const isRedo =
+        (e.metaKey || e.ctrlKey) &&
+        ((e.shiftKey && e.key.toLowerCase() === "z") || e.key.toLowerCase() === "y");
+      if (!isUndo && !isRedo) return;
+
+      e.preventDefault();
+      if (isUndo) {
+        void canvasHistory.undo();
+        return;
+      }
+      void canvasHistory.redo();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [canvasHistory]);
+
   const { flowPanOnDrag, flowSelectionOnDrag } = useMemo(() => {
     const panMiddleRight: number[] = [1, 2];
     if (scissorsMode) {
@@ -328,14 +439,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setScissorsMode,
     setNavTool,
     setScissorStrokePreview,
-    runRemoveEdgeMutation,
+    runRemoveEdgeMutation: runRemoveEdgeWithHistory,
   });
 
   const { onBeforeDelete, onNodesDelete, onEdgesDelete } = useCanvasDeleteHandlers({
     t,
     canvasId,
-    nodes,
-    edges,
     nodesRef,
     edgesRef,
     deletingNodeIds,
@@ -343,6 +452,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runBatchRemoveNodesMutation,
     runCreateEdgeMutation,
     runRemoveEdgeMutation,
+    onHistoryCapture: canvasHistory.capture,
   });
 
   const {
@@ -369,12 +479,12 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     setEdgeSyncNonce,
     screenToFlowPosition,
     syncPendingMoveForClientRequest,
-    runCreateEdgeMutation,
+    runCreateEdgeMutation: runCreateEdgeWithHistory,
     runSplitEdgeAtExistingNodeMutation,
-    runRemoveEdgeMutation,
+    runRemoveEdgeMutation: runRemoveEdgeWithHistory,
     runSwapMixerInputsMutation,
-    runCreateNodeWithEdgeFromSourceOnlineOnly,
-    runCreateNodeWithEdgeToTargetOnlineOnly,
+    runCreateNodeWithEdgeFromSourceOnlineOnly: runCreateNodeWithEdgeFromSourceWithHistory,
+    runCreateNodeWithEdgeToTargetOnlineOnly: runCreateNodeWithEdgeToTargetWithHistory,
     showConnectionRejectedToast,
   });
 
@@ -425,7 +535,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     canvasId,
     nodes,
     edges,
-    runCreateNodeWithEdgeSplitOnlineOnly,
+    runCreateNodeWithEdgeSplitOnlineOnly: runCreateNodeWithEdgeSplitWithHistory,
     runBatchMoveNodesMutation,
     applyLocalNodeMoves: applyLocalEdgeInsertMoves,
     showConnectionRejectedToast,
@@ -528,6 +638,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     runSplitEdgeAtExistingNodeMutation,
     onInvalidConnection: showConnectionRejectedToast,
     syncPendingMoveForClientRequest,
+    onHistoryCapture: canvasHistory.capture,
   });
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -548,19 +659,19 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     generateUploadUrl,
     registerUploadedImageMedia,
     registerUploadedVideoMedia,
-    runCreateNodeOnlineOnly,
-    runCreateNodeWithEdgeSplitOnlineOnly,
+    runCreateNodeOnlineOnly: runCreateNodeWithHistory,
+    runCreateNodeWithEdgeSplitOnlineOnly: runCreateNodeWithEdgeSplitWithHistory,
     notifyOfflineUnsupported,
-    queueNodeDataUpdate: runUpdateNodeDataMutation,
-    queueNodeResize: runResizeNodeMutation,
+    queueNodeDataUpdate: runUpdateNodeDataWithHistory,
+    queueNodeResize: runResizeNodeWithHistory,
     syncPendingMoveForClientRequest,
   });
 
   const canvasSyncContextValue = useMemo(
     () => ({
-      queueNodeDataUpdate: runUpdateNodeDataMutation,
-      queueNodeResize: runResizeNodeMutation,
-      ungroupNodes: runUngroupNodesMutation,
+      queueNodeDataUpdate: runUpdateNodeDataWithHistory,
+      queueNodeResize: runResizeNodeWithHistory,
+      ungroupNodes: runUngroupNodesWithHistory,
       notifyOfflineUnsupported,
       status: {
         pendingCount: pendingSyncCount,
@@ -573,9 +684,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       isSyncing,
       notifyOfflineUnsupported,
       pendingSyncCount,
-      runResizeNodeMutation,
-      runUngroupNodesMutation,
-      runUpdateNodeDataMutation,
+      runResizeNodeWithHistory,
+      runUngroupNodesWithHistory,
+      runUpdateNodeDataWithHistory,
     ],
   );
 
@@ -596,10 +707,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       <CanvasPresetsProvider enabled={hasPresetAwareNodes}>
         <CanvasPlacementProvider
           canvasId={canvasId}
-          createNode={runCreateNodeOnlineOnly}
-          createNodeWithEdgeSplit={runCreateNodeWithEdgeSplitOnlineOnly}
-          createNodeWithEdgeFromSource={runCreateNodeWithEdgeFromSourceOnlineOnly}
-          createNodeWithEdgeToTarget={runCreateNodeWithEdgeToTargetOnlineOnly}
+          createNode={runCreateNodeWithHistory}
+          createNodeWithEdgeSplit={runCreateNodeWithEdgeSplitWithHistory}
+          createNodeWithEdgeFromSource={runCreateNodeWithEdgeFromSourceWithHistory}
+          createNodeWithEdgeToTarget={runCreateNodeWithEdgeToTargetWithHistory}
           onCreateNodeSettled={({ clientRequestId, realId }) => {
             void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
               (error: unknown) => {
@@ -622,6 +733,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           favoriteFilterActive={focusFavorites}
           onFavoriteFilterChange={setFocusFavorites}
           favoriteCount={favoriteProjection.favoriteCount}
+          canUndo={canvasHistory.canUndo}
+          canRedo={canvasHistory.canRedo}
+          onUndo={() => void canvasHistory.undo()}
+          onRedo={() => void canvasHistory.redo()}
         />
         <CanvasAppMenu
           canvasId={canvasId}
@@ -749,8 +864,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                   canvasId={canvasId}
                   disabled={scissorsMode}
                   isSyncOnline={isSyncOnline}
-                  createGroupFromSelection={runCreateGroupFromSelectionMutation}
-                  ungroupNodes={runUngroupNodesMutation}
+                  createGroupFromSelection={runCreateGroupFromSelectionWithHistory}
+                  ungroupNodes={runUngroupNodesWithHistory}
                   notifyOfflineUnsupported={notifyOfflineUnsupported}
                 />
               </ReactFlow>

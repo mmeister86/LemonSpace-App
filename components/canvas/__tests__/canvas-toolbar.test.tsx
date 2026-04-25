@@ -373,6 +373,41 @@ describe("CanvasToolbar", () => {
     expect((toolbar as HTMLElement | null)?.style.marginInline).toBe("auto");
     expect((toolbar as HTMLElement | null)?.style.transform).toBe("none");
   });
+
+  it("enables undo and redo controls when history is available", async () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Neuer Workspace"
+          activeTool="select"
+          onToolChange={vi.fn()}
+          canUndo
+          canRedo
+          onUndo={onUndo}
+          onRedo={onRedo}
+        />,
+      );
+    });
+
+    const undoButton = container?.querySelector('button[title="Rückgängig"]');
+    const redoButton = container?.querySelector('button[title="Wiederholen"]');
+    if (!(undoButton instanceof HTMLButtonElement) || !(redoButton instanceof HTMLButtonElement)) {
+      throw new Error("Undo/redo buttons not found");
+    }
+
+    await act(async () => {
+      undoButton.click();
+      redoButton.click();
+    });
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onRedo).toHaveBeenCalledTimes(1);
+    expect(container?.textContent).not.toContain("folgt");
+  });
 });
 
 describe("resolveToolbarSnapSide", () => {
