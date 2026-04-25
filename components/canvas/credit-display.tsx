@@ -11,7 +11,11 @@ const showTestCreditGrant =
   typeof process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "string" &&
   process.env.NEXT_PUBLIC_ALLOW_TEST_CREDIT_GRANT === "true";
 
-export function CreditDisplay() {
+type CreditDisplayProps = {
+  compact?: boolean;
+};
+
+export function CreditDisplay({ compact = false }: CreditDisplayProps) {
   const t = useTranslations('toasts');
   const balance = useAuthQuery(api.credits.getBalance);
   const grantTestCredits = useMutation(api.credits.grantTestCredits);
@@ -20,7 +24,7 @@ export function CreditDisplay() {
     return (
       <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-1.5 animate-pulse">
         <Coins className="h-4 w-4 text-muted-foreground" />
-        <div className="h-4 w-16 rounded bg-muted" />
+        <div className={compact ? "h-4 w-12 rounded bg-muted" : "h-4 w-16 rounded bg-muted"} />
       </div>
     );
   }
@@ -31,9 +35,11 @@ export function CreditDisplay() {
   const isEmpty = available <= 0;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={compact ? "flex w-full items-center justify-center" : "flex items-center gap-2"}>
       <div
-        className={`flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors ${
+        className={`flex items-center rounded-lg transition-colors ${
+          compact ? "w-full flex-col justify-center gap-0.5 px-1 py-2" : "gap-2 px-3 py-1.5"
+        } ${
           isEmpty
             ? "bg-destructive/10"
             : isLow
@@ -51,14 +57,17 @@ export function CreditDisplay() {
           }`}
         />
         <span
-          className={`text-sm font-medium tabular-nums ${
+          className={`font-medium tabular-nums ${
+            compact ? "text-[11px] leading-none" : "text-sm"
+          } ${
             isEmpty ? "text-destructive" : isLow ? "text-amber-500" : "text-foreground"
           }`}
         >
-          {available.toLocaleString("de-DE")} Cr
+          {compact ? available.toLocaleString("de-DE") : `${available.toLocaleString("de-DE")} Cr`}
         </span>
+        {compact ? <span className="text-[10px] leading-none text-muted-foreground/70">Cr</span> : null}
         {balance.reserved > 0 && (
-          <span className="text-xs text-muted-foreground/70">
+          <span className={compact ? "hidden" : "text-xs text-muted-foreground/70"}>
             ({balance.reserved} reserved)
           </span>
         )}

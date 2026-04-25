@@ -614,6 +614,8 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           <AssetBrowserTargetContext.Provider value={assetBrowserTargetApi}>
       <div className="relative h-full w-full">
         <CanvasToolbar
+          key={canvasId}
+          canvasId={canvasId}
           canvasName={canvas?.name}
           activeTool={navTool}
           onToolChange={handleNavToolChange}

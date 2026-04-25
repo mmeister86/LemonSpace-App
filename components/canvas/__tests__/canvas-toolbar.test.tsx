@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createNodeWithIntersection: vi.fn(async () => undefined),
   getCenteredPosition: vi.fn(() => ({ x: 0, y: 0 })),
+  renameCanvas: vi.fn(async () => undefined),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
 }));
 
 vi.mock("@/components/canvas/canvas-placement-context", () => ({
@@ -32,6 +35,25 @@ vi.mock("@/components/canvas/credit-display", () => ({
   CreditDisplay: () => <div data-testid="credit-display" />,
 }));
 
+vi.mock("convex/react", () => ({
+  useMutation: () => mocks.renameCanvas,
+}));
+
+vi.mock("@/convex/_generated/api", () => ({
+  api: {
+    canvases: {
+      update: "canvases.update",
+    },
+  },
+}));
+
+vi.mock("@/lib/toast", () => ({
+  toast: {
+    error: mocks.toastError,
+    success: mocks.toastSuccess,
+  },
+}));
+
 vi.mock("@/lib/canvas-node-catalog", () => ({
   NODE_CATEGORIES_ORDERED: [],
   NODE_CATEGORY_META: {},
@@ -40,17 +62,41 @@ vi.mock("@/lib/canvas-node-catalog", () => ({
   isNodePaletteEnabled: () => false,
 }));
 
-import CanvasToolbar from "@/components/canvas/canvas-toolbar";
+import CanvasToolbar, { resolveToolbarSnapSide } from "@/components/canvas/canvas-toolbar";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function installLocalStorageMock() {
+  const entries = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: vi.fn((key: string) => entries.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        entries.set(key, value);
+      }),
+      removeItem: vi.fn((key: string) => {
+        entries.delete(key);
+      }),
+      clear: vi.fn(() => {
+        entries.clear();
+      }),
+    },
+  });
+}
 
 describe("CanvasToolbar", () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
 
   beforeEach(() => {
+    installLocalStorageMock();
     mocks.createNodeWithIntersection.mockClear();
     mocks.getCenteredPosition.mockClear();
+    mocks.renameCanvas.mockClear();
+    mocks.toastError.mockClear();
+    mocks.toastSuccess.mockClear();
+    window.localStorage.clear();
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -72,6 +118,7 @@ describe("CanvasToolbar", () => {
     await act(async () => {
       root?.render(
         <CanvasToolbar
+          canvasId={"canvas-1" as never}
           activeTool="select"
           onToolChange={vi.fn()}
           onFavoriteFilterChange={vi.fn()}
@@ -89,6 +136,7 @@ describe("CanvasToolbar", () => {
     await act(async () => {
       root?.render(
         <CanvasToolbar
+          canvasId={"canvas-1" as never}
           activeTool="select"
           onToolChange={vi.fn()}
           favoriteFilterActive={false}
@@ -103,6 +151,7 @@ describe("CanvasToolbar", () => {
     await act(async () => {
       root?.render(
         <CanvasToolbar
+          canvasId={"canvas-1" as never}
           activeTool="select"
           onToolChange={vi.fn()}
           favoriteFilterActive
@@ -121,6 +170,7 @@ describe("CanvasToolbar", () => {
     await act(async () => {
       root?.render(
         <CanvasToolbar
+          canvasId={"canvas-1" as never}
           activeTool="select"
           onToolChange={vi.fn()}
           favoriteFilterActive={false}
@@ -146,6 +196,7 @@ describe("CanvasToolbar", () => {
     await act(async () => {
       root?.render(
         <CanvasToolbar
+          canvasId={"canvas-1" as never}
           activeTool="select"
           onToolChange={vi.fn()}
           favoriteFilterActive
@@ -165,5 +216,194 @@ describe("CanvasToolbar", () => {
 
     expect(onFavoriteFilterChange).toHaveBeenCalledTimes(1);
     expect(onFavoriteFilterChange).toHaveBeenCalledWith(false);
+  });
+
+  it("renders a drag handle and removes the full-width spacer layout", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Neuer Workspace"
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const toolbar = container?.querySelector('[data-testid="canvas-toolbar"]');
+    expect(toolbar).not.toBeNull();
+    expect(toolbar?.className).not.toContain("w-[min(calc(100vw-9rem),64rem)]");
+    expect(toolbar?.querySelector('[data-testid="canvas-toolbar-drag-handle"]')).not.toBeNull();
+    expect(toolbar?.querySelector('[data-testid="canvas-toolbar-meta"]')?.className).not.toContain(
+      "flex-1",
+    );
+  });
+
+  it("renames the canvas inline when Enter is pressed", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Neuer Workspace"
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const nameButton = container?.querySelector('[data-testid="canvas-toolbar-name"]');
+    if (!(nameButton instanceof HTMLButtonElement)) {
+      throw new Error("Canvas name button not found");
+    }
+
+    await act(async () => {
+      nameButton.click();
+    });
+
+    const input = container?.querySelector('[data-testid="canvas-toolbar-name-input"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Canvas name input not found");
+    }
+
+    await act(async () => {
+      input.value = "Launch Board";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+
+    expect(mocks.renameCanvas).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      name: "Launch Board",
+    });
+    expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels inline rename when Escape is pressed", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Neuer Workspace"
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const nameButton = container?.querySelector('[data-testid="canvas-toolbar-name"]');
+    if (!(nameButton instanceof HTMLButtonElement)) {
+      throw new Error("Canvas name button not found");
+    }
+
+    await act(async () => {
+      nameButton.click();
+    });
+
+    const input = container?.querySelector('[data-testid="canvas-toolbar-name-input"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Canvas name input not found");
+    }
+
+    await act(async () => {
+      input.value = "Temporary Name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(mocks.renameCanvas).not.toHaveBeenCalled();
+    expect(container?.textContent).toContain("Neuer Workspace");
+  });
+
+  it("restores a vertical dock position from localStorage", async () => {
+    window.localStorage.setItem(
+      "lemonspace.canvas:toolbar:v1:canvas-1",
+      JSON.stringify({
+        version: 1,
+        updatedAt: Date.now(),
+        position: { x: 32, y: 96, side: "left" },
+      }),
+    );
+
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Neuer Workspace"
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const toolbar = container?.querySelector('[data-testid="canvas-toolbar"]');
+    expect(toolbar?.getAttribute("data-side")).toBe("left");
+    expect(toolbar?.getAttribute("data-orientation")).toBe("vertical");
+    expect(toolbar?.className).toContain("w-16");
+
+    const nameButton = container?.querySelector('[data-testid="canvas-toolbar-name"]');
+    expect(nameButton?.className).toContain("[writing-mode:vertical-rl]");
+  });
+
+  it("centers top and bottom dock positions with auto margins instead of transform", async () => {
+    window.localStorage.setItem(
+      "lemonspace.canvas:toolbar:v1:canvas-1",
+      JSON.stringify({
+        version: 1,
+        updatedAt: Date.now(),
+        position: { x: 992, y: 720, side: "bottom" },
+      }),
+    );
+
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          canvasName="Never give up"
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const toolbar = container?.querySelector('[data-testid="canvas-toolbar"]');
+    expect(toolbar?.getAttribute("data-side")).toBe("bottom");
+    expect(toolbar?.getAttribute("data-orientation")).toBe("horizontal");
+    expect((toolbar as HTMLElement | null)?.style.left).toBe("0px");
+    expect((toolbar as HTMLElement | null)?.style.right).toBe("0px");
+    expect((toolbar as HTMLElement | null)?.style.marginInline).toBe("auto");
+    expect((toolbar as HTMLElement | null)?.style.transform).toBe("none");
+  });
+});
+
+describe("resolveToolbarSnapSide", () => {
+  const parentRect = {
+    width: 1200,
+    height: 800,
+  } as DOMRect;
+
+  it("recognizes points across the full top and bottom snap hitboxes", () => {
+    expect(resolveToolbarSnapSide({ x: 360, y: 48 }, parentRect)).toBe("top");
+    expect(resolveToolbarSnapSide({ x: 600, y: 48 }, parentRect)).toBe("top");
+    expect(resolveToolbarSnapSide({ x: 840, y: 48 }, parentRect)).toBe("top");
+
+    expect(resolveToolbarSnapSide({ x: 360, y: 752 }, parentRect)).toBe("bottom");
+    expect(resolveToolbarSnapSide({ x: 600, y: 752 }, parentRect)).toBe("bottom");
+    expect(resolveToolbarSnapSide({ x: 840, y: 752 }, parentRect)).toBe("bottom");
+  });
+
+  it("recognizes points across the full left and right snap hitboxes", () => {
+    expect(resolveToolbarSnapSide({ x: 48, y: 220 }, parentRect)).toBe("left");
+    expect(resolveToolbarSnapSide({ x: 48, y: 400 }, parentRect)).toBe("left");
+    expect(resolveToolbarSnapSide({ x: 48, y: 580 }, parentRect)).toBe("left");
+
+    expect(resolveToolbarSnapSide({ x: 1152, y: 220 }, parentRect)).toBe("right");
+    expect(resolveToolbarSnapSide({ x: 1152, y: 400 }, parentRect)).toBe("right");
+    expect(resolveToolbarSnapSide({ x: 1152, y: 580 }, parentRect)).toBe("right");
+  });
+
+  it("returns null outside the snap hitboxes", () => {
+    expect(resolveToolbarSnapSide({ x: 120, y: 120 }, parentRect)).toBeNull();
+    expect(resolveToolbarSnapSide({ x: 600, y: 400 }, parentRect)).toBeNull();
+    expect(resolveToolbarSnapSide({ x: 1080, y: 680 }, parentRect)).toBeNull();
   });
 });
