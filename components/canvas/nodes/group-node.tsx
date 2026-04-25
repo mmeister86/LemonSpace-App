@@ -80,18 +80,20 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
         childPositions.map((position) => [position.nodeId as string, position]),
       );
       setNodes((currentNodes) =>
-        currentNodes.map((node) => {
-          const childPosition = childPositionByNodeId.get(node.id);
-          if (!childPosition) return node;
-          return {
-            ...node,
-            parentId: childPosition.parentId as string | undefined,
-            position: {
-              x: childPosition.positionX,
-              y: childPosition.positionY,
-            },
-          };
-        }),
+        currentNodes
+          .filter((node) => node.id !== id)
+          .map((node) => {
+            const childPosition = childPositionByNodeId.get(node.id);
+            if (!childPosition) return node;
+            return {
+              ...node,
+              parentId: childPosition.parentId as string | undefined,
+              position: {
+                x: childPosition.positionX,
+                y: childPosition.positionY,
+              },
+            };
+          }),
       );
     });
   }, [getNodes, id, notifyOfflineUnsupported, setNodes, status.isOffline, ungroupNodes]);

@@ -118,6 +118,9 @@ describe("GroupNode", () => {
           data={{ label: "Gruppe" }}
           selected
           dragging={false}
+          selectable
+          deletable
+          draggable
           zIndex={0}
           isConnectable
           positionAbsoluteX={0}
@@ -143,6 +146,74 @@ describe("GroupNode", () => {
           positionY: 60,
         },
       ],
+    });
+  });
+
+  it("removes the group node from local state after ungrouping", async () => {
+    const nodes: RFNode[] = [
+      {
+        id: "parent-group",
+        type: "group",
+        position: { x: 100, y: 100 },
+        style: { width: 300, height: 240 },
+        data: {},
+      },
+      {
+        id: "group-1",
+        type: "group",
+        parentId: "parent-group",
+        position: { x: 30, y: 40 },
+        style: { width: 200, height: 160 },
+        data: {},
+        zIndex: 20,
+      },
+      {
+        id: "node-child",
+        type: "image",
+        parentId: "group-1",
+        position: { x: 10, y: 20 },
+        style: { width: 80, height: 40 },
+        data: {},
+        zIndex: 1,
+      },
+    ];
+    mocks.getNodes.mockReturnValue(nodes);
+
+    await act(async () => {
+      root?.render(
+        <GroupNode
+          id="group-1"
+          type="group"
+          data={{ label: "Gruppe" }}
+          selected
+          dragging={false}
+          selectable
+          deletable
+          draggable
+          zIndex={0}
+          isConnectable
+          positionAbsoluteX={0}
+          positionAbsoluteY={0}
+        />,
+      );
+    });
+
+    const ungroupButton = container?.querySelector('button[title="Ungroup"]');
+    expect(ungroupButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      ungroupButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const updater = mocks.setNodes.mock.calls.at(-1)?.[0];
+    if (typeof updater !== "function") throw new Error("Expected setNodes updater");
+
+    const nextNodes = (updater as (currentNodes: RFNode[]) => RFNode[])(nodes);
+
+    expect(nextNodes.find((node) => node.id === "group-1")).toBeUndefined();
+    expect(nextNodes.find((node) => node.id === "node-child")).toMatchObject({
+      parentId: "parent-group",
+      position: { x: 40, y: 60 },
     });
   });
 });

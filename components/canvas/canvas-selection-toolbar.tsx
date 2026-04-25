@@ -249,19 +249,22 @@ export function CanvasSelectionToolbar({
       const childPositionByNodeId = new Map(
         childPositions.map((position) => [position.nodeId as string, position]),
       );
+      const ungroupedGroupIds = new Set(groupNodes.map((node) => node.id));
       setNodes((currentNodes) =>
-        currentNodes.map((node) => {
-          const childPosition = childPositionByNodeId.get(node.id);
-          if (!childPosition) return node;
-          return {
-            ...node,
-            parentId: childPosition.parentId as string | undefined,
-            position: {
-              x: childPosition.positionX,
-              y: childPosition.positionY,
-            },
-          };
-        }),
+        currentNodes
+          .filter((node) => !ungroupedGroupIds.has(node.id))
+          .map((node) => {
+            const childPosition = childPositionByNodeId.get(node.id);
+            if (!childPosition) return node;
+            return {
+              ...node,
+              parentId: childPosition.parentId as string | undefined,
+              position: {
+                x: childPosition.positionX,
+                y: childPosition.positionY,
+              },
+            };
+          }),
       );
     } finally {
       setIsMutating(false);

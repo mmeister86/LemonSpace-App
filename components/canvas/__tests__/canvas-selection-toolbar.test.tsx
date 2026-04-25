@@ -251,4 +251,68 @@ describe("CanvasSelectionToolbar", () => {
 
     expect(container?.querySelector('button[title="Group"]')).toBeTruthy();
   });
+
+  it("removes selected group nodes from local state after ungrouping", async () => {
+    const nodes: RFNode[] = [
+      {
+        id: "group-a",
+        type: "group",
+        position: { x: 20, y: 30 },
+        style: { width: 200, height: 160 },
+        data: {},
+        selected: true,
+        zIndex: 20,
+      },
+      {
+        id: "node-child",
+        type: "image",
+        parentId: "group-a",
+        position: { x: 12, y: 18 },
+        style: { width: 80, height: 40 },
+        data: {},
+        zIndex: 1,
+      },
+      {
+        id: "node-b",
+        type: "text",
+        position: { x: 300, y: 30 },
+        style: { width: 120, height: 90 },
+        data: {},
+        selected: true,
+      },
+    ];
+    await renderToolbar(nodes);
+
+    const ungroupButton = container?.querySelector('button[title="Ungroup"]');
+    if (!(ungroupButton instanceof HTMLButtonElement)) {
+      throw new Error("Ungroup button not found");
+    }
+
+    await act(async () => {
+      ungroupButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.ungroupNodes).toHaveBeenCalledWith({
+      groupNodeIds: ["group-a"],
+      childPositions: [
+        {
+          nodeId: "node-child",
+          parentId: undefined,
+          positionX: 32,
+          positionY: 48,
+        },
+      ],
+    });
+
+    const updater = mocks.setNodes.mock.calls.at(-1)?.[0];
+    if (typeof updater !== "function") throw new Error("Expected setNodes updater");
+
+    const nextNodes = (updater as (currentNodes: RFNode[]) => RFNode[])(nodes);
+
+    expect(nextNodes.find((node) => node.id === "group-a")).toBeUndefined();
+    expect(nextNodes.find((node) => node.id === "node-child")).toMatchObject({
+      parentId: undefined,
+      position: { x: 32, y: 48 },
+    });
+  });
 });

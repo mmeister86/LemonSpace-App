@@ -1667,6 +1667,24 @@ export const ungroupNodes = mutation({
 
     for (const groupNode of groupNodes) {
       affectedCanvasIds.add(groupNode.canvasId);
+
+      const sourceEdges = await ctx.db
+        .query("edges")
+        .withIndex("by_source", (q) => q.eq("sourceNodeId", groupNode._id))
+        .collect();
+      for (const edge of sourceEdges) {
+        await ctx.db.delete(edge._id);
+      }
+
+      const targetEdges = await ctx.db
+        .query("edges")
+        .withIndex("by_target", (q) => q.eq("targetNodeId", groupNode._id))
+        .collect();
+      for (const edge of targetEdges) {
+        await ctx.db.delete(edge._id);
+      }
+
+      await ctx.db.delete(groupNode._id);
     }
     for (const canvasId of affectedCanvasIds) {
       await ctx.db.patch(canvasId, { updatedAt: Date.now() });
