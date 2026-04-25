@@ -487,4 +487,49 @@ describe("canvas flow reconciliation helpers", () => {
       },
     ]);
   });
+
+  it("deduplicates reconciled nodes by id before rendering", () => {
+    const result = reconcileCanvasFlowNodes({
+      previousNodes: [],
+      incomingNodes: [
+        {
+          id: "group-1",
+          type: "group",
+          position: { x: 0, y: 0 },
+          data: { label: "Old" },
+        },
+        {
+          id: "group-1",
+          type: "group",
+          position: { x: 10, y: 20 },
+          data: { label: "Latest" },
+          selected: true,
+        },
+        {
+          id: "node-child",
+          type: "image",
+          parentId: "group-1",
+          position: { x: 24, y: 44 },
+          data: {},
+        },
+      ],
+      convexNodes: [
+        { _id: asNodeId("group-1"), type: "group" },
+        { _id: asNodeId("node-child"), type: "image" },
+      ],
+      deletingNodeIds: new Set(),
+      resolvedRealIdByClientRequest: new Map(),
+      pendingConnectionCreateIds: new Set(),
+      preferLocalPositionNodeIds: new Set(),
+      pendingLocalPositionPins: new Map(),
+      pendingMovePins: new Map(),
+    });
+
+    expect(result.nodes.filter((node) => node.id === "group-1")).toHaveLength(1);
+    expect(result.nodes.find((node) => node.id === "group-1")).toMatchObject({
+      position: { x: 10, y: 20 },
+      data: { label: "Latest" },
+      selected: true,
+    });
+  });
 });

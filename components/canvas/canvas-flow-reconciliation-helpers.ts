@@ -73,6 +73,32 @@ export function sortParentNodesBeforeChildren(nodes: RFNode[]): RFNode[] {
   });
 }
 
+function dedupeNodesById(nodes: RFNode[]): RFNode[] {
+  const nodeById = new Map<string, RFNode>();
+
+  for (const node of nodes) {
+    const existing = nodeById.get(node.id);
+    if (!existing) {
+      nodeById.set(node.id, node);
+      continue;
+    }
+
+    const existingData = isNodeDataRecord(existing.data) ? existing.data : {};
+    const nodeData = isNodeDataRecord(node.data) ? node.data : {};
+    nodeById.set(node.id, {
+      ...existing,
+      ...node,
+      data: {
+        ...existingData,
+        ...nodeData,
+      },
+      selected: Boolean(existing.selected || node.selected),
+    });
+  }
+
+  return Array.from(nodeById.values());
+}
+
 export function inferPendingConnectionNodeHandoff(args: {
   previousNodes: RFNode[];
   incomingConvexNodes: FlowConvexNodeRecord[];
@@ -519,10 +545,11 @@ export function reconcileCanvasFlowNodes(args: {
     nodes: parentPinnedNodes.nodes,
     pendingLocalPositionPins: args.pendingLocalPositionPins,
   });
-  const nodes = sortParentNodesBeforeChildren(applyPinnedNodePositionsReadOnly(
-    pinnedNodes.nodes,
-    args.pendingMovePins,
-  ));
+  const nodes = sortParentNodesBeforeChildren(
+    dedupeNodesById(
+      applyPinnedNodePositionsReadOnly(pinnedNodes.nodes, args.pendingMovePins),
+    ),
+  );
 
   const incomingById = new Map(filteredIncomingNodes.map((node) => [node.id, node]));
   const clearedPreferLocalPositionNodeIds: string[] = [];

@@ -145,9 +145,10 @@ describe("CanvasSelectionToolbar", () => {
         { nodeId: "node-b", positionX: 184, positionY: 104 },
       ],
     });
+    expect(mocks.setNodes).not.toHaveBeenCalled();
   });
 
-  it("collapses duplicate group entries when applying the local grouping result", async () => {
+  it("does not apply a delayed local grouping result", async () => {
     const nodes: RFNode[] = [
       {
         id: "node-a",
@@ -175,33 +176,8 @@ describe("CanvasSelectionToolbar", () => {
       groupButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const updater = mocks.setNodes.mock.calls.at(-1)?.[0];
-    if (typeof updater !== "function") throw new Error("Expected setNodes updater");
-
-    const currentNodesWithDuplicateGroup: RFNode[] = [
-      {
-        id: "group-new",
-        type: "group",
-        position: { x: 76, y: 76 },
-        style: { width: 328, height: 218 },
-        data: { label: "Gruppe" },
-        selected: true,
-      },
-      ...nodes,
-      {
-        id: "group-new",
-        type: "group",
-        position: { x: 76, y: 76 },
-        style: { width: 328, height: 218 },
-        data: { label: "Gruppe" },
-        selected: true,
-      },
-    ];
-    const nextNodes = (updater as (currentNodes: RFNode[]) => RFNode[])(
-      currentNodesWithDuplicateGroup,
-    );
-
-    expect(nextNodes.filter((node) => node.id === "group-new")).toHaveLength(1);
+    expect(mocks.createGroupFromSelection).toHaveBeenCalledTimes(1);
+    expect(mocks.setNodes).not.toHaveBeenCalled();
   });
 
   it("disables grouping when selected nodes include optimistic ids", async () => {
@@ -252,7 +228,7 @@ describe("CanvasSelectionToolbar", () => {
     expect(container?.querySelector('button[title="Group"]')).toBeTruthy();
   });
 
-  it("removes selected group nodes from local state after ungrouping", async () => {
+  it("calls ungroup mutation without applying a delayed local node update", async () => {
     const nodes: RFNode[] = [
       {
         id: "group-a",
@@ -303,16 +279,6 @@ describe("CanvasSelectionToolbar", () => {
         },
       ],
     });
-
-    const updater = mocks.setNodes.mock.calls.at(-1)?.[0];
-    if (typeof updater !== "function") throw new Error("Expected setNodes updater");
-
-    const nextNodes = (updater as (currentNodes: RFNode[]) => RFNode[])(nodes);
-
-    expect(nextNodes.find((node) => node.id === "group-a")).toBeUndefined();
-    expect(nextNodes.find((node) => node.id === "node-child")).toMatchObject({
-      parentId: undefined,
-      position: { x: 32, y: 48 },
-    });
+    expect(mocks.setNodes).not.toHaveBeenCalled();
   });
 });

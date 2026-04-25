@@ -25,7 +25,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
     notifyOfflineUnsupported,
     status,
   } = useCanvasSync();
-  const { getNodes, setNodes } = useReactFlow();
+  const { getNodes } = useReactFlow();
   const [label, setLabel] = useState(data.label ?? "Gruppe");
   const [isEditing, setIsEditing] = useState(false);
   const isDropTarget = data._groupDropTarget === true;
@@ -75,28 +75,8 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNode>) 
     void ungroupNodes({
       groupNodeIds: [id as Id<"nodes">],
       childPositions,
-    }).then(() => {
-      const childPositionByNodeId = new Map(
-        childPositions.map((position) => [position.nodeId as string, position]),
-      );
-      setNodes((currentNodes) =>
-        currentNodes
-          .filter((node) => node.id !== id)
-          .map((node) => {
-            const childPosition = childPositionByNodeId.get(node.id);
-            if (!childPosition) return node;
-            return {
-              ...node,
-              parentId: childPosition.parentId as string | undefined,
-              position: {
-                x: childPosition.positionX,
-                y: childPosition.positionY,
-              },
-            };
-          }),
-      );
     });
-  }, [getNodes, id, notifyOfflineUnsupported, setNodes, status.isOffline, ungroupNodes]);
+  }, [getNodes, id, notifyOfflineUnsupported, status.isOffline, ungroupNodes]);
 
   return (
     <BaseNodeWrapper

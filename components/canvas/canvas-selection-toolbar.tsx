@@ -72,7 +72,7 @@ export function CanvasSelectionToolbar({
   ungroupNodes,
   notifyOfflineUnsupported,
 }: CanvasSelectionToolbarProps) {
-  const { getNodes, setNodes } = useReactFlow();
+  const { getNodes } = useReactFlow();
   const [selectedNodes, setSelectedNodes] = useState<RFNode[]>([]);
   const [isMutating, setIsMutating] = useState(false);
 
@@ -131,7 +131,7 @@ export function CanvasSelectionToolbar({
     const clientRequestId = crypto.randomUUID();
     setIsMutating(true);
     try {
-      const groupId = await createGroupFromSelection({
+      await createGroupFromSelection({
         canvasId,
         nodeIds: selectedRootNodes.map((node) => node.id as Id<"nodes">),
         group: {
@@ -149,63 +149,6 @@ export function CanvasSelectionToolbar({
           positionY: position.positionY,
         })),
       });
-
-      const childPositionByNodeId = new Map(
-        frame.childPositions.map((position) => [position.nodeId, position]),
-      );
-      setNodes((currentNodes) => {
-        let existingGroupNode: RFNode | undefined;
-        const seenNodeIds = new Set<string>();
-        const nextNodes: RFNode[] = [];
-
-        for (const node of currentNodes) {
-          const childPosition = childPositionByNodeId.get(node.id);
-          const nextNode = childPosition
-            ? {
-                ...node,
-                parentId: groupId,
-                position: {
-                  x: childPosition.positionX,
-                  y: childPosition.positionY,
-                },
-                selected: false,
-              }
-            : { ...node, selected: node.id === groupId };
-
-          if (nextNode.id === groupId) {
-            existingGroupNode ??= nextNode;
-            continue;
-          }
-
-          if (seenNodeIds.has(nextNode.id)) continue;
-          seenNodeIds.add(nextNode.id);
-          nextNodes.push(nextNode);
-        }
-
-        const groupNode: RFNode = {
-          id: groupId,
-          type: "group",
-          position: { x: frame.positionX, y: frame.positionY },
-          style: { width: frame.width, height: frame.height },
-          data: { label: "Gruppe" },
-          zIndex: computeGroupZIndex(selectedRootNodes),
-          selected: true,
-        };
-
-        const resolvedGroupNode = existingGroupNode
-          ? {
-              ...existingGroupNode,
-              ...groupNode,
-              data: {
-                ...((existingGroupNode.data as Record<string, unknown>) ?? {}),
-                ...((groupNode.data as Record<string, unknown>) ?? {}),
-              },
-              selected: true,
-            }
-          : groupNode;
-
-        return [resolvedGroupNode, ...nextNodes];
-      });
     } finally {
       setIsMutating(false);
     }
@@ -217,7 +160,6 @@ export function CanvasSelectionToolbar({
     getNodes,
     isSyncOnline,
     notifyOfflineUnsupported,
-    setNodes,
   ]);
 
   const ungroupSelection = useCallback(async () => {
@@ -246,30 +188,10 @@ export function CanvasSelectionToolbar({
         groupNodeIds: groupNodes.map((node) => node.id as Id<"nodes">),
         childPositions,
       });
-      const childPositionByNodeId = new Map(
-        childPositions.map((position) => [position.nodeId as string, position]),
-      );
-      const ungroupedGroupIds = new Set(groupNodes.map((node) => node.id));
-      setNodes((currentNodes) =>
-        currentNodes
-          .filter((node) => !ungroupedGroupIds.has(node.id))
-          .map((node) => {
-            const childPosition = childPositionByNodeId.get(node.id);
-            if (!childPosition) return node;
-            return {
-              ...node,
-              parentId: childPosition.parentId as string | undefined,
-              position: {
-                x: childPosition.positionX,
-                y: childPosition.positionY,
-              },
-            };
-          }),
-      );
     } finally {
       setIsMutating(false);
     }
-  }, [canUngroup, getNodes, isSyncOnline, notifyOfflineUnsupported, selectedGroups, setNodes, ungroupNodes]);
+  }, [canUngroup, getNodes, isSyncOnline, notifyOfflineUnsupported, selectedGroups, ungroupNodes]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

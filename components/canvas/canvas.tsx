@@ -82,6 +82,7 @@ import {
 import { useCanvasFlowReconciliation } from "./use-canvas-flow-reconciliation";
 import { useCanvasLocalSnapshotPersistence } from "./use-canvas-local-snapshot-persistence";
 import { useCanvasSyncEngine } from "./use-canvas-sync-engine";
+import { useCanvasGroupingMutations } from "./use-canvas-grouping-mutations";
 import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
 import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
 import { projectCanvasFavoritesVisibility } from "./canvas-favorites-visibility";
@@ -112,8 +113,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   const registerUploadedImageMedia = useMutation(api.storage.registerUploadedImageMedia);
   const registerUploadedVideoMedia = useMutation(api.storage.registerUploadedVideoMedia);
   const runSwapMixerInputsMutation = useMutation(api.edges.swapMixerInputs);
-  const runCreateGroupFromSelectionMutation = useMutation(api.nodes.createGroupFromSelection);
-  const runUngroupNodesMutation = useMutation(api.nodes.ungroupNodes);
+  const {
+    createGroupFromSelection: runCreateGroupFromSelectionMutation,
+    ungroupNodes: runUngroupNodesMutation,
+  } = useCanvasGroupingMutations({ canvasId });
   const convexNodeIdsSnapshotForEdgeCarryRef = useRef(new Set<string>());
   const [assetBrowserTargetNodeId, setAssetBrowserTargetNodeId] = useState<
     string | null

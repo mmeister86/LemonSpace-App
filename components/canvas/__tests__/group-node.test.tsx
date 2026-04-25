@@ -149,7 +149,7 @@ describe("GroupNode", () => {
     });
   });
 
-  it("removes the group node from local state after ungrouping", async () => {
+  it("calls ungroup mutation without applying a delayed local node update", async () => {
     const nodes: RFNode[] = [
       {
         id: "parent-group",
@@ -205,15 +205,17 @@ describe("GroupNode", () => {
       ungroupButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const updater = mocks.setNodes.mock.calls.at(-1)?.[0];
-    if (typeof updater !== "function") throw new Error("Expected setNodes updater");
-
-    const nextNodes = (updater as (currentNodes: RFNode[]) => RFNode[])(nodes);
-
-    expect(nextNodes.find((node) => node.id === "group-1")).toBeUndefined();
-    expect(nextNodes.find((node) => node.id === "node-child")).toMatchObject({
-      parentId: "parent-group",
-      position: { x: 40, y: 60 },
+    expect(mocks.ungroupNodes).toHaveBeenCalledWith({
+      groupNodeIds: ["group-1"],
+      childPositions: [
+        {
+          nodeId: "node-child",
+          parentId: "parent-group",
+          positionX: 40,
+          positionY: 60,
+        },
+      ],
     });
+    expect(mocks.setNodes).not.toHaveBeenCalled();
   });
 });
