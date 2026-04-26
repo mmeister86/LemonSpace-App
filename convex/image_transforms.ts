@@ -78,11 +78,40 @@ const operationValidator = v.union(
   }),
   v.object({
     type: v.literal("style-transfer"),
-    prompt: v.optional(v.string()),
-    styleReferenceNodeId: v.optional(v.id("nodes")),
-    presetId: v.optional(v.string()),
-    styleIntensity: v.number(),
-    preserveStructure: v.boolean(),
+    styleStrength: v.number(),
+    structureStrength: v.number(),
+    flavor: v.union(
+      v.literal("faithful"),
+      v.literal("gen_z"),
+      v.literal("psychedelia"),
+      v.literal("detaily"),
+      v.literal("clear"),
+      v.literal("donotstyle"),
+      v.literal("donotstyle_sharp"),
+    ),
+    engine: v.union(
+      v.literal("balanced"),
+      v.literal("definio"),
+      v.literal("illusio"),
+      v.literal("3d_cartoon"),
+      v.literal("colorful_anime"),
+      v.literal("caricature"),
+      v.literal("real"),
+      v.literal("super_real"),
+      v.literal("softy"),
+    ),
+    fixedGeneration: v.boolean(),
+    isPortrait: v.boolean(),
+    portraitStyle: v.union(
+      v.literal("standard"),
+      v.literal("pop"),
+      v.literal("super_pop"),
+    ),
+    portraitBeautifier: v.union(
+      v.literal("none"),
+      v.literal("beautify_face"),
+      v.literal("beautify_face_max"),
+    ),
   }),
   v.object({
     type: v.literal("face-restore"),
@@ -128,9 +157,17 @@ function clampPercent(value: number, fallback: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function clampStyleIntensity(value: number): number {
-  if (!Number.isFinite(value)) return 0.7;
-  return Math.max(0, Math.min(1, value));
+function getFreepikInvalidParamsForLog(error: unknown): string | undefined {
+  if (!(error instanceof FreepikApiError)) return undefined;
+  const body = error.body;
+  if (body === null || typeof body !== "object") return undefined;
+  const invalidParams = (body as { invalid_params?: unknown }).invalid_params;
+  if (!Array.isArray(invalidParams)) return undefined;
+  try {
+    return JSON.stringify(invalidParams);
+  } catch {
+    return String(invalidParams);
+  }
 }
 
 function sanitizeOperation(operation: ImageTransformOperation): ImageTransformOperation {
@@ -145,8 +182,8 @@ function sanitizeOperation(operation: ImageTransformOperation): ImageTransformOp
     case "style-transfer":
       return {
         ...operation,
-        prompt: operation.prompt?.trim() || undefined,
-        styleIntensity: clampStyleIntensity(operation.styleIntensity),
+        styleStrength: clampPercent(operation.styleStrength, 100),
+        structureStrength: clampPercent(operation.structureStrength, 50),
       };
     case "face-restore":
       return operation;
@@ -196,14 +233,33 @@ async function decrementConcurrencyIfNeeded(
   await ctx.runMutation(internal.credits.decrementConcurrency, { userId });
 }
 
+function normalizeStyleTransferHandle(handle: string | undefined): "image" | "reference" | null {
+  if (handle === undefined || handle === "" || handle === "null") {
+    return "image";
+  }
+  if (handle === "image" || handle === "reference") {
+    return handle;
+  }
+  return null;
+}
+
 async function resolveImageSourceNode(args: {
   nodes: GraphNode[];
   edges: GraphEdge[];
   transformNodeId: Id<"nodes">;
+  targetHandle?: "image" | "reference";
 }): Promise<GraphNode> {
-  const incoming = args.edges.find((edge) => edge.targetNodeId === args.transformNodeId);
+  const incoming = args.edges.find((edge) => {
+    if (edge.targetNodeId !== args.transformNodeId) return false;
+    if (!args.targetHandle) return true;
+    return normalizeStyleTransferHandle(edge.targetHandle) === args.targetHandle;
+  });
   if (!incoming) {
-    throw new Error("Input: Transform node needs an incoming image source");
+    throw new Error(
+      args.targetHandle === "reference"
+        ? "Input: Style transfer needs a reference image"
+        : "Input: Transform node needs an incoming image source",
+    );
   }
 
   const directSource = args.nodes.find((node) => node._id === incoming.sourceNodeId);
@@ -229,6 +285,23 @@ async function resolveImageSourceNode(args: {
     throw new Error("Input: Previous transform has no image output");
   }
   return outputNode;
+}
+
+export async function resolveStyleTransferInputNodes(args: {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  transformNodeId: Id<"nodes">;
+}): Promise<{ sourceNode: GraphNode; referenceNode: GraphNode }> {
+  const sourceNode = await resolveImageSourceNode({
+    ...args,
+    targetHandle: "image",
+  });
+  const referenceNode = await resolveImageSourceNode({
+    ...args,
+    targetHandle: "reference",
+  });
+
+  return { sourceNode, referenceNode };
 }
 
 async function getNodeWithStorageUrl(
@@ -399,9 +472,14 @@ export const processImageTransform = internalAction({
         const result = await createStyleTransferTaskOrRun({
           imageUrl: args.sourceImageUrl,
           styleReferenceUrl: args.styleReferenceImageUrl,
-          prompt: args.operation.prompt,
-          styleIntensity: args.operation.styleIntensity,
-          preserveStructure: args.operation.preserveStructure,
+          styleStrength: args.operation.styleStrength,
+          structureStrength: args.operation.structureStrength,
+          flavor: args.operation.flavor,
+          engine: args.operation.engine,
+          fixedGeneration: args.operation.fixedGeneration,
+          isPortrait: args.operation.isPortrait,
+          portraitStyle: args.operation.portraitStyle,
+          portraitBeautifier: args.operation.portraitBeautifier,
         });
         if ("url" in result) {
           await finalizeSuccessfulImage({
@@ -489,6 +567,7 @@ export const processImageTransform = internalAction({
         source: getErrorSource(error) ?? null,
         providerStatus: getProviderStatus(error),
         freepikBody: error instanceof FreepikApiError ? error.body : undefined,
+        freepikInvalidParams: getFreepikInvalidParamsForLog(error),
       });
 
       await releaseInternalReservationBestEffort(ctx, args.reservationId);
@@ -683,11 +762,21 @@ export const generateTransform = action({
     const graph = await ctx.runQuery(api.canvasGraph.get, {
       canvasId: args.canvasId,
     }) as { nodes: GraphNode[]; edges: GraphEdge[] };
-    const sourceNodeRef = await resolveImageSourceNode({
-      nodes: graph.nodes,
-      edges: graph.edges,
-      transformNodeId: args.transformNodeId,
-    });
+    const styleTransferInputs =
+      operation.type === "style-transfer"
+        ? await resolveStyleTransferInputNodes({
+            nodes: graph.nodes,
+            edges: graph.edges,
+            transformNodeId: args.transformNodeId,
+          })
+        : null;
+    const sourceNodeRef =
+      styleTransferInputs?.sourceNode ??
+      (await resolveImageSourceNode({
+          nodes: graph.nodes,
+          edges: graph.edges,
+          transformNodeId: args.transformNodeId,
+        }));
     const sourceNode = await getNodeWithStorageUrl(ctx, sourceNodeRef._id);
     const sourceImageUrl = getNodeDataUrl(sourceNode);
     if (!sourceImageUrl) {
@@ -700,12 +789,14 @@ export const generateTransform = action({
       typeof sourceData.height === "number" ? sourceData.height : undefined;
 
     let styleReferenceImageUrl: string | undefined;
-    if (operation.type === "style-transfer" && operation.styleReferenceNodeId) {
+    if (operation.type === "style-transfer") {
+      if (!styleTransferInputs) {
+        throw new Error("Input: Style transfer needs a reference image");
+      }
       const styleReferenceNode = await getNodeWithStorageUrl(
         ctx,
-        operation.styleReferenceNodeId,
+        styleTransferInputs.referenceNode._id,
       );
-      assertNodeBelongsToCanvas(styleReferenceNode, args.canvasId);
       styleReferenceImageUrl = getNodeDataUrl(styleReferenceNode) ?? undefined;
       if (!styleReferenceImageUrl) {
         throw new Error("Input: Style reference image URL is unavailable");

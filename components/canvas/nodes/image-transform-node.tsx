@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Position, useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import { useTranslations } from "next-intl";
 import { ImageOff, Loader2, Sparkles, Wand2 } from "lucide-react";
 
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
@@ -19,6 +20,10 @@ import {
   type FaceRestoreMode,
   type ImageTransformOperation,
   type ImageTransformType,
+  type StyleTransferEngine,
+  type StyleTransferFlavor,
+  type StyleTransferPortraitBeautifier,
+  type StyleTransferPortraitStyle,
   type UpscaleFlavor,
   type UpscaleOutputFormat,
   type UpscaleScale,
@@ -41,19 +46,36 @@ type ImageTransformNodeProps = NodeProps<ImageTransformNodeType> & {
   operationType: ImageTransformType;
 };
 
-const LABELS: Record<ImageTransformType, string> = {
-  "bg-remove": "BG entfernen",
-  upscale: "Upscale",
-  "style-transfer": "Style Transfer",
-  "face-restore": "Gesicht",
-};
-
-const DESCRIPTIONS: Record<ImageTransformType, string> = {
-  "bg-remove": "Entfernt den Hintergrund mit Freepik.",
-  upscale: "Vergroessert das Bild per Freepik Precision V2.",
-  "style-transfer": "Uebertraegt Prompt oder Referenzstil.",
-  "face-restore": "Verbessert Portraits mit Skin Enhancer.",
-};
+const STYLE_TRANSFER_FLAVORS: StyleTransferFlavor[] = [
+  "faithful",
+  "gen_z",
+  "psychedelia",
+  "detaily",
+  "clear",
+  "donotstyle",
+  "donotstyle_sharp",
+];
+const STYLE_TRANSFER_ENGINES: StyleTransferEngine[] = [
+  "balanced",
+  "definio",
+  "illusio",
+  "3d_cartoon",
+  "colorful_anime",
+  "caricature",
+  "real",
+  "super_real",
+  "softy",
+];
+const STYLE_TRANSFER_PORTRAIT_STYLES: StyleTransferPortraitStyle[] = [
+  "standard",
+  "pop",
+  "super_pop",
+];
+const STYLE_TRANSFER_PORTRAIT_BEAUTIFIERS: StyleTransferPortraitBeautifier[] = [
+  "none",
+  "beautify_face",
+  "beautify_face_max",
+];
 
 function defaultOperation(type: ImageTransformType): ImageTransformOperation {
   switch (type) {
@@ -72,9 +94,14 @@ function defaultOperation(type: ImageTransformType): ImageTransformOperation {
     case "style-transfer":
       return {
         type,
-        prompt: "",
-        styleIntensity: 0.7,
-        preserveStructure: true,
+        styleStrength: 100,
+        structureStrength: 50,
+        flavor: "faithful",
+        engine: "balanced",
+        fixedGeneration: false,
+        isPortrait: false,
+        portraitStyle: "standard",
+        portraitBeautifier: "none",
       };
     case "face-restore":
       return { type, mode: "faithful" };
@@ -113,19 +140,34 @@ function normalizeOperation(
   if (type === "style-transfer") {
     return {
       type,
-      prompt: typeof parameters.prompt === "string" ? parameters.prompt : "",
-      styleReferenceNodeId:
-        typeof parameters.styleReferenceNodeId === "string"
-          ? (parameters.styleReferenceNodeId as Id<"nodes">)
-          : undefined,
-      presetId:
-        typeof parameters.presetId === "string" ? parameters.presetId : undefined,
-      styleIntensity:
-        typeof parameters.styleIntensity === "number" ? parameters.styleIntensity : 0.7,
-      preserveStructure:
-        typeof parameters.preserveStructure === "boolean"
-          ? parameters.preserveStructure
-          : true,
+      styleStrength:
+        typeof parameters.styleStrength === "number" ? parameters.styleStrength : 100,
+      structureStrength:
+        typeof parameters.structureStrength === "number"
+          ? parameters.structureStrength
+          : 50,
+      flavor: STYLE_TRANSFER_FLAVORS.includes(parameters.flavor as StyleTransferFlavor)
+        ? (parameters.flavor as StyleTransferFlavor)
+        : "faithful",
+      engine: STYLE_TRANSFER_ENGINES.includes(parameters.engine as StyleTransferEngine)
+        ? (parameters.engine as StyleTransferEngine)
+        : "balanced",
+      fixedGeneration:
+        typeof parameters.fixedGeneration === "boolean"
+          ? parameters.fixedGeneration
+          : false,
+      isPortrait:
+        typeof parameters.isPortrait === "boolean" ? parameters.isPortrait : false,
+      portraitStyle: STYLE_TRANSFER_PORTRAIT_STYLES.includes(
+        parameters.portraitStyle as StyleTransferPortraitStyle,
+      )
+        ? (parameters.portraitStyle as StyleTransferPortraitStyle)
+        : "standard",
+      portraitBeautifier: STYLE_TRANSFER_PORTRAIT_BEAUTIFIERS.includes(
+        parameters.portraitBeautifier as StyleTransferPortraitBeautifier,
+      )
+        ? (parameters.portraitBeautifier as StyleTransferPortraitBeautifier)
+        : "none",
     };
   }
 
@@ -146,10 +188,19 @@ function normalizeOperation(
 
 export function getSourcePreviewMeta(args: {
   nodeId: string;
-  edges: Array<{ source: string; target: string }>;
+  targetHandle?: string;
+  edges: Array<{ source: string; target: string; targetHandle?: string | null }>;
   nodes: Array<{ id: string; type?: string; data?: unknown }>;
 }): { url: string; width?: number; height?: number } | null {
-  const incoming = args.edges.find((edge) => edge.target === args.nodeId);
+  const incoming = args.edges.find((edge) => {
+    if (edge.target !== args.nodeId) return false;
+    if (!args.targetHandle) return true;
+    const handle =
+      edge.targetHandle === undefined || edge.targetHandle === null || edge.targetHandle === ""
+        ? "image"
+        : edge.targetHandle;
+    return handle === args.targetHandle;
+  });
   if (!incoming) return null;
   const source = args.nodes.find((node) => node.id === incoming.source);
   if (!source || !source.data || typeof source.data !== "object") return null;
@@ -186,6 +237,16 @@ export function getSourcePreviewMeta(args: {
   };
 }
 
+export function hasStyleTransferReferenceInput(args: {
+  nodeId: string;
+  edges: Array<{ target: string; targetHandle?: string | null } & Record<string, unknown>>;
+}): boolean {
+  return args.edges.some((edge) => {
+    if (edge.target !== args.nodeId) return false;
+    return edge.targetHandle === "reference";
+  });
+}
+
 function iconFor(type: ImageTransformType) {
   if (type === "bg-remove") return ImageOff;
   if (type === "face-restore") return Sparkles;
@@ -198,6 +259,7 @@ export default function ImageTransformNode({
   selected,
   operationType,
 }: ImageTransformNodeProps) {
+  const t = useTranslations("imageTransformNode");
   const { queueNodeDataUpdate, status } = useCanvasSync();
   const { createNodeConnectedFromSource } = useCanvasPlacement();
   const { getNode } = useReactFlow();
@@ -228,23 +290,31 @@ export default function ImageTransformNode({
   const [isRunning, setIsRunning] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const sourcePreview = useMemo(
-    () => getSourcePreviewMeta({ nodeId: id, edges, nodes }),
-    [edges, id, nodes],
+    () =>
+      getSourcePreviewMeta({
+        nodeId: id,
+        targetHandle: operationType === "style-transfer" ? "image" : undefined,
+        edges,
+        nodes,
+      }),
+    [edges, id, nodes, operationType],
+  );
+  const referencePreview = useMemo(
+    () =>
+      operationType === "style-transfer"
+        ? getSourcePreviewMeta({
+            nodeId: id,
+            targetHandle: "reference",
+            edges,
+            nodes,
+          })
+        : null,
+    [edges, id, nodes, operationType],
   );
   const sourceAspectRatio =
     sourcePreview?.width && sourcePreview.height
       ? `${sourcePreview.width} / ${sourcePreview.height}`
       : undefined;
-  const selectableImageNodes = useMemo(
-    () =>
-      nodes.filter(
-        (node) =>
-          node.id !== id &&
-          (node.type === "image" || node.type === "asset" || node.type === "ai-image"),
-      ),
-    [id, nodes],
-  );
-
   const Icon = iconFor(operationType);
   const creditCost = getImageTransformCreditCost(operation);
   const isExecuting = isRunning || nodeData._status === "executing";
@@ -327,11 +397,18 @@ export default function ImageTransformNode({
   const runTransform = useCallback(async () => {
     if (isExecuting) return;
     if (status.isOffline) {
-      toast.warning("Offline aktuell nicht unterstuetzt", "Freepik benoetigt eine aktive Verbindung.");
+      toast.warning(t("offlineTitle"), t("offlineDescription"));
       return;
     }
     if (!nodeData.canvasId) {
-      setLocalError("Canvas-ID fehlt in der Node");
+      setLocalError(t("errors.missingCanvas"));
+      return;
+    }
+    if (
+      operation.type === "style-transfer" &&
+      !hasStyleTransferReferenceInput({ nodeId: id, edges })
+    ) {
+      setLocalError(t("errors.missingReference"));
       return;
     }
 
@@ -347,9 +424,9 @@ export default function ImageTransformNode({
           operation,
         }),
         {
-          loading: "Freepik-Job wird gestartet",
-          success: "Freepik-Job wurde gestartet",
-          error: "Freepik-Job konnte nicht gestartet werden",
+          loading: t("toasts.loading"),
+          success: t("toasts.success"),
+          error: t("toasts.error"),
         },
       );
     } catch (error) {
@@ -364,7 +441,9 @@ export default function ImageTransformNode({
     isExecuting,
     nodeData.canvasId,
     operation,
+    edges,
     status.isOffline,
+    t,
   ]);
 
   return (
@@ -375,52 +454,105 @@ export default function ImageTransformNode({
       statusMessage={nodeData._statusMessage}
       className="min-w-[280px] border-teal-500/30"
     >
-      <CanvasHandle
-        nodeId={id}
-        nodeType={operationType}
-        type="target"
-        position={Position.Left}
-        className="!h-3 !w-3 !border-2 !border-background !bg-teal-500"
-      />
+      {operationType === "style-transfer" ? (
+        <>
+          <CanvasHandle
+            nodeId={id}
+            nodeType={operationType}
+            type="target"
+            position={Position.Left}
+            id="image"
+            style={{ top: "34%" }}
+            className="!h-3 !w-3 !border-2 !border-background"
+          />
+          <CanvasHandle
+            nodeId={id}
+            nodeType={operationType}
+            type="target"
+            position={Position.Left}
+            id="reference"
+            style={{ top: "56%" }}
+            className="!h-3 !w-3 !border-2 !border-background"
+          />
+        </>
+      ) : (
+        <CanvasHandle
+          nodeId={id}
+          nodeType={operationType}
+          type="target"
+          position={Position.Left}
+          className="!h-3 !w-3 !border-2 !border-background !bg-teal-500"
+        />
+      )}
 
       <div className="flex h-full flex-col gap-2 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-300">
             <Icon className="h-3.5 w-3.5" />
-            {LABELS[operationType]}
+            {t(`labels.${operationType}`)}
           </div>
           <div className="text-[10px] text-muted-foreground">{creditCost} Cr</div>
         </div>
 
-        <div
-          className={`relative w-full overflow-hidden rounded-md border border-border bg-muted/40 ${
-            sourcePreview ? "" : "h-28"
-          }`}
-          style={sourceAspectRatio ? { aspectRatio: sourceAspectRatio } : undefined}
-        >
-          {sourcePreview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={sourcePreview.url}
-              alt=""
-              className="h-full w-full object-contain"
-              draggable={false}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-              Bild verbinden
-            </div>
-          )}
-        </div>
+        {operation.type === "style-transfer" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { key: "image" as const, preview: sourcePreview },
+              { key: "reference" as const, preview: referencePreview },
+            ].map(({ key, preview }) => (
+              <div key={key} className="space-y-1">
+                <div className="text-[10px] font-medium uppercase text-muted-foreground">
+                  {t(`inputs.${key}`)}
+                </div>
+                <div className="relative h-24 overflow-hidden rounded-md border border-border bg-muted/40">
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={preview.url}
+                      alt=""
+                      className="h-full w-full object-contain"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-2 text-center text-[11px] text-muted-foreground">
+                      {t(`emptyInputs.${key}`)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className={`relative w-full overflow-hidden rounded-md border border-border bg-muted/40 ${
+              sourcePreview ? "" : "h-28"
+            }`}
+            style={sourceAspectRatio ? { aspectRatio: sourceAspectRatio } : undefined}
+          >
+            {sourcePreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={sourcePreview.url}
+                alt=""
+                className="h-full w-full object-contain"
+                draggable={false}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                {t("emptyInputs.image")}
+              </div>
+            )}
+          </div>
+        )}
 
         <p className="text-[11px] leading-snug text-muted-foreground">
-          {DESCRIPTIONS[operationType]}
+          {t(`descriptions.${operationType}`)}
         </p>
 
         {operation.type === "upscale" ? (
           <div className="grid grid-cols-2 gap-2 text-xs">
             <label className="flex flex-col gap-1">
-              Scale
+              {t("controls.scale")}
               <select
                 className="nodrag nowheel h-8 rounded-md border bg-background px-2"
                 value={operation.scale}
@@ -439,7 +571,7 @@ export default function ImageTransformNode({
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              Format
+              {t("controls.format")}
               <select
                 className="nodrag nowheel h-8 rounded-md border bg-background px-2"
                 value={operation.outputFormat}
@@ -458,42 +590,160 @@ export default function ImageTransformNode({
         ) : null}
 
         {operation.type === "style-transfer" ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              className="nodrag nowheel min-h-16 resize-none rounded-md border bg-background px-2 py-1.5 text-xs"
-              value={operation.prompt ?? ""}
-              placeholder="Prompt-Stil"
-              onChange={(event) =>
-                saveOperation({ ...operation, prompt: event.target.value })
-              }
-            />
-            <select
-              className="nodrag nowheel h-8 rounded-md border bg-background px-2 text-xs"
-              value={operation.styleReferenceNodeId ?? ""}
-              onChange={(event) =>
-                saveOperation({
-                  ...operation,
-                  styleReferenceNodeId: event.target.value
-                    ? (event.target.value as Id<"nodes">)
-                    : undefined,
-                })
-              }
-            >
-              <option value="">Keine Referenz</option>
-              {selectableImageNodes.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.type} {node.id.slice(-4)}
-                </option>
-              ))}
-            </select>
-            <select
-              disabled
-              className="nodrag nowheel h-8 rounded-md border bg-muted px-2 text-xs text-muted-foreground"
-              value=""
-              onChange={() => undefined}
-            >
-              <option value="">Presets folgen spaeter</option>
-            </select>
+          <div className="flex flex-col gap-2 text-xs">
+            <label className="flex flex-col gap-1">
+              <span className="flex items-center justify-between">
+                <span>{t("controls.styleStrength")}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {operation.styleStrength}
+                </span>
+              </span>
+              <input
+                className="nodrag nowheel"
+                type="range"
+                min={0}
+                max={100}
+                value={operation.styleStrength}
+                onChange={(event) =>
+                  saveOperation({
+                    ...operation,
+                    styleStrength: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="flex items-center justify-between">
+                <span>{t("controls.structureStrength")}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {operation.structureStrength}
+                </span>
+              </span>
+              <input
+                className="nodrag nowheel"
+                type="range"
+                min={0}
+                max={100}
+                value={operation.structureStrength}
+                onChange={(event) =>
+                  saveOperation({
+                    ...operation,
+                    structureStrength: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                {t("controls.flavor")}
+                <select
+                  className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                  value={operation.flavor}
+                  onChange={(event) =>
+                    saveOperation({
+                      ...operation,
+                      flavor: event.target.value as StyleTransferFlavor,
+                    })
+                  }
+                >
+                  {STYLE_TRANSFER_FLAVORS.map((flavor) => (
+                    <option key={flavor} value={flavor}>
+                      {t(`flavors.${flavor}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                {t("controls.engine")}
+                <select
+                  className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                  value={operation.engine}
+                  onChange={(event) =>
+                    saveOperation({
+                      ...operation,
+                      engine: event.target.value as StyleTransferEngine,
+                    })
+                  }
+                >
+                  {STYLE_TRANSFER_ENGINES.map((engine) => (
+                    <option key={engine} value={engine}>
+                      {t(`engines.${engine}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5">
+              <span>{t("controls.fixedGeneration")}</span>
+              <input
+                className="nodrag"
+                type="checkbox"
+                checked={operation.fixedGeneration}
+                onChange={(event) =>
+                  saveOperation({
+                    ...operation,
+                    fixedGeneration: event.target.checked,
+                  })
+                }
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5">
+              <span>{t("controls.isPortrait")}</span>
+              <input
+                className="nodrag"
+                type="checkbox"
+                checked={operation.isPortrait}
+                onChange={(event) =>
+                  saveOperation({
+                    ...operation,
+                    isPortrait: event.target.checked,
+                  })
+                }
+              />
+            </label>
+            {operation.isPortrait ? (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  {t("controls.portraitStyle")}
+                  <select
+                    className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                    value={operation.portraitStyle}
+                    onChange={(event) =>
+                      saveOperation({
+                        ...operation,
+                        portraitStyle: event.target.value as StyleTransferPortraitStyle,
+                      })
+                    }
+                  >
+                    {STYLE_TRANSFER_PORTRAIT_STYLES.map((style) => (
+                      <option key={style} value={style}>
+                        {t(`portraitStyles.${style}`)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  {t("controls.portraitBeautifier")}
+                  <select
+                    className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                    value={operation.portraitBeautifier}
+                    onChange={(event) =>
+                      saveOperation({
+                        ...operation,
+                        portraitBeautifier:
+                          event.target.value as StyleTransferPortraitBeautifier,
+                      })
+                    }
+                  >
+                    {STYLE_TRANSFER_PORTRAIT_BEAUTIFIERS.map((beautifier) => (
+                      <option key={beautifier} value={beautifier}>
+                        {t(`portraitBeautifiers.${beautifier}`)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -508,7 +758,7 @@ export default function ImageTransformNode({
                 }`}
                 onClick={() => saveOperation({ ...operation, mode })}
               >
-                {mode}
+                {t(`faceModes.${mode}`)}
               </button>
             ))}
           </div>
@@ -527,7 +777,7 @@ export default function ImageTransformNode({
           onClick={runTransform}
         >
           {isExecuting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {nodeData._status === "error" ? "Retry" : "Ausfuehren"}
+          {nodeData._status === "error" ? t("retryButton") : t("runButton")}
         </button>
       </div>
 

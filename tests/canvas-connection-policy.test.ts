@@ -112,8 +112,8 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
-  it("allows image sources to transform nodes", () => {
-    for (const targetType of ["bg-remove", "upscale", "style-transfer", "face-restore"]) {
+  it("allows image sources to single-input transform nodes", () => {
+    for (const targetType of ["bg-remove", "upscale", "face-restore"]) {
       expect(
         validateCanvasConnectionPolicy({
           sourceType: "image",
@@ -122,6 +122,58 @@ describe("canvas connection policy", () => {
         }),
       ).toBeNull();
     }
+  });
+
+  it("allows style transfer image and reference handles", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "style-transfer",
+        targetIncomingCount: 0,
+        targetHandle: "image",
+      }),
+    ).toBeNull();
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset",
+        targetType: "style-transfer",
+        targetIncomingCount: 1,
+        targetHandle: "reference",
+        targetIncomingHandles: ["image"],
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects invalid or occupied style transfer handles", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "style-transfer",
+        targetIncomingCount: 0,
+        targetHandle: "wrong",
+      }),
+    ).toBe("style-transfer-target-handle-invalid");
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "style-transfer",
+        targetIncomingCount: 1,
+        targetHandle: "reference",
+        targetIncomingHandles: ["reference"],
+      }),
+    ).toBe("style-transfer-handle-incoming-limit");
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "style-transfer",
+        targetIncomingCount: 2,
+        targetHandle: "reference",
+        targetIncomingHandles: ["image", "reference"],
+      }),
+    ).toBe("style-transfer-incoming-limit");
   });
 
   it("limits transform nodes to one incoming source image", () => {

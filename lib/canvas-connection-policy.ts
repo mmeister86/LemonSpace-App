@@ -84,6 +84,7 @@ const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
 ]);
 
 const MIXER_TARGET_HANDLES = new Set<string>(["base", "overlay"]);
+const STYLE_TRANSFER_TARGET_HANDLES = new Set<string>(["image", "reference"]);
 
 function normalizeMixerHandle(handle: string | null | undefined): string {
   if (handle == null || handle === "" || handle === "null") {
@@ -110,6 +111,9 @@ export type CanvasConnectionValidationReason =
   | "render-source-invalid"
   | "transform-source-invalid"
   | "transform-incoming-limit"
+  | "style-transfer-target-handle-invalid"
+  | "style-transfer-handle-incoming-limit"
+  | "style-transfer-incoming-limit"
   | "agent-source-invalid"
   | "ai-text-source-invalid"
   | "ai-text-incoming-limit"
@@ -160,6 +164,36 @@ export function validateCanvasConnectionPolicy(args: {
     if (incomingOnHandle >= 1) {
       return "mixer-handle-incoming-limit";
     }
+  }
+
+  if (targetType === "style-transfer") {
+    if (!TRANSFORM_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "transform-source-invalid";
+    }
+
+    const normalizedTargetHandle =
+      targetHandle == null || targetHandle === "" || targetHandle === "null"
+        ? "image"
+        : targetHandle;
+    if (!STYLE_TRANSFER_TARGET_HANDLES.has(normalizedTargetHandle)) {
+      return "style-transfer-target-handle-invalid";
+    }
+
+    if (targetIncomingCount >= 2) {
+      return "style-transfer-incoming-limit";
+    }
+
+    const incomingOnHandle = (targetIncomingHandles ?? []).filter((handle) => {
+      const normalized =
+        handle == null || handle === "" || handle === "null" ? "image" : handle;
+      return normalized === normalizedTargetHandle;
+    }).length;
+
+    if (incomingOnHandle >= 1) {
+      return "style-transfer-handle-incoming-limit";
+    }
+
+    return null;
   }
 
   if (targetType === "agent-output" && sourceType !== "agent") {
@@ -273,6 +307,12 @@ export function getCanvasConnectionValidationMessage(
       return "Transform-Nodes akzeptieren nur Bild-, Asset-, KI-Bild-, Render-, Crop- oder Transform-Input.";
     case "transform-incoming-limit":
       return "Transform-Nodes erlauben genau eine eingehende Verbindung.";
+    case "style-transfer-target-handle-invalid":
+      return "Style Transfer akzeptiert nur die Ziel-Handles 'image' und 'reference'.";
+    case "style-transfer-handle-incoming-limit":
+      return "Jeder Style-Transfer-Handle akzeptiert nur eine eingehende Verbindung.";
+    case "style-transfer-incoming-limit":
+      return "Style-Transfer-Nodes erlauben maximal zwei eingehende Verbindungen.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
     case "ai-text-source-invalid":

@@ -144,6 +144,11 @@ const MIXER_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
   "mixer-out": [100, 116, 139],
 };
 
+const STYLE_TRANSFER_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
+  image: [20, 184, 166],
+  reference: [236, 72, 153],
+};
+
 const CONNECTION_LINE_FALLBACK_RGB: RgbColor = [13, 148, 136];
 
 export function canvasHandleAccentRgb(args: {
@@ -170,6 +175,13 @@ export function canvasHandleAccentRgb(args: {
       return SOURCE_NODE_GLOW_RGB.mixer;
     }
     const byHandle = MIXER_HANDLE_CONNECTION_RGB[handleId];
+    if (byHandle) {
+      return byHandle;
+    }
+  }
+
+  if (nodeType === "style-transfer" && handleId) {
+    const byHandle = STYLE_TRANSFER_HANDLE_CONNECTION_RGB[handleId];
     if (byHandle) {
       return byHandle;
     }
@@ -375,7 +387,7 @@ export const NODE_HANDLE_MAP: Record<
   crop: { source: undefined, target: undefined },
   "bg-remove": { source: undefined, target: undefined },
   upscale: { source: undefined, target: undefined },
-  "style-transfer": { source: undefined, target: undefined },
+  "style-transfer": { source: undefined, target: "image" },
   "face-restore": { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
@@ -467,15 +479,20 @@ export const NODE_DEFAULTS: Record<
     },
   },
   "style-transfer": {
-    width: 320,
-    height: 360,
+    width: 340,
+    height: 620,
     data: {
       operation: "style-transfer",
       parameters: {
         type: "style-transfer",
-        prompt: "",
-        styleIntensity: 0.7,
-        preserveStructure: true,
+        styleStrength: 100,
+        structureStrength: 50,
+        flavor: "faithful",
+        engine: "balanced",
+        fixedGeneration: false,
+        isPortrait: false,
+        portraitStyle: "standard",
+        portraitBeautifier: "none",
       },
     },
   },

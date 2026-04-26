@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createImageTransformTask,
   createSkinEnhancerTask,
+  createStyleTransferTaskOrRun,
   createVideoTask,
   downloadImageAsBlob,
   downloadVideoAsBlob,
@@ -332,6 +333,58 @@ describe("freepik image transform client", () => {
         }),
       }),
     );
+  });
+
+  it("creates a style transfer task with Freepik reference image field names and controls", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: { task_id: "style_task" },
+      }),
+    );
+
+    const result = await createStyleTransferTaskOrRun({
+      imageUrl: "https://images.example.com/source.jpg",
+      styleReferenceUrl: "https://images.example.com/style.jpg",
+      styleStrength: 72,
+      structureStrength: 44,
+      flavor: "gen_z",
+      engine: "colorful_anime",
+      fixedGeneration: true,
+    });
+
+    expect(result).toEqual({ task_id: "style_task" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.freepik.com/v1/ai/image-style-transfer",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          image: "https://images.example.com/source.jpg",
+          reference_image: "https://images.example.com/style.jpg",
+          style_strength: 72,
+          structure_strength: 44,
+          flavor: "gen_z",
+          engine: "colorful_anime",
+          fixed_generation: true,
+        }),
+      }),
+    );
+  });
+
+  it("rejects style transfer requests without a reference image before calling Freepik", async () => {
+    await expect(
+      createStyleTransferTaskOrRun({
+        imageUrl: "https://images.example.com/source.jpg",
+        styleStrength: 70,
+        structureStrength: 50,
+        flavor: "faithful",
+        engine: "balanced",
+        fixedGeneration: false,
+      }),
+    ).rejects.toThrow("Style transfer requires a reference image");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("reads image transform task status from string and object generated entries", async () => {

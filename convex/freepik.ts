@@ -610,24 +610,50 @@ export async function createSkinEnhancerTask(params: {
 export async function createStyleTransferTaskOrRun(params: {
   imageUrl: string;
   styleReferenceUrl?: string;
-  prompt?: string;
-  styleIntensity?: number;
-  preserveStructure?: boolean;
+  styleStrength?: number;
+  structureStrength?: number;
+  flavor?: string;
+  engine?: string;
+  fixedGeneration?: boolean;
+  isPortrait?: boolean;
+  portraitStyle?: string;
+  portraitBeautifier?: string;
 }): Promise<{ task_id: string } | { url: string }> {
+  if (!params.styleReferenceUrl) {
+    throw new Error("Style transfer requires a reference image");
+  }
+
   const payload: Record<string, unknown> = {
-    image_url: params.imageUrl,
+    image: params.imageUrl,
+    reference_image: params.styleReferenceUrl,
   };
-  if (params.styleReferenceUrl) {
-    payload.style_reference_url = params.styleReferenceUrl;
+  if (params.styleStrength !== undefined) {
+    payload.style_strength = params.styleStrength;
   }
-  if (params.prompt?.trim()) {
-    payload.prompt = params.prompt.trim();
+  if (params.structureStrength !== undefined) {
+    payload.structure_strength = params.structureStrength;
   }
-  if (params.styleIntensity !== undefined) {
-    payload.style_intensity = params.styleIntensity;
+  if (params.flavor) {
+    payload.flavor = params.flavor;
   }
-  if (params.preserveStructure !== undefined) {
-    payload.preserve_structure = params.preserveStructure;
+  if (params.engine) {
+    payload.engine = params.engine;
+  }
+  if (params.fixedGeneration !== undefined) {
+    payload.fixed_generation = params.fixedGeneration;
+  }
+  if (params.isPortrait !== undefined) {
+    payload.is_portrait = params.isPortrait;
+  }
+  if (params.isPortrait && params.portraitStyle) {
+    payload.portrait_style = params.portraitStyle;
+  }
+  if (
+    params.isPortrait &&
+    params.portraitBeautifier &&
+    params.portraitBeautifier !== "none"
+  ) {
+    payload.portrait_beautifier = params.portraitBeautifier;
   }
 
   const result = await freepikJsonRequest<unknown>({

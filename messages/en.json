@@ -165,6 +165,88 @@
     "insufficientCredits": "Not enough credits",
     "noPromptHint": "Enter a prompt or connect a text node"
   },
+  "imageTransformNode": {
+    "labels": {
+      "bg-remove": "Remove BG",
+      "upscale": "Upscale",
+      "style-transfer": "Style Transfer",
+      "face-restore": "Face"
+    },
+    "descriptions": {
+      "bg-remove": "Removes the background with Freepik.",
+      "upscale": "Enlarges the image with Freepik Precision V2.",
+      "style-transfer": "Transfers the look of a reference image to the main image.",
+      "face-restore": "Enhances portraits with Skin Enhancer."
+    },
+    "inputs": {
+      "image": "Image",
+      "reference": "Reference"
+    },
+    "emptyInputs": {
+      "image": "Connect image",
+      "reference": "Connect reference"
+    },
+    "controls": {
+      "scale": "Scale",
+      "format": "Format",
+      "styleStrength": "Style strength",
+      "structureStrength": "Structure",
+      "flavor": "Flavor",
+      "engine": "Engine",
+      "fixedGeneration": "Fixed generation",
+      "isPortrait": "Portrait",
+      "portraitStyle": "Portrait style",
+      "portraitBeautifier": "Beautifier"
+    },
+    "flavors": {
+      "faithful": "Faithful",
+      "gen_z": "Gen Z",
+      "psychedelia": "Psychedelia",
+      "detaily": "Detailed",
+      "clear": "Clear",
+      "donotstyle": "Subtle",
+      "donotstyle_sharp": "Subtle sharp"
+    },
+    "engines": {
+      "balanced": "Balanced",
+      "definio": "Definio",
+      "illusio": "Illusio",
+      "3d_cartoon": "3D cartoon",
+      "colorful_anime": "Colorful anime",
+      "caricature": "Caricature",
+      "real": "Real",
+      "super_real": "Super real",
+      "softy": "Softy"
+    },
+    "portraitStyles": {
+      "standard": "Standard",
+      "pop": "Pop",
+      "super_pop": "Super pop"
+    },
+    "portraitBeautifiers": {
+      "none": "None",
+      "beautify_face": "Beautify",
+      "beautify_face_max": "Max beautify"
+    },
+    "faceModes": {
+      "faithful": "Faithful",
+      "creative": "Creative",
+      "flexible": "Flexible"
+    },
+    "errors": {
+      "missingCanvas": "Canvas ID is missing on this node.",
+      "missingReference": "Reference image is missing."
+    },
+    "toasts": {
+      "loading": "Starting Freepik job",
+      "success": "Freepik job started",
+      "error": "Freepik job could not be started"
+    },
+    "offlineTitle": "Offline currently not supported",
+    "offlineDescription": "Freepik requires an active connection.",
+    "runButton": "Run",
+    "retryButton": "Retry"
+  },
   "textNode": {
     "label": "Text",
     "emptyHint": "Select, then click here",

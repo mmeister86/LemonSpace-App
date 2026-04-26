@@ -75,7 +75,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
   crop: ["crop", "resize", "ratio"],
   "bg-remove": ["background", "remove", "freistellen", "hintergrund"],
   upscale: ["upscale", "size", "resolution", "auflösung"],
-  "style-transfer": ["style", "transfer", "look", "prompt"],
+  "style-transfer": ["style", "transfer", "look", "reference", "referenz"],
   "face-restore": ["face", "restore", "portrait", "gesicht"],
   curves: ["curves", "tone", "contrast"],
   "color-adjust": ["color", "hue", "saturation"],

@@ -1,5 +1,3 @@
-import type { Id } from "@/convex/_generated/dataModel";
-
 export const IMAGE_TRANSFORM_TYPES = [
   "bg-remove",
   "upscale",
@@ -13,6 +11,29 @@ export type UpscaleScale = 2 | 4 | 8 | 16;
 export type UpscaleOutputFormat = "png" | "jpeg";
 export type UpscaleFlavor = "sublime" | "photo" | "photo_denoiser";
 export type FaceRestoreMode = "faithful" | "creative" | "flexible";
+export type StyleTransferFlavor =
+  | "faithful"
+  | "gen_z"
+  | "psychedelia"
+  | "detaily"
+  | "clear"
+  | "donotstyle"
+  | "donotstyle_sharp";
+export type StyleTransferEngine =
+  | "balanced"
+  | "definio"
+  | "illusio"
+  | "3d_cartoon"
+  | "colorful_anime"
+  | "caricature"
+  | "real"
+  | "super_real"
+  | "softy";
+export type StyleTransferPortraitStyle = "standard" | "pop" | "super_pop";
+export type StyleTransferPortraitBeautifier =
+  | "none"
+  | "beautify_face"
+  | "beautify_face_max";
 
 export type ImageTransformOperation =
   | { type: "bg-remove" }
@@ -27,11 +48,14 @@ export type ImageTransformOperation =
     }
   | {
       type: "style-transfer";
-      prompt?: string;
-      styleReferenceNodeId?: Id<"nodes">;
-      presetId?: string;
-      styleIntensity: number;
-      preserveStructure: boolean;
+      styleStrength: number;
+      structureStrength: number;
+      flavor: StyleTransferFlavor;
+      engine: StyleTransferEngine;
+      fixedGeneration: boolean;
+      isPortrait: boolean;
+      portraitStyle: StyleTransferPortraitStyle;
+      portraitBeautifier: StyleTransferPortraitBeautifier;
     }
   | {
       type: "face-restore";

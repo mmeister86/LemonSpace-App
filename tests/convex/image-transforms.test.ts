@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildUpscalePayload,
+  resolveStyleTransferInputNodes,
   resolveTransformOutputDimensions,
 } from "@/convex/image_transforms";
 
@@ -53,5 +54,38 @@ describe("image transform orchestration", () => {
         sourceHeight: 800,
       }),
     ).toEqual({ width: 1200, height: 800 });
+  });
+
+  it("resolves style transfer image and reference inputs by handles", async () => {
+    const nodes = [
+      { _id: "source-node", type: "image", data: {}, canvasId: "canvas-1" },
+      { _id: "reference-node", type: "asset", data: {}, canvasId: "canvas-1" },
+      { _id: "style-node", type: "style-transfer", data: {}, canvasId: "canvas-1" },
+    ] as never;
+    const edges = [
+      {
+        _id: "edge-source",
+        sourceNodeId: "source-node",
+        targetNodeId: "style-node",
+        targetHandle: "image",
+      },
+      {
+        _id: "edge-reference",
+        sourceNodeId: "reference-node",
+        targetNodeId: "style-node",
+        targetHandle: "reference",
+      },
+    ] as never;
+
+    await expect(
+      resolveStyleTransferInputNodes({
+        nodes,
+        edges,
+        transformNodeId: "style-node" as never,
+      }),
+    ).resolves.toEqual({
+      sourceNode: nodes[0],
+      referenceNode: nodes[1],
+    });
   });
 });
