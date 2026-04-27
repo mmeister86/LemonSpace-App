@@ -22,6 +22,13 @@ import {
   mergeNodeData,
 } from "./node_status_helpers";
 import {
+  commitInternalReservationIfNeeded,
+  decrementConcurrencyIfNeeded,
+  releaseInternalReservationBestEffort,
+  releasePublicReservationBestEffort,
+  startPublicJobCreditFlow,
+} from "./job_credit_flow";
+import {
   createVideoTask,
   downloadVideoAsBlob,
   FreepikApiError,
@@ -113,44 +120,6 @@ function buildAiTextMessages(args: {
       ].join("\n\n"),
     },
   ];
-}
-
-async function releaseInternalReservationBestEffort(
-  reservationId: Id<"creditTransactions"> | null | undefined,
-  releaseFn: (transactionId: Id<"creditTransactions">) => Promise<unknown>
-) {
-  if (!reservationId) {
-    return;
-  }
-  try {
-    await releaseFn(reservationId);
-  } catch {
-    // Keep node status updates best-effort even if credit release fails.
-  }
-}
-
-async function releasePublicReservationBestEffort(
-  reservationId: Id<"creditTransactions"> | null | undefined,
-  releaseFn: (transactionId: Id<"creditTransactions">) => Promise<unknown>
-) {
-  if (!reservationId) {
-    return;
-  }
-  try {
-    await releaseFn(reservationId);
-  } catch {
-    // Prefer returning a clear node error over masking with cleanup failures.
-  }
-}
-
-async function decrementConcurrencyIfNeeded(
-  shouldDecrement: boolean,
-  decrementFn: () => Promise<unknown>
-) {
-  if (!shouldDecrement) {
-    return;
-  }
-  await decrementFn();
 }
 
 export const markNodeExecuting = internalMutation({
@@ -393,12 +362,7 @@ export const processImageGeneration = internalAction({
         retryCount,
       });
 
-      if (args.reservationId) {
-        await ctx.runMutation(internal.credits.commitInternal, {
-          transactionId: args.reservationId,
-          actualCost: creditCost,
-        });
-      }
+      await commitInternalReservationIfNeeded(ctx, args.reservationId, creditCost);
 
       console.info("[processImageGeneration] success", {
         nodeId: args.nodeId,
@@ -416,13 +380,7 @@ export const processImageGeneration = internalAction({
         message: errorMessage(error),
       });
 
-      await releaseInternalReservationBestEffort(
-        args.reservationId,
-        (transactionId) =>
-          ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId,
-          })
-      );
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeImageFailure, {
         nodeId: args.nodeId,
@@ -430,11 +388,7 @@ export const processImageGeneration = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
     } finally {
-      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: args.userId,
-        })
-      );
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
 
       console.info("[processImageGeneration] finished", {
         nodeId: args.nodeId,
@@ -484,9 +438,6 @@ export const generateImage = action({
     const verifiedCanvasId = canvas._id;
     const verifiedNodeId = node._id;
 
-    const internalCreditsEnabled =
-      process.env.INTERNAL_CREDITS_ENABLED === "true";
-
     const modelId = args.model ?? DEFAULT_IMAGE_MODEL;
     const modelConfig = IMAGE_MODELS[modelId];
     if (!modelConfig) {
@@ -499,24 +450,17 @@ export const generateImage = action({
       throw new Error(`Model ${modelId} requires ${modelConfig.minTier} tier`);
     }
 
-    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
-
-    let usageIncremented = false;
-    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
-      ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: modelConfig.creditCost,
-          description: `Bildgenerierung — ${modelConfig.name}`,
-          model: modelId,
-          nodeId: verifiedNodeId,
-          canvasId: verifiedCanvasId,
-          provider: "openrouter",
-        })
-      : null;
-
-    if (!internalCreditsEnabled) {
-      await ctx.runMutation(internal.credits.incrementUsage, {});
-      usageIncremented = true;
-    }
+    const {
+      reservationId,
+      shouldDecrementConcurrency: usageIncremented,
+    } = await startPublicJobCreditFlow(ctx, {
+      estimatedCost: modelConfig.creditCost,
+      description: `Bildgenerierung — ${modelConfig.name}`,
+      model: modelId,
+      nodeId: verifiedNodeId,
+      canvasId: verifiedCanvasId,
+      provider: "openrouter",
+    });
 
     const retryCount = 0;
     let backgroundJobScheduled = false;
@@ -559,11 +503,7 @@ export const generateImage = action({
         message: errorMessage(error),
       });
 
-      await releasePublicReservationBestEffort(reservationId, (transactionId) =>
-        ctx.runMutation(api.credits.release, {
-          transactionId,
-        })
-      );
+      await releasePublicReservationBestEffort(ctx, reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeImageFailure, {
         nodeId: verifiedNodeId,
@@ -573,13 +513,7 @@ export const generateImage = action({
 
       throw error;
     } finally {
-      await decrementConcurrencyIfNeeded(
-        usageIncremented && !backgroundJobScheduled,
-        () =>
-          ctx.runMutation(internal.credits.decrementConcurrency, {
-            userId,
-          })
-      );
+      await decrementConcurrencyIfNeeded(ctx, usageIncremented && !backgroundJobScheduled, userId);
     }
   },
 });
@@ -679,31 +613,16 @@ export const processTextGeneration = internalAction({
         outputText,
       });
 
-      if (args.reservationId) {
-        await ctx.runMutation(internal.credits.commitInternal, {
-          transactionId: args.reservationId,
-          actualCost: creditCost,
-        });
-      }
+      await commitInternalReservationIfNeeded(ctx, args.reservationId, creditCost);
     } catch (error) {
-      await releaseInternalReservationBestEffort(
-        args.reservationId,
-        (transactionId) =>
-          ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId,
-          }),
-      );
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeTextFailure, {
         nodeId: args.outputNodeId,
         statusMessage: formatTerminalStatusMessage(error),
       });
     } finally {
-      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: args.userId,
-        }),
-      );
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
     }
   },
 });
@@ -775,25 +694,17 @@ export const generateText = action({
       throw new Error(`Model ${selectedModel.id} requires ${selectedModel.minTier} tier`);
     }
 
-    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
-
-    const internalCreditsEnabled = process.env.INTERNAL_CREDITS_ENABLED === "true";
-    let usageIncremented = false;
-    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
-      ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: selectedModel.creditCost,
-          description: `KI-Text - ${selectedModel.label}`,
-          model: selectedModel.id,
-          nodeId: args.outputNodeId,
-          canvasId: args.canvasId,
-          provider: "openrouter",
-        })
-      : null;
-
-    if (!internalCreditsEnabled) {
-      await ctx.runMutation(internal.credits.incrementUsage, {});
-      usageIncremented = true;
-    }
+    const {
+      reservationId,
+      shouldDecrementConcurrency: usageIncremented,
+    } = await startPublicJobCreditFlow(ctx, {
+      estimatedCost: selectedModel.creditCost,
+      description: `KI-Text - ${selectedModel.label}`,
+      model: selectedModel.id,
+      nodeId: args.outputNodeId,
+      canvasId: args.canvasId,
+      provider: "openrouter",
+    });
 
     let scheduled = false;
 
@@ -815,11 +726,7 @@ export const generateText = action({
       scheduled = true;
       return { queued: true, outputNodeId: args.outputNodeId };
     } catch (error) {
-      await releasePublicReservationBestEffort(reservationId, (transactionId) =>
-        ctx.runMutation(api.credits.release, {
-          transactionId,
-        }),
-      );
+      await releasePublicReservationBestEffort(ctx, reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeTextFailure, {
         nodeId: args.outputNodeId,
@@ -828,13 +735,7 @@ export const generateText = action({
 
       throw error;
     } finally {
-      await decrementConcurrencyIfNeeded(
-        usageIncremented && !scheduled,
-        () =>
-          ctx.runMutation(internal.credits.decrementConcurrency, {
-            userId: canvas.ownerId,
-          }),
-      );
+      await decrementConcurrencyIfNeeded(ctx, usageIncremented && !scheduled, canvas.ownerId);
     }
   },
 });
@@ -1040,13 +941,7 @@ export const processVideoGeneration = internalAction({
         freepikBody: error instanceof FreepikApiError ? error.body : undefined,
       });
 
-      await releaseInternalReservationBestEffort(
-        args.reservationId,
-        (transactionId) =>
-          ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId,
-          })
-      );
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1054,11 +949,7 @@ export const processVideoGeneration = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: args.userId,
-        })
-      );
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
     }
   },
 });
@@ -1087,13 +978,7 @@ export const pollVideoTask = internalAction({
         maxTotalMs: MAX_VIDEO_POLL_TOTAL_MS,
       })
     ) {
-      await releaseInternalReservationBestEffort(
-        args.reservationId,
-        (transactionId) =>
-          ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId,
-          })
-      );
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1101,11 +986,7 @@ export const pollVideoTask = internalAction({
         statusMessage: "Timeout: Video generation exceeded maximum polling time",
       });
 
-      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: args.userId,
-        })
-      );
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
       return;
     }
 
@@ -1143,13 +1024,7 @@ export const pollVideoTask = internalAction({
       }
 
       if (status.status === "FAILED") {
-        await releaseInternalReservationBestEffort(
-          args.reservationId,
-          (transactionId) =>
-            ctx.runMutation(internal.credits.releaseInternal, {
-              transactionId,
-            })
-        );
+        await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
         await ctx.runMutation(internal.ai.finalizeVideoFailure, {
           nodeId: args.outputNodeId,
@@ -1157,11 +1032,7 @@ export const pollVideoTask = internalAction({
           statusMessage: status.error?.trim() || "Provider: Video generation failed",
         });
 
-        await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-          ctx.runMutation(internal.credits.decrementConcurrency, {
-            userId: args.userId,
-          })
-        );
+        await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
         return;
       }
 
@@ -1184,18 +1055,9 @@ export const pollVideoTask = internalAction({
           creditCost: args.creditCost,
         });
 
-        if (args.reservationId) {
-          await ctx.runMutation(internal.credits.commitInternal, {
-            transactionId: args.reservationId,
-            actualCost: args.creditCost,
-          });
-        }
+        await commitInternalReservationIfNeeded(ctx, args.reservationId, args.creditCost);
 
-        await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-          ctx.runMutation(internal.credits.decrementConcurrency, {
-            userId: args.userId,
-          })
-        );
+        await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
         return;
       }
     } catch (error) {
@@ -1229,13 +1091,7 @@ export const pollVideoTask = internalAction({
         return;
       }
 
-      await releaseInternalReservationBestEffort(
-        args.reservationId,
-        (transactionId) =>
-          ctx.runMutation(internal.credits.releaseInternal, {
-            transactionId,
-          })
-      );
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1243,11 +1099,7 @@ export const pollVideoTask = internalAction({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      await decrementConcurrencyIfNeeded(args.shouldDecrementConcurrency, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: args.userId,
-        })
-      );
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
       return;
     }
 
@@ -1326,31 +1178,22 @@ export const generateVideo = action({
 
     const userId = canvas.ownerId;
     const creditCost = model.creditCost[args.durationSeconds];
-    const internalCreditsEnabled = process.env.INTERNAL_CREDITS_ENABLED === "true";
-
-    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
-
-    let usageIncremented = false;
-    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
-      ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: creditCost,
-          description: `Videogenerierung - ${model.label} (${args.durationSeconds}s)`,
-          model: args.modelId,
-          nodeId: args.outputNodeId,
-          canvasId: args.canvasId,
-          provider: "freepik",
-          videoMeta: {
-            model: args.modelId,
-            durationSeconds: args.durationSeconds,
-            hasAudio: false,
-          },
-        })
-      : null;
-
-    if (!internalCreditsEnabled) {
-      await ctx.runMutation(internal.credits.incrementUsage, {});
-      usageIncremented = true;
-    }
+    const {
+      reservationId,
+      shouldDecrementConcurrency: usageIncremented,
+    } = await startPublicJobCreditFlow(ctx, {
+      estimatedCost: creditCost,
+      description: `Videogenerierung - ${model.label} (${args.durationSeconds}s)`,
+      model: args.modelId,
+      nodeId: args.outputNodeId,
+      canvasId: args.canvasId,
+      provider: "freepik",
+      videoMeta: {
+        model: args.modelId,
+        durationSeconds: args.durationSeconds,
+        hasAudio: false,
+      },
+    });
 
     try {
       await ctx.runMutation(internal.ai.markNodeExecuting, {
@@ -1370,11 +1213,7 @@ export const generateVideo = action({
 
       return { queued: true, outputNodeId: args.outputNodeId };
     } catch (error) {
-      await releasePublicReservationBestEffort(reservationId, (transactionId) =>
-        ctx.runMutation(api.credits.release, {
-          transactionId,
-        })
-      );
+      await releasePublicReservationBestEffort(ctx, reservationId, "ai");
 
       await ctx.runMutation(internal.ai.finalizeVideoFailure, {
         nodeId: args.outputNodeId,
@@ -1382,11 +1221,7 @@ export const generateVideo = action({
         statusMessage: formatTerminalStatusMessage(error),
       });
 
-      await decrementConcurrencyIfNeeded(usageIncremented, () =>
-        ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId,
-        })
-      );
+      await decrementConcurrencyIfNeeded(ctx, usageIncremented, userId);
 
       throw error;
     }
