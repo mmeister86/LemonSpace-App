@@ -10,6 +10,7 @@ import { api, internal } from "./_generated/api";
 import type { FunctionReference } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  createChangeCameraTask,
   createImageTransformTask,
   createSkinEnhancerTask,
   createStyleTransferTaskOrRun,
@@ -44,21 +45,35 @@ const TRANSFORM_SOURCE_TYPES = new Set([
   "ai-image",
   "render",
   "crop",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
   "bg-remove",
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
+]);
+const LOCAL_PIPELINE_SOURCE_TYPES = new Set([
+  "crop",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
 ]);
 const TRANSFORM_NODE_TYPES = new Set([
   "bg-remove",
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
 ]);
 const TASK_STATUS_ENDPOINTS = {
   upscale: "/v1/ai/image-upscaler-precision-v2/{task-id}",
   "style-transfer": "/v1/ai/image-style-transfer/{task-id}",
   "face-restore": "/v1/ai/skin-enhancer/{task-id}",
+  "change-camera": "/v1/ai/image-change-camera/{task-id}",
 } as const;
 
 const operationValidator = v.union(
@@ -121,6 +136,14 @@ const operationValidator = v.union(
       v.literal("flexible"),
     ),
     preset: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("change-camera"),
+    horizontalAngle: v.number(),
+    verticalAngle: v.number(),
+    zoom: v.number(),
+    outputFormat: v.union(v.literal("png"), v.literal("jpeg")),
+    seed: v.optional(v.number()),
   }),
 );
 
@@ -185,6 +208,17 @@ function sanitizeOperation(operation: ImageTransformOperation): ImageTransformOp
         styleStrength: clampPercent(operation.styleStrength, 100),
         structureStrength: clampPercent(operation.structureStrength, 50),
       };
+    case "change-camera":
+      return {
+        ...operation,
+        horizontalAngle: Math.max(0, Math.min(360, Math.round(operation.horizontalAngle))),
+        verticalAngle: Math.max(-30, Math.min(90, Math.round(operation.verticalAngle))),
+        zoom: Math.max(0, Math.min(10, Math.round(operation.zoom))),
+        seed:
+          operation.seed !== undefined && Number.isFinite(operation.seed)
+            ? Math.max(1, Math.round(operation.seed))
+            : undefined,
+      };
     case "face-restore":
       return operation;
     case "bg-remove":
@@ -243,11 +277,12 @@ function normalizeStyleTransferHandle(handle: string | undefined): "image" | "re
   return null;
 }
 
-async function resolveImageSourceNode(args: {
+export async function resolveImageSourceNode(args: {
   nodes: GraphNode[];
   edges: GraphEdge[];
   transformNodeId: Id<"nodes">;
   targetHandle?: "image" | "reference";
+  visitedNodeIds?: Set<Id<"nodes">>;
 }): Promise<GraphNode> {
   const incoming = args.edges.find((edge) => {
     if (edge.targetNodeId !== args.transformNodeId) return false;
@@ -269,6 +304,20 @@ async function resolveImageSourceNode(args: {
 
   if (!TRANSFORM_SOURCE_TYPES.has(directSource.type)) {
     throw new Error("Input: Unsupported source node type");
+  }
+
+  if (LOCAL_PIPELINE_SOURCE_TYPES.has(directSource.type)) {
+    const visitedNodeIds = args.visitedNodeIds ?? new Set<Id<"nodes">>();
+    if (visitedNodeIds.has(directSource._id)) {
+      throw new Error("Input: Source pipeline contains a cycle");
+    }
+    visitedNodeIds.add(directSource._id);
+    return await resolveImageSourceNode({
+      nodes: args.nodes,
+      edges: args.edges,
+      transformNodeId: directSource._id,
+      visitedNodeIds,
+    });
   }
 
   if (!TRANSFORM_NODE_TYPES.has(directSource.type)) {
@@ -344,6 +393,24 @@ export function buildUpscalePayload(args: {
     sharpen: args.sharpen,
     smart_grain: args.grain,
     ultra_detail: args.ultraDetail,
+  };
+}
+
+export function buildChangeCameraPayload(args: {
+  imageUrl: string;
+  horizontalAngle: number;
+  verticalAngle: number;
+  zoom: number;
+  outputFormat: "png" | "jpeg";
+  seed?: number;
+}): Record<string, unknown> {
+  return {
+    image: args.imageUrl,
+    horizontal_angle: args.horizontalAngle,
+    vertical_angle: args.verticalAngle,
+    zoom: args.zoom,
+    output_format: args.outputFormat,
+    ...(args.seed !== undefined ? { seed: args.seed } : {}),
   };
 }
 
@@ -531,6 +598,15 @@ export const processImageTransform = internalAction({
                 ultraDetail: args.operation.ultraDetail,
               }),
             })
+          : args.operation.type === "change-camera"
+            ? await createChangeCameraTask({
+                imageUrl: args.sourceImageUrl,
+                horizontalAngle: args.operation.horizontalAngle,
+                verticalAngle: args.operation.verticalAngle,
+                zoom: args.operation.zoom,
+                outputFormat: args.operation.outputFormat,
+                seed: args.operation.seed,
+              })
           : await createSkinEnhancerTask({
               mode: args.operation.mode as FaceRestoreMode,
               imageUrl: args.sourceImageUrl,
@@ -552,6 +628,8 @@ export const processImageTransform = internalAction({
           statusEndpointPath:
             args.operation.type === "upscale"
               ? TASK_STATUS_ENDPOINTS.upscale
+              : args.operation.type === "change-camera"
+                ? TASK_STATUS_ENDPOINTS["change-camera"]
               : TASK_STATUS_ENDPOINTS["face-restore"],
           attempt: 1,
           startedAtMs: Date.now(),

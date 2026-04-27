@@ -177,6 +177,7 @@ const SOURCE_NODE_TYPES = new Set([
   "image",
   "ai-image",
   "asset",
+  "change-camera",
   "video",
   "asset-video",
   "ai-video",

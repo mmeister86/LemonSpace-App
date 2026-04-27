@@ -170,13 +170,15 @@
       "bg-remove": "Remove BG",
       "upscale": "Upscale",
       "style-transfer": "Style Transfer",
-      "face-restore": "Face"
+      "face-restore": "Face",
+      "change-camera": "Change Camera"
     },
     "descriptions": {
       "bg-remove": "Removes the background with Freepik.",
       "upscale": "Enlarges the image with Freepik Precision V2.",
       "style-transfer": "Transfers the look of a reference image to the main image.",
-      "face-restore": "Enhances portraits with Skin Enhancer."
+      "face-restore": "Enhances portraits with Skin Enhancer.",
+      "change-camera": "Changes camera angle, tilt, and zoom with Freepik."
     },
     "inputs": {
       "image": "Image",
@@ -196,7 +198,12 @@
       "fixedGeneration": "Fixed generation",
       "isPortrait": "Portrait",
       "portraitStyle": "Portrait style",
-      "portraitBeautifier": "Beautifier"
+      "portraitBeautifier": "Beautifier",
+      "horizontalAngle": "Horizontal",
+      "verticalAngle": "Vertical",
+      "zoom": "Zoom",
+      "seed": "Seed",
+      "seedPlaceholder": "Random"
     },
     "flavors": {
       "faithful": "Faithful",

@@ -76,7 +76,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | **source** (Quelle) | `image`, `text`, `video`, `asset`, `color`, `ai-video` | Input-Quellen für den Workflow |
 | **ai-output** (KI-Ausgabe) | `prompt`, `video-prompt`, `ai-text` | KI-generierte Inhalte |
 | **agents** (Agents) | `agent`, `agent-output` | Agent-Orchestrierung und Agent-Outputs |
-| **transform** (Transformation) | `crop`, `bg-remove`, `upscale`, `style-transfer`, `face-restore` | Bildbearbeitung-Transformationen |
+| **transform** (Transformation) | `crop`, `bg-remove`, `upscale`, `style-transfer`, `face-restore`, `change-camera` | Bildbearbeitung-Transformationen |
 | **image-edit** (Bildbearbeitung) | `curves`, `color-adjust`, `light-adjust`, `detail-adjust`, `render` | Preset-basierte Adjustments und Render |
 | **control** (Steuerung & Flow) | `splitter`, `loop`, `mixer`, `switch` | Kontrollfluss-Elemente |
 | **layout** (Canvas & Layout) | `group`, `frame`, `note`, `text-overlay`, `compare`, `comment`, `presentation` | Layout-Elemente |
@@ -97,10 +97,11 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `agent` | 2 | ✅ | agents | target: `agent-in`, source (default) |
 | `agent-output` | 2 | ✅ (systemOutput) | agents | target: `agent-output-in` |
 | `crop` | 2 | ✅ | transform | 🔲 |
-| `bg-remove` | 2 | 🔲 | transform | 🔲 |
-| `upscale` | 2 | 🔲 | transform | 🔲 |
-| `style-transfer` | 3 | 🔲 | transform | 🔲 |
-| `face-restore` | 3 | 🔲 | transform | 🔲 |
+| `bg-remove` | 2 | ✅ | transform | source/target (default) |
+| `upscale` | 2 | ✅ | transform | source/target (default) |
+| `style-transfer` | 2 | ✅ | transform | source (default), targets: `image`, `reference` |
+| `face-restore` | 2 | ✅ | transform | source/target (default) |
+| `change-camera` | 2 | ✅ | transform | source/target (default) |
 | `curves` | 2 | ✅ | image-edit | Preset-basiert (nicht standalone) |
 | `color-adjust` | 2 | ✅ | image-edit | Preset-basiert |
 | `light-adjust` | 2 | ✅ | image-edit | Preset-basiert |
@@ -207,6 +208,7 @@ Jede Edge bekommt einen `drop-shadow`-Filter entsprechend dem Quell-Node-Typ. Fa
 - `frame` → Orange (249, 115, 22)
 - `group`, `compare` → Grau (100, 116, 139)
 - `curves`, `color-adjust`, `light-adjust`, `detail-adjust` → Pink (236, 72, 153)
+- `change-camera`, `render` → Sky (14, 165, 233)
 
 Compare-Node hat zusätzlich Handle-spezifische Farben (`left` → Blau, `right` → Smaragd).
 

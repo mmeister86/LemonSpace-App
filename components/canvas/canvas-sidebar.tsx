@@ -4,6 +4,7 @@ import { useState } from "react";
 import NextImage from "next/image";
 import {
   Bot,
+  Camera,
   ClipboardList,
   ChevronDown,
   ChevronRight,
@@ -62,6 +63,7 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   upscale: Wand2,
   "style-transfer": Wand2,
   "face-restore": Sparkles,
+  "change-camera": Camera,
   curves: Sparkles,
   "color-adjust": Palette,
   "light-adjust": Sparkles,

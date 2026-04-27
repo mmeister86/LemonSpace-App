@@ -38,6 +38,9 @@ export class NodeErrorBoundary extends Component<
     console.error("Node rendering error", {
       nodeType: this.props.nodeType,
       error,
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
       componentStack: errorInfo.componentStack,
     });
   }

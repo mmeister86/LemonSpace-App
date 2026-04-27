@@ -186,11 +186,58 @@ describe("canvas connection policy", () => {
     ).toBe("transform-incoming-limit");
   });
 
+  it("allows image-like sources to change camera", () => {
+    for (const sourceType of [
+      "image",
+      "asset",
+      "ai-image",
+      "render",
+      "crop",
+      "curves",
+      "color-adjust",
+      "light-adjust",
+      "detail-adjust",
+      "bg-remove",
+      "upscale",
+      "style-transfer",
+      "face-restore",
+      "change-camera",
+    ]) {
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType,
+          targetType: "change-camera",
+          targetIncomingCount: 0,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("limits change camera to one incoming source image", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "change-camera",
+        targetIncomingCount: 1,
+      }),
+    ).toBe("transform-incoming-limit");
+  });
+
   it("allows transform nodes to output normal image nodes", () => {
     expect(
       validateCanvasConnectionPolicy({
         sourceType: "bg-remove",
         targetType: "image",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows change camera output as render source", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "change-camera",
+        targetType: "render",
         targetIncomingCount: 0,
       }),
     ).toBeNull();

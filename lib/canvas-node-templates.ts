@@ -187,6 +187,22 @@ export const CANVAS_NODE_TEMPLATES = [
     },
   },
   {
+    type: "change-camera",
+    label: "Kamera ändern",
+    width: 320,
+    height: 440,
+    defaultData: {
+      operation: "change-camera",
+      parameters: {
+        type: "change-camera",
+        horizontalAngle: 0,
+        verticalAngle: 0,
+        zoom: 5,
+        outputFormat: "png",
+      },
+    },
+  },
+  {
     type: "curves",
     label: "Kurven",
     width: 320,

@@ -64,6 +64,14 @@ const operationValidator = v.union(
     ),
     preset: v.optional(v.string()),
   }),
+  v.object({
+    type: v.literal("change-camera"),
+    horizontalAngle: v.number(),
+    verticalAngle: v.number(),
+    zoom: v.number(),
+    outputFormat: v.union(v.literal("png"), v.literal("jpeg")),
+    seed: v.optional(v.number()),
+  }),
 );
 
 function computeImageNodeDisplaySize(args: {
@@ -238,6 +246,11 @@ export const finalizeTransformSuccess = internalMutation({
       statusMessage: undefined,
       data: {
         ...getNodeDataRecord(transformNode.data),
+        storageId: args.storageId,
+        mimeType: args.mimeType,
+        originalFilename: args.filename,
+        ...(args.width !== undefined ? { width: args.width } : {}),
+        ...(args.height !== undefined ? { height: args.height } : {}),
         outputNodeId: args.outputNodeId,
         operation: args.operation.type,
         parameters: args.operation,

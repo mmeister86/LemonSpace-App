@@ -37,6 +37,7 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "color-adjust",
   "light-adjust",
   "detail-adjust",
+  "change-camera",
 ]);
 
 const TRANSFORM_NODE_TYPES = new Set<string>([
@@ -44,6 +45,7 @@ const TRANSFORM_NODE_TYPES = new Set<string>([
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
 ]);
 
 const TRANSFORM_ALLOWED_SOURCE_TYPES = new Set<string>([
@@ -56,6 +58,11 @@ const TRANSFORM_ALLOWED_SOURCE_TYPES = new Set<string>([
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
 ]);
 
 const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([

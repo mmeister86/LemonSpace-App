@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   createGroupFromSelection: vi.fn(async () => "group-new" as Id<"nodes">),
   ungroupNodes: vi.fn(async () => undefined),
   notifyOfflineUnsupported: vi.fn(),
+  cloneSelectionOnChange: false,
+  selectionChangeHandlers: [] as Array<(selection: { nodes: RFNode[] }) => void>,
+  selectionRevision: 0,
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -26,9 +29,15 @@ vi.mock("@xyflow/react", () => ({
   }) => (isVisible === false ? null : <div data-testid="selection-toolbar">{children}</div>),
   Position: { Top: "top" },
   useOnSelectionChange: ({ onChange }: { onChange: (selection: { nodes: RFNode[] }) => void }) => {
+    const selectionRevision = mocks.selectionRevision;
+    mocks.selectionChangeHandlers.push(onChange);
     React.useEffect(() => {
-      onChange({ nodes: mocks.selectedNodes });
-    }, [onChange]);
+      onChange({
+        nodes: mocks.cloneSelectionOnChange
+          ? mocks.selectedNodes.map((node) => ({ ...node }))
+          : mocks.selectedNodes,
+      });
+    }, [onChange, selectionRevision]);
   },
   useReactFlow: () => ({
     getNodes: mocks.getNodes,
@@ -53,6 +62,9 @@ describe("CanvasSelectionToolbar", () => {
     mocks.createGroupFromSelection.mockResolvedValue("group-new" as Id<"nodes">);
     mocks.ungroupNodes.mockClear();
     mocks.notifyOfflineUnsupported.mockClear();
+    mocks.cloneSelectionOnChange = false;
+    mocks.selectionChangeHandlers = [];
+    mocks.selectionRevision = 0;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -71,6 +83,7 @@ describe("CanvasSelectionToolbar", () => {
 
   async function renderToolbar(nodes: RFNode[], options: { online?: boolean } = {}) {
     mocks.selectedNodes = nodes.filter((node) => node.selected);
+    mocks.selectionRevision += 1;
     mocks.getNodes.mockReturnValue(nodes);
     await act(async () => {
       root?.render(
@@ -97,6 +110,31 @@ describe("CanvasSelectionToolbar", () => {
       { id: "node-b", type: "text", position: { x: 200, y: 0 }, data: {}, selected: true },
     ]);
     expect(container?.querySelector('button[title="Group"]')).toBeTruthy();
+  });
+
+  it("ignores repeated selection callbacks with equivalent fresh node arrays", async () => {
+    mocks.cloneSelectionOnChange = true;
+
+    await renderToolbar([
+      { id: "node-a", type: "image", position: { x: 0, y: 0 }, data: {}, selected: true },
+      { id: "node-b", type: "render", position: { x: 200, y: 0 }, data: {}, selected: true },
+    ]);
+
+    expect(container?.querySelector('button[title="Group"]')).toBeTruthy();
+  });
+
+  it("keeps the React Flow selection subscription handler stable across rerenders", async () => {
+    await renderToolbar([
+      { id: "node-a", type: "image", position: { x: 0, y: 0 }, data: {}, selected: true },
+      { id: "node-b", type: "render", position: { x: 200, y: 0 }, data: {}, selected: true },
+    ]);
+
+    expect(mocks.selectionChangeHandlers.length).toBeGreaterThan(1);
+    expect(
+      mocks.selectionChangeHandlers.every(
+        (handler) => handler === mocks.selectionChangeHandlers[0],
+      ),
+    ).toBe(true);
   });
 
   it("calls create group mutation with padded bounds and relative child positions", async () => {

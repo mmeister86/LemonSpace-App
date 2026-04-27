@@ -607,6 +607,32 @@ export async function createSkinEnhancerTask(params: {
   });
 }
 
+export async function createChangeCameraTask(params: {
+  imageUrl: string;
+  horizontalAngle: number;
+  verticalAngle: number;
+  zoom: number;
+  outputFormat: "png" | "jpeg";
+  seed?: number;
+}): Promise<{ task_id: string }> {
+  const payload: Record<string, unknown> = {
+    image: params.imageUrl,
+    horizontal_angle: params.horizontalAngle,
+    vertical_angle: params.verticalAngle,
+    zoom: params.zoom,
+    output_format: params.outputFormat,
+  };
+
+  if (params.seed !== undefined) {
+    payload.seed = params.seed;
+  }
+
+  return createImageTransformTask({
+    endpoint: "/v1/ai/image-change-camera",
+    payload,
+  });
+}
+
 export async function createStyleTransferTaskOrRun(params: {
   imageUrl: string;
   styleReferenceUrl?: string;

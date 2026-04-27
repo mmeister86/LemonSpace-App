@@ -64,6 +64,19 @@ function computeGroupZIndex(nodes: RFNode[]): number | undefined {
   return Math.min(...selectedZIndexes) - 1;
 }
 
+function isSameSelectedNodeList(previous: RFNode[], next: RFNode[]): boolean {
+  if (previous.length !== next.length) return false;
+  return previous.every((node, index) => {
+    const nextNode = next[index];
+    return (
+      nextNode !== undefined &&
+      node.id === nextNode.id &&
+      node.type === nextNode.type &&
+      node.parentId === nextNode.parentId
+    );
+  });
+}
+
 export function CanvasSelectionToolbar({
   canvasId,
   disabled,
@@ -76,10 +89,14 @@ export function CanvasSelectionToolbar({
   const [selectedNodes, setSelectedNodes] = useState<RFNode[]>([]);
   const [isMutating, setIsMutating] = useState(false);
 
+  const handleSelectionChange = useCallback(({ nodes }: { nodes: RFNode[] }) => {
+    setSelectedNodes((previous) =>
+      isSameSelectedNodeList(previous, nodes) ? previous : nodes,
+    );
+  }, []);
+
   useOnSelectionChange({
-    onChange: ({ nodes }) => {
-      setSelectedNodes(nodes);
-    },
+    onChange: handleSelectionChange,
   });
 
   const effectiveSelectedRoots = useMemo(() => {
