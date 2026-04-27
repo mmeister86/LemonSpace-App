@@ -1,4 +1,12 @@
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  getLocalStorage,
+  isJsonRecord,
+  type JsonRecord,
+  safeJsonParse,
+  safeStorageGet,
+  safeStorageSet,
+} from "@/lib/browser-storage-cache";
 
 const DB_NAME = "lemonspace.canvas.sync";
 const DB_VERSION = 1;
@@ -128,8 +136,6 @@ type CanvasSyncOpFor<TType extends CanvasSyncOpType> = Extract<
   { type: TType }
 >;
 
-type JsonRecord = Record<string, unknown>;
-
 type EnqueueInput<TType extends CanvasSyncOpType> = {
   id: string;
   canvasId: string;
@@ -140,35 +146,13 @@ type EnqueueInput<TType extends CanvasSyncOpType> = {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null;
-}
-
-function getLocalStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function safeParse(raw: string | null): unknown {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function readFallbackOps(): CanvasSyncOp[] {
   const storage = getLocalStorage();
   if (!storage) return [];
-  const parsed = safeParse(storage.getItem(FALLBACK_STORAGE_KEY));
+  const parsed = safeJsonParse(safeStorageGet(storage, FALLBACK_STORAGE_KEY));
   if (!Array.isArray(parsed)) return [];
   return parsed
-    .filter((entry): entry is JsonRecord => isRecord(entry))
+    .filter((entry): entry is JsonRecord => isJsonRecord(entry))
     .map(normalizeOp)
     .filter((entry): entry is CanvasSyncOp => entry !== null);
 }
@@ -177,7 +161,7 @@ function writeFallbackOps(ops: CanvasSyncOp[]): void {
   const storage = getLocalStorage();
   if (!storage) return;
   try {
-    storage.setItem(FALLBACK_STORAGE_KEY, JSON.stringify(ops));
+    safeStorageSet(storage, FALLBACK_STORAGE_KEY, JSON.stringify(ops));
   } catch {
     // Ignore storage quota failures in fallback layer.
   }
@@ -238,7 +222,7 @@ function getNodeIdFromOp(op: CanvasSyncOp): string {
 }
 
 function normalizeOp(raw: unknown): CanvasSyncOp | null {
-  if (!isRecord(raw)) return null;
+  if (!isJsonRecord(raw)) return null;
   const id = raw.id;
   const canvasId = raw.canvasId;
   const type = raw.type;
@@ -274,7 +258,7 @@ function normalizeOp(raw: unknown): CanvasSyncOp | null {
       : enqueuedAt + CANVAS_SYNC_RETENTION_MS;
   const lastError = typeof raw.lastError === "string" ? raw.lastError : undefined;
 
-  if (!isRecord(payload)) return null;
+  if (!isJsonRecord(payload)) return null;
 
   if (
     type === "createNode" &&
