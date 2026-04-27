@@ -5,7 +5,7 @@ status: Done
 assignee:
   - Codex
 created_date: '2026-04-26 10:28'
-updated_date: '2026-04-26 11:02'
+updated_date: '2026-04-26 18:18'
 labels:
   - canvas
   - freepik
@@ -49,6 +49,10 @@ Implementation plan approved by user on 2026-04-26. Build a localized Freepik Ch
 2026-04-26: Created isolated worktree /Users/matthias/Documents/Code/Web/lemonspace/webapp/.worktrees/change-camera-node on branch codex/change-camera-node. Baseline `npm test` passed: 104 test files, 588 tests. Initial `npm test -- --runInBand` failed because Vitest does not support that Jest option; reran with project script only.
 
 2026-04-26: Implemented Change Camera in isolated worktree branch codex/change-camera-node. Added the node to shared node unions, catalog/templates/defaults, sidebar/command/template picker UI, React Flow registry, connection policy, render-source resolution, Convex transform flow, Freepik client, and i18n messages. Added localized controls for horizontal angle, vertical angle, zoom, output format, and optional seed. Completed result metadata now persists storage and image dimensions on transform nodes so completed Change Camera nodes can feed Render directly. Verification: `npm test` passed 105 test files / 596 tests; `npm run lint` exited 0 with 6 existing warnings in unrelated files.
+
+2026-04-26: Fixed a post-implementation runtime loop when placing Render from the image node produced by Change Camera. Root cause was CanvasSelectionToolbar updating local selection state for repeated equivalent selection callbacks with fresh node array identities. Added an equality guard and a regression test. Also fixed transform source resolution so crop/adjustment chains feeding Change Camera resolve back to the persisted image source. Verification: `npm test -- components/canvas/__tests__/canvas-selection-toolbar.test.tsx tests/convex/image-transforms.test.ts tests/canvas-connection-policy.test.ts tests/change-camera-node.test.ts` passed 4 files / 58 tests; `npm run lint` exited 0 with the same 6 unrelated warnings.
+
+2026-04-26: Follow-up fix for node rendering errors while dragging a connection from the Change Camera output image toward a new Render node. Existing adjustment nodes could throw inside Radix Select during high-frequency connection-drag rerenders, so preset controls in curves, color-adjust, light-adjust, and detail-adjust were changed to native select elements. NodeErrorBoundary logging now includes errorName, errorMessage, and errorStack for future browser reports. Verification: `npm test -- tests/light-adjust-node.test.ts tests/adjustment-preview.test.ts components/canvas/__tests__/canvas-selection-toolbar.test.tsx tests/canvas-connection-policy.test.ts` passed 4 files / 53 tests; `npm run lint` exited 0 with the same 6 unrelated warnings.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
