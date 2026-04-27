@@ -36,6 +36,7 @@ import {
   type FaceRestoreMode,
   type ImageTransformOperation,
 } from "../lib/image-transform-models";
+import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
 
 const MAX_TRANSFORM_POLL_ATTEMPTS = 30;
 const MAX_TRANSFORM_POLL_TOTAL_MS = 10 * 60 * 1000;
@@ -155,12 +156,6 @@ function getNodeDataUrl(node: GraphNode): string | null {
   return typeof data.url === "string" && data.url.trim().length > 0
     ? data.url
     : null;
-}
-
-function assertNodeBelongsToCanvas(node: { canvasId: Id<"canvases"> }, canvasId: Id<"canvases">) {
-  if (node.canvasId !== canvasId) {
-    throw new Error("Node does not belong to canvas");
-  }
 }
 
 function assertTransformOperationMatchesNode(
@@ -822,7 +817,7 @@ export const generateTransform = action({
     if (!transformNode) {
       throw new Error("Transform node not found");
     }
-    assertNodeBelongsToCanvas(transformNode, args.canvasId);
+    assertNodeBelongsToCanvasOrThrow(transformNode, args.canvasId);
     assertTransformOperationMatchesNode(transformNode, operation);
 
     const outputNode = await ctx.runQuery(
@@ -832,7 +827,7 @@ export const generateTransform = action({
     if (!outputNode) {
       throw new Error("Output node not found");
     }
-    assertNodeBelongsToCanvas(outputNode, args.canvasId);
+    assertNodeBelongsToCanvasOrThrow(outputNode, args.canvasId);
     if (outputNode.type !== "image") {
       throw new Error("Output node must be image");
     }

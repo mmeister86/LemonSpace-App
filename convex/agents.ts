@@ -12,6 +12,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { generateStructuredObjectViaOpenRouter } from "./openrouter";
 import { getNodeDataRecord } from "./ai_node_data";
 import {
+  buildNodeDonePatch,
+  buildNodeErrorPatch,
+  buildNodeExecutingPatch,
+  mergeNodeData,
+} from "./node_status_helpers";
+import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
+import {
   errorMessage,
   formatTerminalStatusMessage,
   getErrorCode,
@@ -786,11 +793,12 @@ export const setAgentAnalyzing = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
+      ...buildNodeExecutingPatch({
+        statusMessage: "Step 1/2 - analyzing inputs",
+      }),
       status: "analyzing",
       statusMessage: "Step 1/2 - analyzing inputs",
-      retryCount: 0,
-      data: {
-        ...prev,
+      data: mergeNodeData(prev, {
         modelId: args.modelId,
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
@@ -798,7 +806,7 @@ export const setAgentAnalyzing = internalMutation({
         executionPlanSummary: undefined,
         executionSummary: undefined,
         executionSteps: [],
-      },
+      }),
     });
   },
 });
@@ -826,11 +834,10 @@ export const setAgentClarifying = internalMutation({
     await ctx.db.patch(args.nodeId, {
       status: "clarifying",
       statusMessage: "Clarification required before execution",
-      data: {
-        ...prev,
+      data: mergeNodeData(prev, {
         clarificationQuestions: args.clarificationQuestions,
         clarificationAnswers: answers,
-      },
+      }),
     });
   },
 });
@@ -848,12 +855,14 @@ export const setAgentExecuting = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
-      status: "executing",
-      statusMessage: args.statusMessage ?? "Step 2/2 - generating outputs",
-      data: {
-        ...prev,
+      ...buildNodeExecutingPatch({
+        retryCount: undefined,
+        statusMessage: args.statusMessage ?? "Step 2/2 - generating outputs",
+      }),
+      retryCount: undefined,
+      data: mergeNodeData(prev, {
         clarificationQuestions: [],
-      },
+      }),
     });
   },
 });
@@ -888,9 +897,11 @@ export const createExecutionSkeletonOutputs = internalMutation({
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Agent node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(
+      node,
+      args.canvasId,
+      "Agent node does not belong to canvas",
+    );
 
     const prev = getNodeDataRecord(node.data);
     const existingOutputNodeIds = Array.isArray(prev.outputNodeIds)
@@ -1054,9 +1065,7 @@ export const completeExecutionStepOutput = internalMutation({
     });
 
     await ctx.db.patch(args.outputNodeId, {
-      status: "done",
-      statusMessage: undefined,
-      retryCount: 0,
+      ...buildNodeDonePatch(),
       data: normalizedOutputData,
     });
   },
@@ -1075,13 +1084,12 @@ export const setAgentError = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
-      status: "error",
-      statusMessage: args.statusMessage,
-      data: {
-        ...prev,
+      ...buildNodeErrorPatch({ statusMessage: args.statusMessage }),
+      retryCount: undefined,
+      data: mergeNodeData(prev, {
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
-      },
+      }),
     });
   },
 });
@@ -1142,11 +1150,8 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
       : [];
 
     await ctx.db.patch(args.nodeId, {
-      status: "done",
-      statusMessage: undefined,
-      retryCount: 0,
-      data: {
-        ...prev,
+      ...buildNodeDonePatch(),
+      data: mergeNodeData(prev, {
         clarificationQuestions: [],
         outputNodeIds: existingOutputNodeIds,
         executionSummary: resolveFinalExecutionSummary({
@@ -1163,7 +1168,7 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
         }),
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
-      },
+      }),
     });
 
     await ctx.db.patch(node.canvasId, {
@@ -1478,9 +1483,7 @@ export const runAgent = action({
     if (!node) {
       throw new Error("Node not found");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
@@ -1570,9 +1573,7 @@ export const resumeAgent = action({
     if (!node) {
       throw new Error("Node not found");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }

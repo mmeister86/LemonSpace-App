@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
+import { getOwnedCanvasOrNull, requireOwnedCanvas } from "./authz_helpers";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 100;
 
@@ -41,9 +42,9 @@ export const get = query({
     }
 
     const canvasLookupStartedAt = Date.now();
-    const canvas = await ctx.db.get(canvasId);
+    const canvas = await getOwnedCanvasOrNull(ctx, canvasId, user.userId);
     const canvasLookupMs = Date.now() - canvasLookupStartedAt;
-    if (!canvas || canvas.ownerId !== user.userId) {
+    if (!canvas) {
       return null;
     }
 
@@ -99,10 +100,7 @@ export const update = mutation({
   },
   handler: async (ctx, { canvasId, name, description }) => {
     const user = await requireAuth(ctx);
-    const canvas = await ctx.db.get(canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
-      throw new Error("Canvas not found");
-    }
+    await requireOwnedCanvas(ctx, canvasId, user.userId);
 
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
     if (name !== undefined) updates.name = name;
@@ -119,10 +117,7 @@ export const remove = mutation({
   args: { canvasId: v.id("canvases") },
   handler: async (ctx, { canvasId }) => {
     const user = await requireAuth(ctx);
-    const canvas = await ctx.db.get(canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
-      throw new Error("Canvas not found");
-    }
+    await requireOwnedCanvas(ctx, canvasId, user.userId);
 
     // Alle Nodes dieses Canvas löschen
     const nodes = await ctx.db
@@ -157,10 +152,7 @@ export const setThumbnail = mutation({
   },
   handler: async (ctx, { canvasId, thumbnail }) => {
     const user = await requireAuth(ctx);
-    const canvas = await ctx.db.get(canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
-      throw new Error("Canvas not found");
-    }
+    await requireOwnedCanvas(ctx, canvasId, user.userId);
     await ctx.db.patch(canvasId, { thumbnail, updatedAt: Date.now() });
   },
 });

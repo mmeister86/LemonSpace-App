@@ -2,6 +2,7 @@ import { mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Id } from "./_generated/dataModel";
+import { requireOwnedCanvas } from "./authz_helpers";
 import { collectOwnedMediaStorageIds, upsertMediaItemByOwnerAndDedupe } from "./media";
 import { buildStoredMediaDedupeKey } from "../lib/media-archive";
 
@@ -55,10 +56,7 @@ async function assertCanvasOwner(
   canvasId: Id<"canvases">,
   userId: string,
 ): Promise<void> {
-  const canvas = await ctx.db.get(canvasId);
-  if (!canvas || canvas.ownerId !== userId) {
-    throw new Error("Canvas not found");
-  }
+  await requireOwnedCanvas(ctx, canvasId, userId);
 }
 
 async function resolveStorageUrls(

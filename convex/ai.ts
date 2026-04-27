@@ -13,7 +13,14 @@ import {
   IMAGE_MODELS,
 } from "./openrouter";
 import type { Id } from "./_generated/dataModel";
-import { assertNodeBelongsToCanvasOrThrow } from "./ai_utils";
+import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
+import {
+  buildNodeDonePatch,
+  buildNodeErrorPatch,
+  buildNodeExecutingPatch,
+  buildNodeRetryPatch,
+  mergeNodeData,
+} from "./node_status_helpers";
 import {
   createVideoTask,
   downloadVideoAsBlob,
@@ -151,11 +158,7 @@ export const markNodeExecuting = internalMutation({
     nodeId: v.id("nodes"),
   },
   handler: async (ctx, { nodeId }) => {
-    await ctx.db.patch(nodeId, {
-      status: "executing",
-      retryCount: 0,
-      statusMessage: undefined,
-    });
+    await ctx.db.patch(nodeId, buildNodeExecutingPatch());
   },
 });
 
@@ -171,11 +174,10 @@ export const markNodeRetry = internalMutation({
       typeof failureMessage === "string" && failureMessage.trim().length > 0
         ? failureMessage
         : "temporärer Fehler";
-    await ctx.db.patch(nodeId, {
-      status: "executing",
+    await ctx.db.patch(nodeId, buildNodeRetryPatch({
       retryCount,
       statusMessage: `Retry ${retryCount}/${maxRetries} — ${reason}`,
-    });
+    }));
   },
 });
 
@@ -209,11 +211,8 @@ export const finalizeImageSuccess = internalMutation({
       (typeof prev.aspectRatio === "string" ? prev.aspectRatio : undefined);
 
     await ctx.db.patch(nodeId, {
-      status: "done",
-      retryCount,
-      statusMessage: undefined,
-      data: {
-        ...prev,
+      ...buildNodeDonePatch({ retryCount }),
+      data: mergeNodeData(prev, {
         storageId,
         prompt,
         model: modelId,
@@ -222,7 +221,7 @@ export const finalizeImageSuccess = internalMutation({
         generatedAt: Date.now(),
         creditCost,
         ...(resolvedAspectRatio ? { aspectRatio: resolvedAspectRatio } : {}),
-      },
+      }),
     });
 
     const canvas = await ctx.db.get(existing.canvasId);
@@ -253,11 +252,7 @@ export const finalizeImageFailure = internalMutation({
     statusMessage: v.string(),
   },
   handler: async (ctx, { nodeId, retryCount, statusMessage }) => {
-    await ctx.db.patch(nodeId, {
-      status: "error",
-      retryCount,
-      statusMessage,
-    });
+    await ctx.db.patch(nodeId, buildNodeErrorPatch({ retryCount, statusMessage }));
   },
 });
 
@@ -613,18 +608,15 @@ export const finalizeTextSuccess = internalMutation({
 
     const prev = getNodeDataRecord(node.data);
     await ctx.db.patch(args.nodeId, {
-      status: "done",
-      retryCount: 0,
-      statusMessage: undefined,
-      data: {
-        ...prev,
+      ...buildNodeDonePatch(),
+      data: mergeNodeData(prev, {
         modelId: model.id,
         instruction: args.instruction,
         inputText: args.inputText,
         outputText: args.outputText,
         creditCost: model.creditCost,
         generatedAt: Date.now(),
-      },
+      }),
     });
 
     return { creditCost: model.creditCost };
@@ -637,11 +629,10 @@ export const finalizeTextFailure = internalMutation({
     statusMessage: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.nodeId, {
-      status: "error",
-      retryCount: 0,
-      statusMessage: args.statusMessage,
-    });
+    await ctx.db.patch(
+      args.nodeId,
+      buildNodeErrorPatch({ retryCount: 0, statusMessage: args.statusMessage }),
+    );
   },
 });
 
@@ -891,11 +882,10 @@ export const markVideoPollingRetry = internalMutation({
     failureMessage: v.string(),
   },
   handler: async (ctx, { nodeId, attempt, maxAttempts, failureMessage }) => {
-    await ctx.db.patch(nodeId, {
-      status: "executing",
+    await ctx.db.patch(nodeId, buildNodeRetryPatch({
       retryCount: attempt,
       statusMessage: `Retry ${attempt}/${maxAttempts} - ${failureMessage}`,
-    });
+    }));
   },
 });
 
@@ -926,11 +916,8 @@ export const finalizeVideoSuccess = internalMutation({
     const prev = getNodeDataRecord(existing.data);
 
     await ctx.db.patch(nodeId, {
-      status: "done",
-      retryCount,
-      statusMessage: undefined,
-      data: {
-        ...prev,
+      ...buildNodeDonePatch({ retryCount }),
+      data: mergeNodeData(prev, {
         taskId: undefined,
         storageId,
         prompt,
@@ -939,7 +926,7 @@ export const finalizeVideoSuccess = internalMutation({
         durationSeconds,
         generatedAt: Date.now(),
         creditCost,
-      },
+      }),
     });
 
     const canvas = await ctx.db.get(existing.canvasId);
@@ -976,13 +963,10 @@ export const finalizeVideoFailure = internalMutation({
     const prev = getNodeDataRecord(existing.data);
 
     await ctx.db.patch(nodeId, {
-      status: "error",
-      retryCount,
-      statusMessage,
-      data: {
-        ...prev,
+      ...buildNodeErrorPatch({ retryCount, statusMessage }),
+      data: mergeNodeData(prev, {
         taskId: undefined,
-      },
+      }),
     });
   },
 });

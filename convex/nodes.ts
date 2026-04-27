@@ -1,4 +1,4 @@
-import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
+import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -9,39 +9,17 @@ import {
   validateCanvasConnectionPolicy,
 } from "../lib/canvas-connection-policy";
 import { nodeTypeValidator } from "./node_type_validator";
+import { buildNodeStatusUpdatePatch } from "./node_status_helpers";
+import {
+  getOwnedCanvasOrNull,
+  requireOwnedCanvas,
+} from "./authz_helpers";
 import { normalizeCropNodeData } from "../lib/image-pipeline/crop-node-data";
 import { preserveNodeFavorite } from "../lib/canvas-node-favorite";
 
 // ============================================================================
 // Interne Helpers
 // ============================================================================
-
-/**
- * Prüft ob der User Zugriff auf den Canvas hat und gibt ihn zurück.
- */
-async function getCanvasOrThrow(
-  ctx: QueryCtx | MutationCtx,
-  canvasId: Id<"canvases">,
-  userId: string
-) {
-  const canvas = await ctx.db.get(canvasId);
-  if (!canvas || canvas.ownerId !== userId) {
-    throw new Error("Canvas not found");
-  }
-  return canvas;
-}
-
-async function getCanvasIfAuthorized(
-  ctx: QueryCtx | MutationCtx,
-  canvasId: Id<"canvases">,
-  userId: string
-) {
-  const canvas = await ctx.db.get(canvasId);
-  if (!canvas || canvas.ownerId !== userId) {
-    return null;
-  }
-  return canvas;
-}
 
 async function getValidatedBatchNodesOrThrow(
   ctx: MutationCtx,
@@ -606,7 +584,7 @@ export const list = query({
     const authMs = Date.now() - authStartedAt;
 
     const canvasLookupStartedAt = Date.now();
-    const canvas = await getCanvasOrThrow(ctx, canvasId, user.userId);
+    const canvas = await requireOwnedCanvas(ctx, canvasId, user.userId);
     const canvasLookupMs = Date.now() - canvasLookupStartedAt;
 
     const collectStartedAt = Date.now();
@@ -650,7 +628,7 @@ export const get = query({
     const node = await ctx.db.get(nodeId);
     if (!node) return null;
 
-    const canvas = await getCanvasIfAuthorized(ctx, node.canvasId, user.userId);
+    const canvas = await getOwnedCanvasOrNull(ctx, node.canvasId, user.userId);
     if (!canvas) {
       return null;
     }
@@ -722,7 +700,7 @@ export const listByType = query({
   },
   handler: async (ctx, { canvasId, type }) => {
     const user = await requireAuth(ctx);
-    const canvas = await getCanvasIfAuthorized(ctx, canvasId, user.userId);
+    const canvas = await getOwnedCanvasOrNull(ctx, canvasId, user.userId);
     if (!canvas) {
       return [];
     }
@@ -771,7 +749,7 @@ export const create = mutation({
     try {
       const user = await requireAuth(ctx);
       const authDurationMs = Date.now() - startedAt;
-      await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+      await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
       const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
         userId: user.userId,
@@ -869,7 +847,7 @@ export const createGroupFromSelection = mutation({
   },
   handler: async (ctx, { canvasId, nodeIds, group, childPositions }) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, canvasId, user.userId);
+    await requireOwnedCanvas(ctx, canvasId, user.userId);
 
     if (nodeIds.length < 2) {
       throw new Error("At least two nodes are required to create a group");
@@ -994,7 +972,7 @@ export const createWithEdgeSplit = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
       userId: user.userId,
@@ -1101,7 +1079,7 @@ export const splitEdgeAtExistingNode = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     const existingMutationRecord =
       args.clientRequestId === undefined
@@ -1228,7 +1206,7 @@ export const createWithEdgeFromSource = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
       userId: user.userId,
@@ -1320,7 +1298,7 @@ export const createWithEdgeToTarget = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    await getCanvasOrThrow(ctx, args.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     const existingNodeId = await getIdempotentNodeCreateResult(ctx, {
       userId: user.userId,
@@ -1400,7 +1378,7 @@ export const move = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
     await ctx.db.patch(nodeId, { positionX, positionY });
   },
 });
@@ -1419,7 +1397,7 @@ export const resize = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) return;
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
     const clampedWidth =
       isAdjustmentNodeType(node.type) && width < ADJUSTMENT_MIN_WIDTH
         ? ADJUSTMENT_MIN_WIDTH
@@ -1471,7 +1449,7 @@ export const updateData = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
     const normalizedData = normalizeNodeDataForWrite(node.type, data);
     await ctx.db.patch(nodeId, { data: normalizedData });
   },
@@ -1499,22 +1477,12 @@ export const updateStatus = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
-    const patch: {
-      status: typeof status;
-      statusMessage?: string;
-      retryCount?: number;
-    } = {
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
+    const patch = buildNodeStatusUpdatePatch({
       status,
-    };
-    if (statusMessage !== undefined) {
-      patch.statusMessage = statusMessage;
-    } else if (status === "done" || status === "executing" || status === "idle") {
-      patch.statusMessage = undefined;
-    }
-    if (retryCount !== undefined) {
-      patch.retryCount = retryCount;
-    }
+      statusMessage,
+      retryCount,
+    });
     await ctx.db.patch(nodeId, patch);
   },
 });
@@ -1532,7 +1500,7 @@ export const updateZIndex = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
     await ctx.db.patch(nodeId, { zIndex });
   },
 });
@@ -1552,7 +1520,7 @@ export const setParent = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
 
     // Prüfen ob Parent existiert und zum gleichen Canvas gehört
     if (parentId) {
@@ -1702,7 +1670,7 @@ export const remove = mutation({
     const node = await ctx.db.get(nodeId);
     if (!node) throw new Error("Node not found");
 
-    await getCanvasOrThrow(ctx, node.canvasId, user.userId);
+    await requireOwnedCanvas(ctx, node.canvasId, user.userId);
 
     // Alle Edges entfernen, die diesen Node als Source oder Target haben
     const sourceEdges = await ctx.db

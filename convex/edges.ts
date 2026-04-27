@@ -2,6 +2,7 @@ import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
+import { getOwnedCanvasOrNull, requireOwnedCanvas } from "./authz_helpers";
 import {
   getCanvasConnectionValidationMessage,
   validateCanvasConnectionPolicy,
@@ -116,9 +117,9 @@ export const list = query({
     const authMs = Date.now() - authStartedAt;
 
     const canvasLookupStartedAt = Date.now();
-    const canvas = await ctx.db.get(canvasId);
+    const canvas = await getOwnedCanvasOrNull(ctx, canvasId, user.userId);
     const canvasLookupMs = Date.now() - canvasLookupStartedAt;
-    if (!canvas || canvas.ownerId !== user.userId) {
+    if (!canvas) {
       return [];
     }
 
@@ -166,10 +167,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    const canvas = await ctx.db.get(args.canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
-      throw new Error("Canvas not found");
-    }
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     const getExistingEdge = async (): Promise<Id<"edges"> | null> => {
       const clientRequestId = args.clientRequestId;
@@ -279,10 +277,7 @@ export const swapMixerInputs = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
-    const canvas = await ctx.db.get(args.canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
-      throw new Error("Canvas not found");
-    }
+    await requireOwnedCanvas(ctx, args.canvasId, user.userId);
 
     if (args.edgeId === args.otherEdgeId) {
       throw new Error("Edge IDs must be different");
@@ -340,8 +335,8 @@ export const remove = mutation({
       return;
     }
 
-    const canvas = await ctx.db.get(edge.canvasId);
-    if (!canvas || canvas.ownerId !== user.userId) {
+    const canvas = await getOwnedCanvasOrNull(ctx, edge.canvasId, user.userId);
+    if (!canvas) {
       console.warn("[edges.remove] unauthorized canvas access", {
         edgeId,
         canvasId: edge.canvasId,
