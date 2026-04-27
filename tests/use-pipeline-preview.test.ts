@@ -1056,7 +1056,10 @@ describe("preview histogram call sites", () => {
   });
 
   it("prefers preview aspect ratio for RenderNode resize when pipeline contains crop", async () => {
-    const queueNodeResize = vi.fn(async () => undefined);
+    const queueNodeResizeCalls: unknown[] = [];
+    let queueNodeResize = vi.fn(async (args: unknown) => {
+      queueNodeResizeCalls.push(args);
+    });
 
     vi.doMock("@/hooks/use-pipeline-preview", () => ({
       usePipelinePreview: () => ({
@@ -1190,12 +1193,44 @@ describe("preview histogram call sites", () => {
       await Promise.resolve();
     });
 
-    expect(queueNodeResize).toHaveBeenCalledWith(
+    expect(queueNodeResizeCalls).toEqual([
       expect.objectContaining({
         nodeId: "render-1",
         width: 450,
         height: 450,
       }),
-    );
+    ]);
+
+    queueNodeResize = vi.fn(async (args: unknown) => {
+      queueNodeResizeCalls.push(args);
+    });
+
+    await act(async () => {
+      root?.render(
+        createElement(RenderNode, {
+          id: "render-1",
+          data: {},
+          selected: false,
+          dragging: false,
+          zIndex: 0,
+          isConnectable: true,
+          type: "render",
+          xPos: 0,
+          yPos: 0,
+          width: 450,
+          height: 300,
+          sourcePosition: undefined,
+          targetPosition: undefined,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        } as never),
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(queueNodeResizeCalls).toHaveLength(1);
   });
 });

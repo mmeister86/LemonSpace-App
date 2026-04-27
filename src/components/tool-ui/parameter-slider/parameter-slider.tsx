@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import * as SliderPrimitive from "@radix-ui/react-slider";
 import type { ParameterSliderProps, SliderConfig, SliderValue } from "./schema";
 import { ActionButtons } from "../shared/action-buttons";
 import { normalizeActionsConfig } from "../shared/actions-config";
@@ -73,6 +72,31 @@ const TEXT_VERTICAL_OFFSET = 0.5;
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
+}
+
+type ResizeEntrySnapshot = {
+  target: Element;
+  contentRect: Pick<DOMRectReadOnly, "width" | "height">;
+};
+
+export function shouldApplyResizeEntries(
+  previousSizes: WeakMap<Element, { width: number; height: number }>,
+  entries: ResizeEntrySnapshot[],
+): boolean {
+  let hasChanged = false;
+
+  for (const entry of entries) {
+    const width = entry.contentRect.width;
+    const height = entry.contentRect.height;
+    const previous = previousSizes.get(entry.target);
+
+    if (!previous || previous.width !== width || previous.height !== height) {
+      previousSizes.set(entry.target, { width, height });
+      hasChanged = true;
+    }
+  }
+
+  return hasChanged;
 }
 
 // Convert a percentage (0-100) to an inset position string
@@ -249,6 +273,7 @@ function SliderRow({
   const trackRef = useRef<HTMLSpanElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const valueRef = useRef<HTMLSpanElement>(null);
+  const resizeEntrySizesRef = useRef(new WeakMap<Element, { width: number; height: number }>());
 
   const [dragGap, setDragGap] = useState(0);
   const [fullGap, setFullGap] = useState(0);
@@ -271,8 +296,10 @@ function SliderRow({
     const bumpLayoutVersion = () => setLayoutVersion((v) => v + 1);
 
     if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => {
-        bumpLayoutVersion();
+      const observer = new ResizeObserver((entries) => {
+        if (shouldApplyResizeEntries(resizeEntrySizesRef.current, entries)) {
+          bumpLayoutVersion();
+        }
       });
       observer.observe(track);
       observer.observe(labelEl);
@@ -328,7 +355,8 @@ function SliderRow({
       false,
     ); // value is right-aligned
 
-    setDragGap(Math.max(labelGap, valueGap));
+    const nextDragGap = Math.max(labelGap, valueGap);
+    setDragGap((current) => (current === nextDragGap ? current : nextDragGap));
 
     // Tight intersection check for release state
     // Inset by px-2 (8px) padding to check against actual text, not padded container
@@ -343,7 +371,10 @@ function SliderRow({
     const hitsLabel = thumbRight > labelLeft && thumbLeft < labelRight;
     const hitsValue = thumbRight > valueLeft && thumbLeft < valueRight;
 
-    setIntersectsText(hitsLabel || hitsValue);
+    const nextIntersectsText = hitsLabel || hitsValue;
+    setIntersectsText((current) =>
+      current === nextIntersectsText ? current : nextIntersectsText,
+    );
 
     // Calculate full separation gap for release state
     // Use the max gap of whichever text element(s) the handle intersects
@@ -357,7 +388,7 @@ function SliderRow({
           : hitsValue
             ? valueFullGap
             : 0;
-    setFullGap(releaseGap);
+    setFullGap((current) => (current === releaseGap ? current : releaseGap));
   }, [value, min, max, layoutVersion]);
 
   // While dragging: use distance-based separation, but never collapse below
@@ -494,10 +525,11 @@ function SliderRow({
 
   return (
     <div className="py-2">
-      <SliderPrimitive.Root
+      <div
         id={id}
         className={cn(
           "group/slider relative flex w-full touch-none items-center select-none",
+          "nodrag nowheel",
           "isolate h-12",
           isDragging
             ? "[&>span]:transition-[left,transform] [&>span]:duration-45 [&>span]:ease-linear"
@@ -506,19 +538,12 @@ function SliderRow({
           "motion-reduce:[&>span]:transition-none",
           disabled && "pointer-events-none opacity-50",
         )}
-        value={[value]}
-        onValueChange={handleValueChange}
         onPointerDown={() => setIsDragging(true)}
         onPointerUp={() => setIsDragging(false)}
         onPointerEnter={() => setIsHovered(true)}
         onPointerLeave={() => setIsHovered(false)}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        aria-valuetext={getAriaValueText(value, min, max, unit)}
       >
-        <SliderPrimitive.Track
+        <div
           ref={trackRef}
           className={cn(
             "squircle relative h-12 w-full grow overflow-hidden rounded-sm",
@@ -566,8 +591,8 @@ function SliderRow({
                 }}
               />
             );
-          })}
-        </SliderPrimitive.Track>
+            })}
+        </div>
 
         {/* Metallic reflection overlay - follows handle, brightness scales with interaction */}
         <div
@@ -586,10 +611,12 @@ function SliderRow({
           }}
         />
 
-        <SliderPrimitive.Thumb
+        <span
+          aria-hidden="true"
           className={cn(
+            "pointer-events-none absolute top-1/2",
             "group/thumb z-0 block w-3 shrink-0 cursor-grab rounded-sm",
-            "relative bg-transparent outline-none",
+            "bg-transparent outline-none",
             "transition-[height,opacity] duration-150 ease-[var(--cubic-ease-in-out)]",
             "focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-1",
             "active:cursor-grabbing",
@@ -597,6 +624,10 @@ function SliderRow({
             // Height morphs: rest (track height) → hover → active
             isDragging ? "h-[56px]" : isHovered ? "h-[54px]" : "h-12",
           )}
+          style={{
+            left: toRadixThumbPosition(valuePercent),
+            transform: "translate(-50%, -50%)",
+          }}
         >
           {(() => {
             // Calculate morph state
@@ -665,7 +696,23 @@ function SliderRow({
               </>
             );
           })()}
-        </SliderPrimitive.Thumb>
+        </span>
+
+        <input
+          className="nodrag nowheel absolute inset-0 z-20 h-12 w-full cursor-pointer opacity-0 disabled:pointer-events-none"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          disabled={disabled}
+          aria-label={label}
+          aria-valuetext={getAriaValueText(value, min, max, unit)}
+          onChange={(event) => handleValueChange([event.currentTarget.valueAsNumber])}
+          onPointerDown={() => setIsDragging(true)}
+          onPointerUp={() => setIsDragging(false)}
+          onBlur={() => setIsDragging(false)}
+        />
 
         <div
           className="pointer-events-none absolute inset-x-3 top-1/2 z-10 flex items-center justify-between"
@@ -686,7 +733,7 @@ function SliderRow({
             {formatSignedValue(value, min, max, precision, unit)}
           </span>
         </div>
-      </SliderPrimitive.Root>
+      </div>
     </div>
   );
 }

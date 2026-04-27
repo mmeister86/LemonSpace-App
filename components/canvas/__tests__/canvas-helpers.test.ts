@@ -269,6 +269,32 @@ describe("canvas preview graph helpers", () => {
     ]);
   });
 
+  it("resolves completed change camera nodes as render sources", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "change-camera-1",
+          type: "change-camera",
+          data: { url: "https://cdn.example.com/camera.png" },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [{ source: "change-camera-1", target: "render-1" }],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/camera.png");
+    expect(preview.steps).toEqual([]);
+  });
+
   it("prefers local node data overrides during render preview resolution", () => {
     const graph = buildGraphSnapshot(
       [

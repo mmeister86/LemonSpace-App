@@ -181,6 +181,12 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     category: "transform",
     phase: 2,
   }),
+  entry({
+    type: "change-camera",
+    label: "Kamera ändern",
+    category: "transform",
+    phase: 2,
+  }),
   // Bildbearbeitung
   entry({
     type: "curves",

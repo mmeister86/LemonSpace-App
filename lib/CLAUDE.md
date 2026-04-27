@@ -142,7 +142,7 @@ isNodePaletteEnabled  // true wenn: implementiert + kein systemOutput + Template
 - `source` — Quelle (image, text, video, asset, color)
 - `ai-output` — KI-Ausgabe (prompt, video-prompt, ai-text)
 - `agents` — Agents (agent, agent-output)
-- `transform` — Transformation (crop, bg-remove, upscale)
+- `transform` — Transformation (crop, bg-remove, upscale, style-transfer, face-restore, change-camera)
 - `image-edit` — Bildbearbeitung (adjustments)
 - `control` — Steuerung & Flow
 - `layout` — Canvas & Layout (group, frame, note, compare)

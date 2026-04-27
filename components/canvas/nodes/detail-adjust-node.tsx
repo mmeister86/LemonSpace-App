@@ -27,7 +27,6 @@ import {
 } from "@/lib/image-pipeline/adjustment-types";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import { DETAIL_PRESETS } from "@/lib/image-pipeline/presets";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 
@@ -218,24 +217,24 @@ export default function DetailAdjustNode({ id, data, selected, width }: NodeProp
         </div>
 
         <div className="flex items-center gap-2">
-          <Select value={presetSelection} onValueChange={applyPresetValue}>
-            <SelectTrigger className="nodrag h-8 text-xs" size="sm">
-              <SelectValue placeholder={tNodes("adjustments.common.presetPlaceholder")} />
-            </SelectTrigger>
-            <SelectContent className="nodrag">
-              <SelectItem value="custom">{tNodes("custom")}</SelectItem>
+          <select
+            value={presetSelection}
+            aria-label={tNodes("adjustments.common.presetPlaceholder")}
+            className="nodrag h-8 w-full rounded-lg border border-input bg-transparent px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            onChange={(event) => applyPresetValue(event.target.value)}
+          >
+            <option value="custom">{tNodes("custom")}</option>
               {builtinOptions.map(([name]) => (
-                <SelectItem key={name} value={`builtin:${name}`}>
+                <option key={name} value={`builtin:${name}`}>
                   {tNodes("adjustments.common.builtinPresetLabel", { name })}
-                </SelectItem>
+                </option>
               ))}
               {userPresets.map((preset) => (
-                <SelectItem key={preset._id} value={`user:${preset._id}`}>
+                <option key={preset._id} value={`user:${preset._id}`}>
                   {tNodes("adjustments.common.userPresetLabel", { name: preset.name })}
-                </SelectItem>
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+          </select>
           <button
             type="button"
             className="nodrag rounded-md border px-2 py-1 text-[11px]"

@@ -417,6 +417,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuPanelRef = useRef<HTMLDivElement | null>(null);
   const lastAppliedAspectRatioRef = useRef<number | null>(null);
+  const lastRequestedResizeRef = useRef<{
+    fromWidth: number;
+    fromHeight: number;
+    width: number;
+    height: number;
+    aspectRatio: number;
+  } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -632,6 +639,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
 
   useEffect(() => {
     if (!hasSource || targetAspectRatio === null) {
+      lastRequestedResizeRef.current = null;
       return;
     }
 
@@ -664,10 +672,30 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     const heightDelta = Math.abs(targetSize.height - measuredHeight);
     if (widthDelta <= SIZE_TOLERANCE_PX && heightDelta <= SIZE_TOLERANCE_PX) {
       lastAppliedAspectRatioRef.current = targetAspectRatio;
+      lastRequestedResizeRef.current = null;
+      return;
+    }
+
+    const lastRequestedResize = lastRequestedResizeRef.current;
+    if (
+      lastRequestedResize &&
+      lastRequestedResize.fromWidth === measuredWidth &&
+      lastRequestedResize.fromHeight === measuredHeight &&
+      lastRequestedResize.width === targetSize.width &&
+      lastRequestedResize.height === targetSize.height &&
+      Math.abs(lastRequestedResize.aspectRatio - targetAspectRatio) <= ASPECT_RATIO_TOLERANCE
+    ) {
       return;
     }
 
     lastAppliedAspectRatioRef.current = targetAspectRatio;
+    lastRequestedResizeRef.current = {
+      fromWidth: measuredWidth,
+      fromHeight: measuredHeight,
+      width: targetSize.width,
+      height: targetSize.height,
+      aspectRatio: targetAspectRatio,
+    };
     void queueNodeResize({
       nodeId: id as Id<"nodes">,
       width: targetSize.width,

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Position, useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { useTranslations } from "next-intl";
-import { ImageOff, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Camera, ImageOff, Loader2, Sparkles, Wand2 } from "lucide-react";
 
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
@@ -17,6 +17,7 @@ import { toast } from "@/lib/toast";
 import { computeMediaNodeSize } from "@/lib/canvas-utils";
 import {
   getImageTransformCreditCost,
+  type ChangeCameraOutputFormat,
   type FaceRestoreMode,
   type ImageTransformOperation,
   type ImageTransformType,
@@ -45,6 +46,13 @@ export type ImageTransformNodeType = Node<TransformNodeData, ImageTransformType>
 type ImageTransformNodeProps = NodeProps<ImageTransformNodeType> & {
   operationType: ImageTransformType;
 };
+
+type SourcePreviewMeta = { url: string; width?: number; height?: number };
+
+type ChangeCameraOperation = Extract<
+  ImageTransformOperation,
+  { type: "change-camera" }
+>;
 
 const STYLE_TRANSFER_FLAVORS: StyleTransferFlavor[] = [
   "faithful",
@@ -105,6 +113,14 @@ function defaultOperation(type: ImageTransformType): ImageTransformOperation {
       };
     case "face-restore":
       return { type, mode: "faithful" };
+    case "change-camera":
+      return {
+        type,
+        horizontalAngle: 0,
+        verticalAngle: 0,
+        zoom: 5,
+        outputFormat: "png",
+      };
   }
 }
 
@@ -183,6 +199,19 @@ function normalizeOperation(
     };
   }
 
+  if (type === "change-camera") {
+    return {
+      type,
+      horizontalAngle:
+        typeof parameters.horizontalAngle === "number" ? parameters.horizontalAngle : 0,
+      verticalAngle:
+        typeof parameters.verticalAngle === "number" ? parameters.verticalAngle : 0,
+      zoom: typeof parameters.zoom === "number" ? parameters.zoom : 5,
+      outputFormat: parameters.outputFormat === "jpeg" ? "jpeg" : "png",
+      seed: typeof parameters.seed === "number" ? parameters.seed : undefined,
+    };
+  }
+
   return fallback;
 }
 
@@ -191,7 +220,7 @@ export function getSourcePreviewMeta(args: {
   targetHandle?: string;
   edges: Array<{ source: string; target: string; targetHandle?: string | null }>;
   nodes: Array<{ id: string; type?: string; data?: unknown }>;
-}): { url: string; width?: number; height?: number } | null {
+}): SourcePreviewMeta | null {
   const incoming = args.edges.find((edge) => {
     if (edge.target !== args.nodeId) return false;
     if (!args.targetHandle) return true;
@@ -250,7 +279,231 @@ export function hasStyleTransferReferenceInput(args: {
 function iconFor(type: ImageTransformType) {
   if (type === "bg-remove") return ImageOff;
   if (type === "face-restore") return Sparkles;
+  if (type === "change-camera") return Camera;
   return Wand2;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+type StagePoint = { x: number; y: number };
+
+function polarPoint(center: StagePoint, radiusX: number, radiusY: number, angleDeg: number): StagePoint {
+  const radians = (angleDeg * Math.PI) / 180;
+  return {
+    x: center.x + radiusX * Math.cos(radians),
+    y: center.y + radiusY * Math.sin(radians),
+  };
+}
+
+function formatPoint(point: StagePoint): string {
+  return `${Math.round(point.x)},${Math.round(point.y)}`;
+}
+
+function arcPath(center: StagePoint, radius: number, startAngle: number, endAngle: number): string {
+  const start = polarPoint(center, radius, radius, startAngle);
+  const end = polarPoint(center, radius, radius, endAngle);
+  const largeArcFlag = Math.abs(endAngle - startAngle) > 180 ? 1 : 0;
+  const sweepFlag = endAngle > startAngle ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`;
+}
+
+function ChangeCameraStage({
+  operation,
+  sourcePreview,
+  emptyLabel,
+}: {
+  operation: ChangeCameraOperation;
+  sourcePreview: SourcePreviewMeta | null;
+  emptyLabel: string;
+}) {
+  const horizontalAngle = clampNumber(operation.horizontalAngle, 0, 360);
+  const verticalAngle = clampNumber(operation.verticalAngle, -30, 90);
+  const zoom = clampNumber(operation.zoom, 0, 10);
+  const horizontalProgress = horizontalAngle / 360;
+  const verticalProgress = (verticalAngle + 30) / 120;
+  const zoomProgress = zoom / 10;
+  const focus = { x: 160, y: 70 };
+  const orbitCenter = { x: focus.x, y: 92 };
+  const orbitRadiusX = 126 - zoomProgress * 24;
+  const orbitRadiusY = 42 - zoomProgress * 8;
+  const cameraOrbitAngle = 90 - horizontalAngle;
+  const cameraPoint = polarPoint(
+    orbitCenter,
+    orbitRadiusX,
+    orbitRadiusY,
+    cameraOrbitAngle,
+  );
+  const tiltRadius = 58;
+  const tiltStartAngle = 180 + -30 * 1.25;
+  const tiltEndAngle = 180 + 90 * 1.25;
+  const tiltMarkerAngle = 180 + verticalAngle * 1.25;
+  const tiltPoint = polarPoint(focus, tiltRadius, tiltRadius, tiltMarkerAngle);
+  const cameraScale = 0.86 + zoomProgress * 0.34;
+  const imageScale = 0.9 + zoomProgress * 0.16;
+  const imageRotateY = -18 + horizontalProgress * 36;
+  const imageRotateX = -4 - verticalProgress * 12;
+  const imageWidth = 74 + zoomProgress * 12;
+  const imageHeight = 56 + zoomProgress * 8;
+  const imageLeft = focus.x - imageWidth / 2;
+  const imageTop = focus.y - imageHeight / 2 - 2;
+  const zoomDistance = Math.round(orbitRadiusX);
+  const cameraPointText = formatPoint(cameraPoint);
+  const tiltPointText = formatPoint(tiltPoint);
+  const isCameraBehindImage = cameraPoint.y < orbitCenter.y;
+  const cameraDepth = isCameraBehindImage ? "back" : "front";
+  const horizontalLabelX = Math.max(8, Math.min(250, cameraPoint.x + 12));
+  const horizontalMarker = (
+    <g data-testid="change-camera-horizontal-marker-group" data-depth={cameraDepth}>
+      <circle
+        data-testid="change-camera-horizontal-marker"
+        data-orbit-bound="true"
+        data-angle={String(horizontalAngle)}
+        data-point={cameraPointText}
+        data-depth={cameraDepth}
+        cx={cameraPoint.x}
+        cy={cameraPoint.y}
+        r={11 * cameraScale}
+        fill="rgb(14 165 233)"
+        stroke="rgb(186 230 253)"
+        strokeWidth="2"
+      />
+      <g
+        data-testid="change-camera-horizontal-label"
+        data-depth={cameraDepth}
+        transform={`translate(${horizontalLabelX} ${cameraPoint.y + 2})`}
+      >
+        <rect x="0" y="-12" width="58" height="22" rx="8" fill="rgb(8 47 73)" opacity="0.82" />
+        <text x="9" y="3" fill="rgb(224 242 254)" fontSize="10" fontWeight="700">
+          {horizontalAngle} deg
+        </text>
+      </g>
+    </g>
+  );
+
+  return (
+    <div
+      data-testid="change-camera-stage"
+      data-geometry="coupled"
+      data-horizontal-angle={String(horizontalAngle)}
+      data-vertical-angle={String(verticalAngle)}
+      data-zoom={String(zoom)}
+      data-zoom-distance={String(zoomDistance)}
+      className="relative h-40 overflow-hidden rounded-lg border border-sky-500/35 bg-slate-950 text-white shadow-inner shadow-black/30"
+    >
+      <div
+        className="absolute inset-0 z-0 opacity-35"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)",
+          backgroundSize: "24px 24px",
+          transform: "perspective(360px) rotateX(58deg) translateY(-72px) scale(1.25)",
+        }}
+      />
+      <svg
+        data-testid="change-camera-back-layer"
+        className="pointer-events-none absolute inset-0 z-10 h-full w-full"
+        viewBox="0 0 320 160"
+        aria-hidden="true"
+      >
+        <ellipse
+          data-testid="change-camera-orbit"
+          cx={orbitCenter.x}
+          cy={orbitCenter.y}
+          rx={orbitRadiusX}
+          ry={orbitRadiusY}
+          fill="none"
+          stroke="rgb(14 165 233)"
+          strokeWidth="5"
+          opacity="0.9"
+        />
+        <path
+          d={arcPath(focus, tiltRadius, tiltStartAngle, tiltEndAngle)}
+          fill="none"
+          stroke="rgb(139 92 246)"
+          strokeLinecap="round"
+          strokeWidth="6"
+          opacity="0.92"
+        />
+        <line
+          data-testid="change-camera-sightline"
+          data-from="camera"
+          data-to="image-plane"
+          x1={cameraPoint.x}
+          y1={cameraPoint.y}
+          x2={focus.x}
+          y2={focus.y}
+          stroke="rgb(125 211 252)"
+          strokeDasharray="4 4"
+          strokeWidth="1.5"
+          opacity="0.55"
+        />
+        {isCameraBehindImage ? horizontalMarker : null}
+      </svg>
+      <div
+        data-testid="change-camera-image-plane"
+        data-layer="image-plane"
+        className="absolute z-20 rounded-md border border-white/25 bg-white shadow-2xl shadow-black/40"
+        style={{
+          left: `${(imageLeft / 320) * 100}%`,
+          top: `${(imageTop / 160) * 100}%`,
+          width: `${(imageWidth / 320) * 100}%`,
+          height: `${(imageHeight / 160) * 100}%`,
+          transform: `perspective(260px) rotateX(${imageRotateX}deg) rotateY(${imageRotateY}deg) scale(${imageScale})`,
+        }}
+      >
+        {sourcePreview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            data-testid="change-camera-source-preview"
+            src={sourcePreview.url}
+            alt=""
+            className="h-full w-full rounded-[3px] object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-3 text-center text-[11px] font-medium text-slate-500">
+            {emptyLabel}
+          </div>
+        )}
+      </div>
+      <svg
+        data-testid="change-camera-front-layer"
+        className="pointer-events-none absolute inset-0 z-30 h-full w-full"
+        viewBox="0 0 320 160"
+        aria-hidden="true"
+      >
+        {!isCameraBehindImage ? horizontalMarker : null}
+        <circle
+          data-testid="change-camera-vertical-marker"
+          data-arc-bound="true"
+          data-angle={String(verticalAngle)}
+          data-point={tiltPointText}
+          cx={tiltPoint.x}
+          cy={tiltPoint.y}
+          r="8"
+          fill="rgb(139 92 246)"
+          stroke="rgb(221 214 254)"
+          strokeWidth="2"
+        />
+        <circle cx={focus.x} cy={focus.y} r="3" fill="rgb(255 255 255)" opacity="0.8" />
+        <g transform={`translate(${Math.max(8, tiltPoint.x - 64)} ${tiltPoint.y + 2})`}>
+          <rect x="0" y="-12" width="52" height="22" rx="8" fill="rgb(46 16 101)" opacity="0.82" />
+          <text x="9" y="3" fill="rgb(237 233 254)" fontSize="10" fontWeight="700">
+            {verticalAngle} deg
+          </text>
+        </g>
+        <g transform={`translate(${focus.x - 24} 140)`}>
+          <rect x="0" y="-12" width="48" height="22" rx="8" fill="rgb(2 44 34)" opacity="0.82" />
+          <text x="19" y="3" fill="rgb(167 243 208)" fontSize="10" fontWeight="700">
+            {zoom}
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
 }
 
 export default function ImageTransformNode({
@@ -287,6 +540,7 @@ export default function ImageTransformNode({
   const [operation, setOperation] = useState<ImageTransformOperation>(() =>
     normalizeOperation(operationType, nodeData.parameters),
   );
+  const operationRef = useRef(operation);
   const [isRunning, setIsRunning] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const sourcePreview = useMemo(
@@ -329,8 +583,13 @@ export default function ImageTransformNode({
     }
   }, [nodeData._status]);
 
+  useEffect(() => {
+    operationRef.current = operation;
+  }, [operation]);
+
   const saveOperation = useCallback(
     (next: ImageTransformOperation) => {
+      operationRef.current = next;
       setOperation(next);
       void queueNodeDataUpdate({
         nodeId: id as Id<"nodes">,
@@ -522,6 +781,12 @@ export default function ImageTransformNode({
               </div>
             ))}
           </div>
+        ) : operation.type === "change-camera" ? (
+          <ChangeCameraStage
+            operation={operation}
+            sourcePreview={sourcePreview}
+            emptyLabel={t("emptyInputs.image")}
+          />
         ) : (
           <div
             className={`relative w-full overflow-hidden rounded-md border border-border bg-muted/40 ${
@@ -761,6 +1026,103 @@ export default function ImageTransformNode({
                 {t(`faceModes.${mode}`)}
               </button>
             ))}
+          </div>
+        ) : null}
+
+        {operation.type === "change-camera" ? (
+          <div className="flex flex-col gap-1.5 text-xs">
+            {[
+              {
+                key: "horizontalAngle" as const,
+                min: 0,
+                max: 360,
+                value: operation.horizontalAngle,
+                fillClassName: "accent-sky-500",
+                valueClassName: "text-sky-600 dark:text-sky-300",
+              },
+              {
+                key: "verticalAngle" as const,
+                min: -30,
+                max: 90,
+                value: operation.verticalAngle,
+                fillClassName: "accent-violet-500",
+                valueClassName: "text-violet-600 dark:text-violet-300",
+              },
+              {
+                key: "zoom" as const,
+                min: 0,
+                max: 10,
+                value: operation.zoom,
+                fillClassName: "accent-emerald-500",
+                valueClassName: "text-emerald-600 dark:text-emerald-300",
+              },
+            ].map((control) => (
+              <label
+                key={control.key}
+                className="rounded-md border border-border bg-background/70 px-2 py-1"
+              >
+                <span className="flex items-center justify-between">
+                  <span className="font-medium">{t(`controls.${control.key}`)}</span>
+                  <span className={`text-[10px] font-semibold ${control.valueClassName}`}>
+                    {control.key === "zoom" ? control.value : `${control.value} deg`}
+                  </span>
+                </span>
+                <input
+                  data-testid={`change-camera-control-${control.key}`}
+                  className={`nodrag nowheel h-4 w-full ${control.fillClassName}`}
+                  type="range"
+                  min={control.min}
+                  max={control.max}
+                  value={control.value}
+                  onInput={(event) => {
+                    const currentOperation = operationRef.current;
+                    if (currentOperation.type !== "change-camera") return;
+                    saveOperation({
+                      ...currentOperation,
+                      [control.key]: Number(event.currentTarget.value),
+                    });
+                  }}
+                />
+              </label>
+            ))}
+
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                {t("controls.format")}
+                <select
+                  className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                  value={operation.outputFormat}
+                  onChange={(event) =>
+                    saveOperation({
+                      ...operation,
+                      outputFormat: event.target.value as ChangeCameraOutputFormat,
+                    })
+                  }
+                >
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                {t("controls.seed")}
+                <input
+                  className="nodrag nowheel h-8 rounded-md border bg-background px-2"
+                  type="number"
+                  min={1}
+                  value={operation.seed ?? ""}
+                  placeholder={t("controls.seedPlaceholder")}
+                  onChange={(event) =>
+                    saveOperation({
+                      ...operation,
+                      seed:
+                        event.target.value.trim().length > 0
+                          ? Number(event.target.value)
+                          : undefined,
+                    })
+                  }
+                />
+              </label>
+            </div>
           </div>
         ) : null}
 

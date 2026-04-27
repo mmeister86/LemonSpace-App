@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Bot,
+  Camera,
   ClipboardList,
   Crop,
   FolderOpen,
@@ -71,6 +72,7 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   upscale: Wand2,
   "style-transfer": Wand2,
   "face-restore": Sparkles,
+  "change-camera": Camera,
   curves: Sparkles,
   "color-adjust": Palette,
   "light-adjust": Sparkles,

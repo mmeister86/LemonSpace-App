@@ -125,6 +125,7 @@ const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   "light-adjust": [245, 158, 11],
   "detail-adjust": [99, 102, 241],
   crop: [139, 92, 246],
+  "change-camera": [14, 165, 233],
   render: [14, 165, 233],
   agent: [245, 158, 11],
   "agent-output": [245, 158, 11],
@@ -389,6 +390,7 @@ export const NODE_HANDLE_MAP: Record<
   upscale: { source: undefined, target: undefined },
   "style-transfer": { source: undefined, target: "image" },
   "face-restore": { source: undefined, target: undefined },
+  "change-camera": { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
   mixer: { source: "mixer-out", target: "base" },
@@ -502,6 +504,20 @@ export const NODE_DEFAULTS: Record<
     data: {
       operation: "face-restore",
       parameters: { type: "face-restore", mode: "faithful" },
+    },
+  },
+  "change-camera": {
+    width: 320,
+    height: 440,
+    data: {
+      operation: "change-camera",
+      parameters: {
+        type: "change-camera",
+        horizontalAngle: 0,
+        verticalAngle: 0,
+        zoom: 5,
+        outputFormat: "png",
+      },
     },
   },
   render: {

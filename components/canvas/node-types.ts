@@ -23,6 +23,7 @@ import BgRemoveNode from "./nodes/bg-remove-node";
 import UpscaleNode from "./nodes/upscale-node";
 import StyleTransferNode from "./nodes/style-transfer-node";
 import FaceRestoreNode from "./nodes/face-restore-node";
+import ChangeCameraNode from "./nodes/change-camera-node";
 import AgentNode from "./nodes/agent-node";
 import AgentOutputNode from "./nodes/agent-output-node";
 import MixerNode from "./nodes/mixer-node";
@@ -59,6 +60,7 @@ export const nodeTypes = {
   upscale: UpscaleNode,
   "style-transfer": StyleTransferNode,
   "face-restore": FaceRestoreNode,
+  "change-camera": ChangeCameraNode,
   render: RenderNode,
   agent: AgentNode,
   mixer: MixerNode,

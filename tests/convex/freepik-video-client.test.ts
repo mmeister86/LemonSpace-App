@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createChangeCameraTask,
   createImageTransformTask,
   createSkinEnhancerTask,
   createStyleTransferTaskOrRun,
@@ -367,6 +368,41 @@ describe("freepik image transform client", () => {
           flavor: "gen_z",
           engine: "colorful_anime",
           fixed_generation: true,
+        }),
+      }),
+    );
+  });
+
+  it("creates a change camera task with Freepik camera field names and controls", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: { data: { task_id: "camera_task" } },
+      }),
+    );
+
+    const result = await createChangeCameraTask({
+      imageUrl: "https://images.example.com/source.jpg",
+      horizontalAngle: 45,
+      verticalAngle: 15,
+      zoom: 7,
+      outputFormat: "jpeg",
+      seed: 42,
+    });
+
+    expect(result.task_id).toBe("camera_task");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.freepik.com/v1/ai/image-change-camera",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          image: "https://images.example.com/source.jpg",
+          horizontal_angle: 45,
+          vertical_angle: 15,
+          zoom: 7,
+          output_format: "jpeg",
+          seed: 42,
         }),
       }),
     );

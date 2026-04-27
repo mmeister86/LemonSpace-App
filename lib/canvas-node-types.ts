@@ -29,6 +29,7 @@ export const CANVAS_NODE_TYPES = [
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
   "curves",
   "color-adjust",
   "light-adjust",

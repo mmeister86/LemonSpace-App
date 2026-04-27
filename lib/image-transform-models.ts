@@ -3,6 +3,7 @@ export const IMAGE_TRANSFORM_TYPES = [
   "upscale",
   "style-transfer",
   "face-restore",
+  "change-camera",
 ] as const;
 
 export type ImageTransformType = (typeof IMAGE_TRANSFORM_TYPES)[number];
@@ -34,6 +35,7 @@ export type StyleTransferPortraitBeautifier =
   | "none"
   | "beautify_face"
   | "beautify_face_max";
+export type ChangeCameraOutputFormat = "png" | "jpeg";
 
 export type ImageTransformOperation =
   | { type: "bg-remove" }
@@ -61,6 +63,14 @@ export type ImageTransformOperation =
       type: "face-restore";
       mode: FaceRestoreMode;
       preset?: string;
+    }
+  | {
+      type: "change-camera";
+      horizontalAngle: number;
+      verticalAngle: number;
+      zoom: number;
+      outputFormat: ChangeCameraOutputFormat;
+      seed?: number;
     };
 
 export const IMAGE_TRANSFORM_CREDIT_COSTS = {
@@ -73,6 +83,7 @@ export const IMAGE_TRANSFORM_CREDIT_COSTS = {
   } satisfies Record<UpscaleScale, number>,
   "style-transfer": 12,
   "face-restore": 10,
+  "change-camera": 10,
 } as const;
 
 export function isImageTransformType(value: string): value is ImageTransformType {
@@ -96,5 +107,7 @@ export function getImageTransformLabel(type: ImageTransformType): string {
       return "Style Transfer";
     case "face-restore":
       return "Gesicht";
+    case "change-camera":
+      return "Kamera ändern";
   }
 }
