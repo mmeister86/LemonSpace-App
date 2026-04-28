@@ -791,6 +791,7 @@ describe("preview histogram call sites", () => {
         createElement("div", null,
           createElement(CompareSurface, {
             nodeWidth: 320,
+            nodeHeight: 380,
             previewInput: {
               sourceUrl: "https://cdn.example.com/source.png",
               steps: [
@@ -976,6 +977,7 @@ describe("preview histogram call sites", () => {
         createElement("div", null,
           createElement(CompareSurface, {
             nodeWidth: 320,
+            nodeHeight: 380,
             previewInput: {
               sourceUrl: "https://cdn.example.com/source.png",
               steps: [

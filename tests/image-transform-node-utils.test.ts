@@ -6,6 +6,7 @@ import {
   hasStyleTransferReferenceInput,
   normalizeOperation,
 } from "@/components/canvas/nodes/image-transform-node";
+import type { TransformNodeData } from "@/components/canvas/nodes/image-transform-node-types";
 
 describe("image transform node preview helpers", () => {
   it("reads source preview URL and dimensions from the incoming source node", () => {
@@ -115,7 +116,7 @@ describe("image transform operation defaults", () => {
         sharpen: "high",
         grain: null,
         ultraDetail: undefined,
-      }),
+      } as unknown as TransformNodeData["parameters"]),
     ).toEqual(defaultOperation("upscale"));
 
     expect(
@@ -126,7 +127,7 @@ describe("image transform operation defaults", () => {
         zoom: 9,
         outputFormat: "jpeg",
         seed: 123,
-      }),
+      } as unknown as TransformNodeData["parameters"]),
     ).toEqual({
       type: "change-camera",
       horizontalAngle: 45,

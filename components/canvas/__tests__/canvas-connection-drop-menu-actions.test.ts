@@ -1,11 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
+import type { Dispatch, SetStateAction } from "react";
 
 import {
   buildConnectionDropMenuNodeAction,
   settleConnectionDropMenuNodeAction,
 } from "@/components/canvas/canvas-connection-drop-menu-actions";
-import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
+import {
+  CANVAS_NODE_TEMPLATES,
+  type CanvasNodeTemplate,
+} from "@/lib/canvas-node-templates";
+
+function getMixerTemplate(): Extract<CanvasNodeTemplate, { type: "mixer" }> {
+  const template = CANVAS_NODE_TEMPLATES.find(
+    (candidate): candidate is Extract<CanvasNodeTemplate, { type: "mixer" }> =>
+      candidate.type === "mixer",
+  );
+  if (!template) {
+    throw new Error("Mixer template missing");
+  }
+  return template;
+}
 
 describe("connection drop-menu node actions", () => {
   it("builds a source-to-new-node action with defaults, template data, and validation", () => {
@@ -15,11 +30,7 @@ describe("connection drop-menu node actions", () => {
       position: { x: 0, y: 0 },
       data: {},
     };
-    const template = {
-      type: "mixer",
-      label: "Mixer",
-      defaultData: { opacity: 50 },
-    } as CanvasNodeTemplate;
+    const template = getMixerTemplate();
 
     const action = buildConnectionDropMenuNodeAction({
       canvasId: "canvas-1" as never,
@@ -29,6 +40,7 @@ describe("connection drop-menu node actions", () => {
         flowX: 300,
         flowY: 140,
         fromNodeId: "node-source" as never,
+        fromHandleId: undefined,
         fromHandleType: "source",
       },
       fromNode,
@@ -48,7 +60,7 @@ describe("connection drop-menu node actions", () => {
           positionY: 140,
           sourceNodeId: "node-source",
           targetHandle: "base",
-          data: expect.objectContaining({ canvasId: "canvas-1", opacity: 50 }),
+          data: expect.objectContaining({ canvasId: "canvas-1", opacity: 100 }),
         }),
       }),
     );
@@ -63,6 +75,7 @@ describe("connection drop-menu node actions", () => {
         flowX: 300,
         flowY: 140,
         fromNodeId: "node-video" as never,
+        fromHandleId: undefined,
         fromHandleType: "source",
       },
       fromNode: {
@@ -71,7 +84,7 @@ describe("connection drop-menu node actions", () => {
         position: { x: 0, y: 0 },
         data: {},
       } as RFNode,
-      template: { type: "mixer", label: "Mixer" } as CanvasNodeTemplate,
+      template: getMixerTemplate(),
       edges: [] as RFEdge[],
       clientRequestId: "request-1",
     });
@@ -82,7 +95,7 @@ describe("connection drop-menu node actions", () => {
   it("settles non-optimistic created node ids and skips optimistic ids", async () => {
     const resolvedRealIds = new Map<string, string>();
     const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
-    const setEdgeSyncNonce = vi.fn<(updater: (n: number) => number) => void>();
+    const setEdgeSyncNonce: Dispatch<SetStateAction<number>> = vi.fn();
 
     await settleConnectionDropMenuNodeAction({
       realId: "node-real" as never,

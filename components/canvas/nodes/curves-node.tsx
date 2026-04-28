@@ -8,7 +8,7 @@ import {
 } from "@/components/canvas/nodes/adjustment-node-shell";
 import type { CurvesData } from "@/lib/image-pipeline/adjustment-types";
 
-type CurvesNodeData = CurvesData & {
+type CurvesNodeData = CurvesData & Record<string, unknown> & {
   _status?: string;
   _statusMessage?: string;
 };
@@ -16,5 +16,5 @@ type CurvesNodeData = CurvesData & {
 export type CurvesNodeType = Node<CurvesNodeData, "curves">;
 
 export default function CurvesNode(props: NodeProps<CurvesNodeType>) {
-  return <AdjustmentNodeShell {...(props as never)} config={ADJUSTMENT_NODE_CONFIGS.curves} />;
+  return <AdjustmentNodeShell {...props} config={ADJUSTMENT_NODE_CONFIGS.curves} />;
 }

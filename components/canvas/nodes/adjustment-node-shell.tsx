@@ -42,7 +42,7 @@ import {
 
 type AdjustmentData = CurvesData | ColorAdjustData | LightAdjustData | DetailAdjustData;
 
-type AdjustmentNodeData<TData extends AdjustmentData> = TData & {
+type AdjustmentNodeData<TData extends AdjustmentData> = TData & Record<string, unknown> & {
   _status?: string;
   _statusMessage?: string;
 };

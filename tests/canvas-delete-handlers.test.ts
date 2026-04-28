@@ -47,8 +47,6 @@ function HookHarness(props: HarnessProps) {
     t: ((key: string, values?: Record<string, unknown>) =>
       values ? `${key}:${JSON.stringify(values)}` : key) as never,
     canvasId: asCanvasId("canvas-1"),
-    nodes: props.nodes,
-    edges: props.edges,
     nodesRef,
     edgesRef,
     deletingNodeIds,

@@ -25,7 +25,7 @@ describe("splitter node config", () => {
   });
 
   it("does not expose splitter placement metadata", () => {
-    expect(CANVAS_NODE_TEMPLATES.some((template) => template.type === "splitter")).toBe(
+    expect(CANVAS_NODE_TEMPLATES.some((template) => (template.type as string) === "splitter")).toBe(
       false,
     );
     expect(NODE_HANDLE_MAP.splitter).toBeUndefined();

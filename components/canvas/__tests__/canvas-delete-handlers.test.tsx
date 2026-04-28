@@ -52,8 +52,6 @@ function HookHarness({
   const handlers = useCanvasDeleteHandlers({
     t: ((key: string) => key) as never,
     canvasId: asCanvasId("canvas-1"),
-    nodes,
-    edges,
     nodesRef,
     edgesRef,
     deletingNodeIds,

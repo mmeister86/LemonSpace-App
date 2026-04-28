@@ -35,6 +35,11 @@ import {
   useSaveCanvasAdjustmentPreset,
 } from "@/components/canvas/canvas-presets-context";
 
+function createEnabledPresetsProvider(children: React.ReactNode) {
+  const props = { enabled: true } as React.ComponentProps<typeof CanvasPresetsProvider>;
+  return React.createElement(CanvasPresetsProvider, props, children);
+}
+
 type PresetConsumerSnapshot = {
   curves: string[];
   colorAdjust: string[];
@@ -108,7 +113,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 
@@ -140,7 +145,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 
@@ -180,7 +185,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 
@@ -190,7 +195,7 @@ describe("CanvasPresetsProvider", () => {
     authState.isAuthenticated = true;
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 
@@ -216,7 +221,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
       await Promise.resolve();
       await Promise.resolve();
@@ -256,7 +261,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 
@@ -307,7 +312,7 @@ describe("CanvasPresetsProvider", () => {
 
     await act(async () => {
       root?.render(
-        React.createElement(CanvasPresetsProvider, { enabled: true }, React.createElement(Harness)),
+        createEnabledPresetsProvider(React.createElement(Harness)),
       );
     });
 

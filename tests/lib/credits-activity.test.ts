@@ -111,16 +111,12 @@ describe("credits activity helpers", () => {
   it("calculates a zoomed domain for low usage/activity values", () => {
     const domain = calculateUsageActivityDomain([
       {
-        day: "06. Apr",
         usage: 4,
         activity: 4,
-        available: 1200,
       },
       {
-        day: "07. Apr",
         usage: 20,
         activity: 20,
-        available: 1200,
       },
     ]);
 

@@ -270,7 +270,7 @@ function SliderRow({
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  const trackRef = useRef<HTMLSpanElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const valueRef = useRef<HTMLSpanElement>(null);
   const resizeEntrySizesRef = useRef(new WeakMap<Element, { width: number; height: number }>());
@@ -617,7 +617,7 @@ function SliderRow({
             "pointer-events-none absolute top-1/2",
             "group/thumb z-0 block w-3 shrink-0 cursor-grab rounded-sm",
             "bg-transparent outline-none",
-            "transition-[height,opacity] duration-150 ease-[var(--cubic-ease-in-out)]",
+            "transition-[height,opacity] duration-150 ease-(--cubic-ease-in-out)",
             "focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-1",
             "active:cursor-grabbing",
             "disabled:pointer-events-none disabled:opacity-50",
@@ -660,7 +660,7 @@ function SliderRow({
                 <span
                   className={cn(
                     "absolute top-0 left-1/2",
-                    "transition-all duration-100 ease-[var(--cubic-ease-in-out)]",
+                    "transition-all duration-100 ease-(--cubic-ease-in-out)",
                     isActive
                       ? gap > 0
                         ? "rounded-full"
@@ -678,7 +678,7 @@ function SliderRow({
                 <span
                   className={cn(
                     "absolute bottom-0 left-1/2",
-                    "transition-all duration-100 ease-[var(--cubic-ease-in-out)]",
+                    "transition-all duration-100 ease-(--cubic-ease-in-out)",
                     isActive
                       ? gap > 0
                         ? "rounded-full"

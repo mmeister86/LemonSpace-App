@@ -8,7 +8,7 @@ import {
 } from "@/components/canvas/nodes/adjustment-node-shell";
 import type { DetailAdjustData } from "@/lib/image-pipeline/adjustment-types";
 
-type DetailAdjustNodeData = DetailAdjustData & {
+type DetailAdjustNodeData = DetailAdjustData & Record<string, unknown> & {
   _status?: string;
   _statusMessage?: string;
 };
@@ -16,5 +16,5 @@ type DetailAdjustNodeData = DetailAdjustData & {
 export type DetailAdjustNodeType = Node<DetailAdjustNodeData, "detail-adjust">;
 
 export default function DetailAdjustNode(props: NodeProps<DetailAdjustNodeType>) {
-  return <AdjustmentNodeShell {...(props as never)} config={ADJUSTMENT_NODE_CONFIGS["detail-adjust"]} />;
+  return <AdjustmentNodeShell {...props} config={ADJUSTMENT_NODE_CONFIGS["detail-adjust"]} />;
 }

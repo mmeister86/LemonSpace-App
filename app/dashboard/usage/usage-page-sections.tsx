@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Filter, ListFilter } from "lucide-react";
+import type { useFormatter } from "next-intl";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,10 +40,7 @@ type ActivityTableItem = {
   videoMeta?: { model?: string };
 };
 
-type Formatter = {
-  number: (value: number) => string;
-  dateTime: (value: number, options: Intl.DateTimeFormatOptions) => string;
-};
+type Formatter = Pick<ReturnType<typeof useFormatter>, "number" | "dateTime">;
 
 function statusBadge(status: ActivityTableItem["status"]) {
   switch (status) {

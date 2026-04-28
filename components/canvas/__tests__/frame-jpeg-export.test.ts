@@ -40,7 +40,7 @@ describe("exportFrameAsJpeg", () => {
       revokeObjectURL,
     });
 
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function handleClick() {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function handleClick(this: HTMLAnchorElement) {
       click(this.download);
     });
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({

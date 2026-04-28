@@ -161,12 +161,13 @@ describe("nodes helper modules", () => {
     const children = [{ _id: childId }];
     const deleted: string[] = [];
     const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+    let edgeQueryCount = 0;
     const ctx = {
       db: {
         query: vi.fn((table: "edges" | "nodes") => {
           if (table === "edges") {
-            const call = vi.mocked(ctx.db.query).mock.calls.filter(([name]) => name === "edges").length;
-            return makeCollectQuery(call === 1 ? sourceEdges : targetEdges);
+            edgeQueryCount += 1;
+            return makeCollectQuery(edgeQueryCount === 1 ? sourceEdges : targetEdges);
           }
           return makeCollectQuery(children);
         }),
