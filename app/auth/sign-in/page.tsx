@@ -3,22 +3,20 @@
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-
-const socialProviders = [
-  {
-    id: "google",
-    name: "Google",
-    subtitle: "Platzhalter",
-    icon: "G",
-  },
-  {
-    id: "apple",
-    name: "Apple",
-    subtitle: "Platzhalter",
-    icon: "",
-  },
-];
+import {
+  AuthCard,
+  AuthField,
+  AuthFooterLink,
+  AuthHeader,
+  AuthMessage,
+  AuthPageShell,
+  AuthSocialProviders,
+} from "@/components/auth/auth-page";
+import {
+  getAuthSocialPlaceholderMessage,
+  socialProviders,
+  toGermanSignInAuthError,
+} from "@/components/auth/auth-page-content";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -29,28 +27,6 @@ export default function SignInPage() {
   const [socialMessage, setSocialMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [magicLinkLoading, setMagicLinkLoading] = useState(false);
-
-  const toGermanAuthError = (message?: string) => {
-    if (!message) {
-      return "Anmeldung fehlgeschlagen. Bitte versuche es erneut.";
-    }
-
-    const normalized = message.toLowerCase();
-
-    if (normalized.includes("invalid") || normalized.includes("credentials")) {
-      return "E-Mail/Username oder Passwort ist nicht korrekt.";
-    }
-
-    if (normalized.includes("verify") || normalized.includes("verification")) {
-      return "Bitte bestätige zuerst deine E-Mail-Adresse.";
-    }
-
-    if (normalized.includes("username")) {
-      return "Username oder Passwort ist nicht korrekt.";
-    }
-
-    return "Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben.";
-  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +54,7 @@ export default function SignInPage() {
           });
 
       if (result.error) {
-        setError(toGermanAuthError(result.error.message));
+        setError(toGermanSignInAuthError(result.error.message));
       } else {
         router.push("/dashboard");
       }
@@ -114,7 +90,7 @@ export default function SignInPage() {
       });
 
       if (result.error) {
-        setError(toGermanAuthError(result.error.message));
+        setError(toGermanSignInAuthError(result.error.message));
       } else {
         setMagicLinkMessage("Magic Link gesendet. Prüfe dein Postfach.");
       }
@@ -128,88 +104,42 @@ export default function SignInPage() {
   const handleSocialPlaceholder = (provider: string) => {
     setError("");
     setMagicLinkMessage("");
-    setSocialMessage(`${provider}-Login ist aktuell als Platzhalter eingebunden.`);
+    setSocialMessage(getAuthSocialPlaceholderMessage(provider, "sign-in"));
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border bg-card p-8 shadow-sm">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold">Willkommen zurück 🍋</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Melde dich bei LemonSpace an
-          </p>
-        </div>
+    <AuthPageShell>
+      <AuthCard>
+        <AuthHeader title="Willkommen zurück 🍋" subtitle="Melde dich bei LemonSpace an" />
 
         <form onSubmit={handleSignIn} className="space-y-4">
-          <div>
-            <label htmlFor="identifier" className="block text-sm font-medium mb-1.5">
-              E-Mail oder Username
-            </label>
-            <input
-              id="identifier"
-              type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="name@beispiel.de oder dein Username"
-              autoCapitalize="none"
-              autoCorrect="off"
-            />
-          </div>
+          <AuthField
+            id="identifier"
+            label="E-Mail oder Username"
+            type="text"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            required
+            placeholder="name@beispiel.de oder dein Username"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium mb-1.5">
-              Passwort
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Dein Passwort"
-            />
-          </div>
+          <AuthField
+            id="password"
+            label="Passwort"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="Dein Passwort"
+          />
 
-          {error && (
-            <p
-              className="text-sm text-red-500"
-              role="alert"
-              aria-live="assertive"
-              aria-atomic="true"
-            >
-              {error}
-            </p>
-          )}
+          {error && <AuthMessage tone="error">{error}</AuthMessage>}
 
-          <div className="space-y-2">
-            <p className="text-xs text-center text-muted-foreground">Oder mit externen Anbietern</p>
-            {socialProviders.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                onClick={() => handleSocialPlaceholder(provider.name)}
-                className="w-full rounded-lg border bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors"
-              >
-                <span aria-hidden className="inline-block w-6 text-left">{provider.icon}</span>
-                {provider.name} {provider.subtitle}
-              </button>
-            ))}
-          </div>
+          <AuthSocialProviders providers={socialProviders} onSelect={handleSocialPlaceholder} />
 
-          {socialMessage && (
-            <p
-              className="text-sm text-amber-600"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {socialMessage}
-            </p>
-          )}
+          {socialMessage && <AuthMessage tone="warning">{socialMessage}</AuthMessage>}
 
           <button
             type="submit"
@@ -227,25 +157,11 @@ export default function SignInPage() {
           >
             {magicLinkLoading ? "Wird gesendet…" : "Magic Link senden"}
           </button>
-          {magicLinkMessage && (
-            <p
-              className="text-sm text-emerald-600"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {magicLinkMessage}
-            </p>
-          )}
+          {magicLinkMessage && <AuthMessage tone="success">{magicLinkMessage}</AuthMessage>}
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Noch kein Konto?{" "}
-          <Link href="/auth/sign-up" className="font-medium text-primary hover:underline">
-            Registrieren
-          </Link>
-        </p>
-      </div>
-    </div>
+        <AuthFooterLink text="Noch kein Konto?" href="/auth/sign-up" label="Registrieren" />
+      </AuthCard>
+    </AuthPageShell>
   );
 }

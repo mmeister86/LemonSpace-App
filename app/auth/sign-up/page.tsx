@@ -3,22 +3,20 @@
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-
-const socialProviders = [
-  {
-    id: "google",
-    name: "Google",
-    subtitle: "Platzhalter",
-    icon: "G",
-  },
-  {
-    id: "apple",
-    name: "Apple",
-    subtitle: "Platzhalter",
-    icon: "",
-  },
-];
+import {
+  AuthCard,
+  AuthField,
+  AuthFooterLink,
+  AuthHeader,
+  AuthMessage,
+  AuthPageShell,
+  AuthSocialProviders,
+} from "@/components/auth/auth-page";
+import {
+  getAuthSocialPlaceholderMessage,
+  socialProviders,
+  toGermanSignUpAuthError,
+} from "@/components/auth/auth-page-content";
 
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
@@ -92,32 +90,6 @@ async function getAvailableUsername(base: string) {
   return truncateWithSuffix(seeded, `.${Date.now().toString().slice(-4)}`);
 }
 
-function toGermanAuthError(message?: string) {
-  if (!message) {
-    return "Registrierung fehlgeschlagen. Bitte versuche es erneut.";
-  }
-
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("email") && normalized.includes("already")) {
-    return "Diese E-Mail-Adresse wird bereits verwendet.";
-  }
-
-  if (normalized.includes("username") && normalized.includes("already")) {
-    return "Dieser Username ist bereits vergeben.";
-  }
-
-  if (normalized.includes("password")) {
-    return "Das Passwort erfüllt die Anforderungen nicht.";
-  }
-
-  if (normalized.includes("invalid username")) {
-    return "Der Username enthält ungültige Zeichen.";
-  }
-
-  return "Registrierung fehlgeschlagen. Bitte prüfe deine Eingaben.";
-}
-
 export default function SignUpPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -169,7 +141,7 @@ export default function SignUpPage() {
       });
 
       if (result.error) {
-        setError(toGermanAuthError(result.error.message));
+        setError(toGermanSignUpAuthError(result.error.message));
       } else {
         setSuccess(true);
       }
@@ -182,13 +154,13 @@ export default function SignUpPage() {
 
   const handleSocialPlaceholder = (provider: string) => {
     setError("");
-    setSocialMessage(`${provider}-Signup ist aktuell als Platzhalter eingebunden.`);
+    setSocialMessage(getAuthSocialPlaceholderMessage(provider, "sign-up"));
   };
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="w-full max-w-sm space-y-4 rounded-xl border bg-card p-8 shadow-sm">
+      <AuthPageShell>
+        <AuthCard compact>
           <div className="text-center" role="status" aria-live="polite" aria-atomic="true">
             <div className="text-4xl mb-3">📧</div>
             <h1 className="text-xl font-semibold">E-Mail bestätigen</h1>
@@ -203,62 +175,44 @@ export default function SignUpPage() {
           >
             Zum Login
           </button>
-        </div>
-      </div>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border bg-card p-8 shadow-sm">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold">Konto erstellen 🍋</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Erstelle dein LemonSpace-Konto
-          </p>
-        </div>
+    <AuthPageShell>
+      <AuthCard>
+        <AuthHeader title="Konto erstellen 🍋" subtitle="Erstelle dein LemonSpace-Konto" />
 
         <form onSubmit={handleSignUp} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium mb-1.5">
-              Name
-            </label>
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Dein Name"
-            />
-          </div>
+          <AuthField
+            id="name"
+            label="Name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            placeholder="Dein Name"
+          />
 
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium mb-1.5">
-              E-Mail
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="name@beispiel.de"
-            />
-          </div>
+          <AuthField
+            id="email"
+            label="E-Mail"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="name@beispiel.de"
+          />
 
           <div className="space-y-2">
-            <label htmlFor="username" className="block text-sm font-medium mb-1.5">
-              Username (optional)
-            </label>
-            <input
+            <AuthField
               id="username"
+              label="Username (optional)"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
               placeholder="z. B. max.mustermann"
               autoCapitalize="none"
               autoCorrect="off"
@@ -274,58 +228,22 @@ export default function SignUpPage() {
             </label>
           </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium mb-1.5">
-              Passwort
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Mindestens 8 Zeichen"
-            />
-          </div>
+          <AuthField
+            id="password"
+            label="Passwort"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            placeholder="Mindestens 8 Zeichen"
+          />
 
-          {error && (
-            <p
-              className="text-sm text-red-500"
-              role="alert"
-              aria-live="assertive"
-              aria-atomic="true"
-            >
-              {error}
-            </p>
-          )}
+          {error && <AuthMessage tone="error">{error}</AuthMessage>}
 
-          <div className="space-y-2">
-            <p className="text-xs text-center text-muted-foreground">Oder mit externen Anbietern</p>
-            {socialProviders.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                onClick={() => handleSocialPlaceholder(provider.name)}
-                className="w-full rounded-lg border bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors"
-              >
-                <span aria-hidden className="inline-block w-6 text-left">{provider.icon}</span>
-                {provider.name} {provider.subtitle}
-              </button>
-            ))}
-          </div>
+          <AuthSocialProviders providers={socialProviders} onSelect={handleSocialPlaceholder} />
 
-          {socialMessage && (
-            <p
-              className="text-sm text-amber-600"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {socialMessage}
-            </p>
-          )}
+          {socialMessage && <AuthMessage tone="warning">{socialMessage}</AuthMessage>}
 
           <button
             type="submit"
@@ -336,13 +254,8 @@ export default function SignUpPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Bereits ein Konto?{" "}
-          <Link href="/auth/sign-in" className="font-medium text-primary hover:underline">
-            Anmelden
-          </Link>
-        </p>
-      </div>
-    </div>
+        <AuthFooterLink text="Bereits ein Konto?" href="/auth/sign-in" label="Anmelden" />
+      </AuthCard>
+    </AuthPageShell>
   );
 }

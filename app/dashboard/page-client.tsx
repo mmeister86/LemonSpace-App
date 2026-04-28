@@ -1,50 +1,20 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useTheme } from "next-themes";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
 import {
-  Box,
-  ChevronDown,
-  Coins,
-  ImageIcon,
-  LayoutTemplate,
-  Loader2,
-  Monitor,
-  Moon,
-  Search,
-  Sun,
-  Video,
-} from "lucide-react";
-
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+  DashboardActivitySection,
+  DashboardCreditsSection,
+  DashboardHeader,
+  DashboardMediaPreviewSection,
+  DashboardWorkspaceSection,
+} from "@/components/dashboard/dashboard-page-sections";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
-import { CreditOverview } from "@/components/dashboard/credit-overview";
-import { CreditsActivityChart } from "@/components/dashboard/credits-activity-chart";
-import { RecentTransactions } from "@/components/dashboard/recent-transactions";
-import CanvasCard from "@/components/dashboard/canvas-card";
 import { MediaLibraryDialog } from "@/components/media/media-library-dialog";
-import {
-  collectMediaStorageIdsForResolution,
-  resolveMediaPreviewUrl,
-} from "@/components/media/media-preview-utils";
+import { useDashboardMediaPreviewUrls } from "@/hooks/use-dashboard-media-preview-urls";
 import { useDashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
 import { toast } from "@/lib/toast";
 
@@ -60,75 +30,6 @@ function getInitials(nameOrEmail: string) {
   return normalized.slice(0, 2).toUpperCase();
 }
 
-function formatDimensions(
-  width: number | undefined,
-  height: number | undefined,
-  unknownSizeLabel: string,
-): string {
-  if (typeof width === "number" && typeof height === "number") {
-    return `${width} x ${height}px`;
-  }
-
-  return unknownSizeLabel;
-}
-
-function getMediaItemKey(item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number]): string {
-  if (item.storageId) {
-    return item.storageId;
-  }
-
-  if (item.originalUrl) {
-    return `url:${item.originalUrl}`;
-  }
-
-  if (item.previewUrl) {
-    return `preview:${item.previewUrl}`;
-  }
-
-  if (item.sourceUrl) {
-    return `source:${item.sourceUrl}`;
-  }
-
-  return `${item.kind}:${item.createdAt}:${item.filename ?? "unnamed"}`;
-}
-
-function getMediaItemMeta(
-  item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number],
-  labels: {
-    unknownSize: string;
-    videoFile: string;
-  },
-): string {
-  if (item.kind === "video") {
-    return labels.videoFile;
-  }
-
-  return formatDimensions(item.width, item.height, labels.unknownSize);
-}
-
-function getMediaItemLabel(
-  item: NonNullable<ReturnType<typeof useDashboardSnapshot>["snapshot"]>["mediaPreview"][number],
-  labels: {
-    untitledImage: string;
-    untitledVideo: string;
-    untitledAsset: string;
-  },
-): string {
-  if (item.filename) {
-    return item.filename;
-  }
-
-  if (item.kind === "video") {
-    return labels.untitledVideo;
-  }
-
-  if (item.kind === "asset") {
-    return labels.untitledAsset;
-  }
-
-  return labels.untitledImage;
-}
-
 export function DashboardPageClient() {
   const t = useTranslations("toasts");
   const tMediaCommon = useTranslations("mediaLibrary.common");
@@ -136,17 +37,17 @@ export function DashboardPageClient() {
   const tMediaDialog = useTranslations("mediaLibrary.dialog");
   const router = useRouter();
   const welcomeToastSentRef = useRef(false);
-  const { theme = "system", setTheme } = useTheme();
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { snapshot: dashboardSnapshot } = useDashboardSnapshot(session?.user?.id);
   const createCanvas = useMutation(api.canvases.create);
-  const resolveMediaPreviewUrls = useMutation(api.storage.batchGetUrlsForUserMedia);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [isMediaLibraryDialogOpen, setIsMediaLibraryDialogOpen] = useState(false);
-  const [mediaPreviewUrlMap, setMediaPreviewUrlMap] = useState<Record<string, string | undefined>>({});
-  const [isResolvingMediaPreview, setIsResolvingMediaPreview] = useState(false);
-  const [mediaPreviewError, setMediaPreviewError] = useState<string | null>(null);
   const [hasClientMounted, setHasClientMounted] = useState(false);
+  const {
+    urlMap: mediaPreviewUrlMap,
+    isResolving: isResolvingMediaPreview,
+    error: mediaPreviewError,
+  } = useDashboardMediaPreviewUrls(dashboardSnapshot, tMediaDialog("urlResolveError"));
 
   useEffect(() => {
     setHasClientMounted(true);
@@ -155,11 +56,6 @@ export function DashboardPageClient() {
   const displayName = session?.user.name?.trim() || session?.user.email || "Nutzer";
   const initials = getInitials(displayName);
   const canvases = dashboardSnapshot?.canvases;
-  const mediaPreview = dashboardSnapshot?.mediaPreview;
-  const mediaPreviewStorageIds = useMemo(() => {
-    const previewItems = mediaPreview ?? [];
-    return collectMediaStorageIdsForResolution(previewItems);
-  }, [mediaPreview]);
 
   useEffect(() => {
     if (!session?.user || welcomeToastSentRef.current) return;
@@ -169,55 +65,6 @@ export function DashboardPageClient() {
     sessionStorage.setItem(key, "1");
     toast.success(t("auth.welcomeOnDashboard"));
   }, [t, session?.user]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function run() {
-      if (dashboardSnapshot === undefined) {
-        setMediaPreviewUrlMap({});
-        setMediaPreviewError(null);
-        setIsResolvingMediaPreview(false);
-        return;
-      }
-
-      if (mediaPreviewStorageIds.length === 0) {
-        setMediaPreviewUrlMap({});
-        setMediaPreviewError(null);
-        setIsResolvingMediaPreview(false);
-        return;
-      }
-
-      setIsResolvingMediaPreview(true);
-      setMediaPreviewError(null);
-
-      try {
-        const resolved = await resolveMediaPreviewUrls({ storageIds: mediaPreviewStorageIds });
-        if (isCancelled) {
-          return;
-        }
-        setMediaPreviewUrlMap(resolved);
-      } catch (error) {
-        if (isCancelled) {
-          return;
-        }
-        setMediaPreviewUrlMap({});
-        setMediaPreviewError(
-          error instanceof Error ? error.message : tMediaDialog("urlResolveError"),
-        );
-      } finally {
-        if (!isCancelled) {
-          setIsResolvingMediaPreview(false);
-        }
-      }
-    }
-
-    void run();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [dashboardSnapshot, mediaPreviewStorageIds, resolveMediaPreviewUrls, tMediaDialog]);
 
   const handleSignOut = async () => {
     toast.info(t("auth.signedOut"));
@@ -244,77 +91,7 @@ export function DashboardPageClient() {
 
   return (
     <div className="min-h-full bg-background">
-      <header className="sticky top-0 z-10 border-b bg-background/90 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-6">
-          <div className="flex items-center gap-2.5 text-base font-semibold tracking-tight">
-            <Image
-              src="/logos/lemonspace-logo-v2-primary-rgb.svg"
-              alt=""
-              width={449}
-              height={86}
-              unoptimized
-              className="h-5 w-auto shrink-0"
-              aria-hidden
-              loading="eager"
-            />
-          </div>
-
-          <div className="relative ml-8 hidden max-w-xs flex-1 sm:block">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-8 rounded-lg bg-muted/60 pl-8 text-sm"
-              placeholder="Suchen…"
-              type="search"
-              disabled
-            />
-          </div>
-
-          <div className="ml-auto flex items-center gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2 px-1.5">
-                  <Avatar className="size-7">
-                    <AvatarFallback className="bg-primary/12 text-xs font-medium text-primary">
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden text-sm font-medium md:inline">{displayName}</span>
-                  <ChevronDown className="size-3.5 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Theme
-                </DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={theme}
-                  onValueChange={(value) => setTheme(value)}
-                >
-                  <DropdownMenuRadioItem value="light">
-                    <Sun className="size-4" />
-                    Light
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
-                    <Moon className="size-4" />
-                    Dark
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
-                    <Monitor className="size-4" />
-                    System
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>Einstellungen</DropdownMenuItem>
-                <DropdownMenuItem disabled>Abrechnung</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={handleSignOut}>Abmelden</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </header>
+      <DashboardHeader displayName={displayName} initials={initials} onSignOut={handleSignOut} />
 
       <main className="mx-auto max-w-5xl px-6 pt-10 pb-16">
         <div className="mb-10">
@@ -324,163 +101,41 @@ export function DashboardPageClient() {
           </p>
         </div>
 
-        <section className="mb-12">
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-            <Coins className="size-3.5 text-muted-foreground" />
-            Credit-Übersicht
-          </div>
-          <CreditOverview
-            balance={dashboardSnapshot?.balance}
-            subscription={dashboardSnapshot?.subscription}
-            usageStats={dashboardSnapshot?.usageStats}
-          />
-        </section>
+        <DashboardCreditsSection snapshot={dashboardSnapshot} />
 
-        <section className="mb-12">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <LayoutTemplate className="size-3.5 text-muted-foreground" />
-              Arbeitsbereiche
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="cursor-pointer text-muted-foreground"
-              type="button"
-              onClick={handleCreateWorkspace}
-              disabled={
-                isCreatingWorkspace ||
-                !hasClientMounted ||
-                isSessionPending ||
-                !session?.user
-              }
-            >
-              {isCreatingWorkspace ? "Erstelle..." : "Neuen Arbeitsbereich"}
-            </Button>
-          </div>
+        <DashboardWorkspaceSection
+          canvases={canvases}
+          isCreatingWorkspace={isCreatingWorkspace}
+          isCreateDisabled={
+            isCreatingWorkspace || !hasClientMounted || isSessionPending || !session?.user
+          }
+          isSessionPending={isSessionPending}
+          onCreateWorkspace={handleCreateWorkspace}
+          onNavigateCanvas={(id) => router.push(`/canvas/${id}`)}
+        />
 
-          {isSessionPending || canvases === undefined ? (
-            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Arbeitsbereiche werden geladen...
-            </div>
-          ) : canvases.length === 0 ? (
-            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              Noch kein Arbeitsbereich vorhanden. Mit „Neuer Arbeitsbereich“ legst du den
-              ersten an.
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-3">
-              {canvases.map((canvas: Doc<"canvases">) => (
-                <CanvasCard
-                  key={canvas._id}
-                  canvas={canvas}
-                  onNavigate={(id) => router.push(`/canvas/${id}`)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+        <DashboardActivitySection snapshot={dashboardSnapshot} />
 
-        <section className="mb-12 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] [&>*]:min-w-0">
-          <CreditsActivityChart
-            balance={dashboardSnapshot?.balance}
-            recentTransactions={dashboardSnapshot?.recentTransactions}
-          />
-          <RecentTransactions recentTransactions={dashboardSnapshot?.recentTransactions} />
-        </section>
-
-        <section className="mb-12">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <ImageIcon className="size-3.5 text-muted-foreground" />
-              {tMediaDashboard("sectionTitle")}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="cursor-pointer text-muted-foreground"
-              type="button"
-              onClick={() => setIsMediaLibraryDialogOpen(true)}
-              disabled={!hasClientMounted || isSessionPending || !session?.user}
-            >
-              {tMediaDashboard("openAll")}
-            </Button>
-          </div>
-
-          {dashboardSnapshot === undefined ? (
-            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              {tMediaDashboard("loading")}
-            </div>
-          ) : mediaPreviewError ? (
-            <div className="rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              {tMediaDashboard("previewError", { error: mediaPreviewError })}
-            </div>
-          ) : !mediaPreview || mediaPreview.length === 0 ? (
-            <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-foreground/3">
-              {tMediaDashboard("empty")}
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-4">
-              {(mediaPreview ?? []).map((item) => {
-                const itemKey = getMediaItemKey(item);
-                const previewUrl = resolveMediaPreviewUrl(item, mediaPreviewUrlMap);
-                const itemLabel = getMediaItemLabel(item, {
-                  untitledImage: tMediaCommon("untitledImage"),
-                  untitledVideo: tMediaCommon("untitledVideo"),
-                  untitledAsset: tMediaCommon("untitledAsset"),
-                });
-                const itemMeta = getMediaItemMeta(item, {
-                  unknownSize: tMediaCommon("unknownSize"),
-                  videoFile: tMediaCommon("videoFile"),
-                });
-
-                return (
-                  <article key={itemKey} className="overflow-hidden rounded-xl border bg-card">
-                    <div className="relative aspect-square bg-muted/50">
-                      {previewUrl && item.kind === "video" ? (
-                        <video
-                          src={previewUrl}
-                          className="h-full w-full object-cover"
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
-                      ) : previewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={previewUrl}
-                          alt={itemLabel}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : isResolvingMediaPreview ? (
-                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                          <Loader2 className="size-4 animate-spin" />
-                        </div>
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                          {item.kind === "video" ? (
-                            <Video className="size-5" />
-                          ) : item.kind === "asset" ? (
-                            <Box className="size-5" />
-                          ) : (
-                            <ImageIcon className="size-5" />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1 p-2">
-                      <p className="truncate text-xs font-medium" title={itemLabel}>
-                        {itemLabel}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">{itemMeta}</p>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        <DashboardMediaPreviewSection
+          snapshot={dashboardSnapshot}
+          isOpenDisabled={!hasClientMounted || isSessionPending || !session?.user}
+          isResolvingMediaPreview={isResolvingMediaPreview}
+          mediaPreviewError={mediaPreviewError}
+          mediaPreviewUrlMap={mediaPreviewUrlMap}
+          labels={{
+            sectionTitle: tMediaDashboard("sectionTitle"),
+            openAll: tMediaDashboard("openAll"),
+            loading: tMediaDashboard("loading"),
+            empty: tMediaDashboard("empty"),
+            previewError: (error) => tMediaDashboard("previewError", { error }),
+            unknownSize: tMediaCommon("unknownSize"),
+            videoFile: tMediaCommon("videoFile"),
+            untitledImage: tMediaCommon("untitledImage"),
+            untitledVideo: tMediaCommon("untitledVideo"),
+            untitledAsset: tMediaCommon("untitledAsset"),
+          }}
+          onOpenMediaLibrary={() => setIsMediaLibraryDialogOpen(true)}
+        />
       </main>
 
       <MediaLibraryDialog

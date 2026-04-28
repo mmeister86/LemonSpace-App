@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { Id } from "@/convex/_generated/dataModel";
+import { optimisticNodeIdForClientRequest } from "@/components/canvas/canvas-sync-optimistic-updates";
+import { createCanvasSyncPendingController } from "@/components/canvas/canvas-sync-pending-controller";
+import { shouldRetryCanvasSyncError } from "@/components/canvas/canvas-sync-queue-flusher";
+import { ensureCanvasSyncClientRequestId } from "@/components/canvas/canvas-sync-node-create-actions";
 import { createCanvasSyncEngineController } from "@/components/canvas/use-canvas-sync-engine";
 
 const asCanvasId = (id: string): Id<"canvases"> => id as Id<"canvases">;
@@ -42,6 +46,50 @@ describe("useCanvasSyncEngine", () => {
     expect(controller.pendingMoveAfterCreateRef.current.has("req-1")).toBe(false);
     expect(runBatchRemoveNodes).not.toHaveBeenCalled();
     expect(runSplitEdgeAtExistingNode).not.toHaveBeenCalled();
+  });
+
+  it("exposes pending operation coordination from a focused module", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+
+    const controller = createCanvasSyncPendingController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+    });
+
+    await controller.queueNodeResize({
+      nodeId: asNodeId("optimistic_req-module"),
+      width: 480,
+      height: 320,
+    });
+
+    expect(controller.pendingResizeAfterCreateRef.current.get("req-module")).toEqual({
+      width: 480,
+      height: 320,
+    });
+    expect(enqueueSyncMutation).not.toHaveBeenCalled();
+  });
+
+  it("exposes optimistic id helpers from a focused module", () => {
+    expect(optimisticNodeIdForClientRequest("req-optimistic")).toBe(
+      "optimistic_req-optimistic",
+    );
+  });
+
+  it("exposes queue retry classification from a focused module", () => {
+    expect(shouldRetryCanvasSyncError(new Error("network timeout"), true)).toBe(true);
+    expect(shouldRetryCanvasSyncError(new Error("validation failed"), true)).toBe(false);
+  });
+
+  it("exposes create-node client request helpers from a focused module", () => {
+    const payload = ensureCanvasSyncClientRequestId({
+      canvasId: asCanvasId("canvas-1"),
+      clientRequestId: "req-existing",
+    });
+
+    expect(payload.clientRequestId).toBe("req-existing");
   });
 
   it("defers resize and data updates for an optimistic node until the real id is known", async () => {

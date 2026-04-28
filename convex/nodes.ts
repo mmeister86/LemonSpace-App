@@ -1,9 +1,8 @@
-import { query, mutation, MutationCtx } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isAdjustmentNodeType } from "../lib/canvas-node-types";
-import { validateBatchNodesForUserOrThrow } from "./batch_validation_utils";
 import {
   getCanvasConnectionValidationMessage,
   validateCanvasConnectionPolicy,
@@ -14,559 +13,30 @@ import {
   getOwnedCanvasOrNull,
   requireOwnedCanvas,
 } from "./authz_helpers";
-import { normalizeCropNodeData } from "../lib/image-pipeline/crop-node-data";
-import { preserveNodeFavorite } from "../lib/canvas-node-favorite";
+import { deleteGroupNodeWithEdges, deleteNodeWithCleanup } from "./nodes/delete_cleanup";
+import {
+  assertParentAllowedForNode,
+  assertSelectedNodesHaveNoSelectedAncestors,
+} from "./nodes/grouping";
+import {
+  getIdempotentNodeCreateResult,
+  rememberIdempotentNodeCreateResult,
+  resolveNodeReferenceForWrite,
+} from "./nodes/idempotency";
+import { assertConnectionPolicyForTypes, getValidatedBatchNodesOrThrow } from "./nodes/validation";
+import {
+  estimateSerializedBytes,
+  insertNodeForWrite,
+  normalizeNodeDataForWrite,
+} from "./nodes/write_helpers";
 
 // ============================================================================
 // Interne Helpers
 // ============================================================================
 
-async function getValidatedBatchNodesOrThrow(
-  ctx: MutationCtx,
-  userId: string,
-  nodeIds: Id<"nodes">[],
-): Promise<{ canvasId: Id<"canvases">; nodes: Doc<"nodes">[] }> {
-  return await validateBatchNodesForUserOrThrow({
-    userId,
-    nodeIds,
-    getNodeById: (nodeId) => ctx.db.get(nodeId),
-    getCanvasById: (canvasId) => ctx.db.get(canvasId),
-  });
-}
-
-async function isNodeDescendantOf(
-  ctx: MutationCtx,
-  candidateId: Id<"nodes">,
-  ancestorId: Id<"nodes">,
-): Promise<boolean> {
-  if (candidateId === ancestorId) return true;
-  let current = await ctx.db.get(candidateId);
-  const visited = new Set<Id<"nodes">>();
-  while (current?.parentId) {
-    if (current.parentId === ancestorId) return true;
-    if (visited.has(current.parentId)) {
-      throw new Error("Invalid parent cycle");
-    }
-    visited.add(current.parentId);
-    current = await ctx.db.get(current.parentId);
-  }
-  return false;
-}
-
-type NodeCreateMutationName =
-  | "nodes.create"
-  | "nodes.createWithEdgeSplit"
-  | "nodes.createWithEdgeFromSource"
-  | "nodes.createWithEdgeToTarget"
-  | "nodes.createGroupFromSelection";
-
-const OPTIMISTIC_NODE_PREFIX = "optimistic_";
-const NODE_CREATE_MUTATIONS: NodeCreateMutationName[] = [
-  "nodes.create",
-  "nodes.createWithEdgeSplit",
-  "nodes.createWithEdgeFromSource",
-  "nodes.createWithEdgeToTarget",
-  "nodes.createGroupFromSelection",
-];
-
-const DISALLOWED_ADJUSTMENT_DATA_KEYS = [
-  "blob",
-  "blobUrl",
-  "imageData",
-] as const;
-
-const DISALLOWED_NON_RENDER_ADJUSTMENT_DATA_KEYS = [
-  "storageId",
-  "url",
-] as const;
-
-const RENDER_OUTPUT_RESOLUTIONS = ["original", "2x", "custom"] as const;
-const RENDER_FORMATS = ["png", "jpeg", "webp"] as const;
-const CUSTOM_RENDER_DIMENSION_MIN = 1;
-const CUSTOM_RENDER_DIMENSION_MAX = 16384;
-const DEFAULT_RENDER_OUTPUT_RESOLUTION = "original" as const;
-const DEFAULT_RENDER_FORMAT = "png" as const;
-const DEFAULT_RENDER_JPEG_QUALITY = 90;
 const ADJUSTMENT_MIN_WIDTH = 240;
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
-
-function estimateSerializedBytes(value: unknown): number | null {
-  try {
-    return JSON.stringify(value)?.length ?? 0;
-  } catch {
-    return null;
-  }
-}
-
-type RenderOutputResolution = (typeof RENDER_OUTPUT_RESOLUTIONS)[number];
-type RenderFormat = (typeof RENDER_FORMATS)[number];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertNoAdjustmentImagePayload(
-  nodeType: Doc<"nodes">["type"],
-  data: unknown,
-): void {
-  if (!isAdjustmentNodeType(nodeType) || !isRecord(data)) {
-    return;
-  }
-
-  for (const key of DISALLOWED_ADJUSTMENT_DATA_KEYS) {
-    if (key in data) {
-      throw new Error(
-        `Adjustment nodes accept parameter data only. '${key}' is not allowed in data.`,
-      );
-    }
-  }
-
-  if (nodeType === "render") {
-    return;
-  }
-
-  for (const key of DISALLOWED_NON_RENDER_ADJUSTMENT_DATA_KEYS) {
-    if (key in data) {
-      throw new Error(
-        `Adjustment nodes '${nodeType}' do not allow '${key}' in data.`,
-      );
-    }
-  }
-}
-
-function parseRenderOutputResolution(value: unknown): RenderOutputResolution {
-  if (value === undefined) {
-    return DEFAULT_RENDER_OUTPUT_RESOLUTION;
-  }
-  if (
-    typeof value !== "string" ||
-    !RENDER_OUTPUT_RESOLUTIONS.includes(value as RenderOutputResolution)
-  ) {
-    throw new Error("Render data 'outputResolution' must be one of: original, 2x, custom.");
-  }
-  return value as RenderOutputResolution;
-}
-
-function parseRenderCustomDimension(fieldName: "customWidth" | "customHeight", value: unknown): number {
-  if (
-    !Number.isInteger(value) ||
-    (value as number) < CUSTOM_RENDER_DIMENSION_MIN ||
-    (value as number) > CUSTOM_RENDER_DIMENSION_MAX
-  ) {
-    throw new Error(
-      `Render data '${fieldName}' must be an integer between ${CUSTOM_RENDER_DIMENSION_MIN} and ${CUSTOM_RENDER_DIMENSION_MAX}.`,
-    );
-  }
-  return value as number;
-}
-
-function parseRenderFormat(value: unknown): RenderFormat {
-  if (value === undefined) {
-    return DEFAULT_RENDER_FORMAT;
-  }
-  if (typeof value !== "string" || !RENDER_FORMATS.includes(value as RenderFormat)) {
-    throw new Error("Render data 'format' must be one of: png, jpeg, webp.");
-  }
-  return value as RenderFormat;
-}
-
-function parseRenderJpegQuality(value: unknown): number {
-  if (value === undefined) {
-    return DEFAULT_RENDER_JPEG_QUALITY;
-  }
-  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 100) {
-    throw new Error("Render data 'jpegQuality' must be an integer between 1 and 100.");
-  }
-  return value as number;
-}
-
-function parseOptionalPositiveInteger(fieldName: string, value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 1) {
-    throw new Error(`Render data '${fieldName}' must be a positive integer.`);
-  }
-  return value as number;
-}
-
-function parseOptionalNonNegativeInteger(fieldName: string, value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 0) {
-    throw new Error(`Render data '${fieldName}' must be a non-negative integer.`);
-  }
-  return value as number;
-}
-
-function normalizeRenderData(data: unknown): Record<string, unknown> {
-  if (!isRecord(data)) {
-    throw new Error("Render node data must be an object.");
-  }
-
-  assertNoAdjustmentImagePayload("render", data);
-
-  const outputResolution = parseRenderOutputResolution(data.outputResolution);
-
-  const normalized: Record<string, unknown> = {
-    outputResolution,
-    format: parseRenderFormat(data.format),
-    jpegQuality: parseRenderJpegQuality(data.jpegQuality),
-  };
-
-  if (outputResolution === "custom") {
-    if (data.customWidth !== undefined) {
-      normalized.customWidth = parseRenderCustomDimension("customWidth", data.customWidth);
-    }
-    if (data.customHeight !== undefined) {
-      normalized.customHeight = parseRenderCustomDimension("customHeight", data.customHeight);
-    }
-  }
-
-  if (data.lastRenderedAt !== undefined) {
-    if (typeof data.lastRenderedAt !== "number" || !Number.isFinite(data.lastRenderedAt)) {
-      throw new Error("Render data 'lastRenderedAt' must be a finite number.");
-    }
-    normalized.lastRenderedAt = data.lastRenderedAt;
-  }
-
-  if (data.lastRenderedHash !== undefined) {
-    if (typeof data.lastRenderedHash !== "string" || data.lastRenderedHash.length === 0) {
-      throw new Error("Render data 'lastRenderedHash' must be a non-empty string when provided.");
-    }
-    normalized.lastRenderedHash = data.lastRenderedHash;
-  }
-
-  if (data.lastRenderWidth !== undefined) {
-    normalized.lastRenderWidth = parseOptionalPositiveInteger("lastRenderWidth", data.lastRenderWidth);
-  }
-
-  if (data.lastRenderHeight !== undefined) {
-    normalized.lastRenderHeight = parseOptionalPositiveInteger("lastRenderHeight", data.lastRenderHeight);
-  }
-
-  if (data.lastRenderFormat !== undefined) {
-    normalized.lastRenderFormat = parseRenderFormat(data.lastRenderFormat);
-  }
-
-  if (data.lastRenderMimeType !== undefined) {
-    if (typeof data.lastRenderMimeType !== "string" || data.lastRenderMimeType.length === 0) {
-      throw new Error("Render data 'lastRenderMimeType' must be a non-empty string when provided.");
-    }
-    normalized.lastRenderMimeType = data.lastRenderMimeType;
-  }
-
-  if (data.lastRenderSizeBytes !== undefined) {
-    normalized.lastRenderSizeBytes = parseOptionalNonNegativeInteger(
-      "lastRenderSizeBytes",
-      data.lastRenderSizeBytes,
-    );
-  }
-
-  if (data.lastRenderQuality !== undefined) {
-    if (data.lastRenderQuality !== null) {
-      if (
-        typeof data.lastRenderQuality !== "number" ||
-        !Number.isFinite(data.lastRenderQuality) ||
-        data.lastRenderQuality < 0 ||
-        data.lastRenderQuality > 1
-      ) {
-        throw new Error("Render data 'lastRenderQuality' must be null or a number between 0 and 1.");
-      }
-    }
-    normalized.lastRenderQuality = data.lastRenderQuality;
-  }
-
-  if (data.lastRenderSourceWidth !== undefined) {
-    normalized.lastRenderSourceWidth = parseOptionalPositiveInteger(
-      "lastRenderSourceWidth",
-      data.lastRenderSourceWidth,
-    );
-  }
-
-  if (data.lastRenderSourceHeight !== undefined) {
-    normalized.lastRenderSourceHeight = parseOptionalPositiveInteger(
-      "lastRenderSourceHeight",
-      data.lastRenderSourceHeight,
-    );
-  }
-
-  if (data.lastRenderWasSizeClamped !== undefined) {
-    if (typeof data.lastRenderWasSizeClamped !== "boolean") {
-      throw new Error("Render data 'lastRenderWasSizeClamped' must be a boolean when provided.");
-    }
-    normalized.lastRenderWasSizeClamped = data.lastRenderWasSizeClamped;
-  }
-
-  if (data.lastRenderError !== undefined) {
-    if (typeof data.lastRenderError !== "string" || data.lastRenderError.length === 0) {
-      throw new Error("Render data 'lastRenderError' must be a non-empty string when provided.");
-    }
-    normalized.lastRenderError = data.lastRenderError;
-  }
-
-  if (data.lastRenderErrorHash !== undefined) {
-    if (typeof data.lastRenderErrorHash !== "string" || data.lastRenderErrorHash.length === 0) {
-      throw new Error("Render data 'lastRenderErrorHash' must be a non-empty string when provided.");
-    }
-    normalized.lastRenderErrorHash = data.lastRenderErrorHash;
-  }
-
-  if (data.lastUploadedAt !== undefined) {
-    if (typeof data.lastUploadedAt !== "number" || !Number.isFinite(data.lastUploadedAt)) {
-      throw new Error("Render data 'lastUploadedAt' must be a finite number.");
-    }
-    normalized.lastUploadedAt = data.lastUploadedAt;
-  }
-
-  if (data.lastUploadedHash !== undefined) {
-    if (typeof data.lastUploadedHash !== "string" || data.lastUploadedHash.length === 0) {
-      throw new Error("Render data 'lastUploadedHash' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadedHash = data.lastUploadedHash;
-  }
-
-  if (data.lastUploadStorageId !== undefined) {
-    if (typeof data.lastUploadStorageId !== "string" || data.lastUploadStorageId.length === 0) {
-      throw new Error("Render data 'lastUploadStorageId' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadStorageId = data.lastUploadStorageId;
-  }
-
-  if (data.lastUploadUrl !== undefined) {
-    if (typeof data.lastUploadUrl !== "string" || data.lastUploadUrl.length === 0) {
-      throw new Error("Render data 'lastUploadUrl' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadUrl = data.lastUploadUrl;
-  }
-
-  if (data.lastUploadMimeType !== undefined) {
-    if (typeof data.lastUploadMimeType !== "string" || data.lastUploadMimeType.length === 0) {
-      throw new Error("Render data 'lastUploadMimeType' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadMimeType = data.lastUploadMimeType;
-  }
-
-  if (data.lastUploadSizeBytes !== undefined) {
-    normalized.lastUploadSizeBytes = parseOptionalNonNegativeInteger(
-      "lastUploadSizeBytes",
-      data.lastUploadSizeBytes,
-    );
-  }
-
-  if (data.lastUploadFilename !== undefined) {
-    if (typeof data.lastUploadFilename !== "string" || data.lastUploadFilename.length === 0) {
-      throw new Error("Render data 'lastUploadFilename' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadFilename = data.lastUploadFilename;
-  }
-
-  if (data.lastUploadError !== undefined) {
-    if (typeof data.lastUploadError !== "string" || data.lastUploadError.length === 0) {
-      throw new Error("Render data 'lastUploadError' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadError = data.lastUploadError;
-  }
-
-  if (data.lastUploadErrorHash !== undefined) {
-    if (typeof data.lastUploadErrorHash !== "string" || data.lastUploadErrorHash.length === 0) {
-      throw new Error("Render data 'lastUploadErrorHash' must be a non-empty string when provided.");
-    }
-    normalized.lastUploadErrorHash = data.lastUploadErrorHash;
-  }
-
-  if (data.storageId !== undefined) {
-    if (typeof data.storageId !== "string" || data.storageId.length === 0) {
-      throw new Error("Render data 'storageId' must be a non-empty string when provided.");
-    }
-    normalized.storageId = data.storageId;
-  }
-
-  if (data.url !== undefined) {
-    if (typeof data.url !== "string" || data.url.length === 0) {
-      throw new Error("Render data 'url' must be a non-empty string when provided.");
-    }
-    normalized.url = data.url;
-  }
-
-  return normalized;
-}
-
-function normalizeNodeDataForWrite(
-  nodeType: Doc<"nodes">["type"],
-  data: unknown,
-): unknown {
-  if (nodeType === "crop") {
-    return preserveNodeFavorite(
-      normalizeCropNodeData(data, {
-        rejectDisallowedPayloadFields: true,
-      }),
-      data,
-    );
-  }
-
-  if (!isAdjustmentNodeType(nodeType)) {
-    return data;
-  }
-
-  if (!isRecord(data)) {
-    throw new Error(`Adjustment node '${nodeType}' data must be an object.`);
-  }
-
-  if (nodeType === "render") {
-    return preserveNodeFavorite(normalizeRenderData(data), data);
-  }
-
-  assertNoAdjustmentImagePayload(nodeType, data);
-  return preserveNodeFavorite(data, data);
-}
-
-async function getIncomingEdgePolicyContext(
-  ctx: MutationCtx,
-  args: {
-    targetNodeId: Id<"nodes">;
-    edgeIdToIgnore?: Id<"edges">;
-  },
-): Promise<{ count: number; targetHandles: Array<string | undefined> }> {
-  const incomingEdgesQuery = ctx.db
-    .query("edges")
-    .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
-
-  const checkStartedAt = Date.now();
-  const incomingEdges = await incomingEdgesQuery.take(3);
-  const checkDurationMs = Date.now() - checkStartedAt;
-
-  const filteredIncomingEdges = incomingEdges.filter(
-    (edge) => edge._id !== args.edgeIdToIgnore,
-  );
-  const incomingCount = filteredIncomingEdges.length;
-  if (checkDurationMs >= PERFORMANCE_LOG_THRESHOLD_MS) {
-    const inspected = incomingEdges.length;
-
-    console.warn("[nodes.countIncomingEdges] slow incoming edge check", {
-      targetNodeId: args.targetNodeId,
-      edgeIdToIgnore: args.edgeIdToIgnore,
-      inspected,
-      checkDurationMs,
-    });
-  }
-
-  return {
-    count: incomingCount,
-    targetHandles: filteredIncomingEdges.map((edge) => edge.targetHandle),
-  };
-}
-
-async function assertConnectionPolicyForTypes(
-  ctx: MutationCtx,
-  args: {
-    sourceType: Doc<"nodes">["type"];
-    targetType: Doc<"nodes">["type"];
-    targetNodeId: Id<"nodes">;
-    targetHandle?: string;
-    edgeIdToIgnore?: Id<"edges">;
-  },
-): Promise<void> {
-  const targetIncoming = await getIncomingEdgePolicyContext(ctx, {
-    targetNodeId: args.targetNodeId,
-    edgeIdToIgnore: args.edgeIdToIgnore,
-  });
-
-  const reason = validateCanvasConnectionPolicy({
-    sourceType: args.sourceType,
-    targetType: args.targetType,
-    targetIncomingCount: targetIncoming.count,
-    targetHandle: args.targetHandle,
-    targetIncomingHandles: targetIncoming.targetHandles,
-  });
-
-  if (reason) {
-    throw new Error(getCanvasConnectionValidationMessage(reason));
-  }
-}
-
-async function getIdempotentNodeCreateResult(
-  ctx: MutationCtx,
-  args: {
-    userId: string;
-    mutation: NodeCreateMutationName;
-    clientRequestId?: string;
-    canvasId: Id<"canvases">;
-  },
-): Promise<Id<"nodes"> | null> {
-  const clientRequestId = args.clientRequestId;
-  if (!clientRequestId) return null;
-
-  const existing = await ctx.db
-    .query("mutationRequests")
-    .withIndex("by_user_mutation_request", (q) =>
-      q
-        .eq("userId", args.userId)
-        .eq("mutation", args.mutation)
-        .eq("clientRequestId", clientRequestId),
-    )
-    .first();
-
-  if (!existing) return null;
-  if (existing.canvasId && existing.canvasId !== args.canvasId) {
-    throw new Error("Client request conflict");
-  }
-  if (!existing.nodeId) return null;
-  return existing.nodeId;
-}
-
-async function rememberIdempotentNodeCreateResult(
-  ctx: MutationCtx,
-  args: {
-    userId: string;
-    mutation: NodeCreateMutationName;
-    clientRequestId?: string;
-    canvasId: Id<"canvases">;
-    nodeId: Id<"nodes">;
-  },
-): Promise<void> {
-  if (!args.clientRequestId) return;
-  await ctx.db.insert("mutationRequests", {
-    userId: args.userId,
-    mutation: args.mutation,
-    clientRequestId: args.clientRequestId,
-    canvasId: args.canvasId,
-    nodeId: args.nodeId,
-    createdAt: Date.now(),
-  });
-}
-
-function getClientRequestIdFromOptimisticNodeId(nodeId: string): string | null {
-  if (!nodeId.startsWith(OPTIMISTIC_NODE_PREFIX)) {
-    return null;
-  }
-  const clientRequestId = nodeId.slice(OPTIMISTIC_NODE_PREFIX.length);
-  return clientRequestId.length > 0 ? clientRequestId : null;
-}
-
-async function resolveNodeReferenceForWrite(
-  ctx: MutationCtx,
-  args: {
-    userId: string;
-    canvasId: Id<"canvases">;
-    nodeId: string;
-  },
-): Promise<Id<"nodes">> {
-  const clientRequestId = getClientRequestIdFromOptimisticNodeId(args.nodeId);
-  if (!clientRequestId) {
-    return args.nodeId as Id<"nodes">;
-  }
-
-  for (const mutation of NODE_CREATE_MUTATIONS) {
-    const resolvedNodeId = await getIdempotentNodeCreateResult(ctx, {
-      userId: args.userId,
-      mutation,
-      clientRequestId,
-      canvasId: args.canvasId,
-    });
-    if (resolvedNodeId) {
-      return resolvedNodeId;
-    }
-  }
-
-  throw new Error(`Referenced node not found for optimistic id ${args.nodeId}`);
-}
 
 // ============================================================================
 // Queries
@@ -769,18 +239,14 @@ export const create = mutation({
         return existingNodeId;
       }
 
-      const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
-
-      const nodeId = await ctx.db.insert("nodes", {
+      const nodeId = await insertNodeForWrite(ctx, {
         canvasId: args.canvasId,
         type: args.type as Doc<"nodes">["type"],
         positionX: args.positionX,
         positionY: args.positionY,
         width: args.width,
         height: args.height,
-        status: "idle",
-        retryCount: 0,
-        data: normalizedData,
+        data: args.data,
         parentId: args.parentId,
         zIndex: args.zIndex,
       });
@@ -876,25 +342,11 @@ export const createGroupFromSelection = mutation({
     if (selectedNodes.some((node) => node.canvasId !== canvasId)) {
       throw new Error("All selected nodes must belong to the target canvas");
     }
-    const selectedNodeIdSet = new Set(uniqueNodeIds);
-    for (const node of selectedNodes) {
-      let parentId = node.parentId;
-      const visited = new Set<Id<"nodes">>();
-      while (parentId) {
-        if (selectedNodeIdSet.has(parentId)) {
-          throw new Error("Selected descendants must be filtered before grouping");
-        }
-        if (visited.has(parentId)) {
-          throw new Error("Invalid parent cycle");
-        }
-        visited.add(parentId);
-        const parent = await ctx.db.get(parentId);
-        if (!parent || parent.canvasId !== canvasId) {
-          throw new Error("Invalid parent chain");
-        }
-        parentId = parent.parentId;
-      }
-    }
+    await assertSelectedNodesHaveNoSelectedAncestors(ctx, {
+      canvasId,
+      selectedNodes,
+      selectedNodeIds: uniqueNodeIds,
+    });
 
     const childPositionByNodeId = new Map(
       childPositions.map((position) => [position.nodeId, position]),
@@ -911,15 +363,13 @@ export const createGroupFromSelection = mutation({
       }
     }
 
-    const groupNodeId = await ctx.db.insert("nodes", {
+    const groupNodeId = await insertNodeForWrite(ctx, {
       canvasId,
       type: "group",
       positionX: group.positionX,
       positionY: group.positionY,
       width: group.width,
       height: group.height,
-      status: "idle",
-      retryCount: 0,
       data: normalizeNodeDataForWrite("group", {
         label: group.label ?? "Gruppe",
       }),
@@ -1014,18 +464,14 @@ export const createWithEdgeSplit = mutation({
       edgeIdToIgnore: args.splitEdgeId,
     });
 
-    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
-
-    const nodeId = await ctx.db.insert("nodes", {
+    const nodeId = await insertNodeForWrite(ctx, {
       canvasId: args.canvasId,
       type: args.type as Doc<"nodes">["type"],
       positionX: args.positionX,
       positionY: args.positionY,
       width: args.width,
       height: args.height,
-      status: "idle",
-      retryCount: 0,
-      data: normalizedData,
+      data: args.data,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -1239,18 +685,14 @@ export const createWithEdgeFromSource = mutation({
       throw new Error(getCanvasConnectionValidationMessage(fromSourceReason));
     }
 
-    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
-
-    const nodeId = await ctx.db.insert("nodes", {
+    const nodeId = await insertNodeForWrite(ctx, {
       canvasId: args.canvasId,
       type: args.type as Doc<"nodes">["type"],
       positionX: args.positionX,
       positionY: args.positionY,
       width: args.width,
       height: args.height,
-      status: "idle",
-      retryCount: 0,
-      data: normalizedData,
+      data: args.data,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -1327,18 +769,14 @@ export const createWithEdgeToTarget = mutation({
       targetHandle: args.targetHandle,
     });
 
-    const normalizedData = normalizeNodeDataForWrite(args.type, args.data);
-
-    const nodeId = await ctx.db.insert("nodes", {
+    const nodeId = await insertNodeForWrite(ctx, {
       canvasId: args.canvasId,
       type: args.type as Doc<"nodes">["type"],
       positionX: args.positionX,
       positionY: args.positionY,
       width: args.width,
       height: args.height,
-      status: "idle",
-      retryCount: 0,
-      data: normalizedData,
+      data: args.data,
       parentId: args.parentId,
       zIndex: args.zIndex,
     });
@@ -1522,16 +960,11 @@ export const setParent = mutation({
 
     await requireOwnedCanvas(ctx, node.canvasId, user.userId);
 
-    // Prüfen ob Parent existiert und zum gleichen Canvas gehört
-    if (parentId) {
-      const parent = await ctx.db.get(parentId);
-      if (!parent || parent.canvasId !== node.canvasId) {
-        throw new Error("Parent not found");
-      }
-      if (parent.type !== "group" && parent.type !== "frame") {
-        throw new Error("Parent must be a group or frame node");
-      }
-    }
+    await assertParentAllowedForNode(ctx, {
+      nodeId,
+      canvasId: node.canvasId,
+      parentId,
+    });
 
     await ctx.db.patch(nodeId, {
       parentId,
@@ -1609,21 +1042,11 @@ export const ungroupNodes = mutation({
         throw new Error("Child and group must belong to the same canvas");
       }
 
-      if (childPosition.parentId) {
-        if (childPosition.parentId === childNode._id) {
-          throw new Error("Parent cycle is not allowed");
-        }
-        const parent = await ctx.db.get(childPosition.parentId);
-        if (!parent || parent.canvasId !== childNode.canvasId) {
-          throw new Error("Parent not found");
-        }
-        if (parent.type !== "group" && parent.type !== "frame") {
-          throw new Error("Parent must be a group or frame node");
-        }
-        if (await isNodeDescendantOf(ctx, childPosition.parentId, childNode._id)) {
-          throw new Error("Parent cycle is not allowed");
-        }
-      }
+      await assertParentAllowedForNode(ctx, {
+        nodeId: childNode._id,
+        canvasId: childNode.canvasId,
+        parentId: childPosition.parentId,
+      });
 
       await ctx.db.patch(childNode._id, {
         parentId: childPosition.parentId,
@@ -1636,23 +1059,7 @@ export const ungroupNodes = mutation({
     for (const groupNode of groupNodes) {
       affectedCanvasIds.add(groupNode.canvasId);
 
-      const sourceEdges = await ctx.db
-        .query("edges")
-        .withIndex("by_source", (q) => q.eq("sourceNodeId", groupNode._id))
-        .collect();
-      for (const edge of sourceEdges) {
-        await ctx.db.delete(edge._id);
-      }
-
-      const targetEdges = await ctx.db
-        .query("edges")
-        .withIndex("by_target", (q) => q.eq("targetNodeId", groupNode._id))
-        .collect();
-      for (const edge of targetEdges) {
-        await ctx.db.delete(edge._id);
-      }
-
-      await ctx.db.delete(groupNode._id);
+      await deleteGroupNodeWithEdges(ctx, groupNode._id);
     }
     for (const canvasId of affectedCanvasIds) {
       await ctx.db.patch(canvasId, { updatedAt: Date.now() });
@@ -1672,35 +1079,7 @@ export const remove = mutation({
 
     await requireOwnedCanvas(ctx, node.canvasId, user.userId);
 
-    // Alle Edges entfernen, die diesen Node als Source oder Target haben
-    const sourceEdges = await ctx.db
-      .query("edges")
-      .withIndex("by_source", (q) => q.eq("sourceNodeId", nodeId))
-      .collect();
-    for (const edge of sourceEdges) {
-      await ctx.db.delete(edge._id);
-    }
-
-    const targetEdges = await ctx.db
-      .query("edges")
-      .withIndex("by_target", (q) => q.eq("targetNodeId", nodeId))
-      .collect();
-    for (const edge of targetEdges) {
-      await ctx.db.delete(edge._id);
-    }
-
-    // Kind-Nodes aus Gruppe/Frame lösen (parentId auf undefined setzen)
-    const children = await ctx.db
-      .query("nodes")
-      .withIndex("by_parent", (q) => q.eq("parentId", nodeId))
-      .collect();
-    for (const child of children) {
-      await ctx.db.patch(child._id, { parentId: undefined });
-    }
-
-    // Node löschen
-    await ctx.db.delete(nodeId);
-    await ctx.db.patch(node.canvasId, { updatedAt: Date.now() });
+    await deleteNodeWithCleanup(ctx, { nodeId, canvasId: node.canvasId });
   },
 });
 
@@ -1726,36 +1105,10 @@ export const batchRemove = mutation({
     }
 
     for (const node of uniqueNodes.values()) {
-      const nodeId = node._id;
-
-      // Alle Edges entfernen, die diesen Node als Source oder Target haben
-      const sourceEdges = await ctx.db
-        .query("edges")
-        .withIndex("by_source", (q) => q.eq("sourceNodeId", nodeId))
-        .collect();
-      for (const edge of sourceEdges) {
-        await ctx.db.delete(edge._id);
-      }
-
-      const targetEdges = await ctx.db
-        .query("edges")
-        .withIndex("by_target", (q) => q.eq("targetNodeId", nodeId))
-        .collect();
-      for (const edge of targetEdges) {
-        await ctx.db.delete(edge._id);
-      }
-
-      // Kind-Nodes aus Gruppe/Frame lösen
-      const children = await ctx.db
-        .query("nodes")
-        .withIndex("by_parent", (q) => q.eq("parentId", nodeId))
-        .collect();
-      for (const child of children) {
-        await ctx.db.patch(child._id, { parentId: undefined });
-      }
-
-      // Node löschen
-      await ctx.db.delete(nodeId);
+      await deleteNodeWithCleanup(ctx, {
+        nodeId: node._id,
+        patchCanvasUpdatedAt: false,
+      });
     }
 
     await ctx.db.patch(canvasId, { updatedAt: Date.now() });

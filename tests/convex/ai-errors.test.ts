@@ -7,6 +7,12 @@ import {
   getVideoPollDelayMs,
   isVideoPollTimedOut,
 } from "@/convex/ai_errors";
+import {
+  buildNextProviderPollSchedule,
+  buildProviderPollTimeoutMessage,
+  getProviderTerminalFailureMessage,
+  shouldRetryProviderPollError,
+} from "@/convex/provider_polling";
 
 describe("ai error helpers", () => {
   it("marks provider 503 failures as retryable", () => {
@@ -114,5 +120,62 @@ describe("ai error helpers", () => {
         maxTotalMs: 600000,
       }),
     ).toBe(false);
+  });
+
+  it("builds provider polling timeout messages with the operation label", () => {
+    expect(buildProviderPollTimeoutMessage("Image transform")).toBe(
+      "Timeout: Image transform exceeded maximum polling time",
+    );
+  });
+
+  it("uses provider terminal errors before generic fallback messages", () => {
+    expect(
+      getProviderTerminalFailureMessage({
+        providerError: "  Render failed  ",
+        fallback: "Provider: Video generation failed",
+      }),
+    ).toBe("Render failed");
+    expect(
+      getProviderTerminalFailureMessage({
+        providerError: " ",
+        fallback: "Provider: Image transform failed",
+      }),
+    ).toBe("Provider: Image transform failed");
+  });
+
+  it("allows retryable provider polling errors until the max attempt", () => {
+    const retryableError = new FreepikApiError({
+      code: "transient",
+      message: "Task not visible yet",
+      retryable: true,
+      status: 404,
+    });
+
+    expect(
+      shouldRetryProviderPollError({
+        error: retryableError,
+        attempt: 29,
+        maxAttempts: 30,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetryProviderPollError({
+        error: retryableError,
+        attempt: 30,
+        maxAttempts: 30,
+      }),
+    ).toBe(false);
+  });
+
+  it("builds the next provider polling schedule without mutating original args", () => {
+    const args = { taskId: "task_123", attempt: 7, startedAtMs: 1000 };
+
+    const schedule = buildNextProviderPollSchedule(args);
+
+    expect(schedule).toEqual({
+      delayMs: 10000,
+      args: { taskId: "task_123", attempt: 8, startedAtMs: 1000 },
+    });
+    expect(args.attempt).toBe(7);
   });
 });

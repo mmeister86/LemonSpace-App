@@ -13,7 +13,11 @@ import {
   invalidateDashboardSnapshotForLastSignedInUser,
 } from "@/lib/dashboard-snapshot-cache";
 import { toast } from "@/lib/toast";
-import { useCanvasDrop } from "@/components/canvas/use-canvas-drop";
+import {
+  createDroppedImageMetadata,
+  createDroppedVideoMetadata,
+  useCanvasDrop,
+} from "@/components/canvas/use-canvas-drop";
 import {
   createCompressedImagePreview,
   getVideoMetadata,
@@ -62,6 +66,54 @@ const latestHandlersRef: {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const asCanvasId = (id: string): Id<"canvases"> => id as Id<"canvases">;
+
+describe("dropped media metadata adapters", () => {
+  it("keeps image and video metadata mapping explicit", () => {
+    const imageFile = new File(["image-bytes"], "photo.png", { type: "image/png" });
+    const videoFile = new File(["video-bytes"], "clip.mp4", { type: "video/mp4" });
+
+    expect(
+      createDroppedImageMetadata({
+        canvasId: asCanvasId("canvas-1"),
+        file: imageFile,
+        dimensions: { width: 1600, height: 900 },
+        previewUpload: {
+          previewStorageId: "preview-storage-1",
+          previewWidth: 640,
+          previewHeight: 360,
+        },
+        storageId: "storage-1",
+      }),
+    ).toEqual({
+      storageId: "storage-1",
+      previewStorageId: "preview-storage-1",
+      filename: "photo.png",
+      mimeType: "image/png",
+      canvasId: "canvas-1",
+      width: 1600,
+      height: 900,
+      previewWidth: 640,
+      previewHeight: 360,
+    });
+
+    expect(
+      createDroppedVideoMetadata({
+        canvasId: asCanvasId("canvas-1"),
+        file: videoFile,
+        metadata: { width: 1920, height: 1080, durationSeconds: 12 },
+        storageId: "video-storage-1",
+      }),
+    ).toEqual({
+      storageId: "video-storage-1",
+      filename: "clip.mp4",
+      mimeType: "video/mp4",
+      canvasId: "canvas-1",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+    });
+  });
+});
 
 type HookHarnessProps = {
   isSyncOnline?: boolean;

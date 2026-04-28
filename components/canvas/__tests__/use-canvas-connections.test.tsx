@@ -10,6 +10,7 @@ import type { CanvasMagnetTarget } from "@/components/canvas/canvas-connection-m
 
 const mocks = vi.hoisted(() => ({
   resolveDroppedConnectionTarget: vi.fn(),
+  resolveConnectionDropTarget: vi.fn(),
   resolveCanvasMagnetTarget: vi.fn(),
 }));
 
@@ -35,8 +36,19 @@ vi.mock("@/components/canvas/canvas-connection-magnetism", async () => {
   };
 });
 
+vi.mock("@/components/canvas/canvas-connection-drop-target", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/components/canvas/canvas-connection-drop-target")
+  >("@/components/canvas/canvas-connection-drop-target");
+
+  return {
+    ...actual,
+    resolveConnectionDropTarget: mocks.resolveConnectionDropTarget,
+  };
+});
+
 import { useCanvasConnections } from "@/components/canvas/use-canvas-connections";
-import type { DroppedConnectionTarget } from "@/components/canvas/canvas-helpers";
+import type { DroppedConnectionTarget } from "@/components/canvas/canvas-connection-drop-target";
 import {
   CanvasConnectionMagnetismProvider,
   useCanvasConnectionMagnetism,
@@ -117,6 +129,38 @@ function HookHarnessInner({
 
   useEffect(() => {
     mocks.resolveDroppedConnectionTarget.mockReturnValue(helperResult);
+    mocks.resolveConnectionDropTarget.mockImplementation(
+      (args: {
+        fromHandleType: "source" | "target";
+        fromNodeId: string;
+        fromHandleId?: string;
+        activeMagnetTarget?: CanvasMagnetTarget | null;
+      }) => {
+        if (helperResult) {
+          return helperResult;
+        }
+
+        if (!args.activeMagnetTarget) {
+          return null;
+        }
+
+        if (args.fromHandleType === "source") {
+          return {
+            sourceNodeId: args.fromNodeId,
+            targetNodeId: args.activeMagnetTarget.nodeId,
+            sourceHandle: args.fromHandleId,
+            targetHandle: args.activeMagnetTarget.handleId,
+          };
+        }
+
+        return {
+          sourceNodeId: args.activeMagnetTarget.nodeId,
+          targetNodeId: args.fromNodeId,
+          sourceHandle: args.activeMagnetTarget.handleId,
+          targetHandle: args.fromHandleId,
+        };
+      },
+    );
   }, [helperResult]);
 
   useEffect(() => {

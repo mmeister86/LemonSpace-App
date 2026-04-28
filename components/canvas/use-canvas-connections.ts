@@ -2,35 +2,27 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import type { Connection, Edge as RFEdge, Node as RFNode, OnConnectEnd, OnConnectStart } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-  NODE_DEFAULTS,
-  NODE_HANDLE_MAP,
-} from "@/lib/canvas-utils";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
 
 import {
-  resolveCanvasMagnetTarget,
-  type CanvasMagnetTarget,
-} from "./canvas-connection-magnetism";
-import {
   getConnectEndClientPoint,
-  hasHandleKey,
   isOptimisticEdgeId,
-  isOptimisticNodeId,
   logCanvasConnectionDebug,
-  normalizeHandle,
-  resolveDroppedConnectionTarget,
 } from "./canvas-helpers";
 import {
   validateCanvasConnection,
-  validateCanvasConnectionByType,
-  validateCanvasEdgeSplit,
 } from "./canvas-connection-validation";
 import { useCanvasConnectionMagnetism } from "./canvas-connection-magnetism-context";
 import { useCanvasReconnectHandlers } from "./canvas-reconnect";
 import type { ConnectionDropMenuState } from "./canvas-connection-drop-menu";
+import { resolveAdjustmentAutoSplit } from "./canvas-connection-auto-split";
+import { resolveConnectionDropTarget } from "./canvas-connection-drop-target";
+import {
+  buildConnectionDropMenuNodeAction,
+  settleConnectionDropMenuNodeAction,
+} from "./canvas-connection-drop-menu-actions";
 
 type UseCanvasConnectionsParams = {
   canvasId: Id<"canvases">;
@@ -147,27 +139,6 @@ export function useCanvasConnections({
       handleType: params.handleType,
     });
   }, [setActiveTarget]);
-
-  const toDroppedConnectionFromMagnetTarget = useCallback(
-    (fromHandleType: "source" | "target", fromNodeId: string, fromHandleId: string | undefined, magnetTarget: CanvasMagnetTarget) => {
-      if (fromHandleType === "source") {
-        return {
-          sourceNodeId: fromNodeId,
-          targetNodeId: magnetTarget.nodeId,
-          sourceHandle: fromHandleId,
-          targetHandle: magnetTarget.handleId,
-        };
-      }
-
-      return {
-        sourceNodeId: magnetTarget.nodeId,
-        targetNodeId: fromNodeId,
-        sourceHandle: magnetTarget.handleId,
-        targetHandle: fromHandleId,
-      };
-    },
-    [],
-  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -353,36 +324,15 @@ export function useCanvasConnections({
         });
 
         const flow = screenToFlowPosition({ x: pt.x, y: pt.y });
-        let droppedConnection = resolveDroppedConnectionTarget({
+        const droppedConnection = resolveConnectionDropTarget({
           point: pt,
           fromNodeId: fromNode.id,
           fromHandleId: fromHandle.id ?? undefined,
           fromHandleType: fromHandle.type,
           nodes: nodesRef.current,
           edges: edgesRef.current,
+          activeMagnetTarget: activeTarget,
         });
-
-        if (!droppedConnection) {
-          const fallbackMagnetTarget =
-            activeTarget ??
-            resolveCanvasMagnetTarget({
-              point: pt,
-              fromNodeId: fromNode.id,
-              fromHandleId: fromHandle.id ?? undefined,
-              fromHandleType: fromHandle.type,
-              nodes: nodesRef.current,
-              edges: edgesRef.current,
-            });
-
-          if (fallbackMagnetTarget) {
-            droppedConnection = toDroppedConnectionFromMagnetTarget(
-              fromHandle.type,
-              fromNode.id,
-              fromHandle.id ?? undefined,
-              fallbackMagnetTarget,
-            );
-          }
-        }
 
         logCanvasConnectionDebug("connect:end-drop-result", {
           point: pt,
@@ -405,65 +355,45 @@ export function useCanvasConnections({
             edgesRef.current,
           );
           if (validationError) {
-            const fullFromNode = nodesRef.current.find((node) => node.id === fromNode.id);
-            const splitHandles = NODE_HANDLE_MAP[fullFromNode?.type ?? ""];
-            const incomingEdges = edgesRef.current.filter(
-              (edge) =>
-                edge.target === droppedConnection.targetNodeId &&
-                edge.className !== "temp" &&
-                !isOptimisticEdgeId(edge.id),
-            );
-            const incomingEdge = incomingEdges.length === 1 ? incomingEdges[0] : undefined;
-            const shouldAttemptAutoSplit =
-              validationError === "adjustment-incoming-limit" &&
-              droppedConnection.sourceNodeId === fromNode.id &&
-              fromHandle.type === "source" &&
-              fullFromNode !== undefined &&
-              splitHandles !== undefined &&
-              hasHandleKey(splitHandles, "source") &&
-              hasHandleKey(splitHandles, "target") &&
-              incomingEdge !== undefined &&
-              incomingEdge.source !== fullFromNode.id &&
-              incomingEdge.target !== fullFromNode.id;
-            const splitValidationError = shouldAttemptAutoSplit
-              ? validateCanvasEdgeSplit({
-                  nodes: nodesRef.current,
-                  edges: edgesRef.current,
-                  splitEdge: incomingEdge,
-                  middleNode: fullFromNode,
-                })
-              : null;
+            const autoSplit = resolveAdjustmentAutoSplit({
+              validationError,
+              droppedConnection,
+              fromNodeId: fromNode.id,
+              fromHandleType: fromHandle.type,
+              nodes: nodesRef.current,
+              edges: edgesRef.current,
+            });
 
             logCanvasConnectionDebug("connect:end-auto-split-eval", {
               point: pt,
               flow,
               droppedConnection,
               validationError,
-              shouldAttemptAutoSplit,
-              splitValidationError,
+              shouldAttemptAutoSplit: autoSplit !== null,
+              splitValidationError: autoSplit?.splitValidationError ?? null,
               fromNodeId: fromNode.id,
-              fromNodeType: fullFromNode?.type ?? null,
-              incomingEdgeId: incomingEdge?.id ?? null,
-              incomingEdgeSourceNodeId: incomingEdge?.source ?? null,
-              incomingEdgeTargetNodeId: incomingEdge?.target ?? null,
+              fromNodeType: autoSplit?.middleNode.type ?? null,
+              incomingEdgeId: autoSplit?.splitEdge.id ?? null,
+              incomingEdgeSourceNodeId: autoSplit?.splitEdge.source ?? null,
+              incomingEdgeTargetNodeId: autoSplit?.splitEdge.target ?? null,
             });
 
-            if (shouldAttemptAutoSplit && !splitValidationError && incomingEdge && fullFromNode && splitHandles) {
+            if (autoSplit && !autoSplit.splitValidationError) {
               logCanvasConnectionDebug("connect:end-auto-split", {
                 point: pt,
                 flow,
                 droppedConnection,
-                splitEdgeId: incomingEdge.id,
-                middleNodeId: fullFromNode.id,
+                splitEdgeId: autoSplit.splitEdge.id,
+                middleNodeId: autoSplit.middleNode.id,
               });
               void runSplitEdgeAtExistingNodeMutation({
                 canvasId,
-                splitEdgeId: incomingEdge.id as Id<"edges">,
-                middleNodeId: fullFromNode.id as Id<"nodes">,
-                splitSourceHandle: normalizeHandle(incomingEdge.sourceHandle),
-                splitTargetHandle: normalizeHandle(incomingEdge.targetHandle),
-                newNodeSourceHandle: normalizeHandle(splitHandles.source),
-                newNodeTargetHandle: normalizeHandle(splitHandles.target),
+                splitEdgeId: autoSplit.splitEdge.id as Id<"edges">,
+                middleNodeId: autoSplit.middleNode.id as Id<"nodes">,
+                splitSourceHandle: autoSplit.splitSourceHandle,
+                splitTargetHandle: autoSplit.splitTargetHandle,
+                newNodeSourceHandle: autoSplit.newNodeSourceHandle,
+                newNodeTargetHandle: autoSplit.newNodeTargetHandle,
               });
               return;
             }
@@ -477,7 +407,7 @@ export function useCanvasConnections({
                 validationError === "adjustment-incoming-limit" &&
                 droppedConnection.sourceNodeId === fromNode.id &&
                 fromHandle.type === "source",
-              splitValidationError,
+              splitValidationError: autoSplit?.splitValidationError ?? null,
             });
             showConnectionRejectedToast(validationError);
             return;
@@ -531,7 +461,6 @@ export function useCanvasConnections({
       setActiveTarget,
       showConnectionRejectedToast,
       activeTarget,
-      toDroppedConnectionFromMagnetTarget,
     ],
   );
 
@@ -546,101 +475,49 @@ export function useCanvasConnections({
         return;
       }
 
-      const defaults = NODE_DEFAULTS[template.type] ?? {
-        width: 200,
-        height: 100,
-        data: {},
-      };
       const clientRequestId = crypto.randomUUID();
-      pendingConnectionCreatesRef.current.add(clientRequestId);
-      const handles = NODE_HANDLE_MAP[template.type];
-      const width = template.width ?? defaults.width;
-      const height = template.height ?? defaults.height;
-      const data = {
-        ...defaults.data,
-        ...(template.defaultData as Record<string, unknown>),
+      const action = buildConnectionDropMenuNodeAction({
         canvasId,
-      };
-
-      const base = {
-        canvasId,
-        type: template.type,
-        positionX: ctx.flowX,
-        positionY: ctx.flowY,
-        width,
-        height,
-        data,
+        ctx,
+        fromNode,
+        template,
+        edges: edgesRef.current,
         clientRequestId,
-      };
+      });
 
-      const settle = (realId: Id<"nodes">) => {
-        void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-          (error: unknown) => {
-            console.error("[Canvas] settle syncPendingMove failed", error);
-          },
-        );
-      };
+      if ("validationError" in action) {
+        showConnectionRejectedToast(action.validationError);
+        return;
+      }
 
-      if (ctx.fromHandleType === "source") {
-        const validationError = validateCanvasConnectionByType({
-          sourceType: fromNode.type ?? "",
-          targetType: template.type,
-          targetNodeId: `__pending_${template.type}_${Date.now()}`,
-          targetHandle: handles?.target,
-          edges: edgesRef.current,
+      pendingConnectionCreatesRef.current.add(clientRequestId);
+
+      const settle = (realId: Id<"nodes"> | string) => {
+        void settleConnectionDropMenuNodeAction({
+          realId,
+          clientRequestId,
+          resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
+          syncPendingMoveForClientRequest,
+          setEdgeSyncNonce,
+        }).catch((error: unknown) => {
+          console.error("[Canvas] settle syncPendingMove failed", error);
         });
-        if (validationError) {
-          showConnectionRejectedToast(validationError);
-          return;
-        }
+      };
 
+      if (action.direction === "from-source") {
         void runCreateNodeWithEdgeFromSourceOnlineOnly({
-          ...base,
-          sourceNodeId: ctx.fromNodeId,
-          sourceHandle: ctx.fromHandleId,
-          targetHandle: handles?.target ?? undefined,
+          ...action.mutationArgs,
         })
-          .then((realId) => {
-            if (isOptimisticNodeId(realId as string)) {
-              return;
-            }
-            const settledRealId = realId as Id<"nodes">;
-            resolvedRealIdByClientRequestRef.current.set(clientRequestId, settledRealId);
-            settle(settledRealId);
-            setEdgeSyncNonce((n) => n + 1);
-          })
+          .then(settle)
           .catch((error) => {
             pendingConnectionCreatesRef.current.delete(clientRequestId);
             console.error("[Canvas] createNodeWithEdgeFromSource failed", error);
           });
       } else {
-        const validationError = validateCanvasConnectionByType({
-          sourceType: template.type,
-          targetType: fromNode.type ?? "",
-          targetNodeId: fromNode.id,
-          targetHandle: ctx.fromHandleId,
-          edges: edgesRef.current,
-        });
-        if (validationError) {
-          showConnectionRejectedToast(validationError);
-          return;
-        }
-
         void runCreateNodeWithEdgeToTargetOnlineOnly({
-          ...base,
-          targetNodeId: ctx.fromNodeId,
-          sourceHandle: handles?.source ?? undefined,
-          targetHandle: ctx.fromHandleId,
+          ...action.mutationArgs,
         })
-          .then((realId) => {
-            if (isOptimisticNodeId(realId as string)) {
-              return;
-            }
-            const settledRealId = realId as Id<"nodes">;
-            resolvedRealIdByClientRequestRef.current.set(clientRequestId, settledRealId);
-            settle(settledRealId);
-            setEdgeSyncNonce((n) => n + 1);
-          })
+          .then(settle)
           .catch((error) => {
             pendingConnectionCreatesRef.current.delete(clientRequestId);
             console.error("[Canvas] createNodeWithEdgeToTarget failed", error);

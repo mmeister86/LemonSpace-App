@@ -20,15 +20,20 @@ import {
   removeImageBackground,
 } from "./freepik";
 import {
-  categorizeError,
   errorMessage,
   formatTerminalStatusMessage,
   getErrorCode,
   getErrorSource,
   getProviderStatus,
-  getVideoPollDelayMs,
-  isVideoPollTimedOut,
 } from "./ai_errors";
+import {
+  buildNextProviderPollSchedule,
+  buildProviderPollTimeoutMessage,
+  getProviderPollDelayMs,
+  getProviderTerminalFailureMessage,
+  isProviderPollTimedOut,
+  shouldRetryProviderPollError,
+} from "./provider_polling";
 import { getNodeDataRecord } from "./ai_node_data";
 import {
   getImageTransformCreditCost,
@@ -527,7 +532,7 @@ export const processImageTransform = internalAction({
           taskId: result.task_id,
         });
         await ctx.scheduler.runAfter(
-          getVideoPollDelayMs(1),
+          getProviderPollDelayMs(1),
           internal.image_transforms.pollImageTransformTask,
           {
             ...args,
@@ -576,7 +581,7 @@ export const processImageTransform = internalAction({
       });
 
       await ctx.scheduler.runAfter(
-        getVideoPollDelayMs(1),
+          getProviderPollDelayMs(1),
         internal.image_transforms.pollImageTransformTask,
         {
           ...args,
@@ -642,7 +647,7 @@ export const pollImageTransformTask = internalAction({
   handler: async (ctx, args) => {
     const elapsedMs = Date.now() - args.startedAtMs;
     if (
-      isVideoPollTimedOut({
+      isProviderPollTimedOut({
         attempt: args.attempt,
         maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
         elapsedMs,
@@ -654,7 +659,7 @@ export const pollImageTransformTask = internalAction({
         transformNodeId: args.transformNodeId,
         outputNodeId: args.outputNodeId,
         retryCount: args.attempt,
-        statusMessage: "Timeout: Image transform exceeded maximum polling time",
+          statusMessage: buildProviderPollTimeoutMessage("Image transform"),
       });
       await decrementConcurrencyIfNeeded(
         ctx,
@@ -676,7 +681,10 @@ export const pollImageTransformTask = internalAction({
           transformNodeId: args.transformNodeId,
           outputNodeId: args.outputNodeId,
           retryCount: args.attempt,
-          statusMessage: status.error?.trim() || "Provider: Image transform failed",
+          statusMessage: getProviderTerminalFailureMessage({
+            providerError: status.error,
+            fallback: "Provider: Image transform failed",
+          }),
         });
         await decrementConcurrencyIfNeeded(
           ctx,
@@ -709,8 +717,13 @@ export const pollImageTransformTask = internalAction({
         return;
       }
     } catch (error) {
-      const { retryable } = categorizeError(error);
-      if (retryable && args.attempt < MAX_TRANSFORM_POLL_ATTEMPTS) {
+      if (
+        shouldRetryProviderPollError({
+          error,
+          attempt: args.attempt,
+          maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
+        })
+      ) {
         await ctx.runMutation(internal.image_transform_mutations.markTransformPollingRetry, {
           transformNodeId: args.transformNodeId,
           outputNodeId: args.outputNodeId,
@@ -718,13 +731,11 @@ export const pollImageTransformTask = internalAction({
           maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
           failureMessage: errorMessage(error),
         });
+        const schedule = buildNextProviderPollSchedule(args);
         await ctx.scheduler.runAfter(
-          getVideoPollDelayMs(args.attempt),
+          schedule.delayMs,
           internal.image_transforms.pollImageTransformTask,
-          {
-            ...args,
-            attempt: args.attempt + 1,
-          },
+          schedule.args,
         );
         return;
       }
@@ -744,13 +755,11 @@ export const pollImageTransformTask = internalAction({
       return;
     }
 
+    const schedule = buildNextProviderPollSchedule(args);
     await ctx.scheduler.runAfter(
-      getVideoPollDelayMs(args.attempt),
+      schedule.delayMs,
       internal.image_transforms.pollImageTransformTask,
-      {
-        ...args,
-        attempt: args.attempt + 1,
-      },
+      schedule.args,
     );
   },
 });
