@@ -5,6 +5,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CanvasGraphProvider } from "@/components/canvas/canvas-graph-context";
+import {
+  buildMixerDiagnosticsPayload,
+  diffMixerData,
+} from "@/components/canvas/nodes/mixer-diagnostics";
+import type { MixerLocalData } from "@/components/canvas/nodes/mixer-types";
+import {
+  normalizeLocalMixerData,
+  resizeOverlayRect,
+} from "@/components/canvas/nodes/use-mixer-interaction";
 
 const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
@@ -643,5 +652,105 @@ describe("MixerNode", () => {
         '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="mixer-out"][data-handle-type="source"]',
       ),
     ).toBeTruthy();
+  });
+
+  it("diffs persisted mixer fields for interaction diagnostics", () => {
+    const before: MixerLocalData = {
+      blendMode: "normal",
+      opacity: 75,
+      overlayX: 0.1,
+      overlayY: 0.2,
+      overlayWidth: 0.5,
+      overlayHeight: 0.4,
+      ...cropRectData(0.1, 0.05, 0.7, 0.7),
+    };
+
+    expect(
+      diffMixerData(before, {
+        ...before,
+        overlayX: 0.25,
+        overlayHeight: 0.3,
+      }),
+    ).toEqual({
+      overlayX: { before: 0.1, after: 0.25 },
+      overlayHeight: { before: 0.4, after: 0.3 },
+    });
+  });
+
+  it("builds rounded frame and content diagnostics without React state", () => {
+    const localData: MixerLocalData = {
+      blendMode: "normal",
+      opacity: 75,
+      overlayX: 0.1,
+      overlayY: 0.2,
+      overlayWidth: 0.5,
+      overlayHeight: 0.4,
+      ...cropRectData(0.1, 0.05, 0.7, 0.7),
+    };
+
+    expect(
+      buildMixerDiagnosticsPayload({
+        nodeId: "mixer-1",
+        reason: "interaction-move",
+        localData,
+        interactionKind: "frame-resize",
+        previewRect: { width: 200, height: 100 },
+        overlayNaturalSize: { width: 400, height: 200 },
+      }),
+    ).toMatchObject({
+      nodeId: "mixer-1",
+      reason: "interaction-move",
+      mode: "frame-resize",
+      interactionKind: "frame-resize",
+      frameRect: { x: 20, y: 20, width: 100, height: 40 },
+      frameAspectRatio: 2.5,
+      contentBoundsRect: { x: 30, y: 22, width: 70, height: 28 },
+      contentBoundsAspectRatio: 2.5,
+      overlayNaturalSize: { width: 400, height: 200 },
+      localData,
+    });
+  });
+
+  it("exposes frame resize math from the mixer interaction hook module", () => {
+    const rect = resizeOverlayRect({
+      startRect: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 },
+      handle: "e",
+      deltaX: 0.2,
+      deltaY: 0.3,
+      keepAspect: false,
+      aspectRatio: 1.25,
+    });
+
+    expect(rect.x).toBeCloseTo(0.1, 6);
+    expect(rect.y).toBeCloseTo(0.2, 6);
+    expect(rect.width).toBeCloseTo(0.7, 6);
+    expect(rect.height).toBeCloseTo(0.4, 6);
+  });
+
+  it("exposes mixer data clamping from the interaction hook module", () => {
+    const data: MixerLocalData = {
+      blendMode: "screen",
+      opacity: 120,
+      overlayX: 0.98,
+      overlayY: -1,
+      overlayWidth: 0.02,
+      overlayHeight: 2,
+      cropLeft: 0.97,
+      cropTop: -0.5,
+      cropRight: 0.9,
+      cropBottom: 0.95,
+    };
+
+    expect(normalizeLocalMixerData(data)).toEqual({
+      ...data,
+      overlayX: 0.9,
+      overlayY: 0,
+      overlayWidth: 0.1,
+      overlayHeight: 1,
+      cropLeft: 0.9,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0.9,
+    });
   });
 });

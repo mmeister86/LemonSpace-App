@@ -1,4 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v, ConvexError } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";
 import { internal } from "./_generated/api";
@@ -70,6 +72,202 @@ type ActivityTransaction = {
   videoMeta?: {
     model: string;
   };
+};
+
+type CreditBalanceSnapshot = Pick<Doc<"creditBalances">, "balance" | "reserved">;
+type ReservedBalanceSnapshot = Pick<Doc<"creditBalances">, "reserved">;
+type DailyUsageSnapshot = Pick<Doc<"dailyUsage">, "generationCount" | "concurrentJobs">;
+
+function getAvailableCredits(balance: CreditBalanceSnapshot): number {
+  return balance.balance - balance.reserved;
+}
+
+function getReservedBalancePatch(
+  balance: ReservedBalanceSnapshot,
+  estimatedCost: number,
+  now: number,
+): { reserved: number; updatedAt: number } {
+  return {
+    reserved: balance.reserved + estimatedCost,
+    updatedAt: now,
+  };
+}
+
+function getCommittedBalancePatch(
+  balance: CreditBalanceSnapshot,
+  args: { estimatedCost: number; actualCost: number; now: number },
+): { balance: number; reserved: number; updatedAt: number } {
+  return {
+    balance: balance.balance - args.actualCost,
+    reserved: Math.max(0, balance.reserved - args.estimatedCost),
+    updatedAt: args.now,
+  };
+}
+
+function getReleasedBalancePatch(
+  balance: ReservedBalanceSnapshot,
+  estimatedCost: number,
+  now: number,
+): { reserved: number; updatedAt: number } {
+  return {
+    reserved: Math.max(0, balance.reserved - estimatedCost),
+    updatedAt: now,
+  };
+}
+
+function getIncrementedDailyUsagePatch(
+  usage: DailyUsageSnapshot,
+): { generationCount: number; concurrentJobs: number } {
+  return {
+    generationCount: usage.generationCount + 1,
+    concurrentJobs: usage.concurrentJobs + 1,
+  };
+}
+
+function getDecrementedConcurrencyPatch(
+  usage: DailyUsageSnapshot,
+): { concurrentJobs: number } | null {
+  if (usage.concurrentJobs <= 0) {
+    return null;
+  }
+
+  return { concurrentJobs: usage.concurrentJobs - 1 };
+}
+
+function getTodayDateKey(now = new Date()): string {
+  return now.toISOString().split("T")[0];
+}
+
+async function loadCreditBalance(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<Doc<"creditBalances"> | null> {
+  return await ctx.db
+    .query("creditBalances")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+}
+
+async function requireCreditBalance(
+  ctx: MutationCtx,
+  userId: string,
+  message = "No credit balance found",
+): Promise<Doc<"creditBalances">> {
+  const balance = await loadCreditBalance(ctx, userId);
+  if (!balance) {
+    throw new Error(message);
+  }
+
+  return balance;
+}
+
+async function loadTierContext(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<{ tier: Tier; config: (typeof TIER_CONFIG)[Tier] }> {
+  const subscription = await ctx.db
+    .query("subscriptions")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .order("desc")
+    .first();
+  const tier = normalizeBillingTier(subscription?.tier);
+
+  return { tier, config: TIER_CONFIG[tier] };
+}
+
+async function loadDailyUsage(
+  ctx: MutationCtx,
+  userId: string,
+  date: string,
+): Promise<Doc<"dailyUsage"> | null> {
+  return await ctx.db
+    .query("dailyUsage")
+    .withIndex("by_user_date", (q) =>
+      q.eq("userId", userId).eq("date", date)
+    )
+    .unique();
+}
+
+function assertDailyUsageWithinTierLimits(
+  usage: DailyUsageSnapshot | null,
+  tier: Tier,
+  config: (typeof TIER_CONFIG)[Tier],
+): void {
+  if (usage && usage.generationCount >= config.dailyGenerationCap) {
+    throw new ConvexError({
+      code: "CREDITS_DAILY_CAP_REACHED",
+      data: { limit: config.dailyGenerationCap, tier },
+    });
+  }
+
+  if (usage && usage.concurrentJobs >= config.concurrencyLimit) {
+    throw new ConvexError({
+      code: "CREDITS_CONCURRENCY_LIMIT",
+      data: { limit: config.concurrencyLimit },
+    });
+  }
+}
+
+async function incrementDailyUsage(
+  ctx: MutationCtx,
+  userId: string,
+  date: string,
+  usage: Doc<"dailyUsage"> | null,
+): Promise<void> {
+  if (usage) {
+    await ctx.db.patch(usage._id, getIncrementedDailyUsagePatch(usage));
+    return;
+  }
+
+  await ctx.db.insert("dailyUsage", {
+    userId,
+    date,
+    generationCount: 1,
+    concurrentJobs: 1,
+  });
+}
+
+async function decrementConcurrencyForUser(
+  ctx: MutationCtx,
+  userId: string,
+  date = getTodayDateKey(),
+): Promise<void> {
+  const usage = await loadDailyUsage(ctx, userId, date);
+  if (!usage) {
+    return;
+  }
+
+  const patch = getDecrementedConcurrencyPatch(usage);
+  if (patch) {
+    await ctx.db.patch(usage._id, patch);
+  }
+}
+
+async function releaseReservedBalance(
+  ctx: MutationCtx,
+  userId: string,
+  estimatedCost: number,
+  now: number,
+  options: { requireBalance: boolean },
+): Promise<void> {
+  const balance = await loadCreditBalance(ctx, userId);
+  if (!balance) {
+    if (options.requireBalance) {
+      throw new Error("No credit balance found");
+    }
+    return;
+  }
+
+  await ctx.db.patch(balance._id, getReleasedBalancePatch(balance, estimatedCost, now));
+}
+
+export const creditTransitionHelpersForTesting = {
+  getAvailableCredits,
+  getReservedBalancePatch,
+  getCommittedBalancePatch,
+  getReleasedBalancePatch,
+  getIncrementedDailyUsagePatch,
+  getDecrementedConcurrencyPatch,
 };
 
 function normalizeActivityPage(page: number): number {
@@ -671,73 +869,33 @@ export const reserve = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
 
-    // Balance laden
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .unique();
-    if (!balance) throw new Error("No credit balance found. Call initBalance first.");
+    const balance = await requireCreditBalance(
+      ctx,
+      user.userId,
+      "No credit balance found. Call initBalance first.",
+    );
 
-    const available = balance.balance - balance.reserved;
+    const available = getAvailableCredits(balance);
     if (available < args.estimatedCost) {
       throw new Error(
         `Insufficient credits. Available: ${available}, required: ${args.estimatedCost}`
       );
     }
 
-    // Subscription laden für Tier-Checks
-    const subscription = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .order("desc")
-      .first();
-    const tier = normalizeBillingTier(subscription?.tier);
-    const config = TIER_CONFIG[tier];
+    const { tier, config } = await loadTierContext(ctx, user.userId);
 
-    // Daily Cap prüfen
-    const today = new Date().toISOString().split("T")[0];
-    const dailyUsage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
-      )
-      .unique();
-
-    if (dailyUsage && dailyUsage.generationCount >= config.dailyGenerationCap) {
-      throw new ConvexError({
-        code: "CREDITS_DAILY_CAP_REACHED",
-        data: { limit: config.dailyGenerationCap, tier },
-      });
-    }
-
-    // Concurrency Limit prüfen
-    if (dailyUsage && dailyUsage.concurrentJobs >= config.concurrencyLimit) {
-      throw new ConvexError({
-        code: "CREDITS_CONCURRENCY_LIMIT",
-        data: { limit: config.concurrencyLimit },
-      });
-    }
+    const today = getTodayDateKey();
+    const dailyUsage = await loadDailyUsage(ctx, user.userId, today);
+    assertDailyUsageWithinTierLimits(dailyUsage, tier, config);
 
     // Credits reservieren
-    await ctx.db.patch(balance._id, {
-      reserved: balance.reserved + args.estimatedCost,
-      updatedAt: Date.now(),
-    });
+    await ctx.db.patch(
+      balance._id,
+      getReservedBalancePatch(balance, args.estimatedCost, Date.now()),
+    );
 
     // Daily Usage aktualisieren
-    if (dailyUsage) {
-      await ctx.db.patch(dailyUsage._id, {
-        generationCount: dailyUsage.generationCount + 1,
-        concurrentJobs: dailyUsage.concurrentJobs + 1,
-      });
-    } else {
-      await ctx.db.insert("dailyUsage", {
-        userId: user.userId,
-        date: today,
-        generationCount: 1,
-        concurrentJobs: 1,
-      });
-    }
+    await incrementDailyUsage(ctx, user.userId, today, dailyUsage);
 
     // Reservation-Transaktion erstellen
     const transactionId = await ctx.db.insert("creditTransactions", {
@@ -783,17 +941,14 @@ export const commitInternal = internalMutation({
 
     const estimatedCost = Math.abs(transaction.amount);
 
-    // Balance aktualisieren
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
-      .unique();
-    if (!balance) throw new Error("No credit balance found");
+    const balance = await requireCreditBalance(ctx, transaction.userId);
 
     await ctx.db.patch(balance._id, {
-      balance: balance.balance - actualCost,
-      reserved: Math.max(0, balance.reserved - estimatedCost),
-      updatedAt: Date.now(),
+      ...getCommittedBalancePatch(balance, {
+        estimatedCost,
+        actualCost,
+        now: Date.now(),
+      }),
     });
 
     // Transaktion committen
@@ -804,19 +959,7 @@ export const commitInternal = internalMutation({
       openRouterCost,
     });
 
-    // Concurrent Jobs dekrementieren
-    const today = new Date().toISOString().split("T")[0];
-    const dailyUsage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", transaction.userId).eq("date", today)
-      )
-      .unique();
-    if (dailyUsage && dailyUsage.concurrentJobs > 0) {
-      await ctx.db.patch(dailyUsage._id, {
-        concurrentJobs: dailyUsage.concurrentJobs - 1,
-      });
-    }
+    await decrementConcurrencyForUser(ctx, transaction.userId);
 
     return { status: "committed" as const };
   },
@@ -879,16 +1022,8 @@ export const releaseInternal = internalMutation({
 
     const estimatedCost = Math.abs(transaction.amount);
 
-    // Credits freigeben
-    const balance = await ctx.db
-      .query("creditBalances")
-      .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
-      .unique();
-    if (!balance) throw new Error("No credit balance found");
-
-    await ctx.db.patch(balance._id, {
-      reserved: Math.max(0, balance.reserved - estimatedCost),
-      updatedAt: Date.now(),
+    await releaseReservedBalance(ctx, transaction.userId, estimatedCost, Date.now(), {
+      requireBalance: true,
     });
 
     // Transaktion als released markieren
@@ -896,19 +1031,7 @@ export const releaseInternal = internalMutation({
       status: "released",
     });
 
-    // Concurrent Jobs dekrementieren
-    const today = new Date().toISOString().split("T")[0];
-    const dailyUsage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", transaction.userId).eq("date", today)
-      )
-      .unique();
-    if (dailyUsage && dailyUsage.concurrentJobs > 0) {
-      await ctx.db.patch(dailyUsage._id, {
-        concurrentJobs: dailyUsage.concurrentJobs - 1,
-      });
-    }
+    await decrementConcurrencyForUser(ctx, transaction.userId);
 
     // Generation Count NICHT zurücksetzen — der Versuch zählt
     return { status: "released" as const };
@@ -982,17 +1105,9 @@ export const releaseStaleReservations = internalMutation({
       }
 
       const estimatedCost = Math.abs(transaction.amount);
-      const balance = await ctx.db
-        .query("creditBalances")
-        .withIndex("by_user", (q) => q.eq("userId", transaction.userId))
-        .unique();
-
-      if (balance) {
-        await ctx.db.patch(balance._id, {
-          reserved: Math.max(0, balance.reserved - estimatedCost),
-          updatedAt: now,
-        });
-      }
+      await releaseReservedBalance(ctx, transaction.userId, estimatedCost, now, {
+        requireBalance: false,
+      });
 
       await ctx.db.patch(transaction._id, {
         status: "released",
@@ -1133,37 +1248,10 @@ export const checkAbuseLimits = internalMutation({
   handler: async (ctx) => {
     const user = await requireAuth(ctx);
 
-    const subscription = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_user", (q) => q.eq("userId", user.userId))
-      .order("desc")
-      .first();
-    const tier = normalizeBillingTier(subscription?.tier);
-    const config = TIER_CONFIG[tier];
+    const { tier, config } = await loadTierContext(ctx, user.userId);
+    const usage = await loadDailyUsage(ctx, user.userId, getTodayDateKey());
 
-    const today = new Date().toISOString().split("T")[0];
-    const usage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
-      )
-      .unique();
-
-    const dailyCount = usage?.generationCount ?? 0;
-    if (dailyCount >= config.dailyGenerationCap) {
-      throw new ConvexError({
-        code: "CREDITS_DAILY_CAP_REACHED",
-        data: { limit: config.dailyGenerationCap, tier },
-      });
-    }
-
-    const currentConcurrency = usage?.concurrentJobs ?? 0;
-    if (currentConcurrency >= config.concurrencyLimit) {
-      throw new ConvexError({
-        code: "CREDITS_CONCURRENCY_LIMIT",
-        data: { limit: config.concurrencyLimit },
-      });
-    }
+    assertDailyUsageWithinTierLimits(usage, tier, config);
   },
 });
 
@@ -1176,28 +1264,10 @@ export const incrementUsage = internalMutation({
   args: {},
   handler: async (ctx) => {
     const user = await requireAuth(ctx);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayDateKey();
+    const usage = await loadDailyUsage(ctx, user.userId, today);
 
-    const usage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", user.userId).eq("date", today)
-      )
-      .unique();
-
-    if (usage) {
-      await ctx.db.patch(usage._id, {
-        generationCount: usage.generationCount + 1,
-        concurrentJobs: usage.concurrentJobs + 1,
-      });
-    } else {
-      await ctx.db.insert("dailyUsage", {
-        userId: user.userId,
-        date: today,
-        generationCount: 1,
-        concurrentJobs: 1,
-      });
-    }
+    await incrementDailyUsage(ctx, user.userId, today, usage);
   },
 });
 
@@ -1213,19 +1283,6 @@ export const decrementConcurrency = internalMutation({
   handler: async (ctx, args) => {
     const resolvedUserId =
       args.userId ?? (await requireAuth(ctx)).userId;
-    const today = new Date().toISOString().split("T")[0];
-
-    const usage = await ctx.db
-      .query("dailyUsage")
-      .withIndex("by_user_date", (q) =>
-        q.eq("userId", resolvedUserId).eq("date", today)
-      )
-      .unique();
-
-    if (usage && usage.concurrentJobs > 0) {
-      await ctx.db.patch(usage._id, {
-        concurrentJobs: usage.concurrentJobs - 1,
-      });
-    }
+    await decrementConcurrencyForUser(ctx, resolvedUserId);
   },
 });

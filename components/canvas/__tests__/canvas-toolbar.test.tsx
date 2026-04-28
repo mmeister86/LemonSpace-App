@@ -63,6 +63,10 @@ vi.mock("@/lib/canvas-node-catalog", () => ({
 }));
 
 import CanvasToolbar, { resolveToolbarSnapSide } from "@/components/canvas/canvas-toolbar";
+import {
+  clampToolbarPosition,
+  getToolbarSnapTarget,
+} from "@/components/canvas/canvas-toolbar-placement";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -440,5 +444,49 @@ describe("resolveToolbarSnapSide", () => {
     expect(resolveToolbarSnapSide({ x: 120, y: 120 }, parentRect)).toBeNull();
     expect(resolveToolbarSnapSide({ x: 600, y: 400 }, parentRect)).toBeNull();
     expect(resolveToolbarSnapSide({ x: 1080, y: 680 }, parentRect)).toBeNull();
+  });
+});
+
+describe("canvas toolbar placement helpers", () => {
+  const parentRect = {
+    width: 1200,
+    height: 800,
+  } as DOMRect;
+  const toolbarRect = {
+    width: 420,
+    height: 56,
+  } as DOMRect;
+
+  it("computes centered snap targets from parent and toolbar geometry", () => {
+    expect(getToolbarSnapTarget("top", parentRect, toolbarRect)).toEqual({
+      x: 390,
+      y: 16,
+      side: "top",
+    });
+    expect(getToolbarSnapTarget("bottom", parentRect, toolbarRect)).toEqual({
+      x: 390,
+      y: 728,
+      side: "bottom",
+    });
+    expect(getToolbarSnapTarget("left", parentRect, toolbarRect)).toEqual({
+      x: 16,
+      y: 140,
+      side: "left",
+    });
+    expect(getToolbarSnapTarget("right", parentRect, toolbarRect)).toEqual({
+      x: 1120,
+      y: 140,
+      side: "right",
+    });
+  });
+
+  it("clamps free placement inside the parent bounds with toolbar margins", () => {
+    expect(
+      clampToolbarPosition({ x: -120, y: 999, side: "free" }, parentRect, toolbarRect),
+    ).toEqual({
+      x: 16,
+      y: 728,
+      side: "free",
+    });
   });
 });

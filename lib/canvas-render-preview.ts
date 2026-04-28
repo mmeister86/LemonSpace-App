@@ -8,6 +8,11 @@ import {
   toPersistedEditorJsRichText,
   type EditorJsRichTextData,
 } from "@/lib/canvas-rich-text";
+import {
+  MIXER_SOURCE_NODE_TYPES,
+  normalizeMixerCompositionData,
+  type MixerBlendMode,
+} from "@/lib/canvas-mixer-normalization";
 
 export type RenderPreviewGraphNode = {
   id: string;
@@ -25,8 +30,6 @@ export type RenderPreviewInput = {
   sourceComposition?: RenderPreviewSourceComposition;
   steps: PipelineStep[];
 };
-
-export type MixerBlendMode = "normal" | "multiply" | "screen" | "overlay";
 
 export type MixerImageLayerSource = {
   kind: "image";
@@ -191,66 +194,8 @@ export const RENDER_PREVIEW_PIPELINE_TYPES = new Set([
   "detail-adjust",
 ]);
 
-const MIXER_SOURCE_NODE_TYPES = new Set(["image", "asset", "ai-image", "render", "text"]);
-const MIXER_BLEND_MODES = new Set<MixerBlendMode>([
-  "normal",
-  "multiply",
-  "screen",
-  "overlay",
-]);
-const DEFAULT_BLEND_MODE: MixerBlendMode = "normal";
-const DEFAULT_OPACITY = 100;
-const MIN_OPACITY = 0;
-const MAX_OPACITY = 100;
-const DEFAULT_OVERLAY_X = 0;
-const DEFAULT_OVERLAY_Y = 0;
-const DEFAULT_OVERLAY_WIDTH = 1;
-const DEFAULT_OVERLAY_HEIGHT = 1;
-const DEFAULT_CROP_LEFT = 0;
-const DEFAULT_CROP_TOP = 0;
-const DEFAULT_CROP_RIGHT = 0;
-const DEFAULT_CROP_BOTTOM = 0;
-const MIN_OVERLAY_POSITION = 0;
-const MAX_OVERLAY_POSITION = 1;
-const MIN_OVERLAY_SIZE = 0.1;
-const MAX_OVERLAY_SIZE = 1;
 const DEFAULT_TEXT_SOURCE_WIDTH = 256;
 const DEFAULT_TEXT_SOURCE_HEIGHT = 120;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function parseNumeric(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function normalizeOpacity(value: unknown): number {
-  const parsed = parseNumeric(value);
-  if (parsed === null) {
-    return DEFAULT_OPACITY;
-  }
-
-  return clamp(parsed, MIN_OPACITY, MAX_OPACITY);
-}
-
-function normalizeOverlayNumber(value: unknown, fallback: number): number {
-  const parsed = parseNumeric(value);
-  if (parsed === null) {
-    return fallback;
-  }
-
-  return parsed;
-}
 
 function resolvePositiveDimension(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -288,129 +233,6 @@ export function resolveTextLayerSource(node: CanvasGraphNodeLike): MixerTextLaye
     richText,
     width: resolveNodeDimension(node, "width", DEFAULT_TEXT_SOURCE_WIDTH),
     height: resolveNodeDimension(node, "height", DEFAULT_TEXT_SOURCE_HEIGHT),
-  };
-}
-
-function normalizeMixerCompositionRect(data: Record<string, unknown>): Pick<
-  RenderPreviewSourceComposition,
-  "overlayX" | "overlayY" | "overlayWidth" | "overlayHeight"
-> {
-  const hasLegacyOffset = data.offsetX !== undefined || data.offsetY !== undefined;
-  const hasOverlayRectField =
-    data.overlayX !== undefined ||
-    data.overlayY !== undefined ||
-    data.overlayWidth !== undefined ||
-    data.overlayHeight !== undefined;
-
-  if (hasLegacyOffset && !hasOverlayRectField) {
-    return {
-      overlayX: DEFAULT_OVERLAY_X,
-      overlayY: DEFAULT_OVERLAY_Y,
-      overlayWidth: DEFAULT_OVERLAY_WIDTH,
-      overlayHeight: DEFAULT_OVERLAY_HEIGHT,
-    };
-  }
-
-  const overlayX = clamp(
-    normalizeOverlayNumber(data.overlayX, DEFAULT_OVERLAY_X),
-    MIN_OVERLAY_POSITION,
-    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
-  );
-  const overlayY = clamp(
-    normalizeOverlayNumber(data.overlayY, DEFAULT_OVERLAY_Y),
-    MIN_OVERLAY_POSITION,
-    MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
-  );
-  const overlayWidth = clamp(
-    normalizeOverlayNumber(data.overlayWidth, DEFAULT_OVERLAY_WIDTH),
-    MIN_OVERLAY_SIZE,
-    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - overlayX),
-  );
-  const overlayHeight = clamp(
-    normalizeOverlayNumber(data.overlayHeight, DEFAULT_OVERLAY_HEIGHT),
-    MIN_OVERLAY_SIZE,
-    Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - overlayY),
-  );
-
-  return {
-    overlayX,
-    overlayY,
-    overlayWidth,
-    overlayHeight,
-  };
-}
-
-function normalizeMixerCompositionCropEdges(data: Record<string, unknown>): Pick<
-  RenderPreviewSourceComposition,
-  "cropLeft" | "cropTop" | "cropRight" | "cropBottom"
-> {
-  const hasCropField =
-    data.cropLeft !== undefined ||
-    data.cropTop !== undefined ||
-    data.cropRight !== undefined ||
-    data.cropBottom !== undefined;
-  const hasLegacyContentRectField =
-    data.contentX !== undefined ||
-    data.contentY !== undefined ||
-    data.contentWidth !== undefined ||
-    data.contentHeight !== undefined;
-
-  if (!hasCropField && hasLegacyContentRectField) {
-    const contentX = clamp(
-      normalizeOverlayNumber(data.contentX, 0),
-      MIN_OVERLAY_POSITION,
-      MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
-    );
-    const contentY = clamp(
-      normalizeOverlayNumber(data.contentY, 0),
-      MIN_OVERLAY_POSITION,
-      MAX_OVERLAY_POSITION - MIN_OVERLAY_SIZE,
-    );
-    const contentWidth = clamp(
-      normalizeOverlayNumber(data.contentWidth, 1),
-      MIN_OVERLAY_SIZE,
-      Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - contentX),
-    );
-    const contentHeight = clamp(
-      normalizeOverlayNumber(data.contentHeight, 1),
-      MIN_OVERLAY_SIZE,
-      Math.min(MAX_OVERLAY_SIZE, MAX_OVERLAY_POSITION - contentY),
-    );
-
-    return {
-      cropLeft: contentX,
-      cropTop: contentY,
-      cropRight: 1 - (contentX + contentWidth),
-      cropBottom: 1 - (contentY + contentHeight),
-    };
-  }
-
-  const cropLeft = clamp(
-    normalizeOverlayNumber(data.cropLeft, DEFAULT_CROP_LEFT),
-    0,
-    1 - MIN_OVERLAY_SIZE,
-  );
-  const cropTop = clamp(
-    normalizeOverlayNumber(data.cropTop, DEFAULT_CROP_TOP),
-    0,
-    1 - MIN_OVERLAY_SIZE,
-  );
-  const cropRight = clamp(
-    normalizeOverlayNumber(data.cropRight, DEFAULT_CROP_RIGHT),
-    0,
-    1 - cropLeft - MIN_OVERLAY_SIZE,
-  );
-  const cropBottom = clamp(
-    normalizeOverlayNumber(data.cropBottom, DEFAULT_CROP_BOTTOM),
-    0,
-    1 - cropTop - MIN_OVERLAY_SIZE,
-  );
-
-  return {
-    cropLeft,
-    cropTop,
-    cropRight,
-    cropBottom,
   };
 }
 
@@ -603,10 +425,7 @@ function resolveRenderMixerCompositionFromGraph(args: {
     return null;
   }
 
-  const data = (args.node.data ?? {}) as Record<string, unknown>;
-  const blendMode = MIXER_BLEND_MODES.has(data.blendMode as MixerBlendMode)
-    ? (data.blendMode as MixerBlendMode)
-    : DEFAULT_BLEND_MODE;
+  const normalized = normalizeMixerCompositionData(args.node.data);
 
   return {
     kind: "mixer",
@@ -614,10 +433,7 @@ function resolveRenderMixerCompositionFromGraph(args: {
     ...(overlaySource.kind === "image"
       ? { overlayUrl: overlaySource.url }
       : { overlaySource }),
-    blendMode,
-    opacity: normalizeOpacity(data.opacity),
-    ...normalizeMixerCompositionRect(data),
-    ...normalizeMixerCompositionCropEdges(data),
+    ...normalized,
   };
 }
 

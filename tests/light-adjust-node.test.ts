@@ -31,7 +31,10 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("lucide-react", () => ({
+  Focus: () => null,
+  Palette: () => null,
   Sun: () => null,
+  TrendingUp: () => null,
 }));
 
 vi.mock("@/components/canvas/canvas-presets-context", () => ({

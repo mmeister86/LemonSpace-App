@@ -20,15 +20,20 @@ import {
   removeImageBackground,
 } from "./freepik";
 import {
-  categorizeError,
   errorMessage,
   formatTerminalStatusMessage,
   getErrorCode,
   getErrorSource,
   getProviderStatus,
-  getVideoPollDelayMs,
-  isVideoPollTimedOut,
 } from "./ai_errors";
+import {
+  buildNextProviderPollSchedule,
+  buildProviderPollTimeoutMessage,
+  getProviderPollDelayMs,
+  getProviderTerminalFailureMessage,
+  isProviderPollTimedOut,
+  shouldRetryProviderPollError,
+} from "./provider_polling";
 import { getNodeDataRecord } from "./ai_node_data";
 import {
   getImageTransformCreditCost,
@@ -36,6 +41,14 @@ import {
   type FaceRestoreMode,
   type ImageTransformOperation,
 } from "../lib/image-transform-models";
+import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
+import {
+  commitInternalReservationIfNeeded,
+  decrementConcurrencyIfNeeded,
+  releaseInternalReservationBestEffort,
+  releasePublicReservationBestEffort,
+  startPublicJobCreditFlow,
+} from "./job_credit_flow";
 
 const MAX_TRANSFORM_POLL_ATTEMPTS = 30;
 const MAX_TRANSFORM_POLL_TOTAL_MS = 10 * 60 * 1000;
@@ -157,12 +170,6 @@ function getNodeDataUrl(node: GraphNode): string | null {
     : null;
 }
 
-function assertNodeBelongsToCanvas(node: { canvasId: Id<"canvases"> }, canvasId: Id<"canvases">) {
-  if (node.canvasId !== canvasId) {
-    throw new Error("Node does not belong to canvas");
-  }
-}
-
 function assertTransformOperationMatchesNode(
   transformNode: GraphNode,
   operation: ImageTransformOperation,
@@ -224,47 +231,6 @@ function sanitizeOperation(operation: ImageTransformOperation): ImageTransformOp
     case "bg-remove":
       return operation;
   }
-}
-
-async function releasePublicReservationBestEffort(
-  ctx: ActionCtx,
-  reservationId: Id<"creditTransactions"> | null,
-) {
-  if (!reservationId) return;
-  try {
-    await ctx.runMutation(api.credits.release, { transactionId: reservationId });
-  } catch (error) {
-    console.warn("[image_transforms] failed to release public reservation", {
-      reservationId,
-      error: errorMessage(error),
-    });
-  }
-}
-
-async function releaseInternalReservationBestEffort(
-  ctx: ActionCtx,
-  reservationId: Id<"creditTransactions"> | undefined,
-) {
-  if (!reservationId) return;
-  try {
-    await ctx.runMutation(internal.credits.releaseInternal, {
-      transactionId: reservationId,
-    });
-  } catch (error) {
-    console.warn("[image_transforms] failed to release internal reservation", {
-      reservationId,
-      error: errorMessage(error),
-    });
-  }
-}
-
-async function decrementConcurrencyIfNeeded(
-  ctx: ActionCtx,
-  shouldDecrementConcurrency: boolean,
-  userId: string,
-) {
-  if (!shouldDecrementConcurrency) return;
-  await ctx.runMutation(internal.credits.decrementConcurrency, { userId });
 }
 
 function normalizeStyleTransferHandle(handle: string | undefined): "image" | "reference" | null {
@@ -483,12 +449,7 @@ async function finalizeSuccessfulImage(args: {
     ...(dimensions.height !== undefined ? { height: dimensions.height } : {}),
   });
 
-  if (args.reservationId) {
-    await args.ctx.runMutation(internal.credits.commitInternal, {
-      transactionId: args.reservationId,
-      actualCost: args.creditCost,
-    });
-  }
+  await commitInternalReservationIfNeeded(args.ctx, args.reservationId, args.creditCost);
 
   await decrementConcurrencyIfNeeded(
     args.ctx,
@@ -571,7 +532,7 @@ export const processImageTransform = internalAction({
           taskId: result.task_id,
         });
         await ctx.scheduler.runAfter(
-          getVideoPollDelayMs(1),
+          getProviderPollDelayMs(1),
           internal.image_transforms.pollImageTransformTask,
           {
             ...args,
@@ -620,7 +581,7 @@ export const processImageTransform = internalAction({
       });
 
       await ctx.scheduler.runAfter(
-        getVideoPollDelayMs(1),
+          getProviderPollDelayMs(1),
         internal.image_transforms.pollImageTransformTask,
         {
           ...args,
@@ -686,7 +647,7 @@ export const pollImageTransformTask = internalAction({
   handler: async (ctx, args) => {
     const elapsedMs = Date.now() - args.startedAtMs;
     if (
-      isVideoPollTimedOut({
+      isProviderPollTimedOut({
         attempt: args.attempt,
         maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
         elapsedMs,
@@ -698,7 +659,7 @@ export const pollImageTransformTask = internalAction({
         transformNodeId: args.transformNodeId,
         outputNodeId: args.outputNodeId,
         retryCount: args.attempt,
-        statusMessage: "Timeout: Image transform exceeded maximum polling time",
+          statusMessage: buildProviderPollTimeoutMessage("Image transform"),
       });
       await decrementConcurrencyIfNeeded(
         ctx,
@@ -720,7 +681,10 @@ export const pollImageTransformTask = internalAction({
           transformNodeId: args.transformNodeId,
           outputNodeId: args.outputNodeId,
           retryCount: args.attempt,
-          statusMessage: status.error?.trim() || "Provider: Image transform failed",
+          statusMessage: getProviderTerminalFailureMessage({
+            providerError: status.error,
+            fallback: "Provider: Image transform failed",
+          }),
         });
         await decrementConcurrencyIfNeeded(
           ctx,
@@ -753,8 +717,13 @@ export const pollImageTransformTask = internalAction({
         return;
       }
     } catch (error) {
-      const { retryable } = categorizeError(error);
-      if (retryable && args.attempt < MAX_TRANSFORM_POLL_ATTEMPTS) {
+      if (
+        shouldRetryProviderPollError({
+          error,
+          attempt: args.attempt,
+          maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
+        })
+      ) {
         await ctx.runMutation(internal.image_transform_mutations.markTransformPollingRetry, {
           transformNodeId: args.transformNodeId,
           outputNodeId: args.outputNodeId,
@@ -762,13 +731,11 @@ export const pollImageTransformTask = internalAction({
           maxAttempts: MAX_TRANSFORM_POLL_ATTEMPTS,
           failureMessage: errorMessage(error),
         });
+        const schedule = buildNextProviderPollSchedule(args);
         await ctx.scheduler.runAfter(
-          getVideoPollDelayMs(args.attempt),
+          schedule.delayMs,
           internal.image_transforms.pollImageTransformTask,
-          {
-            ...args,
-            attempt: args.attempt + 1,
-          },
+          schedule.args,
         );
         return;
       }
@@ -788,13 +755,11 @@ export const pollImageTransformTask = internalAction({
       return;
     }
 
+    const schedule = buildNextProviderPollSchedule(args);
     await ctx.scheduler.runAfter(
-      getVideoPollDelayMs(args.attempt),
+      schedule.delayMs,
       internal.image_transforms.pollImageTransformTask,
-      {
-        ...args,
-        attempt: args.attempt + 1,
-      },
+      schedule.args,
     );
   },
 });
@@ -822,7 +787,7 @@ export const generateTransform = action({
     if (!transformNode) {
       throw new Error("Transform node not found");
     }
-    assertNodeBelongsToCanvas(transformNode, args.canvasId);
+    assertNodeBelongsToCanvasOrThrow(transformNode, args.canvasId);
     assertTransformOperationMatchesNode(transformNode, operation);
 
     const outputNode = await ctx.runQuery(
@@ -832,7 +797,7 @@ export const generateTransform = action({
     if (!outputNode) {
       throw new Error("Output node not found");
     }
-    assertNodeBelongsToCanvas(outputNode, args.canvasId);
+    assertNodeBelongsToCanvasOrThrow(outputNode, args.canvasId);
     if (outputNode.type !== "image") {
       throw new Error("Output node must be image");
     }
@@ -882,25 +847,17 @@ export const generateTransform = action({
     }
 
     const creditCost = getImageTransformCreditCost(operation);
-    const internalCreditsEnabled = process.env.INTERNAL_CREDITS_ENABLED === "true";
-    await ctx.runMutation(internal.credits.checkAbuseLimits, {});
-
-    let usageIncremented = false;
-    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
-      ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: creditCost,
-          description: `${getImageTransformLabel(operation.type)} - Freepik`,
-          model: operation.type,
-          nodeId: args.outputNodeId,
-          canvasId: args.canvasId,
-          provider: "freepik",
-        })
-      : null;
-
-    if (!internalCreditsEnabled) {
-      await ctx.runMutation(internal.credits.incrementUsage, {});
-      usageIncremented = true;
-    }
+    const {
+      reservationId,
+      shouldDecrementConcurrency: usageIncremented,
+    } = await startPublicJobCreditFlow(ctx, {
+      estimatedCost: creditCost,
+      description: `${getImageTransformLabel(operation.type)} - Freepik`,
+      model: operation.type,
+      nodeId: args.outputNodeId,
+      canvasId: args.canvasId,
+      provider: "freepik",
+    });
 
     let backgroundJobScheduled = false;
     try {
@@ -927,7 +884,7 @@ export const generateTransform = action({
       backgroundJobScheduled = true;
       return { queued: true, outputNodeId: args.outputNodeId };
     } catch (error) {
-      await releasePublicReservationBestEffort(ctx, reservationId);
+      await releasePublicReservationBestEffort(ctx, reservationId, "image_transforms");
       await ctx.runMutation(internal.image_transform_mutations.finalizeTransformFailure, {
         transformNodeId: args.transformNodeId,
         outputNodeId: args.outputNodeId,
@@ -936,11 +893,11 @@ export const generateTransform = action({
       });
       throw error;
     } finally {
-      if (usageIncremented && !backgroundJobScheduled) {
-        await ctx.runMutation(internal.credits.decrementConcurrency, {
-          userId: canvas.ownerId,
-        });
-      }
+      await decrementConcurrencyIfNeeded(
+        ctx,
+        usageIncremented && !backgroundJobScheduled,
+        canvas.ownerId,
+      );
     }
   },
 });

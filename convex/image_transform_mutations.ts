@@ -2,6 +2,13 @@ import { v } from "convex/values";
 
 import { internalMutation } from "./_generated/server";
 import { getNodeDataRecord } from "./ai_node_data";
+import {
+  buildNodeDonePatch,
+  buildNodeErrorPatch,
+  buildNodeExecutingPatch,
+  buildNodeRetryPatch,
+  mergeNodeData,
+} from "./node_status_helpers";
 
 const operationValidator = v.union(
   v.object({ type: v.literal("bg-remove") }),
@@ -110,31 +117,28 @@ export const markTransformExecuting = internalMutation({
 
     const now = Date.now();
     await ctx.db.patch(args.transformNodeId, {
-      status: "executing",
+      ...buildNodeExecutingPatch({ retryCount: undefined }),
+      retryCount: undefined,
       statusMessage: undefined,
-      data: {
-        ...getNodeDataRecord(transformNode.data),
+      data: mergeNodeData(getNodeDataRecord(transformNode.data), {
         operation: args.operation.type,
         outputNodeId: args.outputNodeId,
         taskId: undefined,
         lastRunAt: now,
         lastError: undefined,
         parameters: args.operation,
-      },
+      }),
     });
     await ctx.db.patch(args.outputNodeId, {
-      status: "executing",
-      statusMessage: undefined,
-      retryCount: 0,
-      data: {
-        ...getNodeDataRecord(outputNode.data),
+      ...buildNodeExecutingPatch(),
+      data: mergeNodeData(getNodeDataRecord(outputNode.data), {
         source: "freepik-transform",
         transform: {
           operation: args.operation.type,
           transformNodeId: args.transformNodeId,
           provider: "freepik",
         },
-      },
+      }),
     });
   },
 });
@@ -180,14 +184,14 @@ export const markTransformPollingRetry = internalMutation({
     failureMessage: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.transformNodeId, {
+    await ctx.db.patch(args.transformNodeId, buildNodeRetryPatch({
       retryCount: args.attempt,
       statusMessage: `Provider: retry ${args.attempt}/${args.maxAttempts} (${args.failureMessage})`,
-    });
-    await ctx.db.patch(args.outputNodeId, {
+    }));
+    await ctx.db.patch(args.outputNodeId, buildNodeRetryPatch({
       retryCount: args.attempt,
       statusMessage: `Provider: retry ${args.attempt}/${args.maxAttempts}`,
-    });
+    }));
   },
 });
 
@@ -217,12 +221,9 @@ export const finalizeTransformSuccess = internalMutation({
     });
 
     await ctx.db.patch(args.outputNodeId, {
-      status: "done",
-      retryCount: 0,
-      statusMessage: undefined,
+      ...buildNodeDonePatch(),
       ...(displaySize ?? {}),
-      data: {
-        ...getNodeDataRecord(outputNode.data),
+      data: mergeNodeData(getNodeDataRecord(outputNode.data), {
         storageId: args.storageId,
         mimeType: args.mimeType,
         originalFilename: args.filename,
@@ -237,15 +238,12 @@ export const finalizeTransformSuccess = internalMutation({
           ...(args.taskId ? { taskId: args.taskId } : {}),
         },
         creditCost: args.creditCost,
-      },
+      }),
     });
 
     await ctx.db.patch(args.transformNodeId, {
-      status: "done",
-      retryCount: 0,
-      statusMessage: undefined,
-      data: {
-        ...getNodeDataRecord(transformNode.data),
+      ...buildNodeDonePatch(),
+      data: mergeNodeData(getNodeDataRecord(transformNode.data), {
         storageId: args.storageId,
         mimeType: args.mimeType,
         originalFilename: args.filename,
@@ -256,7 +254,7 @@ export const finalizeTransformSuccess = internalMutation({
         parameters: args.operation,
         taskId: undefined,
         lastError: undefined,
-      },
+      }),
     });
   },
 });
@@ -276,19 +274,18 @@ export const finalizeTransformFailure = internalMutation({
     }
 
     await ctx.db.patch(args.transformNodeId, {
-      status: "error",
-      retryCount: args.retryCount,
-      statusMessage: args.statusMessage,
-      data: {
-        ...getNodeDataRecord(transformNode.data),
+      ...buildNodeErrorPatch({
+        retryCount: args.retryCount,
+        statusMessage: args.statusMessage,
+      }),
+      data: mergeNodeData(getNodeDataRecord(transformNode.data), {
         lastError: args.statusMessage,
         taskId: undefined,
-      },
+      }),
     });
-    await ctx.db.patch(args.outputNodeId, {
-      status: "error",
+    await ctx.db.patch(args.outputNodeId, buildNodeErrorPatch({
       retryCount: args.retryCount,
       statusMessage: args.statusMessage,
-    });
+    }));
   },
 });

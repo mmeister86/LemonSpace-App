@@ -1,8 +1,15 @@
+import {
+  getLocalStorage,
+  isJsonRecord,
+  type JsonRecord,
+  safeJsonParse,
+  safeStorageGet,
+  safeStorageSet,
+} from "@/lib/browser-storage-cache";
+
 const STORAGE_NAMESPACE = "lemonspace.canvas";
 const SNAPSHOT_VERSION = 1;
 const OPS_VERSION = 1;
-
-type JsonRecord = Record<string, unknown>;
 
 type CanvasSnapshotPayload<TNode, TEdge> = {
   version: number;
@@ -24,28 +31,6 @@ export type CanvasPendingOp = {
   enqueuedAt: number;
 };
 
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null;
-}
-
-function getLocalStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function safeParse(raw: string | null): unknown {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function snapshotKey(canvasId: string): string {
   return `${STORAGE_NAMESPACE}:snapshot:v${SNAPSHOT_VERSION}:${canvasId}`;
 }
@@ -59,8 +44,8 @@ function readSnapshotPayload<TNode, TEdge>(
 ): CanvasSnapshotPayload<TNode, TEdge> | null {
   const storage = getLocalStorage();
   if (!storage) return null;
-  const parsed = safeParse(storage.getItem(snapshotKey(canvasId)));
-  if (!isRecord(parsed)) return null;
+  const parsed = safeJsonParse(safeStorageGet(storage, snapshotKey(canvasId)));
+  if (!isJsonRecord(parsed)) return null;
   const version = parsed.version;
   const nodes = parsed.nodes;
   const edges = parsed.edges;
@@ -83,12 +68,12 @@ function readOpsPayload(canvasId: string): CanvasOpQueuePayload {
   };
   const storage = getLocalStorage();
   if (!storage) return fallback;
-  const parsed = safeParse(storage.getItem(opsKey(canvasId)));
-  if (!isRecord(parsed)) return fallback;
+  const parsed = safeJsonParse(safeStorageGet(storage, opsKey(canvasId)));
+  if (!isJsonRecord(parsed)) return fallback;
   if (parsed.version !== OPS_VERSION || !Array.isArray(parsed.ops)) return fallback;
 
   const ops = parsed.ops
-    .filter((op): op is JsonRecord => isRecord(op))
+    .filter((op): op is JsonRecord => isJsonRecord(op))
     .filter(
       (op) =>
         typeof op.id === "string" &&
@@ -116,7 +101,7 @@ function writePayload(key: string, value: unknown): void {
   const storage = getLocalStorage();
   if (!storage) return;
   try {
-    storage.setItem(key, JSON.stringify(value));
+    safeStorageSet(storage, key, JSON.stringify(value));
   } catch {
     // Ignore quota/storage write failures in UX cache layer.
   }
@@ -183,7 +168,7 @@ export function readCanvasOps(canvasId: string): CanvasPendingOp[] {
 }
 
 function opTouchesNodeId(op: CanvasPendingOp, nodeIdSet: ReadonlySet<string>): boolean {
-  if (!isRecord(op.payload)) return false;
+  if (!isJsonRecord(op.payload)) return false;
   const payload = op.payload;
 
   if (
@@ -205,7 +190,7 @@ function opTouchesNodeId(op: CanvasPendingOp, nodeIdSet: ReadonlySet<string>): b
   if (Array.isArray(payload.moves)) {
     return payload.moves.some(
       (move) =>
-        isRecord(move) &&
+        isJsonRecord(move) &&
         typeof move.nodeId === "string" &&
         nodeIdSet.has(move.nodeId),
     );
@@ -218,7 +203,7 @@ function opHasClientRequestId(
   op: CanvasPendingOp,
   clientRequestIdSet: ReadonlySet<string>,
 ): boolean {
-  if (!isRecord(op.payload)) return false;
+  if (!isJsonRecord(op.payload)) return false;
   return (
     typeof op.payload.clientRequestId === "string" &&
     clientRequestIdSet.has(op.payload.clientRequestId)
@@ -226,7 +211,7 @@ function opHasClientRequestId(
 }
 
 function opTouchesEdgeId(op: CanvasPendingOp, edgeIdSet: ReadonlySet<string>): boolean {
-  if (!isRecord(op.payload)) return false;
+  if (!isJsonRecord(op.payload)) return false;
   return (
     (typeof op.payload.edgeId === "string" &&
       edgeIdSet.has(op.payload.edgeId)) ||
@@ -283,7 +268,7 @@ function remapNodeIdInPayload(
   fromNodeId: string,
   toNodeId: string,
 ): { payload: unknown; changed: boolean } {
-  if (!isRecord(payload)) return { payload, changed: false };
+  if (!isJsonRecord(payload)) return { payload, changed: false };
 
   let changed = false;
   const nextPayload: JsonRecord = { ...payload };
@@ -302,7 +287,7 @@ function remapNodeIdInPayload(
   const moves = nextPayload.moves;
   if (Array.isArray(moves)) {
     const remappedMoves = moves.map((move) => {
-      if (!isRecord(move)) return move;
+      if (!isJsonRecord(move)) return move;
       if (move.nodeId !== fromNodeId) return move;
       changed = true;
       return {

@@ -3,7 +3,6 @@ import type { FunctionReference } from "convex/server";
 
 import {
   action,
-  type ActionCtx,
   internalAction,
   internalMutation,
 } from "./_generated/server";
@@ -11,6 +10,20 @@ import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { generateStructuredObjectViaOpenRouter } from "./openrouter";
 import { getNodeDataRecord } from "./ai_node_data";
+import {
+  buildNodeDonePatch,
+  buildNodeErrorPatch,
+  buildNodeExecutingPatch,
+  mergeNodeData,
+} from "./node_status_helpers";
+import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
+import {
+  commitInternalReservationIfNeeded,
+  decrementConcurrencyIfNeeded,
+  releaseInternalReservationBestEffort,
+  releasePublicReservationBestEffort,
+  startPublicJobCreditFlow,
+} from "./job_credit_flow";
 import {
   errorMessage,
   formatTerminalStatusMessage,
@@ -698,51 +711,6 @@ function getAgentNodeFromGraph(
   return agentNode;
 }
 
-async function releaseInternalReservationBestEffort(
-  ctx: ActionCtx,
-  reservationId: Id<"creditTransactions"> | undefined,
-) {
-  if (!reservationId) {
-    return;
-  }
-  try {
-    await ctx.runMutation(internalApi.credits.releaseInternal, {
-      transactionId: reservationId,
-    });
-  } catch {
-    // Keep terminal node updates resilient even when cleanup fails.
-  }
-}
-
-async function releasePublicReservationBestEffort(
-  ctx: ActionCtx,
-  reservationId: Id<"creditTransactions"> | null,
-) {
-  if (!reservationId) {
-    return;
-  }
-  try {
-    await ctx.runMutation(api.credits.release, {
-      transactionId: reservationId,
-    });
-  } catch {
-    // Prefer surfacing orchestration errors over cleanup issues.
-  }
-}
-
-async function decrementConcurrencyIfNeeded(
-  ctx: ActionCtx,
-  shouldDecrementConcurrency: boolean,
-  userId: string,
-) {
-  if (!shouldDecrementConcurrency) {
-    return;
-  }
-  await ctx.runMutation(internalApi.credits.decrementConcurrency, {
-    userId,
-  });
-}
-
 function getSelectedModelOrThrow(modelId: string): AgentModel {
   const selectedModel = getAgentModel(modelId);
   if (!selectedModel) {
@@ -786,11 +754,12 @@ export const setAgentAnalyzing = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
+      ...buildNodeExecutingPatch({
+        statusMessage: "Step 1/2 - analyzing inputs",
+      }),
       status: "analyzing",
       statusMessage: "Step 1/2 - analyzing inputs",
-      retryCount: 0,
-      data: {
-        ...prev,
+      data: mergeNodeData(prev, {
         modelId: args.modelId,
         reservationId: args.reservationId,
         shouldDecrementConcurrency: args.shouldDecrementConcurrency,
@@ -798,7 +767,7 @@ export const setAgentAnalyzing = internalMutation({
         executionPlanSummary: undefined,
         executionSummary: undefined,
         executionSteps: [],
-      },
+      }),
     });
   },
 });
@@ -826,11 +795,10 @@ export const setAgentClarifying = internalMutation({
     await ctx.db.patch(args.nodeId, {
       status: "clarifying",
       statusMessage: "Clarification required before execution",
-      data: {
-        ...prev,
+      data: mergeNodeData(prev, {
         clarificationQuestions: args.clarificationQuestions,
         clarificationAnswers: answers,
-      },
+      }),
     });
   },
 });
@@ -848,12 +816,14 @@ export const setAgentExecuting = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
-      status: "executing",
-      statusMessage: args.statusMessage ?? "Step 2/2 - generating outputs",
-      data: {
-        ...prev,
+      ...buildNodeExecutingPatch({
+        retryCount: undefined,
+        statusMessage: args.statusMessage ?? "Step 2/2 - generating outputs",
+      }),
+      retryCount: undefined,
+      data: mergeNodeData(prev, {
         clarificationQuestions: [],
-      },
+      }),
     });
   },
 });
@@ -888,9 +858,11 @@ export const createExecutionSkeletonOutputs = internalMutation({
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Agent node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(
+      node,
+      args.canvasId,
+      "Agent node does not belong to canvas",
+    );
 
     const prev = getNodeDataRecord(node.data);
     const existingOutputNodeIds = Array.isArray(prev.outputNodeIds)
@@ -1054,9 +1026,7 @@ export const completeExecutionStepOutput = internalMutation({
     });
 
     await ctx.db.patch(args.outputNodeId, {
-      status: "done",
-      statusMessage: undefined,
-      retryCount: 0,
+      ...buildNodeDonePatch(),
       data: normalizedOutputData,
     });
   },
@@ -1075,13 +1045,12 @@ export const setAgentError = internalMutation({
     const prev = getNodeDataRecord(node.data);
 
     await ctx.db.patch(args.nodeId, {
-      status: "error",
-      statusMessage: args.statusMessage,
-      data: {
-        ...prev,
+      ...buildNodeErrorPatch({ statusMessage: args.statusMessage }),
+      retryCount: undefined,
+      data: mergeNodeData(prev, {
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
-      },
+      }),
     });
   },
 });
@@ -1142,11 +1111,8 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
       : [];
 
     await ctx.db.patch(args.nodeId, {
-      status: "done",
-      statusMessage: undefined,
-      retryCount: 0,
-      data: {
-        ...prev,
+      ...buildNodeDonePatch(),
+      data: mergeNodeData(prev, {
         clarificationQuestions: [],
         outputNodeIds: existingOutputNodeIds,
         executionSummary: resolveFinalExecutionSummary({
@@ -1163,7 +1129,7 @@ export const finalizeAgentSuccessWithOutputs = internalMutation({
         }),
         reservationId: undefined,
         shouldDecrementConcurrency: undefined,
-      },
+      }),
     });
 
     await ctx.db.patch(node.canvasId, {
@@ -1285,7 +1251,7 @@ export const analyzeAgent = internalAction({
       });
     } catch (error) {
       logAgentFailure("analyzeAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
-      await releaseInternalReservationBestEffort(ctx, args.reservationId);
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "agents");
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
         statusMessage: formatTerminalStatusMessage(error),
@@ -1427,17 +1393,12 @@ export const executeAgent = internalAction({
         summary: execution.summary,
       });
 
-      if (args.reservationId) {
-        await ctx.runMutation(internalApi.credits.commitInternal, {
-          transactionId: args.reservationId,
-          actualCost: selectedModel.creditCost,
-        });
-      }
+      await commitInternalReservationIfNeeded(ctx, args.reservationId, selectedModel.creditCost);
 
       await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
     } catch (error) {
       logAgentFailure("executeAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
-      await releaseInternalReservationBestEffort(ctx, args.reservationId);
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "agents");
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
         statusMessage: formatTerminalStatusMessage(error),
@@ -1478,9 +1439,7 @@ export const runAgent = action({
     if (!node) {
       throw new Error("Node not found");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
@@ -1489,25 +1448,17 @@ export const runAgent = action({
     const subscription = await ctx.runQuery(api.credits.getSubscription, {});
     assertAgentModelTier(selectedModel, subscription?.tier);
 
-    await ctx.runMutation(internalApi.credits.checkAbuseLimits, {});
-
-    const internalCreditsEnabled = process.env.INTERNAL_CREDITS_ENABLED === "true";
-    let usageIncremented = false;
-    const reservationId: Id<"creditTransactions"> | null = internalCreditsEnabled
-      ? await ctx.runMutation(api.credits.reserve, {
-          estimatedCost: selectedModel.creditCost,
-          description: `Agent-Lauf - ${selectedModel.label}`,
-          nodeId: args.nodeId,
-          canvasId: args.canvasId,
-          model: selectedModel.id,
-          provider: "openrouter",
-        })
-      : null;
-
-    if (!internalCreditsEnabled) {
-      await ctx.runMutation(internalApi.credits.incrementUsage, {});
-      usageIncremented = true;
-    }
+    const {
+      reservationId,
+      shouldDecrementConcurrency: usageIncremented,
+    } = await startPublicJobCreditFlow(ctx, {
+      estimatedCost: selectedModel.creditCost,
+      description: `Agent-Lauf - ${selectedModel.label}`,
+      nodeId: args.nodeId,
+      canvasId: args.canvasId,
+      model: selectedModel.id,
+      provider: "openrouter",
+    });
 
     let scheduled = false;
     try {
@@ -1531,7 +1482,7 @@ export const runAgent = action({
       return { queued: true, nodeId: args.nodeId };
     } catch (error) {
       logAgentFailure("runAgent", { nodeId: args.nodeId, modelId: selectedModel.id }, error);
-      await releasePublicReservationBestEffort(ctx, reservationId);
+      await releasePublicReservationBestEffort(ctx, reservationId, "agents");
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
         statusMessage: formatTerminalStatusMessage(error),
@@ -1539,11 +1490,7 @@ export const runAgent = action({
 
       throw error;
     } finally {
-      if (usageIncremented && !scheduled) {
-        await ctx.runMutation(internalApi.credits.decrementConcurrency, {
-          userId: canvas.ownerId,
-        });
-      }
+      await decrementConcurrencyIfNeeded(ctx, usageIncremented && !scheduled, canvas.ownerId);
     }
   },
 });
@@ -1570,9 +1517,7 @@ export const resumeAgent = action({
     if (!node) {
       throw new Error("Node not found");
     }
-    if (node.canvasId !== args.canvasId) {
-      throw new Error("Node does not belong to canvas");
-    }
+    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
     if (node.type !== "agent") {
       throw new Error("Node must be an agent node");
     }
@@ -1619,7 +1564,7 @@ export const resumeAgent = action({
       return { queued: true, nodeId: args.nodeId };
     } catch (error) {
       logAgentFailure("resumeAgent", { nodeId: args.nodeId, modelId }, error);
-      await releasePublicReservationBestEffort(ctx, reservationId ?? null);
+      await releasePublicReservationBestEffort(ctx, reservationId ?? null, "agents");
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
         statusMessage: formatTerminalStatusMessage(error),

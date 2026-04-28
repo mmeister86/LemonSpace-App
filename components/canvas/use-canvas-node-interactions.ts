@@ -14,40 +14,38 @@ import {
 } from "@xyflow/react";
 
 import type { Id } from "@/convex/_generated/dataModel";
-import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import {
   clientRequestIdFromOptimisticNodeId,
   EDGE_INTERSECTION_HIGHLIGHT_STYLE,
   getIntersectedEdgeId,
   getNodeCenterClientPosition,
-  hasHandleKey,
-  isOptimisticEdgeId,
   isOptimisticNodeId,
-  normalizeHandle,
 } from "./canvas-helpers";
 import { validateCanvasEdgeSplit } from "./canvas-connection-validation";
 import { adjustNodeDimensionChanges } from "./canvas-node-change-helpers";
 import {
-  getAbsoluteNodePosition,
-  getNodeRect,
-  isDescendantOf,
-  rectsOverlap,
-} from "./canvas-grouping-helpers";
+  buildPendingEdgeSplit,
+  buildSplitEdgeAtExistingNodeArgs,
+  edgeTouchesNode,
+  getEffectiveSplitMiddleNode,
+  getSplitCandidateEdge,
+  getSplitHandlesForNode,
+  type PendingEdgeSplit,
+} from "./canvas-edge-intersection-split";
+import {
+  clearGroupDropTargetData,
+  findOverlappingGroupTarget,
+  markGroupDropTarget,
+} from "./canvas-node-group-drop-target";
+import { computeParentChangesForDraggedNodes } from "./canvas-node-parent-changes";
+import {
+  computeResizeChangesToPersist,
+  updateResizeInteractionState,
+} from "./canvas-node-resize-persistence";
 
 type PositionPin = { x: number; y: number };
 type MovePin = { positionX: number; positionY: number };
-type PendingEdgeSplit = {
-  intersectedEdgeId: Id<"edges">;
-  sourceNodeId: Id<"nodes">;
-  targetNodeId: Id<"nodes">;
-  intersectedSourceHandle?: string;
-  intersectedTargetHandle?: string;
-  middleSourceHandle?: string;
-  middleTargetHandle?: string;
-  positionX: number;
-  positionY: number;
-};
 
 type RunResizeNodeMutation = (args: {
   nodeId: Id<"nodes">;
@@ -99,110 +97,6 @@ type CanvasNodeInteractionRefs = {
     Map<string, PendingEdgeSplit>
   >;
 };
-
-type ParentChange = {
-  nodeId: string;
-  parentId?: string;
-  position: { x: number; y: number };
-};
-
-function findOverlappingGroupTarget(
-  draggedNode: RFNode,
-  allNodes: RFNode[],
-): RFNode | null {
-  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
-  const draggedRect = getNodeRect(draggedNode, nodeById);
-  const candidates = allNodes.filter((node) => {
-    if (node.id === draggedNode.id) return false;
-    if (node.type !== "group") return false;
-    if (draggedNode.type === "group" && isDescendantOf(node.id, draggedNode.id, nodeById)) {
-      return false;
-    }
-    return rectsOverlap(draggedRect, getNodeRect(node, nodeById));
-  });
-
-  candidates.sort((a, b) => {
-    const depthA = isDescendantOf(a.id, b.id, nodeById) ? 1 : 0;
-    const depthB = isDescendantOf(b.id, a.id, nodeById) ? 1 : 0;
-    if (depthA !== depthB) return depthB - depthA;
-    return (b.zIndex ?? 0) - (a.zIndex ?? 0);
-  });
-
-  return candidates[0] ?? null;
-}
-
-function clearGroupDropTargetData(nodes: RFNode[]): RFNode[] {
-  return nodes.map((node) => {
-    const data = node.data as Record<string, unknown> | undefined;
-    if (!data?._groupDropTarget) return node;
-    const { _groupDropTarget: _removed, ...nextData } = data;
-    void _removed;
-    return {
-      ...node,
-      data: nextData,
-    };
-  });
-}
-
-function markGroupDropTarget(nodes: RFNode[], targetId: string | null): RFNode[] {
-  return nodes.map((node) => {
-    const isTarget = node.id === targetId;
-    const data = (node.data ?? {}) as Record<string, unknown>;
-    if (node.type !== "group" && !data._groupDropTarget) return node;
-    if (Boolean(data._groupDropTarget) === isTarget) return node;
-
-    if (!isTarget) {
-      const { _groupDropTarget: _removed, ...nextData } = data;
-      void _removed;
-      return { ...node, data: nextData };
-    }
-
-    return {
-      ...node,
-      data: {
-        ...data,
-        _groupDropTarget: true,
-      },
-    };
-  });
-}
-
-function computeParentChangeForNode(
-  draggedNode: RFNode,
-  allNodes: RFNode[],
-): ParentChange | null {
-  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
-  const absolutePosition = getAbsoluteNodePosition(draggedNode, nodeById);
-  const overlappingGroup = findOverlappingGroupTarget(draggedNode, allNodes);
-
-  if (overlappingGroup && draggedNode.parentId !== overlappingGroup.id) {
-    const groupPosition = getAbsoluteNodePosition(overlappingGroup, nodeById);
-    return {
-      nodeId: draggedNode.id,
-      parentId: overlappingGroup.id,
-      position: {
-        x: absolutePosition.x - groupPosition.x,
-        y: absolutePosition.y - groupPosition.y,
-      },
-    };
-  }
-
-  if (draggedNode.parentId) {
-    const currentParent = nodeById.get(draggedNode.parentId);
-    if (
-      currentParent?.type === "group" &&
-      !rectsOverlap(getNodeRect(draggedNode, nodeById), getNodeRect(currentParent, nodeById))
-    ) {
-      return {
-        nodeId: draggedNode.id,
-        parentId: undefined,
-        position: absolutePosition,
-      };
-    }
-  }
-
-  return null;
-}
 
 export function useCanvasNodeInteractions(args: {
   canvasId: Id<"canvases">;
@@ -329,43 +223,14 @@ export function useCanvasNodeInteractions(args: {
     setNodes((currentNodes) => clearGroupDropTargetData(currentNodes));
   }, [setNodes]);
 
-  const getEffectiveSplitMiddleNode = useCallback(
-    (node: RFNode): RFNode => {
-      const clientRequestId = clientRequestIdFromOptimisticNodeId(node.id);
-      if (!clientRequestId) {
-        return node;
-      }
-
-      const resolvedRealId =
-        resolvedRealIdByClientRequestRef.current.get(clientRequestId);
-      if (!resolvedRealId) {
-        return node;
-      }
-
-      return {
-        ...node,
-        id: resolvedRealId,
-      };
-    },
-    [resolvedRealIdByClientRequestRef],
-  );
-
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      for (const change of changes) {
-        if (change.type === "dimensions") {
-          if (change.resizing === true) {
-            if (!resizeHistoryCapturedRef.current) {
-              resizeHistoryCapturedRef.current = true;
-              onHistoryCapture?.();
-            }
-            isResizing.current = true;
-          } else if (change.resizing === false) {
-            isResizing.current = false;
-            resizeHistoryCapturedRef.current = false;
-          }
-        }
-      }
+      updateResizeInteractionState(
+        changes,
+        isResizing,
+        resizeHistoryCapturedRef,
+        onHistoryCapture,
+      );
 
       const removedIds = new Set<string>();
       for (const change of changes) {
@@ -385,16 +250,11 @@ export function useCanvasNodeInteractions(args: {
         const adjustedChanges = adjustNodeDimensionChanges(changes, currentNodes);
         const nextNodes = applyNodeChanges(adjustedChanges, currentNodes);
 
-        for (const change of adjustedChanges) {
-          if (change.type !== "dimensions") continue;
-          if (!change.dimensions) continue;
-          if (removedIds.has(change.id)) continue;
-          if (change.resizing !== false) continue;
-
+        for (const resizeChange of computeResizeChangesToPersist(adjustedChanges, removedIds)) {
           void runResizeNodeMutation({
-            nodeId: change.id as Id<"nodes">,
-            width: change.dimensions.width,
-            height: change.dimensions.height,
+            nodeId: resizeChange.nodeId as Id<"nodes">,
+            width: resizeChange.width,
+            height: resizeChange.height,
           }).catch((error: unknown) => {
             if (process.env.NODE_ENV !== "production") {
               console.warn("[Canvas] resizeNode failed", error);
@@ -460,29 +320,23 @@ export function useCanvasNodeInteractions(args: {
         return;
       }
 
-      const intersectedEdge = edges.find(
-        (edge) =>
-          edge.id === intersectedEdgeId &&
-          edge.className !== "temp" &&
-          !isOptimisticEdgeId(edge.id),
-      );
+      const intersectedEdge = getSplitCandidateEdge(intersectedEdgeId, edges);
       if (!intersectedEdge) {
         clearHighlightedIntersectionEdge();
         return;
       }
 
-      const effectiveMiddleNode = getEffectiveSplitMiddleNode(node);
+      const effectiveMiddleNode = getEffectiveSplitMiddleNode(
+        node,
+        resolvedRealIdByClientRequestRef.current,
+      );
 
-      if (
-        intersectedEdge.source === effectiveMiddleNode.id ||
-        intersectedEdge.target === effectiveMiddleNode.id
-      ) {
+      if (edgeTouchesNode(intersectedEdge, effectiveMiddleNode.id)) {
         clearHighlightedIntersectionEdge();
         return;
       }
 
-      const handles = NODE_HANDLE_MAP[node.type ?? ""];
-      if (!hasHandleKey(handles, "source") || !hasHandleKey(handles, "target")) {
+      if (!getSplitHandlesForNode(node)) {
         clearHighlightedIntersectionEdge();
         return;
       }
@@ -493,8 +347,8 @@ export function useCanvasNodeInteractions(args: {
     [
       clearHighlightedIntersectionEdge,
       edges,
-      getEffectiveSplitMiddleNode,
       nodes,
+      resolvedRealIdByClientRequestRef,
       setHighlightedIntersectionEdge,
       setActiveGroupDropTarget,
     ],
@@ -513,15 +367,11 @@ export function useCanvasNodeInteractions(args: {
         }
 
         try {
-          const effectivePrimaryNode = getEffectiveSplitMiddleNode(primaryNode);
-          const intersectedEdge = intersectedEdgeId
-            ? edges.find(
-                (edge) =>
-                  edge.id === intersectedEdgeId &&
-                  edge.className !== "temp" &&
-                  !isOptimisticEdgeId(edge.id),
-              )
-            : undefined;
+          const effectivePrimaryNode = getEffectiveSplitMiddleNode(
+            primaryNode,
+            resolvedRealIdByClientRequestRef.current,
+          );
+          const intersectedEdge = getSplitCandidateEdge(intersectedEdgeId, edges);
 
           const finalDraggedNodes =
             draggedNodes.length > 0
@@ -541,31 +391,20 @@ export function useCanvasNodeInteractions(args: {
                 !nodes.some((candidate) => candidate.id === draggedNode.id),
             ),
           );
-          const parentChanges = finalDraggedNodes
-            .map((draggedNode) => {
-              const finalNode =
-                nodesWithFinalDraggedPositions.find(
-                  (candidate) => candidate.id === draggedNode.id,
-                ) ?? draggedNode;
-              return computeParentChangeForNode(
-                finalNode,
-                nodesWithFinalDraggedPositions,
-              );
-            })
-            .filter((change): change is ParentChange => change !== null);
+          const parentChanges = computeParentChangesForDraggedNodes(
+            finalDraggedNodes,
+            nodesWithFinalDraggedPositions,
+          );
           const parentChangedNodeIds = new Set(
             parentChanges.map((change) => change.nodeId),
           );
 
-          const splitHandles = NODE_HANDLE_MAP[primaryNode.type ?? ""];
+          const splitHandles = getSplitHandlesForNode(primaryNode);
           const splitEligible =
             parentChanges.length === 0 &&
             intersectedEdge !== undefined &&
-            splitHandles !== undefined &&
-            intersectedEdge.source !== effectivePrimaryNode.id &&
-            intersectedEdge.target !== effectivePrimaryNode.id &&
-            hasHandleKey(splitHandles, "source") &&
-            hasHandleKey(splitHandles, "target");
+            splitHandles !== null &&
+            !edgeTouchesNode(intersectedEdge, effectivePrimaryNode.id);
 
           const splitValidationError =
             splitEligible && intersectedEdge
@@ -647,7 +486,7 @@ export function useCanvasNodeInteractions(args: {
               });
             }
 
-            if (!canSplit || !intersectedEdge) {
+            if (!canSplit || !intersectedEdge || !splitHandles) {
               return;
             }
 
@@ -661,40 +500,29 @@ export function useCanvasNodeInteractions(args: {
               if (!resolvedId) {
                 pendingEdgeSplitByClientRequestRef.current.set(
                   multiClientRequestId,
-                  {
-                    intersectedEdgeId: intersectedEdge.id as Id<"edges">,
-                    sourceNodeId: intersectedEdge.source as Id<"nodes">,
-                    targetNodeId: intersectedEdge.target as Id<"nodes">,
-                    intersectedSourceHandle: normalizeHandle(
-                      intersectedEdge.sourceHandle,
-                    ),
-                    intersectedTargetHandle: normalizeHandle(
-                      intersectedEdge.targetHandle,
-                    ),
-                    middleSourceHandle: normalizeHandle(splitHandles.source),
-                    middleTargetHandle: normalizeHandle(splitHandles.target),
-                    positionX: primaryNode.position.x,
-                    positionY: primaryNode.position.y,
-                  },
+                  buildPendingEdgeSplit({
+                    intersectedEdge,
+                    splitHandles,
+                    position: primaryNode.position,
+                  }),
                 );
                 return;
               }
               middleId = resolvedId;
             }
 
-            await runSplitEdgeAtExistingNodeMutation({
-              canvasId,
-              splitEdgeId: intersectedEdge.id as Id<"edges">,
-              middleNodeId: middleId,
-              splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-              splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-              newNodeSourceHandle: normalizeHandle(splitHandles.source),
-              newNodeTargetHandle: normalizeHandle(splitHandles.target),
-            });
+            await runSplitEdgeAtExistingNodeMutation(
+              buildSplitEdgeAtExistingNodeArgs({
+                canvasId,
+                intersectedEdge,
+                middleNodeId: middleId,
+                splitHandles,
+              }),
+            );
             return;
           }
 
-          if (!canSplit || !intersectedEdge) {
+          if (!canSplit || !intersectedEdge || !splitHandles) {
             const singleClientRequestId = clientRequestIdFromOptimisticNodeId(
               primaryNode.id,
             );
@@ -728,47 +556,40 @@ export function useCanvasNodeInteractions(args: {
                 positionX: primaryNode.position.x,
                 positionY: primaryNode.position.y,
               });
-              pendingEdgeSplitByClientRequestRef.current.set(singleClientRequestId, {
-                intersectedEdgeId: intersectedEdge.id as Id<"edges">,
-                sourceNodeId: intersectedEdge.source as Id<"nodes">,
-                targetNodeId: intersectedEdge.target as Id<"nodes">,
-                intersectedSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-                intersectedTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-                middleSourceHandle: normalizeHandle(splitHandles.source),
-                middleTargetHandle: normalizeHandle(splitHandles.target),
-                positionX: primaryNode.position.x,
-                positionY: primaryNode.position.y,
-              });
+              pendingEdgeSplitByClientRequestRef.current.set(
+                singleClientRequestId,
+                buildPendingEdgeSplit({
+                  intersectedEdge,
+                  splitHandles,
+                  position: primaryNode.position,
+                }),
+              );
               await syncPendingMoveForClientRequest(singleClientRequestId);
               return;
             }
 
-            await runSplitEdgeAtExistingNodeMutation({
-              canvasId,
-              splitEdgeId: intersectedEdge.id as Id<"edges">,
-              middleNodeId: resolvedSingle,
-              splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-              splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-              newNodeSourceHandle: normalizeHandle(splitHandles.source),
-              newNodeTargetHandle: normalizeHandle(splitHandles.target),
-              positionX: primaryNode.position.x,
-              positionY: primaryNode.position.y,
-            });
+            await runSplitEdgeAtExistingNodeMutation(
+              buildSplitEdgeAtExistingNodeArgs({
+                canvasId,
+                intersectedEdge,
+                middleNodeId: resolvedSingle,
+                splitHandles,
+                position: primaryNode.position,
+              }),
+            );
             pendingMoveAfterCreateRef.current.delete(singleClientRequestId);
             return;
           }
 
-          await runSplitEdgeAtExistingNodeMutation({
-            canvasId,
-            splitEdgeId: intersectedEdge.id as Id<"edges">,
-            middleNodeId: primaryNode.id as Id<"nodes">,
-            splitSourceHandle: normalizeHandle(intersectedEdge.sourceHandle),
-            splitTargetHandle: normalizeHandle(intersectedEdge.targetHandle),
-            newNodeSourceHandle: normalizeHandle(splitHandles.source),
-            newNodeTargetHandle: normalizeHandle(splitHandles.target),
-            positionX: primaryNode.position.x,
-            positionY: primaryNode.position.y,
-          });
+          await runSplitEdgeAtExistingNodeMutation(
+            buildSplitEdgeAtExistingNodeArgs({
+              canvasId,
+              intersectedEdge,
+              middleNodeId: primaryNode.id as Id<"nodes">,
+              splitHandles,
+              position: primaryNode.position,
+            }),
+          );
         } catch (error) {
           console.error("[Canvas edge intersection split failed]", {
             canvasId,
@@ -794,7 +615,6 @@ export function useCanvasNodeInteractions(args: {
       onInvalidConnection,
       pendingEdgeSplitByClientRequestRef,
       pendingMoveAfterCreateRef,
-      getEffectiveSplitMiddleNode,
       resolvedRealIdByClientRequestRef,
       runBatchMoveNodesMutation,
       runMoveNodeMutation,

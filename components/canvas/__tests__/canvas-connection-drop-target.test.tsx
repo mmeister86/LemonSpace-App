@@ -3,7 +3,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
-import { resolveDroppedConnectionTarget } from "@/components/canvas/canvas-helpers";
+import {
+  resolveConnectionDropTarget,
+  resolveDroppedConnectionTarget,
+  toDroppedConnectionFromMagnetTarget,
+} from "@/components/canvas/canvas-connection-drop-target";
 
 function createNode(overrides: Partial<RFNode> & Pick<RFNode, "id">): RFNode {
   return {
@@ -405,6 +409,65 @@ describe("resolveDroppedConnectionTarget", () => {
       targetNodeId: "node-compare-target",
       sourceHandle: "compare-out",
       targetHandle: "left",
+    });
+  });
+
+  it("converts an active magnet target into a dropped connection fallback", () => {
+    expect(
+      toDroppedConnectionFromMagnetTarget("source", "node-source", "source-out", {
+        nodeId: "node-target",
+        handleId: "target-in",
+        handleType: "target",
+        centerX: 120,
+        centerY: 80,
+        distancePx: 8,
+      }),
+    ).toEqual({
+      sourceNodeId: "node-source",
+      targetNodeId: "node-target",
+      sourceHandle: "source-out",
+      targetHandle: "target-in",
+    });
+  });
+
+  it("uses active magnet target when direct drop target resolution misses", () => {
+    const sourceNode = createNode({
+      id: "node-source",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const targetNode = createNode({
+      id: "node-target",
+      type: "text",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    const result = resolveConnectionDropTarget({
+      point: { x: 340, y: 220 },
+      fromNodeId: "node-source",
+      fromHandleId: "source-out",
+      fromHandleType: "source",
+      nodes: [sourceNode, targetNode],
+      edges: [],
+      activeMagnetTarget: {
+        nodeId: "node-target",
+        handleId: undefined,
+        handleType: "target",
+        centerX: 340,
+        centerY: 220,
+        distancePx: 4,
+      },
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "node-source",
+      targetNodeId: "node-target",
+      sourceHandle: "source-out",
+      targetHandle: undefined,
     });
   });
 });

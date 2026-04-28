@@ -37,6 +37,317 @@ import {
 const ALLOWED_DROPPED_VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const MAX_DROPPED_VIDEO_BYTES = 100 * 1024 * 1024;
 
+type DroppedImageDimensions = { width: number; height: number };
+type DroppedVideoMetadata = DroppedImageDimensions & { durationSeconds: number };
+type DroppedImagePreviewUpload = {
+  previewStorageId: string;
+  previewWidth: number;
+  previewHeight: number;
+};
+
+type UploadedMediaRegistrationArgs = {
+  canvasId: Id<"canvases">;
+  nodeId?: Id<"nodes">;
+  storageId: Id<"_storage">;
+  filename?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+};
+
+type RegisterUploadedMedia = (
+  args: UploadedMediaRegistrationArgs,
+) => Promise<{ ok: true }>;
+
+type MediaNodeData = Record<string, unknown>;
+
+export function createDroppedImageMetadata({
+  canvasId,
+  file,
+  dimensions,
+  previewUpload,
+  storageId,
+}: {
+  canvasId: Id<"canvases">;
+  file: File;
+  dimensions?: DroppedImageDimensions;
+  previewUpload?: DroppedImagePreviewUpload;
+  storageId: string;
+}): MediaNodeData {
+  return {
+    storageId,
+    ...(previewUpload ?? {}),
+    filename: file.name,
+    mimeType: file.type,
+    canvasId,
+    ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
+  };
+}
+
+export function createDroppedVideoMetadata({
+  canvasId,
+  file,
+  metadata,
+  storageId,
+}: {
+  canvasId: Id<"canvases">;
+  file: File;
+  metadata?: DroppedVideoMetadata;
+  storageId: string;
+}): MediaNodeData {
+  return {
+    storageId,
+    filename: file.name,
+    mimeType: file.type,
+    canvasId,
+    ...(metadata
+      ? {
+          width: metadata.width,
+          height: metadata.height,
+          durationSeconds: metadata.durationSeconds,
+        }
+      : {}),
+  };
+}
+
+function createInitialDroppedMediaData({
+  canvasId,
+  file,
+}: {
+  canvasId: Id<"canvases">;
+  file: File;
+}): MediaNodeData {
+  return {
+    filename: file.name,
+    mimeType: file.type,
+    canvasId,
+    _uploadState: "uploading",
+  };
+}
+
+async function uploadFileToStorage({
+  file,
+  generateUploadUrl,
+  contentType = file.type,
+}: {
+  file: Blob;
+  generateUploadUrl: () => Promise<string>;
+  contentType?: string;
+}): Promise<string> {
+  const uploadUrl = await generateUploadUrl();
+  const result = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": contentType },
+    body: file,
+  });
+
+  if (!result.ok) {
+    throw new Error("Upload failed");
+  }
+
+  const { storageId } = (await result.json()) as { storageId: string };
+  return storageId;
+}
+
+function mergeOptimisticMediaNodeData({
+  getNode,
+  optimisticNodeId,
+  initialNodeData,
+  patch,
+  removeUploadState,
+}: {
+  getNode: (id: string) => { data?: unknown } | undefined;
+  optimisticNodeId: Id<"nodes">;
+  initialNodeData: MediaNodeData;
+  patch?: MediaNodeData;
+  removeUploadState?: boolean;
+}): MediaNodeData {
+  const latestNodeData =
+    (getNode(optimisticNodeId as string)?.data as MediaNodeData | undefined) ??
+    initialNodeData;
+  const nextData: MediaNodeData = {
+    ...latestNodeData,
+    ...(patch ?? {}),
+  };
+
+  if (removeUploadState) {
+    delete nextData._uploadState;
+  }
+
+  return nextData;
+}
+
+function createMediaRegistrationArgs({
+  canvasId,
+  nodeId,
+  storageId,
+  file,
+  dimensions,
+  durationSeconds,
+}: {
+  canvasId: Id<"canvases">;
+  nodeId?: Id<"nodes">;
+  storageId: string;
+  file: File;
+  dimensions?: DroppedImageDimensions;
+  durationSeconds?: number;
+}): UploadedMediaRegistrationArgs {
+  return {
+    canvasId,
+    nodeId,
+    storageId: storageId as Id<"_storage">,
+    filename: file.name,
+    mimeType: file.type,
+    width: dimensions?.width,
+    height: dimensions?.height,
+    durationSeconds,
+  };
+}
+
+async function uploadDroppedMediaNode({
+  canvasId,
+  file,
+  type,
+  position,
+  clientRequestId,
+  optimisticNodeId,
+  initialNodeData,
+  getNode,
+  generateUploadUrl,
+  runCreateNodeOnlineOnly,
+  queueNodeDataUpdate,
+  queueNodeResize,
+  syncPendingMoveForClientRequest,
+  readMetadata,
+  buildNodeData,
+  registerUploadedMedia,
+  getRegistrationDetails,
+  syncErrorMessage,
+  registrationWarningMessage,
+}: {
+  canvasId: Id<"canvases">;
+  file: File;
+  type: "image" | "video";
+  position: { x: number; y: number };
+  clientRequestId: string;
+  optimisticNodeId: Id<"nodes">;
+  initialNodeData: MediaNodeData;
+  getNode: (id: string) => { data?: unknown } | undefined;
+  generateUploadUrl: () => Promise<string>;
+  runCreateNodeOnlineOnly: UseCanvasDropParams["runCreateNodeOnlineOnly"];
+  queueNodeDataUpdate: UseCanvasDropParams["queueNodeDataUpdate"];
+  queueNodeResize: UseCanvasDropParams["queueNodeResize"];
+  syncPendingMoveForClientRequest: UseCanvasDropParams["syncPendingMoveForClientRequest"];
+  readMetadata: () => Promise<DroppedImageDimensions | DroppedVideoMetadata | undefined>;
+  buildNodeData: (args: {
+    storageId: string;
+    metadata?: DroppedImageDimensions | DroppedVideoMetadata;
+  }) => Promise<MediaNodeData>;
+  registerUploadedMedia?: RegisterUploadedMedia;
+  getRegistrationDetails: (
+    metadata?: DroppedImageDimensions | DroppedVideoMetadata,
+  ) => { dimensions?: DroppedImageDimensions; durationSeconds?: number };
+  syncErrorMessage: string;
+  registrationWarningMessage: string;
+}): Promise<void> {
+  const createNodePromise = runCreateNodeOnlineOnly({
+    canvasId,
+    type,
+    positionX: position.x,
+    positionY: position.y,
+    width: NODE_DEFAULTS[type].width,
+    height: NODE_DEFAULTS[type].height,
+    data: initialNodeData,
+    clientRequestId,
+  });
+
+  void createNodePromise
+    .then((realId) => {
+      void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
+        (error: unknown) => {
+          console.error(syncErrorMessage, error);
+        },
+      );
+    })
+    .catch(() => undefined);
+
+  const metadata = await readMetadata();
+  const storageId = await uploadFileToStorage({ file, generateUploadUrl });
+  const uploadedNodeData = await buildNodeData({ storageId, metadata });
+
+  await queueNodeDataUpdate({
+    nodeId: optimisticNodeId,
+    data: mergeOptimisticMediaNodeData({
+      getNode,
+      optimisticNodeId,
+      initialNodeData,
+      patch: {
+        ...uploadedNodeData,
+        _uploadState: "resolving-url",
+      },
+    }),
+  });
+
+  if (metadata) {
+    const targetSize = computeMediaNodeSize(type, {
+      intrinsicWidth: metadata.width,
+      intrinsicHeight: metadata.height,
+    });
+
+    await queueNodeResize({
+      nodeId: optimisticNodeId,
+      width: targetSize.width,
+      height: targetSize.height,
+    });
+  }
+
+  void createNodePromise
+    .then((realId) => {
+      invalidateDashboardSnapshotForLastSignedInUser();
+      emitDashboardSnapshotCacheInvalidationSignal();
+
+      if (!registerUploadedMedia) {
+        return;
+      }
+
+      const registrationDetails = getRegistrationDetails(metadata);
+      return registerUploadedMedia(
+        createMediaRegistrationArgs({
+          canvasId,
+          nodeId: realId,
+          storageId,
+          file,
+          ...registrationDetails,
+        }),
+      ).catch((error: unknown) => {
+        console.warn(registrationWarningMessage, error);
+      });
+    })
+    .catch(() => {
+      if (!registerUploadedMedia) {
+        return;
+      }
+
+      const registrationDetails = getRegistrationDetails(metadata);
+      return registerUploadedMedia(
+        createMediaRegistrationArgs({
+          canvasId,
+          storageId,
+          file,
+          ...registrationDetails,
+        }),
+      )
+        .then(() => {
+          invalidateDashboardSnapshotForLastSignedInUser();
+          emitDashboardSnapshotCacheInvalidationSignal();
+        })
+        .catch((error: unknown) => {
+          console.warn(registrationWarningMessage, error);
+        });
+    });
+}
+
 type UseCanvasDropParams = {
   canvasId: Id<"canvases">;
   isSyncOnline: boolean;
@@ -178,12 +489,7 @@ export function useCanvasDrop({
           if (file.type.startsWith("image/")) {
             const clientRequestId = crypto.randomUUID();
             const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}` as Id<"nodes">;
-            const initialNodeData = {
-              filename: file.name,
-              mimeType: file.type,
-              canvasId,
-              _uploadState: "uploading",
-            } satisfies Record<string, unknown>;
+            const initialNodeData = createInitialDroppedMediaData({ canvasId, file });
 
             try {
               const position = screenToFlowPosition({
@@ -191,184 +497,69 @@ export function useCanvasDrop({
                 y: event.clientY,
               });
 
-              const createNodePromise = runCreateNodeOnlineOnly({
+              await uploadDroppedMediaNode({
                 canvasId,
+                file,
                 type: "image",
-                positionX: position.x,
-                positionY: position.y,
-                width: NODE_DEFAULTS.image.width,
-                height: NODE_DEFAULTS.image.height,
-                data: initialNodeData,
+                position,
                 clientRequestId,
-              });
-
-              void createNodePromise
-                .then((realId) => {
-                  void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-                    (error: unknown) => {
-                      console.error("[Canvas] drop createNode syncPendingMove failed", error);
-                    },
-                  );
-                })
-                .catch(() => undefined);
-
-              let dimensions: { width: number; height: number } | undefined;
-              let previewUpload:
-                | {
-                    previewStorageId: string;
-                    previewWidth: number;
-                    previewHeight: number;
+                optimisticNodeId,
+                initialNodeData,
+                getNode,
+                generateUploadUrl,
+                runCreateNodeOnlineOnly,
+                queueNodeDataUpdate,
+                queueNodeResize,
+                syncPendingMoveForClientRequest,
+                readMetadata: async () => {
+                  try {
+                    return await getImageDimensions(file);
+                  } catch {
+                    return undefined;
                   }
-                | undefined;
+                },
+                buildNodeData: async ({ storageId, metadata }) => {
+                  let previewUpload: DroppedImagePreviewUpload | undefined;
 
-              const currentNodeData =
-                (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                initialNodeData;
-
-              const mergeNodeData = (
-                patch: Record<string, unknown>,
-                options?: { removeUploadState?: boolean },
-              ) => {
-                const latestNodeData =
-                  (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                  currentNodeData;
-                const nextData: Record<string, unknown> = {
-                  ...latestNodeData,
-                  ...patch,
-                };
-
-                if (options?.removeUploadState) {
-                  delete nextData._uploadState;
-                }
-
-                return nextData;
-              };
-
-              try {
-                dimensions = await getImageDimensions(file);
-              } catch {
-                dimensions = undefined;
-              }
-
-              const uploadUrl = await generateUploadUrl();
-              const result = await fetch(uploadUrl, {
-                method: "POST",
-                headers: { "Content-Type": file.type },
-                body: file,
-              });
-
-              if (!result.ok) {
-                throw new Error("Upload failed");
-              }
-
-              const { storageId } = (await result.json()) as { storageId: string };
-
-              try {
-                const preview = await createCompressedImagePreview(file);
-                const previewUploadUrl = await generateUploadUrl();
-                const previewUploadResult = await fetch(previewUploadUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": preview.blob.type || "image/webp" },
-                  body: preview.blob,
-                });
-
-                if (!previewUploadResult.ok) {
-                  throw new Error("Preview upload failed");
-                }
-
-                const { storageId: previewStorageId } =
-                  (await previewUploadResult.json()) as { storageId: string };
-                previewUpload = {
-                  previewStorageId,
-                  previewWidth: preview.width,
-                  previewHeight: preview.height,
-                };
-              } catch (previewError) {
-                console.warn("[Canvas] dropped image preview generation/upload failed", previewError);
-              }
-
-              await queueNodeDataUpdate({
-                nodeId: optimisticNodeId,
-                data: mergeNodeData({
-                  storageId,
-                  ...(previewUpload ?? {}),
-                  filename: file.name,
-                  mimeType: file.type,
-                  ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
-                  _uploadState: "resolving-url",
-                }),
-              });
-
-              if (dimensions) {
-                const targetSize = computeMediaNodeSize("image", {
-                  intrinsicWidth: dimensions.width,
-                  intrinsicHeight: dimensions.height,
-                });
-
-                await queueNodeResize({
-                  nodeId: optimisticNodeId,
-                  width: targetSize.width,
-                  height: targetSize.height,
-                });
-              }
-
-              void createNodePromise
-                .then((realId) => {
-                  invalidateDashboardSnapshotForLastSignedInUser();
-                  emitDashboardSnapshotCacheInvalidationSignal();
-
-                  if (!registerUploadedImageMedia) {
-                    return;
-                  }
-
-                  return registerUploadedImageMedia({
-                    canvasId,
-                    nodeId: realId,
-                    storageId: storageId as Id<"_storage">,
-                    filename: file.name,
-                    mimeType: file.type,
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  }).catch((error: unknown) => {
-                    console.warn("[Canvas] dropped image media registration failed", error);
-                  });
-                })
-                .catch(() => {
-                  if (!registerUploadedImageMedia) {
-                    return;
-                  }
-
-                  return registerUploadedImageMedia({
-                    canvasId,
-                    storageId: storageId as Id<"_storage">,
-                    filename: file.name,
-                    mimeType: file.type,
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  })
-                    .then(() => {
-                      invalidateDashboardSnapshotForLastSignedInUser();
-                      emitDashboardSnapshotCacheInvalidationSignal();
-                    })
-                    .catch((error: unknown) => {
-                      console.warn("[Canvas] dropped image media registration failed", error);
+                  try {
+                    const preview = await createCompressedImagePreview(file);
+                    const previewStorageId = await uploadFileToStorage({
+                      file: preview.blob,
+                      generateUploadUrl,
+                      contentType: preview.blob.type || "image/webp",
                     });
-                });
+                    previewUpload = {
+                      previewStorageId,
+                      previewWidth: preview.width,
+                      previewHeight: preview.height,
+                    };
+                  } catch (previewError) {
+                    console.warn("[Canvas] dropped image preview generation/upload failed", previewError);
+                  }
+
+                  return createDroppedImageMetadata({
+                    canvasId,
+                    file,
+                    dimensions: metadata,
+                    previewUpload,
+                    storageId,
+                  });
+                },
+                registerUploadedMedia: registerUploadedImageMedia,
+                getRegistrationDetails: (metadata) => ({ dimensions: metadata }),
+                syncErrorMessage: "[Canvas] drop createNode syncPendingMove failed",
+                registrationWarningMessage: "[Canvas] dropped image media registration failed",
+              });
             } catch (error) {
               console.error("Failed to upload dropped file:", error);
               void queueNodeDataUpdate({
                 nodeId: optimisticNodeId,
-                data:
-                  (() => {
-                    const latestNodeData =
-                      (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                      initialNodeData;
-                    const nextData = {
-                      ...latestNodeData,
-                    };
-                    delete nextData._uploadState;
-                    return nextData;
-                  })(),
+                data: mergeOptimisticMediaNodeData({
+                  getNode,
+                  optimisticNodeId,
+                  initialNodeData,
+                  removeUploadState: true,
+                }),
               }).catch((updateError: unknown) => {
                 console.warn("[Canvas] drop upload cleanup failed", updateError);
               });
@@ -396,12 +587,7 @@ export function useCanvasDrop({
 
             const clientRequestId = crypto.randomUUID();
             const optimisticNodeId = `${OPTIMISTIC_NODE_PREFIX}${clientRequestId}` as Id<"nodes">;
-            const initialNodeData = {
-              filename: file.name,
-              mimeType: file.type,
-              canvasId,
-              _uploadState: "uploading",
-            } satisfies Record<string, unknown>;
+            const initialNodeData = createInitialDroppedMediaData({ canvasId, file });
 
             try {
               const position = screenToFlowPosition({
@@ -409,161 +595,52 @@ export function useCanvasDrop({
                 y: event.clientY,
               });
 
-              const createNodePromise = runCreateNodeOnlineOnly({
+              await uploadDroppedMediaNode({
                 canvasId,
+                file,
                 type: "video",
-                positionX: position.x,
-                positionY: position.y,
-                width: NODE_DEFAULTS.video.width,
-                height: NODE_DEFAULTS.video.height,
-                data: initialNodeData,
+                position,
                 clientRequestId,
-              });
-
-              void createNodePromise
-                .then((realId) => {
-                  void syncPendingMoveForClientRequest(clientRequestId, realId).catch(
-                    (error: unknown) => {
-                      console.error("[Canvas] drop video createNode syncPendingMove failed", error);
-                    },
-                  );
-                })
-                .catch(() => undefined);
-
-              let metadata:
-                | { width: number; height: number; durationSeconds: number }
-                | undefined;
-              const currentNodeData =
-                (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                initialNodeData;
-
-              const mergeNodeData = (
-                patch: Record<string, unknown>,
-                options?: { removeUploadState?: boolean },
-              ) => {
-                const latestNodeData =
-                  (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                  currentNodeData;
-                const nextData: Record<string, unknown> = {
-                  ...latestNodeData,
-                  ...patch,
-                };
-
-                if (options?.removeUploadState) {
-                  delete nextData._uploadState;
-                }
-
-                return nextData;
-              };
-
-              try {
-                metadata = await getVideoMetadata(file);
-              } catch {
-                metadata = undefined;
-              }
-
-              const uploadUrl = await generateUploadUrl();
-              const result = await fetch(uploadUrl, {
-                method: "POST",
-                headers: { "Content-Type": file.type },
-                body: file,
-              });
-
-              if (!result.ok) {
-                throw new Error("Upload failed");
-              }
-
-              const { storageId } = (await result.json()) as { storageId: string };
-
-              await queueNodeDataUpdate({
-                nodeId: optimisticNodeId,
-                data: mergeNodeData({
-                  storageId,
-                  filename: file.name,
-                  mimeType: file.type,
-                  ...(metadata
-                    ? {
-                        width: metadata.width,
-                        height: metadata.height,
-                        durationSeconds: metadata.durationSeconds,
-                      }
-                    : {}),
-                  _uploadState: "resolving-url",
+                optimisticNodeId,
+                initialNodeData,
+                getNode,
+                generateUploadUrl,
+                runCreateNodeOnlineOnly,
+                queueNodeDataUpdate,
+                queueNodeResize,
+                syncPendingMoveForClientRequest,
+                readMetadata: async () => {
+                  try {
+                    return await getVideoMetadata(file);
+                  } catch {
+                    return undefined;
+                  }
+                },
+                buildNodeData: async ({ storageId, metadata }) =>
+                  createDroppedVideoMetadata({
+                    canvasId,
+                    file,
+                    metadata: metadata as DroppedVideoMetadata | undefined,
+                    storageId,
+                  }),
+                registerUploadedMedia: registerUploadedVideoMedia,
+                getRegistrationDetails: (metadata) => ({
+                  dimensions: metadata,
+                  durationSeconds: (metadata as DroppedVideoMetadata | undefined)?.durationSeconds,
                 }),
+                syncErrorMessage: "[Canvas] drop video createNode syncPendingMove failed",
+                registrationWarningMessage: "[Canvas] dropped video media registration failed",
               });
-
-              if (metadata) {
-                const targetSize = computeMediaNodeSize("video", {
-                  intrinsicWidth: metadata.width,
-                  intrinsicHeight: metadata.height,
-                });
-
-                await queueNodeResize({
-                  nodeId: optimisticNodeId,
-                  width: targetSize.width,
-                  height: targetSize.height,
-                });
-              }
-
-              void createNodePromise
-                .then((realId) => {
-                  invalidateDashboardSnapshotForLastSignedInUser();
-                  emitDashboardSnapshotCacheInvalidationSignal();
-
-                  if (!registerUploadedVideoMedia) {
-                    return;
-                  }
-
-                  return registerUploadedVideoMedia({
-                    canvasId,
-                    nodeId: realId,
-                    storageId: storageId as Id<"_storage">,
-                    filename: file.name,
-                    mimeType: file.type,
-                    width: metadata?.width,
-                    height: metadata?.height,
-                    durationSeconds: metadata?.durationSeconds,
-                  }).catch((error: unknown) => {
-                    console.warn("[Canvas] dropped video media registration failed", error);
-                  });
-                })
-                .catch(() => {
-                  if (!registerUploadedVideoMedia) {
-                    return;
-                  }
-
-                  return registerUploadedVideoMedia({
-                    canvasId,
-                    storageId: storageId as Id<"_storage">,
-                    filename: file.name,
-                    mimeType: file.type,
-                    width: metadata?.width,
-                    height: metadata?.height,
-                    durationSeconds: metadata?.durationSeconds,
-                  })
-                    .then(() => {
-                      invalidateDashboardSnapshotForLastSignedInUser();
-                      emitDashboardSnapshotCacheInvalidationSignal();
-                    })
-                    .catch((error: unknown) => {
-                      console.warn("[Canvas] dropped video media registration failed", error);
-                    });
-                });
             } catch (error) {
               console.error("Failed to upload dropped video:", error);
               void queueNodeDataUpdate({
                 nodeId: optimisticNodeId,
-                data:
-                  (() => {
-                    const latestNodeData =
-                      (getNode(optimisticNodeId as string)?.data as Record<string, unknown> | undefined) ??
-                      initialNodeData;
-                    const nextData = {
-                      ...latestNodeData,
-                    };
-                    delete nextData._uploadState;
-                    return nextData;
-                  })(),
+                data: mergeOptimisticMediaNodeData({
+                  getNode,
+                  optimisticNodeId,
+                  initialNodeData,
+                  removeUploadState: true,
+                }),
               }).catch((updateError: unknown) => {
                 console.warn("[Canvas] drop video upload cleanup failed", updateError);
               });
