@@ -1,11 +1,11 @@
 ---
 id: TASK-008
 title: Split canvas connection flow
-status: To Do
+status: Done
 assignee:
   - Kilo
 created_date: '2026-04-27 14:27'
-updated_date: '2026-04-27 14:27'
+updated_date: '2026-04-28 10:10'
 labels:
   - canvas
   - connections
@@ -23,10 +23,10 @@ Split `components/canvas/use-canvas-connections.ts` into smaller helpers for dro
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Connection drop target resolution is isolated and testable.
-- [ ] #2 Adjustment auto-split logic is isolated from hook state wiring.
-- [ ] #3 Connection menu node creation actions are isolated.
-- [ ] #4 Existing connection policy and connection hook tests pass.
+- [x] #1 Connection drop target resolution is isolated and testable.
+- [x] #2 Adjustment auto-split logic is isolated from hook state wiring.
+- [x] #3 Connection menu node creation actions are isolated.
+- [x] #4 Existing connection policy and connection hook tests pass.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,3 +39,18 @@ Split `components/canvas/use-canvas-connections.ts` into smaller helpers for dro
 5. Keep `useCanvasConnections` as the orchestration layer.
 6. Run `npm test -- tests/canvas-connection-policy.test.ts tests/canvas-connection-validation.test.ts components/canvas/__tests__/use-canvas-connections.test.tsx` and `npm run lint`.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Extracted drop target and magnet fallback conversion into `components/canvas/canvas-connection-drop-target.ts`.
+- Extracted adjustment auto-split resolution into `components/canvas/canvas-connection-auto-split.ts`.
+- Extracted connection drop-menu node action construction and settle behavior into `components/canvas/canvas-connection-drop-menu-actions.ts`.
+- Added helper-level tests and included them in `vitest.config.ts`.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`useCanvasConnections` remains the exported orchestration hook while drop target resolution, magnet fallback conversion, adjustment auto-split resolution, and drop-menu node creation actions are now isolated in focused helpers with tests. Required connection tests pass; lint completes with pre-existing warnings only.
+<!-- SECTION:FINAL_SUMMARY:END -->

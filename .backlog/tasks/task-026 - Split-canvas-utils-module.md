@@ -1,11 +1,11 @@
 ---
 id: TASK-026
 title: Split canvas utils module
-status: To Do
+status: Done
 assignee:
   - Kilo
 created_date: '2026-04-27 14:27'
-updated_date: '2026-04-27 14:27'
+updated_date: '2026-04-28 09:53'
 labels:
   - lib
   - canvas
@@ -24,11 +24,11 @@ Split `lib/canvas-utils.ts` into focused modules for Convex/React Flow adapters,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 React Flow adapter functions are isolated.
-- [ ] #2 Handle accent/glow style helpers are isolated.
-- [ ] #3 Node defaults align with node templates and remain available to current callers.
-- [ ] #4 Bridge-edge logic is isolated and tested.
-- [ ] #5 Existing canvas utility tests pass.
+- [x] #1 React Flow adapter functions are isolated.
+- [x] #2 Handle accent/glow style helpers are isolated.
+- [x] #3 Node defaults align with node templates and remain available to current callers.
+- [x] #4 Bridge-edge logic is isolated and tested.
+- [x] #5 Existing canvas utility tests pass.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -42,3 +42,17 @@ Split `lib/canvas-utils.ts` into focused modules for Convex/React Flow adapters,
 6. Preserve old imports through re-exports or update all consumers in one task.
 7. Run `npm test -- components/canvas/__tests__/canvas-helpers.test.ts tests/canvas-connection-policy.test.ts` and `npm run lint`.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Split `lib/canvas-utils.ts` into `canvas-rf-adapters`, `canvas-handle-style`, `canvas-node-defaults`, and `canvas-bridge-edges`.
+- Kept `lib/canvas-utils.ts` as a compatibility facade so current callers continue to work unchanged.
+- Added `tests/lib/canvas-utils-modules.test.ts` to cover direct module imports plus facade parity, including bridge-edge creation.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+TASK-026 completed. Canvas utility responsibilities are isolated into focused modules, legacy exports remain available via the facade, and targeted canvas utility/helper tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

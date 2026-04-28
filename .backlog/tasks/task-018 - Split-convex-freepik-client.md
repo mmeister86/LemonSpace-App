@@ -1,11 +1,11 @@
 ---
 id: TASK-018
 title: Split Convex Freepik client
-status: To Do
+status: Done
 assignee:
   - Kilo
 created_date: '2026-04-27 14:27'
-updated_date: '2026-04-27 14:27'
+updated_date: '2026-04-28 09:56'
 labels:
   - convex
   - freepik
@@ -24,10 +24,10 @@ Split `convex/freepik.ts` into base HTTP client, task parsing, transform endpoin
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 HTTP request/error mapping code is isolated.
-- [ ] #2 Task ID/status parsing is shared by video and image transforms.
-- [ ] #3 Transform endpoint helpers are separated from asset search.
-- [ ] #4 Existing Freepik tests pass.
+- [x] #1 HTTP request/error mapping code is isolated.
+- [x] #2 Task ID/status parsing is shared by video and image transforms.
+- [x] #3 Transform endpoint helpers are separated from asset search.
+- [x] #4 Existing Freepik tests pass.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,3 +39,19 @@ Split `convex/freepik.ts` into base HTTP client, task parsing, transform endpoin
 4. Create transform-specific helper module(s) and keep public action exports stable.
 5. Run `npm test -- tests/convex/freepik-video-client.test.ts tests/convex/image-transforms.test.ts` and `npm run lint`.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Split `convex/freepik.ts` into a stable public facade plus `freepik_client.ts`, `freepik_tasks.ts`, `freepik_transforms.ts`, and `freepik_search.ts`.
+- Kept public imports from `@/convex/freepik` stable for video creation/status/downloads, image transforms, error mapping, and asset search.
+- `npm test -- tests/convex/freepik-video-client.test.ts tests/convex/image-transforms.test.ts` passes.
+- `npm run lint` completes with warnings only from unrelated existing files.
+- `npx tsc --noEmit` remains blocked by unrelated existing repository type errors outside the Freepik modules.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Completed the Freepik client modularization while preserving the `convex/freepik.ts` public surface. HTTP requests, retries, downloads, and error mapping now live in `freepik_client.ts`; shared task ID/status parsing lives in `freepik_tasks.ts`; image transform endpoints live in `freepik_transforms.ts`; and asset search mapping lives in `freepik_search.ts` behind the existing `freepik.search` action export.
+<!-- SECTION:FINAL_SUMMARY:END -->
