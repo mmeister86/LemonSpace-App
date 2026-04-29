@@ -27,6 +27,7 @@ import ChangeCameraNode from "./nodes/change-camera-node";
 import AgentNode from "./nodes/agent-node";
 import AgentOutputNode from "./nodes/agent-output-node";
 import MixerNode from "./nodes/mixer-node";
+import CommentNode from "./nodes/comment-node";
 
 /**
  * Node-Type-Map für React Flow.
@@ -65,4 +66,5 @@ export const nodeTypes = {
   agent: AgentNode,
   mixer: MixerNode,
   "agent-output": AgentOutputNode,
+  comment: CommentNode,
 } as const;

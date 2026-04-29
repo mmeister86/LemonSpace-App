@@ -257,6 +257,53 @@ describe("useCanvasDrop", () => {
     expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-1");
   });
 
+  it("creates a comment node from a raw sidebar node type drop", async () => {
+    const runCreateNodeOnlineOnly = vi.fn(async () => "node-comment");
+    const syncPendingMoveForClientRequest = vi.fn(async () => undefined);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          runCreateNodeOnlineOnly={runCreateNodeOnlineOnly}
+          syncPendingMoveForClientRequest={syncPendingMoveForClientRequest}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHandlersRef.current?.onDrop({
+        preventDefault: vi.fn(),
+        clientX: 120,
+        clientY: 340,
+        dataTransfer: {
+          getData: vi.fn((type: string) =>
+            type === CANVAS_NODE_DND_MIME ? "comment" : "",
+          ),
+          files: [],
+        },
+      } as unknown as React.DragEvent);
+    });
+
+    expect(runCreateNodeOnlineOnly).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      type: "comment",
+      positionX: 120,
+      positionY: 340,
+      width: NODE_DEFAULTS.comment.width,
+      height: NODE_DEFAULTS.comment.height,
+      data: {
+        ...NODE_DEFAULTS.comment.data,
+        canvasId: "canvas-1",
+      },
+      clientRequestId: "req-1",
+    });
+    expect(syncPendingMoveForClientRequest).toHaveBeenCalledWith("req-1", "node-comment");
+  });
+
   it("creates an image node from a dropped image file", async () => {
     const generateUploadUrl = vi.fn(async () => "https://upload.test");
     const registerUploadedImageMedia = vi.fn(async () => ({ ok: true as const }));

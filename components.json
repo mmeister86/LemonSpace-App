@@ -23,6 +23,7 @@
   },
   "registries": {
     "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
-    "@magicui": "https://magicui.design/r/{name}"
+    "@magicui": "https://magicui.design/r/{name}",
+    "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json"
   }
 }

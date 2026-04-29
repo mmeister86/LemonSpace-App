@@ -60,6 +60,18 @@ export const NODE_DEFAULTS: Record<
     data: { label: "Frame", resolution: "1080x1080" },
   },
   note: { width: 208, height: 100, data: { content: "" } },
+  comment: {
+    width: 300,
+    height: 220,
+    data: {
+      resolved: false,
+      content: {
+        version: 1,
+        blocks: [{ id: "comment-root", type: "paragraph", tokens: [] }],
+      },
+      replies: [],
+    },
+  },
   compare: { width: 500, height: 380, data: {} },
   asset: { width: 260, height: 240, data: {} },
   video: { width: 320, height: 180, data: {} },

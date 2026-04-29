@@ -80,6 +80,20 @@ export const CANVAS_NODE_TEMPLATES = [
     defaultData: { content: "" },
   },
   {
+    type: "comment",
+    label: "Kommentar",
+    width: 300,
+    height: 220,
+    defaultData: {
+      resolved: false,
+      content: {
+        version: 1,
+        blocks: [{ id: "comment-root", type: "paragraph", tokens: [] }],
+      },
+      replies: [],
+    },
+  },
+  {
     type: "frame",
     label: "Frame",
     width: 360,

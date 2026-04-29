@@ -175,6 +175,34 @@ describe("resolveDroppedConnectionTarget", () => {
     });
   });
 
+  it("does not resolve body drops onto non-connectable comment nodes", () => {
+    const sourceNode = createNode({
+      id: "node-source",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const commentNode = createNode({
+      id: "node-comment",
+      type: "comment",
+      position: { x: 320, y: 200 },
+    });
+    const commentElement = makeNodeElement("node-comment");
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => [commentElement]),
+      configurable: true,
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 340, y: 220 },
+      fromNodeId: "node-source",
+      fromHandleType: "source",
+      nodes: [sourceNode, commentNode],
+      edges: [],
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("resolves nearest valid target handle even without a node body hit", () => {
     const sourceNode = createNode({
       id: "node-source",

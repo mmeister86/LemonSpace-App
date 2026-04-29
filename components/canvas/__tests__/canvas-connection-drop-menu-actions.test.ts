@@ -22,6 +22,17 @@ function getMixerTemplate(): Extract<CanvasNodeTemplate, { type: "mixer" }> {
   return template;
 }
 
+function getCommentTemplate(): Extract<CanvasNodeTemplate, { type: "comment" }> {
+  const template = CANVAS_NODE_TEMPLATES.find(
+    (candidate): candidate is Extract<CanvasNodeTemplate, { type: "comment" }> =>
+      candidate.type === "comment",
+  );
+  if (!template) {
+    throw new Error("Comment template missing");
+  }
+  return template;
+}
+
 describe("connection drop-menu node actions", () => {
   it("builds a source-to-new-node action with defaults, template data, and validation", () => {
     const fromNode: RFNode = {
@@ -90,6 +101,32 @@ describe("connection drop-menu node actions", () => {
     });
 
     expect(action).toEqual({ validationError: "mixer-source-invalid" });
+  });
+
+  it("rejects non-connectable comment nodes from connection-created placement", () => {
+    const action = buildConnectionDropMenuNodeAction({
+      canvasId: "canvas-1" as never,
+      ctx: {
+        screenX: 10,
+        screenY: 20,
+        flowX: 300,
+        flowY: 140,
+        fromNodeId: "node-image" as never,
+        fromHandleId: undefined,
+        fromHandleType: "source",
+      },
+      fromNode: {
+        id: "node-image",
+        type: "image",
+        position: { x: 0, y: 0 },
+        data: {},
+      } as RFNode,
+      template: getCommentTemplate(),
+      edges: [] as RFEdge[],
+      clientRequestId: "request-1",
+    });
+
+    expect(action).toEqual({ validationError: "incomplete" });
   });
 
   it("settles non-optimistic created node ids and skips optimistic ids", async () => {

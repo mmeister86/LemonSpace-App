@@ -52,6 +52,7 @@ const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   agent: { minWidth: 300, minHeight: 280 },
   text: { minWidth: 220, minHeight: 90 },
   note: { minWidth: 200, minHeight: 90 },
+  comment: { minWidth: 260, minHeight: 180 },
 };
 
 const DEFAULT_CONFIG: ResizeConfig = { minWidth: 80, minHeight: 50 };

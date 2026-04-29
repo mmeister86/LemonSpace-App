@@ -30,6 +30,7 @@ const storeState: StoreState = {
 };
 
 const compareSurfaceSpy = vi.fn();
+const kiboComparisonSpy = vi.fn();
 let resizeObserverCallback:
   | ((entries: ResizeObserverEntryLike[]) => void)
   | null = null;
@@ -84,6 +85,38 @@ vi.mock("../nodes/compare-surface", () => ({
   },
 }));
 
+vi.mock("@/components/kibo-ui/comparison", () => ({
+  Comparison: ({
+    children,
+    className,
+    onKeyDown,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+  }) => {
+    kiboComparisonSpy({ className, hasKeyboardHandler: Boolean(onKeyDown) });
+    return (
+      <div
+        data-kibo-comparison="true"
+        data-has-keyboard-handler={String(Boolean(onKeyDown))}
+      >
+        {children}
+      </div>
+    );
+  },
+  ComparisonHandle: ({ children }: { children: React.ReactNode }) => (
+    <div data-kibo-comparison-handle="true">{children}</div>
+  ),
+  ComparisonItem: ({
+    children,
+    position,
+  }: {
+    children: React.ReactNode;
+    position: "left" | "right";
+  }) => <div data-kibo-comparison-item={position}>{children}</div>,
+}));
+
 import CompareNode from "../nodes/compare-node";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -107,6 +140,7 @@ describe("CompareNode render preview inputs", () => {
     storeState.nodes = [];
     storeState.edges = [];
     compareSurfaceSpy.mockReset();
+    kiboComparisonSpy.mockReset();
     resizeObserverCallback = null;
     globalThis.ResizeObserver = class ResizeObserver {
       constructor(callback: (entries: ResizeObserverEntryLike[]) => void) {
@@ -199,6 +233,63 @@ describe("CompareNode render preview inputs", () => {
       sourceUrl: "https://cdn.example.com/source.png",
       steps: [],
     });
+  });
+
+  it("renders connected compare images inside Kibo comparison items with a keyboard handler", () => {
+    const markup = renderCompareNode({
+      id: "compare-1",
+      data: {
+        leftUrl: "https://cdn.example.com/before.png",
+        rightUrl: "https://cdn.example.com/after.png",
+      },
+      selected: false,
+      dragging: false,
+      zIndex: 0,
+      isConnectable: true,
+      type: "compare",
+      xPos: 0,
+      yPos: 0,
+      width: 500,
+      height: 380,
+      sourcePosition: undefined,
+      targetPosition: undefined,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    });
+
+    expect(markup).toContain('data-kibo-comparison="true"');
+    expect(markup).toContain('data-has-keyboard-handler="true"');
+    expect(markup).toContain('data-kibo-comparison-item="left"');
+    expect(markup).toContain('data-kibo-comparison-item="right"');
+    expect(markup).toContain('data-kibo-comparison-handle="true"');
+    expect(kiboComparisonSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ hasKeyboardHandler: true }),
+    );
+    expect(compareSurfaceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the empty compare state outside the Kibo comparison slider", () => {
+    const markup = renderCompareNode({
+      id: "compare-1",
+      data: {},
+      selected: false,
+      dragging: false,
+      zIndex: 0,
+      isConnectable: true,
+      type: "compare",
+      xPos: 0,
+      yPos: 0,
+      width: 500,
+      height: 380,
+      sourcePosition: undefined,
+      targetPosition: undefined,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    });
+
+    expect(markup).toContain("Connect two image nodes");
+    expect(markup).not.toContain('data-kibo-comparison="true"');
+    expect(compareSurfaceSpy).not.toHaveBeenCalled();
   });
 
   it("defaults render-backed compare inputs to preview mode even when a final render output exists", () => {

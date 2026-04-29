@@ -6,7 +6,7 @@ import {
   resolveCanvasMagnetTarget,
   type CanvasMagnetTarget,
 } from "./canvas-connection-magnetism";
-import { logCanvasConnectionDebug } from "./canvas-helpers";
+import { hasHandleKey, logCanvasConnectionDebug } from "./canvas-helpers";
 
 export type DroppedConnectionTarget = {
   sourceNodeId: string;
@@ -138,6 +138,20 @@ export function resolveDroppedConnectionTarget(args: {
     }
 
     const handles = NODE_HANDLE_MAP[targetNode.type ?? ""];
+    const requiredHandleKey = args.fromHandleType === "source" ? "target" : "source";
+    if (!hasHandleKey(handles, requiredHandleKey)) {
+      logCanvasConnectionDebug("drop-target:node-without-compatible-handle", {
+        point: args.point,
+        fromNodeId: args.fromNodeId,
+        fromHandleId: args.fromHandleId ?? null,
+        fromHandleType: args.fromHandleType,
+        targetNodeId,
+        targetNodeType: targetNode.type ?? null,
+        requiredHandleKey,
+      });
+      return null;
+    }
+
     const droppedConnection =
       args.fromHandleType === "source"
         ? {

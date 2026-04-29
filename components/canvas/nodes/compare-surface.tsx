@@ -31,7 +31,6 @@ type CompareSurfaceProps = {
   mixerPreviewState?: MixerPreviewState;
   nodeWidth: number;
   nodeHeight: number;
-  clipWidthPercent?: number;
   preferPreview?: boolean;
 };
 
@@ -42,7 +41,6 @@ export default function CompareSurface({
   mixerPreviewState,
   nodeWidth,
   nodeHeight,
-  clipWidthPercent,
   preferPreview,
 }: CompareSurfaceProps) {
   const graph = useCanvasGraph();
@@ -82,14 +80,6 @@ export default function CompareSurface({
 
   const hasPreview = Boolean(usePreview && previewInput);
   const hasMixerPreview = mixerPreviewState?.status === "ready";
-  const clipStyle =
-    typeof clipWidthPercent === "number"
-      ? {
-          clipPath: `inset(0 ${100 - clipWidthPercent}% 0 0)`,
-          WebkitClipPath: `inset(0 ${100 - clipWidthPercent}% 0 0)`,
-        }
-      : undefined;
-
   const baseNaturalSize =
     mixerPreviewState?.baseUrl && mixerPreviewState.baseUrl === baseImageState.url
       ? { width: baseImageState.width, height: baseImageState.height }
@@ -120,7 +110,7 @@ export default function CompareSurface({
     : null;
 
   return (
-    <div className="pointer-events-none absolute inset-0" style={clipStyle}>
+    <div className="pointer-events-none absolute inset-0">
       {visibleFinalUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

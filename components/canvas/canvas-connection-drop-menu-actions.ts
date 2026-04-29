@@ -26,6 +26,14 @@ type BaseCreateNodeWithEdgeArgs = {
   targetHandle?: string;
 };
 
+function hasHandleKey(
+  handles: { source?: string; target?: string } | undefined,
+  key: "source" | "target",
+): boolean {
+  if (!handles) return false;
+  return Object.prototype.hasOwnProperty.call(handles, key);
+}
+
 export type ConnectionDropMenuNodeAction =
   | {
       direction: "from-source";
@@ -72,6 +80,10 @@ export function buildConnectionDropMenuNodeAction(args: {
   };
 
   if (args.ctx.fromHandleType === "source") {
+    if (!hasHandleKey(handles, "target")) {
+      return { validationError: "incomplete" };
+    }
+
     const validationError = validateCanvasConnectionByType({
       sourceType: args.fromNode.type ?? "",
       targetType: args.template.type,
@@ -91,6 +103,10 @@ export function buildConnectionDropMenuNodeAction(args: {
         targetHandle: handles?.target ?? undefined,
       },
     };
+  }
+
+  if (!hasHandleKey(handles, "source")) {
+    return { validationError: "incomplete" };
   }
 
   const validationError = validateCanvasConnectionByType({

@@ -287,8 +287,6 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     label: "Kommentar",
     category: "layout",
     phase: 3,
-    implemented: false,
-    disabledHint: "Folgt in Phase 3",
   }),
   entry({
     type: "presentation",
