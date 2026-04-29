@@ -23,7 +23,6 @@ import {
   Presentation,
   Repeat,
   Sparkles,
-  Split,
   StickyNote,
   Type,
   Video,
@@ -69,7 +68,6 @@ const CATALOG_ICONS: Partial<Record<string, LucideIcon>> = {
   "light-adjust": Sparkles,
   "detail-adjust": Wand2,
   render: Image,
-  splitter: Split,
   loop: Repeat,
   agent: Bot,
   mixer: Layers,
@@ -203,7 +201,7 @@ export default function CanvasSidebar({
             <div className="flex flex-col gap-3">
               {NODE_CATEGORIES_ORDERED.map((categoryId, index) => {
                 const entries = (byCategory.get(categoryId) ?? []).filter(
-                  (entry) => !entry.systemOutput,
+                  (entry) => !entry.systemOutput && entry.type !== "splitter",
                 );
                 if (entries.length === 0) return null;
                 return (
@@ -230,7 +228,7 @@ export default function CanvasSidebar({
             <>
               {NODE_CATEGORIES_ORDERED.map((categoryId) => {
                 const entries = (byCategory.get(categoryId) ?? []).filter(
-                  (entry) => !entry.systemOutput,
+                  (entry) => !entry.systemOutput && entry.type !== "splitter",
                 );
                 if (entries.length === 0) return null;
                 const { label } = NODE_CATEGORY_META[categoryId];

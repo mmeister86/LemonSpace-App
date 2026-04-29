@@ -88,6 +88,7 @@ describe("CanvasSidebar", () => {
     expect(text).not.toContain("KI-Video-Ausgabe");
     expect(text).not.toContain("KI-Text-Ausgabe");
     expect(text).not.toContain("Agent-Ausgabe");
+    expect(text).not.toContain("Splitter");
   });
 
   it("enables Freepik transform MVP nodes in the palette", async () => {

@@ -1,11 +1,11 @@
 ---
 id: TASK-032
 title: Implement Comment Node
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-04-28 19:53'
-updated_date: '2026-04-29 08:30'
+updated_date: '2026-04-29 09:44'
 labels:
   - canvas
   - node-system
@@ -28,7 +28,7 @@ Add a canvas Comment node for review collaboration notes with thread-like discus
 - [x] #1 Comment node is available in the canvas node catalog and palette when implemented
 - [x] #2 User can create edit and delete comment content on the canvas
 - [x] #3 Comment node supports resolved and unresolved status with visible state
-- [ ] #4 Comment data persists in Convex and reloads correctly
+- [x] #4 Comment data persists in Convex and reloads correctly
 - [x] #5 Comment content data model can represent threaded replies and mention tokens without requiring realtime collaboration in this task
 - [x] #6 Tests cover rendering editing resolve state and persistence behavior
 <!-- AC:END -->
@@ -49,3 +49,13 @@ Implemented Comment node UI, data helpers, node registration, palette/default/te
 
 Fixed placement errors reported during manual testing: connection-created placement and body-drop connection targeting now reject non-connectable comment nodes before creating React Flow edges. Added regression coverage in canvas-connection-drop-menu-actions and canvas-connection-drop-target. Verification: npm test -- comment canvas-connection-drop-menu-actions canvas-connection-drop-target canvas-agent-config use-canvas-drop (8 files, 43 tests passed); npm run lint (0 errors, 4 pre-existing warnings).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the canvas Comment node for review collaboration notes. Added the Comment node UI with resolved/unresolved state, main comment editing and clearing, threaded reply add/edit/delete behavior, mention-token rendering, and a future-ready persisted data shape. Registered the node in React Flow, catalog, palette/templates, defaults, resize config, and non-connectable handle metadata.
+
+Fixed placement regressions found during manual testing by preventing non-connectable Comment nodes from being used in connection-created placement paths or body-drop edge targeting. Added regression coverage for both paths.
+
+Verification: npm test -- comment; npm test -- canvas-agent-config use-canvas-drop; npm test -- comment canvas-connection-drop-menu-actions canvas-connection-drop-target canvas-agent-config use-canvas-drop; npm run lint. Lint completed with 0 errors and only pre-existing warnings outside this task. User manually confirmed the feature is done, including persistence/reload behavior.
+<!-- SECTION:FINAL_SUMMARY:END -->
