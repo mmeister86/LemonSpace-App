@@ -90,6 +90,21 @@ describe("split canvas utility modules", () => {
     );
   });
 
+  it("uses the node document canvasId as canonical React Flow node data", () => {
+    const node = nodeDoc({
+      canvasId: "canvas-real" as Id<"canvases">,
+      data: {
+        canvasId: "node-stale" as Id<"nodes">,
+        templateId: "instagram-post-agent",
+      },
+    });
+
+    expect(convexNodeToRF(node).data).toMatchObject({
+      canvasId: "canvas-real",
+      templateId: "instagram-post-agent",
+    });
+  });
+
   it("isolates handle style and glow helpers while preserving legacy exports", () => {
     const args = { nodeType: "compare", handleId: "left", handleType: "target" as const };
 

@@ -6,57 +6,34 @@ import {
 } from "@/lib/agent-definitions";
 
 describe("agent definitions", () => {
-  it("registers exactly one runtime definition for now", () => {
+  it("registers only the Instagram tool-harness agent definition", () => {
     expect(AGENT_DEFINITIONS.map((definition) => definition.id)).toEqual([
-      "campaign-distributor",
+      "instagram-post-agent",
     ]);
   });
 
-  it("returns campaign distributor with runtime metadata and blueprint contract", () => {
-    const definition = getAgentDefinition("campaign-distributor");
+  it("registers instagram post agent as a tool harness definition", () => {
+    const definition = getAgentDefinition("instagram-post-agent");
 
-    expect(definition?.metadata.name).toBe("Campaign Distributor");
-    expect(definition?.metadata.color).toBe("yellow");
-    expect(definition?.docs.markdownPath).toBe(
-      "components/agents/campaign-distributor.md",
-    );
-    expect(definition?.acceptedSourceNodeTypes).toContain("text");
-    expect(definition?.briefFieldOrder).toEqual([
-      "briefing",
-      "audience",
-      "tone",
-      "targetChannels",
-      "hardConstraints",
-    ]);
-    expect(definition?.channelCatalog).toContain("Instagram Feed");
-    expect(definition?.operatorParameters).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "targetChannels", type: "multi-select" }),
-        expect.objectContaining({ key: "variantsPerChannel", type: "select" }),
-        expect.objectContaining({ key: "toneOverride", type: "select" }),
-      ]),
-    );
-    expect(definition?.analysisRules.length).toBeGreaterThan(0);
-    expect(definition?.executionRules.length).toBeGreaterThan(0);
+    expect(definition?.metadata.name).toBe("Instagram Post Agent");
+    expect(definition?.runtime.kind).toBe("tool-harness");
+    expect(definition?.runtime.harnessId).toBe("instagram-post");
     expect(definition?.defaultOutputBlueprints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          artifactType: "social-caption-pack",
-          requiredSections: expect.arrayContaining(["Hook", "Caption"]),
+          artifactType: "instagram-post",
+          requiredSections: expect.arrayContaining(["Caption", "Hashtags"]),
           requiredMetadataKeys: expect.arrayContaining([
-            "objective",
-            "targetAudience",
-          ]),
-          qualityChecks: expect.arrayContaining([
-            "matches_channel_constraints",
+            "sourceNodeIds",
+            "syntheticPreviewFields",
           ]),
         }),
       ]),
     );
   });
 
-  it("keeps shared runtime fields accessible without template-specific branching", () => {
-    const definition = getAgentDefinition("campaign-distributor");
+  it("keeps shared runtime fields accessible without legacy campaign branching", () => {
+    const definition = getAgentDefinition("instagram-post-agent");
     if (!definition) {
       throw new Error("Missing definition");
     }
@@ -69,8 +46,8 @@ describe("agent definitions", () => {
     };
 
     expect(commonProjection).toEqual({
-      id: "campaign-distributor",
-      markdownPath: "components/agents/campaign-distributor.md",
+      id: "instagram-post-agent",
+      markdownPath: "components/agents/instagram-post-agent.md",
       sourceTypeCount: definition.acceptedSourceNodeTypes.length,
       blueprintCount: definition.defaultOutputBlueprints.length,
     });

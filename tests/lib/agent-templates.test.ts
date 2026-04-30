@@ -4,15 +4,15 @@ import { getAgentDefinition } from "@/lib/agent-definitions";
 import { AGENT_TEMPLATES, getAgentTemplate } from "@/lib/agent-templates";
 
 describe("agent templates", () => {
-  it("registers the campaign distributor template", () => {
+  it("registers only the Instagram agent template", () => {
     expect(AGENT_TEMPLATES.map((template) => template.id)).toEqual([
-      "campaign-distributor",
+      "instagram-post-agent",
     ]);
   });
 
   it("projects runtime definition metadata for existing canvas callers", () => {
-    const template = getAgentTemplate("campaign-distributor");
-    const definition = getAgentDefinition("campaign-distributor");
+    const template = getAgentTemplate("instagram-post-agent");
+    const definition = getAgentDefinition("instagram-post-agent");
 
     expect(definition).toBeDefined();
 

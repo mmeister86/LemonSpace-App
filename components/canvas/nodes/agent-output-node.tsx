@@ -3,6 +3,7 @@
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 
+import { InstagramPost } from "@/components/agents/instagram/ui/instagram-post";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 
@@ -25,6 +26,16 @@ type AgentOutputNodeData = {
   qualityChecks?: string[];
   outputType?: string;
   body?: string;
+  instagramPost?: {
+    username?: string;
+    location?: string;
+    profileImageUrl?: string;
+    imageUrl?: string;
+    isLiked?: boolean;
+    likesCount?: number;
+    caption?: string;
+    hashtags?: string[];
+  };
   _status?: string;
   _statusMessage?: string;
 };
@@ -221,6 +232,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
   const metadataEntries = normalizeMetadata(nodeData.metadata);
   const metadataLabels = nodeData.metadataLabels;
   const qualityChecks = normalizeQualityChecks(nodeData.qualityChecks);
+  const isInstagramPost = artifactType === "instagram-post" && nodeData.instagramPost;
   const previewText =
     typeof nodeData.previewText === "string" && nodeData.previewText.trim() !== ""
       ? nodeData.previewText.trim()
@@ -282,6 +294,22 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             >
               <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90">{t("plannedContent")}</p>
             </div>
+          </section>
+        ) : isInstagramPost ? (
+          <section data-testid="agent-output-instagram-preview" className="space-y-2">
+            <InstagramPost {...nodeData.instagramPost} />
+            {metadataEntries.length > 0 ? (
+              <details data-testid="agent-output-details" className="rounded-md border border-border/70 bg-muted/30 px-2 py-1.5">
+                <summary className="cursor-pointer text-[11px] font-semibold text-foreground/80">{t("detailsLabel")}</summary>
+                <div className="mt-2 space-y-1 text-[12px] text-foreground/90">
+                  {metadataEntries.map(([key, value]) => (
+                    <p key={key} className="break-words">
+                      <span className="font-semibold">{resolveMetadataLabel(key, metadataLabels)}</span>: {value}
+                    </p>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </section>
         ) : hasStructuredOutput ? (
           <>

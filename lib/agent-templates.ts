@@ -1,6 +1,6 @@
-import { AGENT_DEFINITIONS } from "@/lib/agent-definitions";
+import { AGENT_DEFINITIONS, type AgentDefinitionId } from "@/lib/agent-definitions";
 
-export type AgentTemplateId = "campaign-distributor";
+export type AgentTemplateId = AgentDefinitionId;
 
 export type AgentTemplate = {
   id: AgentTemplateId;

@@ -67,7 +67,7 @@ type AgentBriefConstraints = {
 
 type AgentNodeType = Node<AgentNodeData, "agent">;
 
-const DEFAULT_AGENT_TEMPLATE_ID = "campaign-distributor";
+const DEFAULT_AGENT_TEMPLATE_ID = "instagram-post-agent";
 
 function useSafeCanvasSync() {
   try {
@@ -290,6 +290,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       ? (template?.description ?? "")
       : translatedTemplateDescription;
   const isExecutionActive = nodeData._status === "analyzing" || nodeData._status === "executing";
+  const isCanvasSyncPending = status.isSyncing || status.pendingCount > 0;
   const executionProgressLine = useMemo(() => {
     if (nodeData._status !== "executing") {
       return null;
@@ -408,7 +409,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   );
 
   const handleRunAgent = async () => {
-    if (isExecutionActive) {
+    if (isExecutionActive || isCanvasSyncPending) {
       return;
     }
 
@@ -434,6 +435,10 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   };
 
   const handleSubmitClarification = async () => {
+    if (isCanvasSyncPending) {
+      return;
+    }
+
     if (status.isOffline) {
       toast.warning(
         t("offlineTitle"),
@@ -606,8 +611,8 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           <button
             type="button"
             onClick={() => void handleRunAgent()}
-            disabled={isExecutionActive}
-            aria-busy={isExecutionActive}
+            disabled={isExecutionActive || isCanvasSyncPending}
+            aria-busy={isExecutionActive || isCanvasSyncPending}
             className="nodrag w-full rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {t("runAgentButton")}

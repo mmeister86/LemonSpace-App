@@ -77,7 +77,7 @@ It does not emit raw text blobs as primary output.
 | --- | --- | --- | --- |
 | `brief` | `text`, `note` | yes | Product/campaign description, target audience, growth goal, constraints, budget. |
 | `assets` | `image`, `ai-image`, `render`, `compare` | no | Canvas outputs available as campaign assets. |
-| `content` | `ai-text`, `agent-output` | no | Existing content nodes, e.g. output from Campaign Distributor. |
+| `content` | `ai-text`, `agent-output` | no | Existing content nodes, e.g. output from Instagram Post Agent. |
 
 If assets or content nodes are connected, the agent must use them in at least two experiments. If brief is sparse, infer from asset labels and content and write assumptions explicitly.
 
@@ -127,7 +127,7 @@ For each experiment output, the agent should produce:
 ## Human Reference Examples
 
 - "Analyse these 4 campaign variants and tell me which growth experiments to run first."
-- "I have a Campaign Distributor output for Instagram and LinkedIn — what should I test?"
+- "I have an Instagram Post Agent output — what should I test?"
 - "Solo founder, 1 month, €0 budget — give me the highest-leverage experiments."
 - "My activation rate is low. Diagnose the funnel and give me 3 experiments."
-- "We're about to launch on ProductHunt — build me the experiment plan around it." 
+- "We're about to launch on ProductHunt — build me the experiment plan around it."

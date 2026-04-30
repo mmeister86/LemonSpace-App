@@ -8,7 +8,10 @@ import {
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { generateStructuredObjectViaOpenRouter } from "./openrouter";
+import {
+  generateStructuredObjectViaOpenRouter,
+  generateToolChatCompletionViaOpenRouter,
+} from "./openrouter";
 import { getNodeDataRecord } from "./ai_node_data";
 import {
   buildNodeDonePatch,
@@ -59,6 +62,17 @@ import {
 } from "../lib/agent-models";
 import { getAgentDefinition } from "../lib/agent-definitions";
 import { normalizePublicTier } from "../lib/tier-credits";
+import {
+  runAgentHarnessLoop,
+  type AgentHarnessMessage,
+} from "../lib/agent-harness";
+import {
+  createInstagramHarnessToolState,
+  executeInstagramHarnessTool,
+  INSTAGRAM_AGENT_TOOLS,
+  resolveInstagramOutputArgs,
+  type InstagramConnectedContextResult,
+} from "./agent_instagram_harness";
 
 const ANALYZE_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -244,6 +258,20 @@ type InternalApiShape = {
       },
       unknown
     >;
+    runToolHarnessAgent: FunctionReference<
+      "action",
+      "internal",
+      {
+        canvasId: Id<"canvases">;
+        nodeId: Id<"nodes">;
+        modelId: string;
+        locale: AgentLocale;
+        userId: string;
+        reservationId?: Id<"creditTransactions">;
+        shouldDecrementConcurrency: boolean;
+      },
+      unknown
+    >;
     setAgentAnalyzing: FunctionReference<
       "mutation",
       "internal",
@@ -332,6 +360,36 @@ type InternalApiShape = {
         summary: string;
       },
       { outputNodeIds: Id<"nodes">[] }
+    >;
+    createInstagramHarnessOutput: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        canvasId: Id<"canvases">;
+        nodeId: Id<"nodes">;
+        data: Record<string, unknown>;
+      },
+      { nodeId: Id<"nodes"> }
+    >;
+    createInstagramHarnessTextNode: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        canvasId: Id<"canvases">;
+        nodeId: Id<"nodes">;
+        data: Record<string, unknown>;
+      },
+      { nodeId: Id<"nodes"> }
+    >;
+    createInstagramHarnessPromptNode: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        canvasId: Id<"canvases">;
+        nodeId: Id<"nodes">;
+        data: Record<string, unknown>;
+      },
+      { nodeId: Id<"nodes"> }
     >;
   };
   credits: {
@@ -697,6 +755,78 @@ function collectIncomingContextNodes(
   return nodes;
 }
 
+const INSTAGRAM_CONTEXT_FIELD_WHITELIST: Record<string, readonly string[]> = {
+  image: ["url", "storageId", "mimeType", "width", "height", "prompt"],
+  asset: ["url", "storageId", "mimeType", "width", "height", "title"],
+  text: ["content"],
+  "ai-text-output": ["instruction", "inputText", "outputText", "modelId"],
+  note: ["content", "color"],
+  render: ["url", "storageId", "format", "width", "height"],
+  "ai-image": ["url", "storageId", "prompt", "model", "modelTier", "width", "height"],
+  "agent-output": ["title", "channel", "artifactType", "previewText", "body"],
+};
+
+function summarizeValueForInstagramContext(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.trim().replace(/\s+/g, " ").slice(0, 500);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  return undefined;
+}
+
+async function collectInstagramConnectedContext(
+  ctx: { storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> } },
+  graph: { nodes: Doc<"nodes">[]; edges: Doc<"edges">[] },
+  agentNodeId: Id<"nodes">,
+): Promise<InstagramConnectedContextResult> {
+  const nodeById = new Map(graph.nodes.map((node) => [node._id, node] as const));
+  const incomingEdges = graph.edges.filter((edge) => edge.targetNodeId === agentNodeId);
+  const nodes: InstagramConnectedContextResult["nodes"] = [];
+
+  for (const edge of incomingEdges) {
+    const source = nodeById.get(edge.sourceNodeId);
+    if (!source) {
+      continue;
+    }
+    const data = getNodeDataRecord(source.data);
+    const fields: Record<string, unknown> = {};
+    for (const key of INSTAGRAM_CONTEXT_FIELD_WHITELIST[source.type] ?? []) {
+      const value = summarizeValueForInstagramContext(data[key]);
+      if (value !== undefined && value !== "") {
+        fields[key] = value;
+      }
+    }
+
+    const storageId = trimText(data.storageId);
+    if (!trimText(fields.url) && storageId) {
+      const url = await ctx.storage.getUrl(storageId as Id<"_storage">);
+      if (url) {
+        fields.url = url;
+      }
+    }
+    if (storageId) {
+      fields.storageId = storageId;
+    }
+
+    nodes.push({
+      nodeId: source._id,
+      type: source.type,
+      fields,
+    });
+  }
+
+  return { nodes };
+}
+
 function getAgentNodeFromGraph(
   graph: { nodes: Doc<"nodes">[] },
   nodeId: Id<"nodes">,
@@ -720,7 +850,7 @@ function getSelectedModelOrThrow(modelId: string): AgentModel {
 }
 
 function getAgentDefinitionOrThrow(templateId: unknown) {
-  const resolvedId = trimText(templateId) || "campaign-distributor";
+  const resolvedId = trimText(templateId) || "instagram-post-agent";
   const definition = getAgentDefinition(resolvedId);
   if (!definition) {
     throw new Error(`Unknown agent definition: ${resolvedId}`);
@@ -1029,6 +1159,220 @@ export const completeExecutionStepOutput = internalMutation({
       ...buildNodeDonePatch(),
       data: normalizedOutputData,
     });
+  },
+});
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string {
+  return trimText(record[key]);
+}
+
+function stringListFromRecord(record: Record<string, unknown>, key: string): string[] {
+  return normalizeStringList(record[key]);
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string, fallback: number): number {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+async function getAgentNodeForCanvasOrThrow(
+  ctx: { db: { get: (id: Id<"nodes">) => Promise<Doc<"nodes"> | null> } },
+  nodeId: Id<"nodes">,
+  canvasId: Id<"canvases">,
+): Promise<Doc<"nodes">> {
+  const node = await ctx.db.get(nodeId);
+  if (!node) {
+    throw new Error("Node not found");
+  }
+  if (node.type !== "agent") {
+    throw new Error("Node must be an agent node");
+  }
+  assertNodeBelongsToCanvasOrThrow(node, canvasId);
+  return node;
+}
+
+function buildAgentCreatedNodeEdge<
+  TCanvasId extends string,
+  TAgentNodeId extends string,
+  TTargetNodeId extends string,
+>(args: {
+  canvasId: TCanvasId;
+  agentNodeId: TAgentNodeId;
+  targetNodeId: TTargetNodeId;
+  targetHandle?: string;
+}) {
+  return {
+    canvasId: args.canvasId,
+    sourceNodeId: args.agentNodeId,
+    targetNodeId: args.targetNodeId,
+    sourceHandle: undefined,
+    targetHandle: args.targetHandle,
+  };
+}
+
+export const createInstagramHarnessOutput = internalMutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    data: v.record(v.string(), v.any()),
+  },
+  handler: async (ctx, args) => {
+    const node = await getAgentNodeForCanvasOrThrow(ctx, args.nodeId, args.canvasId);
+    const prev = getNodeDataRecord(node.data);
+    const outputNodeIds = Array.isArray(prev.outputNodeIds)
+      ? prev.outputNodeIds.filter((value): value is Id<"nodes"> => typeof value === "string")
+      : [];
+    const sourceNodeIds = stringListFromRecord(args.data, "sourceNodeIds");
+    const syntheticPreviewFields = stringListFromRecord(args.data, "syntheticPreviewFields");
+    const assumptions = stringListFromRecord(args.data, "assumptions");
+    const hashtags = stringListFromRecord(args.data, "hashtags");
+    const caption = stringFromRecord(args.data, "caption");
+    const cta = stringFromRecord(args.data, "cta");
+    const altText = stringFromRecord(args.data, "altText");
+    const username = stringFromRecord(args.data, "username") || "lemonspace";
+    const location = stringFromRecord(args.data, "location") || "Preview location";
+    const imageUrl = stringFromRecord(args.data, "imageUrl");
+    const profileImageUrl = stringFromRecord(args.data, "profileImageUrl");
+
+    const outputNodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: "agent-output",
+      positionX: node.positionX + node.width + 120,
+      positionY: node.positionY,
+      width: 500,
+      height: 680,
+      status: "done",
+      retryCount: 0,
+      data: {
+        isSkeleton: false,
+        title: "Instagram post preview",
+        channel: "Instagram Feed",
+        outputType: "instagram-post",
+        artifactType: "instagram-post",
+        previewText: caption,
+        instagramPost: {
+          username,
+          location,
+          ...(profileImageUrl ? { profileImageUrl } : {}),
+          ...(imageUrl ? { imageUrl } : {}),
+          isLiked: true,
+          likesCount: numberFromRecord(args.data, "likesCount", 128),
+          caption,
+          hashtags,
+        },
+        sections: [
+          { id: "caption", label: "Caption", content: caption },
+          { id: "hashtags", label: "Hashtags", content: hashtags.join(" ") },
+          { id: "cta", label: "CTA", content: cta },
+          { id: "alt-text", label: "Alt text", content: altText },
+          { id: "assumptions", label: "Assumptions", content: assumptions.join("\n") },
+        ].filter((section) => section.content.trim() !== ""),
+        metadata: {
+          sourceNodeIds,
+          syntheticPreviewFields,
+        },
+        metadataLabels: {
+          sourceNodeIds: "Source node IDs",
+          syntheticPreviewFields: "Synthetic preview fields",
+        },
+        qualityChecks: [
+          "uses_connected_canvas_context",
+          "labels_synthetic_preview_metadata",
+          "contains_caption_hashtags_cta",
+        ],
+        body: caption,
+      },
+    });
+
+    await ctx.db.insert(
+      "edges",
+      buildAgentCreatedNodeEdge({
+        canvasId: args.canvasId,
+        agentNodeId: args.nodeId,
+        targetNodeId: outputNodeId,
+        targetHandle: "agent-output-in",
+      }),
+    );
+
+    await ctx.db.patch(args.nodeId, {
+      data: mergeNodeData(prev, {
+        outputNodeIds: [...outputNodeIds, outputNodeId],
+      }),
+    });
+
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    return { nodeId: outputNodeId };
+  },
+});
+
+export const createInstagramHarnessTextNode = internalMutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    data: v.record(v.string(), v.any()),
+  },
+  handler: async (ctx, args) => {
+    const node = await getAgentNodeForCanvasOrThrow(ctx, args.nodeId, args.canvasId);
+    const content = stringFromRecord(args.data, "content");
+    const textNodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: "text",
+      positionX: node.positionX + node.width + 120,
+      positionY: node.positionY + 720,
+      width: 320,
+      height: 180,
+      status: "idle",
+      retryCount: 0,
+      data: { content },
+    });
+    await ctx.db.insert(
+      "edges",
+      buildAgentCreatedNodeEdge({
+        canvasId: args.canvasId,
+        agentNodeId: args.nodeId,
+        targetNodeId: textNodeId,
+      }),
+    );
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    return { nodeId: textNodeId };
+  },
+});
+
+export const createInstagramHarnessPromptNode = internalMutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    data: v.record(v.string(), v.any()),
+  },
+  handler: async (ctx, args) => {
+    const node = await getAgentNodeForCanvasOrThrow(ctx, args.nodeId, args.canvasId);
+    const promptNodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: "prompt",
+      positionX: node.positionX + node.width + 480,
+      positionY: node.positionY + 720,
+      width: 320,
+      height: 220,
+      status: "idle",
+      retryCount: 0,
+      data: {
+        prompt: stringFromRecord(args.data, "prompt"),
+        aspectRatio: stringFromRecord(args.data, "aspectRatio") || "1:1",
+        model: "google/gemini-2.5-flash-image",
+      },
+    });
+    await ctx.db.insert(
+      "edges",
+      buildAgentCreatedNodeEdge({
+        canvasId: args.canvasId,
+        agentNodeId: args.nodeId,
+        targetNodeId: promptNodeId,
+        targetHandle: "image-in",
+      }),
+    );
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+    return { nodeId: promptNodeId };
   },
 });
 
@@ -1408,6 +1752,161 @@ export const executeAgent = internalAction({
   },
 });
 
+type InstagramHarnessFinal = {
+  summary: string;
+};
+
+function parseInstagramHarnessFinal(content: string): InstagramHarnessFinal {
+  const parsed = JSON.parse(content) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Instagram harness final response must be a JSON object");
+  }
+  const summary = trimText((parsed as Record<string, unknown>).summary);
+  return {
+    summary: summary || "Instagram agent run completed.",
+  };
+}
+
+function buildInstagramHarnessMessages(input: {
+  locale: AgentLocale;
+  briefConstraints: ReturnType<typeof normalizeAgentBriefConstraints>;
+  connectedContext: InstagramConnectedContextResult;
+}): AgentHarnessMessage[] {
+  const languageInstruction =
+    input.locale === "de"
+      ? "Write generated post copy and final summary in German unless the connected context clearly uses another language."
+      : "Write generated post copy and final summary in English unless the connected context clearly uses another language.";
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You are the Instagram Post Agent for LemonSpace.",
+        "You operate through tools only when creating canvas artifacts.",
+        "Use directly connected context only. Do not claim access to unrelated canvas nodes.",
+        "You must create exactly one Instagram output, one supporting text node, and one prompt node before finalizing.",
+        "Synthetic social preview fields such as likesCount, location, or profileImageUrl must be listed in syntheticPreviewFields.",
+        "When finished, return JSON only: {\"summary\":\"...\"}.",
+        languageInstruction,
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: JSON.stringify(
+        {
+          briefConstraints: input.briefConstraints,
+          connectedContext: input.connectedContext,
+        },
+        null,
+        2,
+      ),
+    },
+  ];
+}
+
+export const runToolHarnessAgent = internalAction({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    modelId: v.string(),
+    locale: v.union(v.literal("de"), v.literal("en")),
+    userId: v.string(),
+    reservationId: v.optional(v.id("creditTransactions")),
+    shouldDecrementConcurrency: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey) {
+        throw new Error("OPENROUTER_API_KEY is not set");
+      }
+
+      const selectedModel = getSelectedModelOrThrow(args.modelId);
+      const graph = await ctx.runQuery(internalApi.canvasGraph.getInternal, {
+        canvasId: args.canvasId,
+        userId: args.userId,
+      });
+      const agentNode = getAgentNodeFromGraph(graph, args.nodeId);
+      const agentData = getNodeDataRecord(agentNode.data);
+      const definition = getAgentDefinitionOrThrow(agentData.templateId);
+      if (definition.runtime.kind !== "tool-harness") {
+        throw new Error(`Agent ${definition.id} is not configured for tool harness runtime`);
+      }
+      if (definition.runtime.harnessId !== "instagram-post") {
+        throw new Error(`Unsupported harness: ${definition.runtime.harnessId}`);
+      }
+
+      const locale = normalizeAgentLocale(args.locale);
+      const briefConstraints = normalizeAgentBriefConstraints(agentData.briefConstraints);
+      const connectedContext = await collectInstagramConnectedContext(ctx, graph, args.nodeId);
+      const state = createInstagramHarnessToolState();
+
+      await ctx.runMutation(internalApi.agents.setAgentExecuting, {
+        nodeId: args.nodeId,
+        statusMessage: "Running Instagram harness",
+      });
+
+      const result = await runAgentHarnessLoop<InstagramHarnessFinal>({
+        initialMessages: buildInstagramHarnessMessages({
+          locale,
+          briefConstraints,
+          connectedContext,
+        }),
+        tools: INSTAGRAM_AGENT_TOOLS,
+        maxRounds: 8,
+        callModel: (messages, tools) =>
+          generateToolChatCompletionViaOpenRouter(apiKey, {
+            model: args.modelId,
+            messages,
+            tools,
+          }),
+        executeTool: (call) =>
+          executeInstagramHarnessTool({
+            state,
+            call,
+            ops: {
+              readConnectedContext: async () => connectedContext,
+              createInstagramOutput: async (data) =>
+                ctx.runMutation(internalApi.agents.createInstagramHarnessOutput, {
+                  canvasId: args.canvasId,
+                  nodeId: args.nodeId,
+                  data: resolveInstagramOutputArgs(data, connectedContext),
+                }),
+              createTextNode: async (data) =>
+                ctx.runMutation(internalApi.agents.createInstagramHarnessTextNode, {
+                  canvasId: args.canvasId,
+                  nodeId: args.nodeId,
+                  data,
+                }),
+              createPromptNode: async (data) =>
+                ctx.runMutation(internalApi.agents.createInstagramHarnessPromptNode, {
+                  canvasId: args.canvasId,
+                  nodeId: args.nodeId,
+                  data,
+                }),
+            },
+          }),
+        parseFinal: parseInstagramHarnessFinal,
+      });
+
+      await ctx.runMutation(internalApi.agents.finalizeAgentSuccessWithOutputs, {
+        nodeId: args.nodeId,
+        summary: result.final.summary,
+      });
+      await commitInternalReservationIfNeeded(ctx, args.reservationId, selectedModel.creditCost);
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
+    } catch (error) {
+      logAgentFailure("runToolHarnessAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
+      await releaseInternalReservationBestEffort(ctx, args.reservationId, "agents");
+      await ctx.runMutation(internalApi.agents.setAgentError, {
+        nodeId: args.nodeId,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
+    }
+  },
+});
+
 export const __testables = {
   buildExecuteSchema,
   buildSkeletonOutputData,
@@ -1415,6 +1914,7 @@ export const __testables = {
   getAnalyzeExecutionStepRequiredFields,
   resolveExecutionPlanSummary,
   resolveFinalExecutionSummary,
+  buildAgentCreatedNodeEdge,
 };
 
 export const runAgent = action({
@@ -1444,6 +1944,8 @@ export const runAgent = action({
       throw new Error("Node must be an agent node");
     }
 
+    const nodeData = getNodeDataRecord(node.data);
+    const definition = getAgentDefinitionOrThrow(nodeData.templateId);
     const selectedModel = getSelectedModelOrThrow(args.modelId);
     const subscription = await ctx.runQuery(api.credits.getSubscription, {});
     assertAgentModelTier(selectedModel, subscription?.tier);
@@ -1469,7 +1971,12 @@ export const runAgent = action({
         shouldDecrementConcurrency: usageIncremented,
       });
 
-      await ctx.scheduler.runAfter(0, internalApi.agents.analyzeAgent, {
+      const scheduledAction =
+        definition.runtime.kind === "tool-harness"
+          ? internalApi.agents.runToolHarnessAgent
+          : internalApi.agents.analyzeAgent;
+
+      await ctx.scheduler.runAfter(0, scheduledAction, {
         canvasId: args.canvasId,
         nodeId: args.nodeId,
         modelId: selectedModel.id,

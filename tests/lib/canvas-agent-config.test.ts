@@ -15,9 +15,9 @@ describe("canvas agent config", () => {
     expect(nodeTypes.agent).toBeTypeOf("function");
   });
 
-  it("adds a campaign distributor palette template", () => {
+  it("adds the Instagram agent palette template", () => {
     expect(CANVAS_NODE_TEMPLATES.find((template) => template.type === "agent")?.label).toBe(
-      "Campaign Distributor",
+      "Instagram Post Agent",
     );
   });
 
@@ -36,7 +36,7 @@ describe("canvas agent config", () => {
 
     expect(agentsEntries.map((entry) => entry.type)).toEqual(["agent", "agent-output"]);
     expect(agentsEntries[0]).toMatchObject({
-      label: "Campaign Orchestrator",
+      label: "Instagram Agent",
       category: "agents",
     });
 
@@ -53,7 +53,7 @@ describe("canvas agent config", () => {
     expect(NODE_HANDLE_MAP.agent?.target).toBe("agent-in");
     expect(NODE_HANDLE_MAP.agent?.source).toBeUndefined();
     expect(NODE_DEFAULTS.agent?.data).toMatchObject({
-      templateId: "campaign-distributor",
+      templateId: "instagram-post-agent",
     });
   });
 

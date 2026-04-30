@@ -151,7 +151,7 @@ export const NODE_DEFAULTS: Record<
     width: 360,
     height: 320,
     data: {
-      templateId: "campaign-distributor",
+      templateId: "instagram-post-agent",
       modelId: DEFAULT_AGENT_MODEL_ID,
       clarificationQuestions: [],
       clarificationAnswers: {},

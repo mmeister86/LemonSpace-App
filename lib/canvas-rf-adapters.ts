@@ -58,6 +58,7 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
     position: { x: node.positionX, y: node.positionY },
     data: {
       ...(node.data as Record<string, unknown>),
+      canvasId: node.canvasId,
       // Status direkt in data durchreichen, damit Node-Komponenten darauf zugreifen können
       _status: node.status,
       _statusMessage: node.statusMessage,

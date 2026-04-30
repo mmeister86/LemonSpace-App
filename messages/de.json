@@ -379,9 +379,9 @@
   },
   "agentNode": {
     "templates": {
-      "campaignDistributor": {
-        "name": "Campaign Distributor",
-        "description": "Entwickelt und verteilt LemonSpace-Kampagneninhalte kanal- und plattformgerecht."
+      "instagramPostAgent": {
+        "name": "Instagram Post Agent",
+        "description": "Erstellt aus verbundenem Canvas-Kontext eine Instagram-Post-Vorschau plus begleitende Copy und Visual-Prompts."
       }
     },
     "modelLabel": "Modell",

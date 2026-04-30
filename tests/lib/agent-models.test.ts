@@ -51,7 +51,7 @@ describe("agent models registry", () => {
 
   it("uses the registry default in agent node defaults", () => {
     expect(NODE_DEFAULTS.agent?.data).toMatchObject({
-      templateId: "campaign-distributor",
+      templateId: "instagram-post-agent",
       modelId: DEFAULT_AGENT_MODEL_ID,
       clarificationQuestions: [],
       clarificationAnswers: {},

@@ -1,4 +1,9 @@
-export type AgentDefinitionId = "campaign-distributor";
+export type AgentDefinitionId = "instagram-post-agent";
+
+export type AgentRuntimeDefinition = {
+  kind: "tool-harness";
+  harnessId: "instagram-post";
+};
 
 export type AgentOutputBlueprint = {
   artifactType: string;
@@ -29,6 +34,7 @@ export type AgentDefinition = {
   docs: {
     markdownPath: string;
   };
+  runtime: AgentRuntimeDefinition;
   acceptedSourceNodeTypes: readonly string[];
   briefFieldOrder: readonly string[];
   channelCatalog: readonly string[];
@@ -46,31 +52,32 @@ export type AgentDefinition = {
 
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   {
-    id: "campaign-distributor",
+    id: "instagram-post-agent",
     version: 1,
     metadata: {
-      name: "Campaign Distributor",
+      name: "Instagram Post Agent",
       description:
-        "Turns LemonSpace visual variants and optional campaign context into channel-native distribution packages.",
-      emoji: "lemon",
-      color: "yellow",
-      vibe: "Transforms canvas outputs into channel-native campaign content that can ship immediately.",
+        "Turns connected LemonSpace assets and campaign context into a complete Instagram post mockup plus reusable copy and visual prompts.",
+      emoji: "camera",
+      color: "pink",
+      vibe: "Builds a ready-to-review Instagram post from the canvas context in front of it.",
     },
     docs: {
-      markdownPath: "components/agents/campaign-distributor.md",
+      markdownPath: "components/agents/instagram-post-agent.md",
+    },
+    runtime: {
+      kind: "tool-harness",
+      harnessId: "instagram-post",
     },
     acceptedSourceNodeTypes: [
       "image",
       "asset",
-      "video",
-      "asset-video",
       "text",
       "note",
-      "frame",
-      "compare",
       "render",
       "ai-image",
-      "ai-video",
+      "agent-output",
+      "ai-text-output",
     ],
     briefFieldOrder: [
       "briefing",
@@ -79,121 +86,56 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
       "targetChannels",
       "hardConstraints",
     ],
-    channelCatalog: [
-      "Instagram Feed",
-      "Instagram Stories",
-      "Instagram Reels",
-      "LinkedIn",
-      "X (Twitter)",
-      "TikTok",
-      "Pinterest",
-      "WhatsApp Business",
-      "Telegram",
-      "E-Mail Newsletter",
-      "Discord",
-    ],
-    operatorParameters: [
-      {
-        key: "targetChannels",
-        label: "Target channels",
-        type: "multi-select",
-        options: [
-          "Instagram Feed",
-          "Instagram Stories",
-          "Instagram Reels",
-          "LinkedIn",
-          "X (Twitter)",
-          "TikTok",
-          "Pinterest",
-          "WhatsApp Business",
-          "Telegram",
-          "E-Mail Newsletter",
-          "Discord",
-        ],
-        defaultValue: ["Instagram Feed", "LinkedIn", "E-Mail Newsletter"],
-        description: "Controls which channels receive one structured output each.",
-      },
-      {
-        key: "variantsPerChannel",
-        label: "Variants per channel",
-        type: "select",
-        options: ["1", "2", "3"],
-        defaultValue: "1",
-        description: "Controls how many alternative copy variants are produced per selected channel.",
-      },
-      {
-        key: "toneOverride",
-        label: "Tone override",
-        type: "select",
-        options: ["auto", "professional", "casual", "inspiring", "direct"],
-        defaultValue: "auto",
-        description: "Forces a global tone while still adapting output to channel format constraints.",
-      },
-    ],
+    channelCatalog: ["Instagram Feed"],
+    operatorParameters: [],
     analysisRules: [
-      "Validate that at least one visual source is present and request clarification only when required context is missing.",
-      "Detect output language from briefing context and default to English when ambiguous.",
-      "Assign assets to channels by format fit and visual intent, and surface assignment rationale.",
-      "Produce one execution step per selected channel with explicit goal, sections, and quality checks.",
-      "Record assumptions whenever brief details are missing, and never hide uncertainty.",
+      "Read only directly connected canvas inputs and treat them as the full available context.",
+      "Select the strongest visual source for an Instagram feed post and record assumptions when context is sparse.",
+      "Create a complete Instagram post package with preview metadata clearly labelled when synthetic.",
     ],
     executionRules: [
-      "Generate one structured output payload per execution step and keep titles channel-specific.",
-      "Respect requiredSections and requiredMetadataKeys for the selected blueprint.",
-      "Keep language and tone aligned with brief constraints and toneOverride settings.",
-      "State format mismatches explicitly and provide a practical remediation note.",
-      "Return qualityChecks as explicit user-visible claims, not hidden reasoning.",
+      "Use the Instagram harness tools instead of free-form canvas edits.",
+      "Create no more than one Instagram output, one supporting text node, and one prompt node per run.",
+      "Never edit or delete existing canvas nodes.",
     ],
     defaultOutputBlueprints: [
       {
-        artifactType: "social-caption-pack",
-        requiredSections: ["Hook", "Caption", "Hashtags", "CTA", "Format note"],
+        artifactType: "instagram-post",
+        requiredSections: ["Caption", "Hashtags", "CTA", "Alt text", "Assumptions"],
         requiredMetadataKeys: [
-          "objective",
-          "targetAudience",
-          "channel",
-          "assetRef",
+          "sourceNodeIds",
+          "syntheticPreviewFields",
+          "selectedImageNodeId",
           "language",
-          "tone",
-          "recommendedFormat",
         ],
         qualityChecks: [
-          "matches_channel_constraints",
-          "uses_clear_cta",
-          "references_assigned_asset",
-          "avoids_unverified_claims",
+          "uses_connected_canvas_context",
+          "labels_synthetic_preview_metadata",
+          "contains_caption_hashtags_cta",
+          "includes_followup_prompt_node",
         ],
-      },
-      {
-        artifactType: "messenger-copy",
-        requiredSections: ["Opening", "Message", "CTA", "Format note"],
-        requiredMetadataKeys: ["objective", "channel", "assetRef", "language", "sendWindow"],
-        qualityChecks: ["fits_channel_tone", "contains_one_clear_action", "is_high_signal"],
-      },
-      {
-        artifactType: "newsletter-block",
-        requiredSections: ["Subject", "Preview line", "Body block", "CTA"],
-        requiredMetadataKeys: ["objective", "channel", "assetRef", "language", "recommendedSendTime"],
-        qualityChecks: ["is_publish_ready", "respects_reader_time", "contains_single_primary_cta"],
       },
     ],
     uiReference: {
-      tools: ["WebFetch", "WebSearch", "Read", "Write", "Edit"],
+      tools: [
+        "read_connected_context",
+        "create_instagram_output",
+        "create_text_node",
+        "create_prompt_node",
+      ],
       expectedInputs: [
-        "Visual node outputs (image, ai-image, render, compare)",
-        "Optional briefing context (text, note)",
-        "Asset labels, prompts, dimensions, and format hints",
+        "Connected image, asset, render, ai-image, text, note, or agent-output nodes",
+        "Optional briefing constraints on the agent node",
       ],
       expectedOutputs: [
-        "Per-channel structured delivery packages",
-        "Asset assignment rationale",
-        "Channel-ready captions, CTA, and format notes",
-        "Newsletter-ready subject, preview line, and body block",
+        "Instagram post preview agent-output",
+        "Supporting copy/variant text node",
+        "Follow-up visual prompt node",
       ],
       notes: [
-        "Primary outputs are structured agent-output nodes, not raw ai-text nodes.",
-        "Language defaults to English when briefing language is ambiguous.",
-        "Assumptions must be explicit when required context is missing.",
+        "The agent reads only directly connected inputs.",
+        "Synthetic social metadata must be labelled in output metadata.",
+        "Existing nodes are never edited by the Instagram harness.",
       ],
     },
   },

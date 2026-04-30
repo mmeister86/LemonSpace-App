@@ -27,7 +27,7 @@ Wichtig:
 ## Dateikonvention pro Agent
 
 Dateiname muss dem Agent-Id-Muster folgen, z. B.:
-- `campaign-distributor.md` fur `campaign-distributor`
+- `instagram-post-agent.md` fur `instagram-post-agent`
 
 Die Zuordnung passiert ueber `docs.markdownPath` in `lib/agent-definitions.ts`.
 
@@ -39,11 +39,11 @@ Jede Agent-Datei startet mit Frontmatter:
 
 ```md
 ---
-name: Campaign Distributor
+name: Instagram Post Agent
 description: ...
-tools: WebFetch, WebSearch, Read, Write, Edit
-color: yellow
-emoji: lemon
+tools: read_connected_context, create_instagram_output, create_text_node, create_prompt_node
+color: pink
+emoji: camera
 vibe: ...
 ---
 ```

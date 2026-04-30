@@ -76,13 +76,14 @@ describe("agent doc segment compiler", () => {
     ).toThrowError(/channel-notes/);
   });
 
-  it("ships generated campaign distributor segments with all required keys", () => {
-    const campaignDistributor = AGENT_DOC_SEGMENTS["campaign-distributor"];
-    expect(campaignDistributor).toBeDefined();
-    expect(Object.keys(campaignDistributor)).toEqual(AGENT_PROMPT_SEGMENT_KEYS);
-    expect(campaignDistributor.role.length).toBeGreaterThan(0);
-    expect(campaignDistributor["style-rules"].length).toBeGreaterThan(0);
-    expect(campaignDistributor["decision-framework"].length).toBeGreaterThan(0);
-    expect(campaignDistributor["channel-notes"].length).toBeGreaterThan(0);
+  it("ships generated Instagram agent segments with all required keys", () => {
+    expect(Object.keys(AGENT_DOC_SEGMENTS)).toEqual(["instagram-post-agent"]);
+    const instagramAgent = AGENT_DOC_SEGMENTS["instagram-post-agent"];
+    expect(instagramAgent).toBeDefined();
+    expect(Object.keys(instagramAgent)).toEqual(AGENT_PROMPT_SEGMENT_KEYS);
+    expect(instagramAgent.role.length).toBeGreaterThan(0);
+    expect(instagramAgent["style-rules"].length).toBeGreaterThan(0);
+    expect(instagramAgent["decision-framework"].length).toBeGreaterThan(0);
+    expect(instagramAgent["channel-notes"].length).toBeGreaterThan(0);
   });
 });

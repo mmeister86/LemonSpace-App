@@ -47,11 +47,11 @@ export const CANVAS_NODE_TEMPLATES = [
   },
   {
     type: "agent",
-    label: "Campaign Distributor",
+    label: "Instagram Post Agent",
     width: 360,
     height: 320,
     defaultData: {
-      templateId: "campaign-distributor",
+      templateId: "instagram-post-agent",
     },
   },
   {

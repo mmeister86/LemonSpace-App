@@ -137,7 +137,7 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
   // Agents
   entry({
     type: "agent",
-    label: "Campaign Orchestrator",
+    label: "Instagram Agent",
     category: "agents",
     phase: 2,
   }),

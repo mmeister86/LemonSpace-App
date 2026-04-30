@@ -44,8 +44,8 @@ Diese Seite dokumentiert `components/` außerhalb von `components/canvas/`. Die 
 
 | Datei | Verantwortung |
 |-------|---------------|
-| `components/agents/campaign-distributor.md` | Markdown-Quelle für Campaign Distributor Agent-Dokumentation und markierte Prompt-Segmente. |
 | `components/agents/growth-hacker.md` | Markdown-Quelle für Growth Hacker Agent-Dokumentation und markierte Prompt-Segmente. |
+| `components/agents/instagram-post-agent.md` | Markdown-Quelle für Instagram Post Agent-Dokumentation und markierte Prompt-Segmente. |
 | `components/agents/instagram/ui/instagram-post.tsx` | Instagram Post Preview UI für Agent-/Output-Darstellungen. |
 
 Wichtig: Nur markierte `AGENT_PROMPT_SEGMENT`-Blöcke werden über `scripts/compile-agent-docs.ts` in `lib/generated/agent-doc-segments.ts` kompiliert. Runtime liest die generierte TS-Datei, nicht Raw Markdown.

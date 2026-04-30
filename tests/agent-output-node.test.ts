@@ -23,6 +23,11 @@ vi.mock("@xyflow/react", () => ({
   useConnection: () => ({ inProgress: false }),
 }));
 
+vi.mock("next/image", () => ({
+  default: ({ alt, src }: { alt: string; src: string }) =>
+    React.createElement("img", { alt, src }),
+}));
+
 const translations: Record<string, string> = {
   "agentOutputNode.defaultTitle": "Agent output",
   "agentOutputNode.plannedOutputDefaultTitle": "Planned output",
@@ -141,6 +146,54 @@ describe("AgentOutputNode", () => {
       | null;
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
+  });
+
+  it("renders instagram post artifacts through the Instagram preview component", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-instagram",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Instagram launch post",
+            channel: "Instagram Feed",
+            artifactType: "instagram-post",
+            instagramPost: {
+              username: "lemonspace",
+              location: "Berlin",
+              imageUrl: "https://example.com/post.jpg",
+              likesCount: 128,
+              caption: "Launch your next visual campaign from one canvas.",
+              hashtags: ["#lemonspace", "#creativeworkflow"],
+            },
+            metadata: {
+              syntheticPreviewFields: ["likesCount", "location"],
+            },
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const preview = container.querySelector('[data-testid="agent-output-instagram-preview"]');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toContain("lemonspace");
+    expect(preview?.textContent).toContain("Berlin");
+    expect(preview?.textContent).toContain("128 Likes");
+    expect(preview?.textContent).toContain("Launch your next visual campaign");
+    expect(preview?.textContent).toContain("#lemonspace");
   });
 
   it("prioritizes social caption sections and moves secondary notes into details", async () => {

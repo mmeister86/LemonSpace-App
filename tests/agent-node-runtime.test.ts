@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   subscription: { tier: "starter" as const },
   isOffline: false,
+  syncPendingCount: 0,
+  isSyncing: false,
 }));
 
 vi.mock("convex/react", () => ({
@@ -42,7 +44,11 @@ vi.mock("@/hooks/use-auth-query", () => ({
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
   useCanvasSync: () => ({
     queueNodeDataUpdate: mocks.queueNodeDataUpdate,
-    status: { isOffline: mocks.isOffline, isSyncing: false, pendingCount: 0 },
+    status: {
+      isOffline: mocks.isOffline,
+      isSyncing: mocks.isSyncing,
+      pendingCount: mocks.syncPendingCount,
+    },
   }),
 }));
 
@@ -90,9 +96,9 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
 }));
 
 const translations: Record<string, string> = {
-  "agentNode.templates.campaignDistributor.name": "Campaign Distributor",
-  "agentNode.templates.campaignDistributor.description":
-    "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
+  "agentNode.templates.instagramPostAgent.name": "Instagram Post Agent",
+  "agentNode.templates.instagramPostAgent.description":
+    "Creates a complete Instagram post preview plus supporting copy and visual prompts from connected canvas context.",
   "agentNode.modelLabel": "Model",
   "agentNode.modelCreditMeta": "{model} - {credits} Cr",
   "agentNode.briefingLabel": "Briefing",
@@ -156,6 +162,8 @@ describe("AgentNode runtime", () => {
   beforeEach(() => {
     mocks.subscription = { tier: "starter" };
     mocks.isOffline = false;
+    mocks.syncPendingCount = 0;
+    mocks.isSyncing = false;
     mocks.queueNodeDataUpdate.mockClear();
     mocks.runAgent.mockClear();
     mocks.resumeAgent.mockClear();
@@ -192,7 +200,7 @@ describe("AgentNode runtime", () => {
           type: "agent",
           data: {
             canvasId: "canvas-1",
-            templateId: "campaign-distributor",
+            templateId: "instagram-post-agent",
             modelId: "openai/gpt-5.4-mini",
             briefConstraints: {
               briefing: "Draft channel-ready campaign copy",
@@ -404,7 +412,7 @@ describe("AgentNode runtime", () => {
           type: "agent",
           data: {
             canvasId: "canvas-1",
-            templateId: "campaign-distributor",
+            templateId: "instagram-post-agent",
             modelId: "openai/gpt-5.4-mini",
             clarificationQuestions: [{ id: "q1", prompt: "Goal?", required: true }],
             clarificationAnswers: { q1: "More signups" },
@@ -436,6 +444,52 @@ describe("AgentNode runtime", () => {
     expect(mocks.resumeAgent).not.toHaveBeenCalled();
   });
 
+  it("keeps agent actions disabled while canvas sync has pending changes", async () => {
+    mocks.syncPendingCount = 1;
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentNode, {
+          id: "agent-2",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent",
+          data: {
+            canvasId: "canvas-1",
+            templateId: "instagram-post-agent",
+            modelId: "openai/gpt-5.4-mini",
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const runButton = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Run agent"),
+    );
+    if (!(runButton instanceof HTMLButtonElement)) {
+      throw new Error("Run button not found");
+    }
+
+    expect(runButton.disabled).toBe(true);
+
+    await act(async () => {
+      runButton.click();
+    });
+
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
+
   it("disables run button and shows progress while executing", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -455,7 +509,7 @@ describe("AgentNode runtime", () => {
           type: "agent",
           data: {
             canvasId: "canvas-1",
-            templateId: "campaign-distributor",
+            templateId: "instagram-post-agent",
             modelId: "openai/gpt-5.4-mini",
             _status: "executing",
             _statusMessage: "Executing step 2/4",
@@ -502,7 +556,7 @@ describe("AgentNode runtime", () => {
           type: "agent",
           data: {
             canvasId: "canvas-1",
-            templateId: "campaign-distributor",
+            templateId: "instagram-post-agent",
             modelId: "openai/gpt-5.4-mini",
             _status: "executing",
             executionSteps: [

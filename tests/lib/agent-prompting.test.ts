@@ -11,7 +11,7 @@ import { normalizeAgentExecutionPlan } from "@/lib/agent-run-contract";
 import { AGENT_DOC_SEGMENTS } from "@/lib/generated/agent-doc-segments";
 
 describe("agent prompting helpers", () => {
-  const definition = getAgentDefinition("campaign-distributor");
+  const definition = getAgentDefinition("instagram-post-agent");
 
   it("summarizes incoming context by node with whitelisted fields", () => {
     const nodes: PromptContextNode[] = [
@@ -51,7 +51,7 @@ describe("agent prompting helpers", () => {
 
   it("buildAnalyzeMessages includes definition metadata, prompt segments, rules, and constraints", () => {
     if (!definition) {
-      throw new Error("campaign-distributor definition missing");
+      throw new Error("instagram-post-agent definition missing");
     }
 
     const messages = buildAnalyzeMessages({
@@ -69,7 +69,7 @@ describe("agent prompting helpers", () => {
       },
       incomingContextSummary: "Incoming context nodes: 1",
       incomingContextCount: 1,
-      promptSegments: AGENT_DOC_SEGMENTS["campaign-distributor"],
+      promptSegments: AGENT_DOC_SEGMENTS["instagram-post-agent"],
     });
 
     expect(messages).toHaveLength(2);
@@ -79,7 +79,7 @@ describe("agent prompting helpers", () => {
     const system = messages[0]?.content ?? "";
     const user = messages[1]?.content ?? "";
 
-    expect(system).toContain("Campaign Distributor");
+    expect(system).toContain("Instagram Post Agent");
     expect(system).toContain("role");
     expect(system).toContain("style-rules");
     expect(system).toContain("decision-framework");
@@ -94,7 +94,7 @@ describe("agent prompting helpers", () => {
 
   it("buildExecuteMessages includes execution rules, plan summary, per-step requirements, and checks", () => {
     if (!definition) {
-      throw new Error("campaign-distributor definition missing");
+      throw new Error("instagram-post-agent definition missing");
     }
 
     const executionPlan = normalizeAgentExecutionPlan({
@@ -128,7 +128,7 @@ describe("agent prompting helpers", () => {
       },
       incomingContextSummary: "Incoming context nodes: 1",
       executionPlan,
-      promptSegments: AGENT_DOC_SEGMENTS["campaign-distributor"],
+      promptSegments: AGENT_DOC_SEGMENTS["instagram-post-agent"],
     });
 
     expect(messages).toHaveLength(2);
@@ -139,7 +139,6 @@ describe("agent prompting helpers", () => {
     expect(system).toContain("deliverable-first rules");
     expect(system).toContain("Prioritize publishable, user-facing deliverables");
     expect(system).toContain("Do not produce reasoning-dominant output");
-    expect(system).toContain("For Campaign Distributor steps, output channel-ready publishable copy first");
     expect(system).toContain("channel-notes");
     expect(system).toContain("German (de-DE)");
     expect(user).toContain("Execution plan summary: Ship launch content");
@@ -150,7 +149,7 @@ describe("agent prompting helpers", () => {
 
   it("prompt builders stay definition-driven without hardcoded template branches", () => {
     if (!definition) {
-      throw new Error("campaign-distributor definition missing");
+      throw new Error("instagram-post-agent definition missing");
     }
 
     const variantDefinition = {
@@ -175,7 +174,7 @@ describe("agent prompting helpers", () => {
       clarificationAnswers: {},
       incomingContextSummary: "Incoming context nodes: 0",
       incomingContextCount: 0,
-      promptSegments: AGENT_DOC_SEGMENTS["campaign-distributor"],
+      promptSegments: AGENT_DOC_SEGMENTS["instagram-post-agent"],
     });
 
     expect(messages[0]?.content ?? "").toContain("Custom Runtime Agent");

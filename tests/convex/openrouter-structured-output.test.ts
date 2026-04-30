@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   __testables,
+  generateToolChatCompletionViaOpenRouter,
   generateStructuredObjectViaOpenRouter,
 } from "@/convex/openrouter";
 
@@ -347,6 +348,91 @@ describe("generateStructuredObjectViaOpenRouter", () => {
       hasAnyOf: true,
       hasDynamicAdditionalProperties: true,
       hasPatternProperties: false,
+    });
+  });
+});
+
+describe("generateToolChatCompletionViaOpenRouter", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts chat completions with function tools and normalizes tool calls", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createMockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call-1",
+                    type: "function",
+                    function: {
+                      name: "read_connected_context",
+                      arguments: "{\"limit\":5}",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await generateToolChatCompletionViaOpenRouter("test-api-key", {
+      model: "openai/gpt-5.4-mini",
+      messages: [{ role: "user", content: "Build an Instagram post." }],
+      tools: [
+        {
+          name: "read_connected_context",
+          description: "Read connected context",
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            properties: { limit: { type: "number" } },
+          },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      content: "",
+      toolCalls: [
+        {
+          id: "call-1",
+          name: "read_connected_context",
+          argumentsJson: "{\"limit\":5}",
+        },
+      ],
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+    expect(body).toMatchObject({
+      model: "openai/gpt-5.4-mini",
+      messages: [{ role: "user", content: "Build an Instagram post." }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "read_connected_context",
+            description: "Read connected context",
+          },
+        },
+      ],
+      tool_choice: "auto",
     });
   });
 });

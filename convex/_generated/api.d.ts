@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agent_instagram_harness from "../agent_instagram_harness.js";
 import type * as agents from "../agents.js";
 import type * as ai from "../ai.js";
 import type * as ai_errors from "../ai_errors.js";
@@ -62,6 +63,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agent_instagram_harness: typeof agent_instagram_harness;
   agents: typeof agents;
   ai: typeof ai;
   ai_errors: typeof ai_errors;

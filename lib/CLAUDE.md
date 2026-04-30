@@ -167,7 +167,7 @@ Default-Initial-Daten für neue Nodes beim Einfügen aus Palette.
 - Erstellt durch die Node-Katalog-Einträge
 - Enthält default-Werte für `data`-Felder
 - `video-prompt` hat Default-Daten: `{ modelId: "wan-2-2-720p", durationSeconds: 5 }`
-- `agent` hat aktuell ein statisches Template-Default: `{ templateId: "campaign-distributor" }`
+- `agent` hat aktuell ein statisches Template-Default: `{ templateId: "instagram-post-agent" }`
 - Wird von `canvas.tsx` verwendet beim Node-Create
 
 ---

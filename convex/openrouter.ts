@@ -1,4 +1,9 @@
 import { ConvexError } from "convex/values";
+import type {
+  AgentHarnessMessage,
+  AgentHarnessModelResponse,
+  AgentHarnessTool,
+} from "../lib/agent-harness";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -402,6 +407,131 @@ export async function generateStructuredObjectViaOpenRouter<T>(
   }
 
   return parsedContent.value as T;
+}
+
+function formatHarnessMessagesForOpenRouter(messages: AgentHarnessMessage[]): unknown[] {
+  return messages.map((message) => {
+    if (message.role === "tool") {
+      return {
+        role: "tool",
+        tool_call_id: message.toolCallId,
+        name: message.name,
+        content: message.content,
+      };
+    }
+
+    if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
+      return {
+        role: "assistant",
+        content: message.content || null,
+        tool_calls: message.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: toolCall.argumentsJson,
+          },
+        })),
+      };
+    }
+
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  });
+}
+
+function normalizeToolCalls(raw: unknown): AgentHarnessModelResponse["toolCalls"] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const toolCalls: AgentHarnessModelResponse["toolCalls"] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    const functionBlock =
+      record.function && typeof record.function === "object" && !Array.isArray(record.function)
+        ? (record.function as Record<string, unknown>)
+        : {};
+    const id = typeof record.id === "string" && record.id.trim() !== "" ? record.id : "";
+    const name =
+      typeof functionBlock.name === "string" && functionBlock.name.trim() !== ""
+        ? functionBlock.name
+        : "";
+    const argumentsJson =
+      typeof functionBlock.arguments === "string" ? functionBlock.arguments : "{}";
+
+    if (!id || !name) {
+      continue;
+    }
+
+    toolCalls.push({
+      id,
+      name,
+      argumentsJson,
+    });
+  }
+
+  return toolCalls;
+}
+
+export async function generateToolChatCompletionViaOpenRouter(
+  apiKey: string,
+  args: {
+    model: string;
+    messages: AgentHarnessMessage[];
+    tools: AgentHarnessTool[];
+  },
+): Promise<AgentHarnessModelResponse> {
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://app.lemonspace.io",
+      "X-Title": "LemonSpace",
+    },
+    body: JSON.stringify({
+      model: args.model,
+      messages: formatHarnessMessagesForOpenRouter(args.messages),
+      tools: args.tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        },
+      })),
+      tool_choice: "auto",
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const errorInfo = summarizeStructuredOpenRouterError(errorText, response.status);
+    throw new ConvexError({
+      code: "OPENROUTER_TOOL_CHAT_HTTP_ERROR",
+      status: response.status,
+      message: errorInfo.userMessage,
+      providerMessage: errorInfo.providerMessage || undefined,
+      providerCode: errorInfo.providerCode || undefined,
+      providerType: errorInfo.providerType || undefined,
+      rawBodyPreview: errorInfo.rawBodyPreview,
+    });
+  }
+
+  const data = await response.json();
+  const message = data?.choices?.[0]?.message as Record<string, unknown> | undefined;
+
+  return {
+    content: extractTextFromStructuredContent(message?.content) ?? "",
+    toolCalls: normalizeToolCalls(message?.tool_calls),
+  };
 }
 
 export const __testables = {

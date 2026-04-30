@@ -23,19 +23,19 @@ const getAgentTemplateMock = vi.fn((id: string) => {
     };
   }
 
-  if (id === "campaign-distributor") {
+  if (id === "instagram-post-agent") {
     return {
-      id: "campaign-distributor",
-      name: "Campaign Distributor",
+      id: "instagram-post-agent",
+      name: "Instagram Post Agent",
       description:
-        "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
-      emoji: "lemon",
-      color: "yellow",
-      vibe: "Campaign-first",
+        "Creates a complete Instagram post preview plus supporting copy and visual prompts from connected canvas context.",
+      emoji: "camera",
+      color: "pink",
+      vibe: "Instagram-first",
       tools: [],
-      channels: ["LinkedIn", "Instagram"],
-      expectedInputs: ["Render"],
-      expectedOutputs: ["Caption pack"],
+      channels: ["Instagram Feed"],
+      expectedInputs: ["Image", "Text"],
+      expectedOutputs: ["Instagram post"],
       notes: [],
     };
   }
@@ -64,9 +64,9 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 const translations: Record<string, string> = {
-  "agentNode.templates.campaignDistributor.name": "Campaign Distributor",
-  "agentNode.templates.campaignDistributor.description":
-    "Develops and distributes LemonSpace campaign content across social media and messenger channels.",
+  "agentNode.templates.instagramPostAgent.name": "Instagram Post Agent",
+  "agentNode.templates.instagramPostAgent.description":
+    "Creates a complete Instagram post preview plus supporting copy and visual prompts from connected canvas context.",
   "agentNode.modelLabel": "Model",
   "agentNode.modelCreditMeta": "{model} - {credits} Cr",
   "agentNode.briefingLabel": "Briefing",
@@ -189,8 +189,8 @@ describe("AgentNode", () => {
       );
     });
 
-    expect(container.textContent).toContain("Campaign Distributor");
+    expect(container.textContent).toContain("Instagram Post Agent");
     expect(getAgentTemplateMock).toHaveBeenCalledWith("unknown-template");
-    expect(getAgentTemplateMock).toHaveBeenCalledWith("campaign-distributor");
+    expect(getAgentTemplateMock).toHaveBeenCalledWith("instagram-post-agent");
   });
 });

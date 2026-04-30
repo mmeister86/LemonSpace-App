@@ -124,4 +124,21 @@ describe("agent orchestration contract helpers", () => {
     });
     expect(finalSummary).toBe("Delivered 3 channel drafts.");
   });
+
+  it("creates agent edges for Instagram supporting text and prompt nodes", () => {
+    const edge = __testables.buildAgentCreatedNodeEdge({
+      canvasId: "canvas-1",
+      agentNodeId: "agent-1",
+      targetNodeId: "text-1",
+      targetHandle: undefined,
+    });
+
+    expect(edge).toEqual({
+      canvasId: "canvas-1",
+      sourceNodeId: "agent-1",
+      targetNodeId: "text-1",
+      sourceHandle: undefined,
+      targetHandle: undefined,
+    });
+  });
 });
