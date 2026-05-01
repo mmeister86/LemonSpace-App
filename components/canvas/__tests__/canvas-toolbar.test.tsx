@@ -6,11 +6,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createNodeWithIntersection: vi.fn(async () => undefined),
-  getCenteredPosition: vi.fn(() => ({ x: 0, y: 0 })),
+  getCenteredPosition: vi.fn(() => ({ x: 128, y: 160 })),
   renameCanvas: vi.fn(async () => undefined),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
+
+const commentTemplate = {
+  type: "comment",
+  width: 300,
+  height: 220,
+  defaultData: {
+    resolved: false,
+    replies: [],
+  },
+};
 
 vi.mock("@/components/canvas/canvas-placement-context", () => ({
   useCanvasPlacement: () => ({
@@ -58,7 +68,7 @@ vi.mock("@/lib/canvas-node-catalog", () => ({
   NODE_CATEGORIES_ORDERED: [],
   NODE_CATEGORY_META: {},
   catalogEntriesByCategory: () => new Map(),
-  getTemplateForCatalogType: () => null,
+  getTemplateForCatalogType: (type: string) => (type === "comment" ? commentTemplate : null),
   isNodePaletteEnabled: () => false,
 }));
 
@@ -220,6 +230,46 @@ describe("CanvasToolbar", () => {
 
     expect(onFavoriteFilterChange).toHaveBeenCalledTimes(1);
     expect(onFavoriteFilterChange).toHaveBeenCalledWith(false);
+  });
+
+  it("creates a centered comment node when the comment tool button is clicked", async () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => "comment-request-1"),
+    });
+
+    const onToolChange = vi.fn();
+
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          activeTool="select"
+          onToolChange={onToolChange}
+          onFavoriteFilterChange={vi.fn()}
+        />,
+      );
+    });
+
+    const commentButton = container?.querySelector('button[aria-label="Kommentar hinzufügen"]');
+    if (!(commentButton instanceof HTMLButtonElement)) {
+      throw new Error("Comment button not found");
+    }
+
+    await act(async () => {
+      commentButton.click();
+    });
+
+    expect(onToolChange).not.toHaveBeenCalledWith("comment");
+    expect(mocks.getCenteredPosition).toHaveBeenCalledWith(300, 220, 0);
+    expect(mocks.createNodeWithIntersection).toHaveBeenCalledTimes(1);
+    expect(mocks.createNodeWithIntersection).toHaveBeenCalledWith({
+      type: "comment",
+      position: { x: 128, y: 160 },
+      width: 300,
+      height: 220,
+      data: commentTemplate.defaultData,
+      clientRequestId: "comment-request-1",
+    });
   });
 
   it("renders a drag handle and removes the full-width spacer layout", async () => {

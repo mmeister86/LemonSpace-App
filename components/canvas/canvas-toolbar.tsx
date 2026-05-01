@@ -1,10 +1,5 @@
 "use client";
 
-/**
- * Onboarding note:
- * Supports the Canvas editor workflow for canvas toolbar. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
- */
-
 import {
   type RefObject,
   type ReactNode,
@@ -163,6 +158,7 @@ function CanvasToolbarToolButtons({
   favoriteCount,
   favoriteFilterActive,
   onFavoriteFilterChange,
+  onAddComment,
   onRedo,
   onToolChange,
   onUndo,
@@ -177,7 +173,9 @@ function CanvasToolbarToolButtons({
   | "onRedo"
   | "onToolChange"
   | "onUndo"
->) {
+> & {
+  onAddComment: () => void;
+}) {
   const favoritesLabel =
     typeof favoriteCount === "number"
       ? `Favoriten hervorheben (${favoriteCount})`
@@ -224,11 +222,11 @@ function CanvasToolbarToolButtons({
         size="icon"
         variant="ghost"
         className="size-9 shrink-0"
-        disabled
-        aria-label="Kommentar (folgt)"
-        title="Kommentar — folgt"
+        aria-label="Kommentar hinzufügen"
+        title="Kommentar hinzufügen"
+        onClick={onAddComment}
       >
-        <MessageSquare className="size-4 opacity-50" />
+        <MessageSquare className="size-4" />
       </Button>
 
       <Button
@@ -384,6 +382,14 @@ export default function CanvasToolbar({
     });
   };
 
+  const handleAddComment = () => {
+    const template = getTemplateForCatalogType("comment");
+    if (!template) return;
+    void handleAddNode(template).catch((error) => {
+      console.error("[CanvasToolbar] create comment node failed", error);
+    });
+  };
+
   useEffect(() => {
     if (!isEditingName) return;
     const input = nameInputRef.current;
@@ -475,6 +481,7 @@ export default function CanvasToolbar({
         canUndo={canUndo}
         favoriteCount={favoriteCount}
         favoriteFilterActive={favoriteFilterActive}
+        onAddComment={handleAddComment}
         onFavoriteFilterChange={onFavoriteFilterChange}
         onRedo={onRedo}
         onToolChange={onToolChange}
