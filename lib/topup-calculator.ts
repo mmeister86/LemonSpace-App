@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for topup calculator. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export function calculateCustomTopup(euroAmount: number): {
   credits: number;
   bonusRate: number;

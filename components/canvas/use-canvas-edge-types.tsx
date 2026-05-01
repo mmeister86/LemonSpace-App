@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for use canvas edge types. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import {
   createContext,
   useContext,

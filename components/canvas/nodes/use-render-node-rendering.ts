@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas use render node rendering node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 

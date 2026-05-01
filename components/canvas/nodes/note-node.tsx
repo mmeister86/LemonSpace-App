@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas note node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useState, useCallback, useEffect } from "react";
 import { Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for freepik client. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 "use node";
 
 const FREEPIK_BASE = "https://api.freepik.com";

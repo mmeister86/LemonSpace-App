@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for agent models. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type AgentModelId =
   | "openai/gpt-5.4-nano"
   | "openai/gpt-5.4-mini"

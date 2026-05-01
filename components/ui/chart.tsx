@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Design-system primitive for chart. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Shared client UI for tool action buttons. Keep visual button rendering separate from tool-specific execution logic.
+ */
+
 import type { Action } from "./schema";
 import { cn, Button } from "./_adapter";
 import { useActionButtons } from "./use-action-buttons";

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas mixer preview node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from "react";
 
 import type { MixerPreviewState } from "@/lib/canvas-mixer-preview";

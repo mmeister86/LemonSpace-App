@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas node favorite. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

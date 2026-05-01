@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for agent templates. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import { AGENT_DEFINITIONS, type AgentDefinitionId } from "@/lib/agent-definitions";
 
 export type AgentTemplateId = AgentDefinitionId;

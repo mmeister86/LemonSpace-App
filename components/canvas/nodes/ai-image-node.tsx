@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas ai image node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";

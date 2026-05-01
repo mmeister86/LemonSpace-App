@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas mixer types node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { MixerBlendMode } from "@/lib/canvas-mixer-normalization";
 
 export const MIN_OVERLAY_SIZE = 0.1;

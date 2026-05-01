@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for feature flags. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export const IMAGE_PIPELINE_BACKEND_FLAG_KEYS = {
   forceCpu: "imagePipeline.backend.forceCpu",
   webglEnabled: "imagePipeline.backend.webgl.enabled",

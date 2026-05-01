@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Versioned localStorage cache for dashboard snapshots so the dashboard can render immediately from stale-safe data.
+ */
+
 import {
   createVersionedStorageCache,
   getLocalStorage,

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Next.js App Router module for error. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";

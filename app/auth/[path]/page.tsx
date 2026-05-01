@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for page. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { AuthView } from "@daveyplate/better-auth-ui";
 import { authViewPaths } from "@daveyplate/better-auth-ui/server";
 

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas comment node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useMemo, useState } from "react";
 import { CheckCircle2, MessageSquare, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Node, NodeProps } from "@xyflow/react";

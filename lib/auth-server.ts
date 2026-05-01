@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Server-only Better Auth helpers for reading the current user and Convex token. Use only from Server Components or route handlers.
+ */
+
 import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
 
 import { api } from "@/convex/_generated/api";

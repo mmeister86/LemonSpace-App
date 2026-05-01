@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders Canvas edge UI for default edge. Keep visual treatment separate from persisted edge shape; graph writes belong in connection hooks and Convex mutations.
+ */
+
 import { useMemo, useState, type MouseEvent } from "react";
 import {
   BaseEdge,

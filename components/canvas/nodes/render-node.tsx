@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas render node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { Maximize2 } from "lucide-react";

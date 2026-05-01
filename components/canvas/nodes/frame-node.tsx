@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas frame node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useState } from "react";
 import { Position, type NodeProps, useReactFlow } from "@xyflow/react";
 import { useTranslations } from "next-intl";

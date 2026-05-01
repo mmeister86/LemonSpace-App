@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas node resize persistence. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { MutableRefObject } from "react";
 import type { NodeChange } from "@xyflow/react";
 

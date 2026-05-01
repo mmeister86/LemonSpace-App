@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for backend router. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import { applyPipelineStep, applyPipelineSteps } from "@/lib/image-pipeline/render-core";
 
 import {

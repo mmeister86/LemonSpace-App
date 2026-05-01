@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for toast. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import { useTranslations } from 'next-intl';
 import { gooeyToast, type GooeyPromiseData } from 'goey-toast';
 

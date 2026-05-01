@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas use mixer preview size node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useEffect, useState, type RefObject } from "react";
 
 import { ZERO_SURFACE_SIZE, type PreviewSurfaceSize } from "./mixer-types";

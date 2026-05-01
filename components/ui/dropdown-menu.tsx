@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Design-system primitive for dropdown menu. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 

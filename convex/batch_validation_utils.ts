@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for batch validation utils. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import type { Id } from "./_generated/dataModel";
 
 type BatchNodeRecord = {

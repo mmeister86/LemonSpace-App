@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Source module for use controllable state. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import { useCallback, useMemo, useState } from "react";
 
 export type UseControllableStateOptions<T> = {

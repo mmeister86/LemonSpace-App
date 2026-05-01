@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for provider polling. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { categorizeError } from "./ai_errors";
 
 export function getProviderPollDelayMs(attempt: number): number {

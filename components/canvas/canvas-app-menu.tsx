@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas app menu. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";

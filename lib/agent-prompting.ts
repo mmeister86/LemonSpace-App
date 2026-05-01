@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Pure prompt construction for analyze/execute agent phases. It consumes compiled prompt segments rather than raw Markdown.
+ */
+
 import type { AgentDefinition } from "@/lib/agent-definitions";
 import type {
   AgentBriefConstraints,

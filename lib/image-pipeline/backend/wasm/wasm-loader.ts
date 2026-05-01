@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for wasm loader. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import type {
   BackendPipelineRequest,
   BackendStepRequest,

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for polar products. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import {
   PUBLIC_TIER_MONTHLY_CREDITS,
   normalizePublicTier,

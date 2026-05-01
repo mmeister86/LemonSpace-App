@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard UI module for recent transactions. It should consume the bundled dashboard snapshot rather than issuing separate Convex queries for the same data.
+ */
+
 import Link from "next/link";
 import { useFormatter, useLocale } from "next-intl";
 import { Activity, Coins } from "lucide-react";

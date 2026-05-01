@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Auth-aware Convex query wrapper that prevents requireAuth queries from firing before the client session token is ready.
+ */
+
 import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReference, FunctionArgs, FunctionReturnType } from "convex/server";
 

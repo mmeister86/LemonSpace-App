@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for page. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { notFound, redirect } from "next/navigation";
 
 import { CanvasShell } from "@/components/canvas/canvas-shell";

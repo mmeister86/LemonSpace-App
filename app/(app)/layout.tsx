@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for layout. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import * as Sentry from "@sentry/nextjs";
 
 import { InitUser } from "@/components/init-user";

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas presets context. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import {
   createContext,
   useCallback,

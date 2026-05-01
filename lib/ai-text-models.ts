@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for ai text models. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import {
   AGENT_MODELS,
   DEFAULT_AGENT_MODEL_ID,

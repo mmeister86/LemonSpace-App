@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Persistent IndexedDB/localStorage queue for Canvas mutations. It protects optimistic edits across reloads and transient network failures.
+ */
+
 import {
   canvasSyncOpHasClientRequestId,
   canvasSyncOpTouchesEdgeId,

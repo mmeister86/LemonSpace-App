@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for media archive. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type MediaArchiveKind = "image" | "video" | "asset";
 
 export type MediaArchiveSource =

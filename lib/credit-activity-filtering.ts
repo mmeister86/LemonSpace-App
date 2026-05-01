@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for credit activity filtering. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type CreditActivityDateRange = "all" | "7d" | "30d" | "month" | "custom";
 export type CreditActivitySortValue = "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "model-asc";
 

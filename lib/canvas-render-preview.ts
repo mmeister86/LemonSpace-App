@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Builds preview pipelines from Canvas graph structure so render and crop nodes can share traversal logic.
+ */
+
 import {
   hashPipeline,
   type PipelineStep,

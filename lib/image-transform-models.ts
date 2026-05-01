@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for image transform models. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export const IMAGE_TRANSFORM_TYPES = [
   "bg-remove",
   "upscale",

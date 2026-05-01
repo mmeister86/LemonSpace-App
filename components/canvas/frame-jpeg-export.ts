@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for frame jpeg export. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { toCanvas } from "html-to-image";
 import type { FitBounds, SetViewport, Viewport } from "@xyflow/react";
 

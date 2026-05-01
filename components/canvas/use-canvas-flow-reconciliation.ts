@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Reconciles server graph updates with local React Flow state without clobbering active optimistic edits.
+ */
+
 import { useLayoutEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 

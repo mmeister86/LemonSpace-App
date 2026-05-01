@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Reusable client hook for use centered flow node position. Keep side effects explicit and expose a stable typed return shape for consuming components.
+ */
+
 import { useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
 

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Feature UI module for init user. Keep server data ownership in the relevant Convex/hooks layer and use this file for presentation and local interaction only.
+ */
+
 import { authClient } from "@/lib/auth-client";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";

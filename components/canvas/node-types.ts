@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for node types. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import ImageNode from "./nodes/image-node";
 import TextNode from "./nodes/text-node";
 import PromptNode from "./nodes/prompt-node";

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas rich text card node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type React from "react";
 import type { OutputBlockData, OutputData } from "@editorjs/editorjs";
 import {

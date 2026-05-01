@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Handles Polar.sh webhook effects for subscriptions and top-ups. Idempotency is required because payment providers retry events.
+ */
+
 import { v } from "convex/values";
 
 import { internalMutation, type MutationCtx } from "./_generated/server";

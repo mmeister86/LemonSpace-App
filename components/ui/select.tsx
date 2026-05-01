@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Design-system primitive for select. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"

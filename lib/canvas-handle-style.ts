@@ -1,4 +1,9 @@
 /**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas handle style. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
+/**
  * Akzentfarben der Handles je Node-Typ (s. jeweilige Node-Komponente).
  * Für einen dezenten Glow entlang der Kante (drop-shadow am Pfad).
  */

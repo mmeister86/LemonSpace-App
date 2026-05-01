@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Public entry route. Keep redirects and landing behavior aligned with the auth flow documented in app/CLAUDE.md.
+ */
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Processes the persisted Canvas operation queue. Retry, optimistic-ID remapping, and ACK behavior keep offline-tolerant edits consistent.
+ */
+
 import {
   useCallback,
   useEffect,

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for image formats. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 /** OpenRouter / Gemini image_config.aspect_ratio values */
 export const DEFAULT_ASPECT_RATIO = "1:1" as const;
 

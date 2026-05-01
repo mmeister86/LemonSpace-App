@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for node type validator. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { v, type Validator } from "convex/values";
 
 import {

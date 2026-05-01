@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Lightweight localStorage snapshot and operation mirror for fast Canvas recovery before live Convex data arrives.
+ */
+
 import {
   getLocalStorage,
   isJsonRecord,

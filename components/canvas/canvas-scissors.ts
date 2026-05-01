@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas scissors. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { useCallback, useEffect } from "react";
 import type {
   Dispatch,

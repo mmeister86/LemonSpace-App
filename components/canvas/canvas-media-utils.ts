@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas media utils. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 export async function getImageDimensions(
   file: File,
 ): Promise<{ width: number; height: number }> {

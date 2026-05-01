@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for connection banner. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConvexConnectionState } from "convex/react";
 import { useTranslations } from "next-intl";

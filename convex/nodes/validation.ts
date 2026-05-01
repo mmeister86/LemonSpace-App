@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Backend helper for Canvas node validation. Keep ownership checks, idempotency, and graph cleanup rules aligned with public node mutations.
+ */
+
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { validateBatchNodesForUserOrThrow } from "../batch_validation_utils";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Bridges Convex File Storage to Canvas nodes while verifying requested storage IDs still belong to the current user canvas.
+ */
+
 import { mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";

@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Agent documentation/runtime support module for instagram post. Keep Markdown prompt segments and TypeScript contracts synchronized.
+ */
+
 import Image from "next/image"
 import { Heart, MessageCircle, Send, Bookmark, MoreVertical } from "lucide-react"
 

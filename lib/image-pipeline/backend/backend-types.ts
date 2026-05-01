@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for backend types. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 
 export const CPU_BACKEND_ID = "cpu" as const;

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for agent run contract brief. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import { normalizeStringArray, trimString } from "@/lib/agent-run-contract-shared";
 
 export type AgentClarificationQuestion = {

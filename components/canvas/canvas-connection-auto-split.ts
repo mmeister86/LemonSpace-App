@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas connection auto split. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";

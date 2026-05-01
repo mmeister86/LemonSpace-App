@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for bridge. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import { runFullPipelineWithBackendRouter } from "@/lib/image-pipeline/backend/backend-router";
 import { resolveRenderSize } from "@/lib/image-pipeline/render-size";
 import {

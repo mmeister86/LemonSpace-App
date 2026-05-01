@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Normalizes LLM-generated agent plans and deliverables into stable structures stored on agent-output nodes.
+ */
+
 export type {
   AgentBriefConstraints,
   AgentClarificationAnswerMap,

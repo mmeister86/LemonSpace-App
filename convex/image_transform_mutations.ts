@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for image transform mutations. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { v } from "convex/values";
 
 import { internalMutation } from "./_generated/server";

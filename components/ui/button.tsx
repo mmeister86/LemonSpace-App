@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Design-system primitive for button. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"

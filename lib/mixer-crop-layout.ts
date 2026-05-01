@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for mixer crop layout. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 const MIN_CROP_REMAINING_SIZE = 0.1;
 
 type MixerSurfaceFit = "contain" | "cover" | "width";

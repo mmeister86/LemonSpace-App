@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for ai image pipeline. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { v } from "convex/values";
 import type { FunctionReference } from "convex/server";
 import type { action, internalAction, internalMutation } from "./_generated/server";

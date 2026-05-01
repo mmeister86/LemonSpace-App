@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for histogram plot. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import type { HistogramData } from "@/lib/image-pipeline/histogram";
 
 type HistogramChannels = Pick<HistogramData, "red" | "green" | "blue" | "rgb">;

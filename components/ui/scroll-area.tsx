@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Design-system primitive for scroll area. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 

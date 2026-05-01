@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for job credit flow. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";

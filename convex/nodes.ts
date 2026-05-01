@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Persists Canvas nodes and coordinates idempotent create/update/delete flows used by optimistic client sync.
+ */
+
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";

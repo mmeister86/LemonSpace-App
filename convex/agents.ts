@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Runs the two-phase agent workflow: analyze connected context, request clarifications when needed, then execute structured deliverables into agent-output nodes.
+ */
+
 import { v } from "convex/values";
 import type { FunctionReference } from "convex/server";
 

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Reusable client hook for use debounced callback. Keep side effects explicit and expose a stable typed return shape for consuming components.
+ */
+
 import { useRef, useCallback, useEffect, useMemo } from "react";
 
 type DebouncedCallback<Args extends unknown[]> = ((...args: Args) => void) & {

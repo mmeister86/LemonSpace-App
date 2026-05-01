@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Client implementation of the reusable parameter slider UI. Keep interaction math and form-state wiring stable for Canvas tool panels.
+ */
+
 import {
   useCallback,
   useEffect,

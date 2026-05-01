@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas user menu. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";

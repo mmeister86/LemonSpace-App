@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for migrations. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { v } from "convex/values";
 
 import { internalMutation, type MutationCtx } from "./_generated/server";

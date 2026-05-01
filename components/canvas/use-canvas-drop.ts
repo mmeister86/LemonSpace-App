@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Translates drag/drop and uploads into Canvas node creation while keeping optimistic previews and storage writes separate.
+ */
+
 import { useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
 

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for node status helpers. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import type { Doc } from "./_generated/dataModel";
 
 export type NodeStatus = Doc<"nodes">["status"];

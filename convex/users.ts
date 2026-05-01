@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for users. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";

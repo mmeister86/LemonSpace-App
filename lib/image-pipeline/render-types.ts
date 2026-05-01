@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for render types. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { MixerLayerSource } from "@/lib/canvas-render-preview";
 

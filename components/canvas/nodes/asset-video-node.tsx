@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas asset video node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Position, useStore, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";

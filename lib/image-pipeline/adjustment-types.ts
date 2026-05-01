@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for adjustment types. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export type AdjustmentNodeKind = "curves" | "color-adjust" | "light-adjust" | "detail-adjust";
 
 export type CurvePoint = {

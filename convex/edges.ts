@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Persists Canvas edges and enforces server-side connection policy parity with the React Flow client.
+ */
+
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./helpers";

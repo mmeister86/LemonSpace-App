@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Pure geometry resolver for handle magnetism. Keep this client-only and policy-aware; it should not persist graph state.
+ */
+
 import type { Connection, Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { validateCanvasConnectionPolicy } from "@/lib/canvas-connection-policy";

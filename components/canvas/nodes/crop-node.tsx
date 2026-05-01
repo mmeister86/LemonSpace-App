@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas crop node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { Crop } from "lucide-react";

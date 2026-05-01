@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for credit display. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { useMutation } from "convex/react";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useTranslations } from "next-intl";

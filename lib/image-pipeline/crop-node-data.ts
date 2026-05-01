@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for crop node data. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export type CropResizeMode = "source" | "custom";
 export type CropFitMode = "cover" | "contain" | "fill";
 

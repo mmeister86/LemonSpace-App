@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for schema. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import { z } from "zod";
 import { type ActionsProp } from "../shared/actions-config";
 import type { EmbeddedActionsProps } from "../shared/embedded-actions";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas use image transform runner node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useEffect, useState } from "react";
 import type { Node } from "@xyflow/react";
 import { useAction } from "convex/react";

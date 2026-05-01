@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for ai errors. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type ErrorType =
   | "timeout"
   | "insufficientCredits"

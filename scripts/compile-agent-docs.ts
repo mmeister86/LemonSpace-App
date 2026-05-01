@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Developer script for compile agent docs. Keep it deterministic because generated artifacts are consumed by runtime code and tests.
+ */
+
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

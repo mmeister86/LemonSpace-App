@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for source loader. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
 import {
   isEditorJsDataEmpty,

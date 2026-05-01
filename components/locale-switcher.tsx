@@ -1,4 +1,9 @@
 'use client';
+/**
+ * Onboarding note:
+ * Feature UI module for locale switcher. Keep server data ownership in the relevant Convex/hooks layer and use this file for presentation and local interaction only.
+ */
+
 import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Client layout shell for the editor. It owns sidebar sizing and rail-mode state, not graph or node persistence.
+ */
+
 import { useCallback, useState } from "react";
 
 import Canvas from "@/components/canvas/canvas";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas sync op mutations. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasSyncOp } from "@/lib/canvas-sync-op-types";
 

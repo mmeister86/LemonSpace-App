@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Source module for use action buttons. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Action } from "./schema";
 

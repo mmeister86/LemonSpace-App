@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for page. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { redirect } from "next/navigation";
 
 import { isAuthenticated } from "@/lib/auth-server";

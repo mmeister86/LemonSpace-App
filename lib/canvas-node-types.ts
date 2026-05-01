@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Type-level source for Canvas node unions. Keep it synchronized with Convex validators before adding or renaming nodes.
+ */
+
 export const PHASE1_CANVAS_NODE_TYPES = [
   "image",
   "text",

@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for toast messages. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import { useTranslations } from 'next-intl';
 import { toast, type ToastDurationOverrides } from './toast';
 import type { CanvasNodeDeleteBlockReason } from './toast';

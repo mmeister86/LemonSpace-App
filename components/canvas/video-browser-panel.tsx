@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for video browser panel. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import {
   useCallback,
   useEffect,

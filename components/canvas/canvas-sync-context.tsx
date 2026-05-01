@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas sync context. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import type { Id } from "@/convex/_generated/dataModel";

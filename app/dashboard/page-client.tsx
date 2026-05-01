@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Next.js App Router module for page client. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";

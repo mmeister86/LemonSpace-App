@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Design-system primitive for card. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

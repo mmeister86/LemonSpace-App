@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas mixer overlay resize handles node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type { FrameHandle } from "./mixer-types";

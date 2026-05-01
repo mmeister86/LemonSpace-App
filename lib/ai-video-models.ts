@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Client video-model registry. Freepik endpoint paths, tiers, durations, and credits must match backend job handling.
+ */
+
 export type VideoModelId =
   | "wan-2-2-480p"
   | "wan-2-2-720p"

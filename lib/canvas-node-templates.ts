@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Default data factory for new nodes inserted from the palette, command palette, or connection menus.
+ */
+
 import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
 
 export const CANVAS_NODE_TEMPLATES = [

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for use canvas edge insertions. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 

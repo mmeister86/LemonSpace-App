@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for actions config. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import type { Action, ActionsConfig } from "./schema";
 
 export type ActionsProp = ActionsConfig | Action[];

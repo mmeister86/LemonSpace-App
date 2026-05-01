@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for use canvas node interactions. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import {
   useCallback,
   useRef,

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for canvases. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { optionalAuth, requireAuth } from "./helpers";

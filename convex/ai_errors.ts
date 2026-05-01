@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for ai errors. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { ConvexError } from "convex/values";
 import { FreepikApiError } from "./freepik";
 

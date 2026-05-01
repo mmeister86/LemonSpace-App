@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Wraps OpenRouter model calls for image and structured-output generation. Keep model/cost assumptions in sync with the client registries.
+ */
+
 import { ConvexError } from "convex/values";
 import type {
   AgentHarnessMessage,

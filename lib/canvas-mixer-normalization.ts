@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas mixer normalization. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type MixerBlendMode = "normal" | "multiply" | "screen" | "overlay";
 
 export type NormalizedMixerCompositionData = {

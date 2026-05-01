@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Next.js App Router module for global error. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 

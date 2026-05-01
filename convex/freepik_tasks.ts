@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for freepik tasks. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 "use node";
 
 import { FreepikApiError, isRecord } from "./freepik_client";

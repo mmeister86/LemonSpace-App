@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Orchestrates asynchronous AI image and video jobs. Status mutations, credit reservations, storage writes, and provider retries must stay ordered so failed jobs release credits safely.
+ */
+
 import { v } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { buildNodeExecutingPatch } from "./node_status_helpers";

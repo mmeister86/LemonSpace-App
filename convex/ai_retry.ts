@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for ai retry. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { categorizeError, errorMessage, type ErrorCategory } from "./ai_errors";
 
 function wait(ms: number) {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for presets. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 

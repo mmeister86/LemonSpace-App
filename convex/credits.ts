@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Owns the credit ledger, reservations, commits, refunds, tier limits, and audit trail. Treat balance changes as financial state transitions, not UI counters.
+ */
+
 import { query, mutation, internalMutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";

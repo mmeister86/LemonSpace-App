@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas mixer diagnostics node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { computeVisibleMixerContentRect } from "@/lib/mixer-crop-layout";
 
 import {

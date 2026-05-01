@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for media. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";

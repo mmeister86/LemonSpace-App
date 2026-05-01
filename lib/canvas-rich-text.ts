@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas rich text. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import type { OutputBlockData, OutputData } from "@editorjs/editorjs";
 
 export type EditorJsRichTextData = {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Backend helper for Canvas node idempotency. Keep ownership checks, idempotency, and graph cleanup rules aligned with public node mutations.
+ */
+
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 

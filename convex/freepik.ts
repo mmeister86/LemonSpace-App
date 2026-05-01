@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Wraps Freepik asset and video APIs. Endpoint parsing is defensive because Freepik responses differ by model family.
+ */
+
 "use node";
 
 import { shouldLogVideoPollResult, type VideoPollStatus } from "../lib/video-poll-logging";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for usage page sections. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { ChevronLeft, ChevronRight, Filter, ListFilter } from "lucide-react";
 import type { useFormatter } from "next-intl";
 

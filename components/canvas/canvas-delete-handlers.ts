@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Coordinates node/edge deletion, bridge-edge creation, and queue cleanup after server mutations resolve.
+ */
+
 import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for pexels types. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export interface PexelsVideoFile {
   id: number;
   /** Pexels liefert u. a. `hls` mit `.m3u8` — nicht für `<video src>`. */

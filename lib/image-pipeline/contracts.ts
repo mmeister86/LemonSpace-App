@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for contracts. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export type PipelineStep<TNodeType extends string = string, TData = unknown> = {
   nodeId: string;
   type: TNodeType;

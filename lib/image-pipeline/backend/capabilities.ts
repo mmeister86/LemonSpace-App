@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for capabilities. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export type BackendCapabilities = {
   webgl: boolean;
   wasmSimd: boolean;

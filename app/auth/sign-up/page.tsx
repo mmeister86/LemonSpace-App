@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Next.js App Router module for page. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";

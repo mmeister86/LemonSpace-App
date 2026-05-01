@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas node group drop target. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { Node as RFNode } from "@xyflow/react";
 
 import { getNodeRect, isDescendantOf, rectsOverlap } from "./canvas-grouping-helpers";

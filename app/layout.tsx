@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Root App Router layout. It establishes fonts, server-derived auth token, telemetry, providers, and first-login user initialization.
+ */
+
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Manrope } from "next/font/google";

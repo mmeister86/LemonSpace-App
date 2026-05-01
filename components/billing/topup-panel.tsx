@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Billing UI module for topup panel. Keep display logic aligned with Convex credit tiers and route all payment state changes through provider-backed mutations/webhooks.
+ */
+
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 

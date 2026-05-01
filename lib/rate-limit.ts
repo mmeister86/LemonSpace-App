@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Server-side Redis-backed rate limiting helpers. Keep it out of client components and fail safely when Redis is unavailable.
+ */
+
 import { redis } from "./redis";
 
 export async function rateLimit(

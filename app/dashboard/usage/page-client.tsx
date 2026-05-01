@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Next.js App Router module for page client. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import Link from "next/link";
 import { useFormatter, useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for math. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import type { SliderConfig, SliderValue } from "./schema";
 
 type SliderPercentInput = {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas node defaults. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
 import {

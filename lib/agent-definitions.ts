@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Runtime registry for agent capabilities, rules, blueprint steps, and documentation paths.
+ */
+
 export type AgentDefinitionId = "instagram-post-agent";
 
 export type AgentRuntimeDefinition = {

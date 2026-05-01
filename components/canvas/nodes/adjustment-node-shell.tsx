@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas adjustment node shell node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useMemo, useState, type ComponentType } from "react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { Focus, Palette, Sun, TrendingUp } from "lucide-react";

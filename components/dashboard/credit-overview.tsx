@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard UI module for credit overview. It should consume the bundled dashboard snapshot rather than issuing separate Convex queries for the same data.
+ */
+
 import { useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { CreditCard } from "lucide-react";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas change camera stage node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { ChangeCameraOutputFormat } from "@/lib/image-transform-models";
 
 import type { SourcePreviewMeta } from "./image-transform-node-types";

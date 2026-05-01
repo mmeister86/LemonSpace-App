@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Client-side taxonomy for every node type, phase, category, and palette eligibility flag.
+ */
+
 import { nodeTypes } from "@/components/canvas/node-types";
 import {
   CANVAS_NODE_TEMPLATES,

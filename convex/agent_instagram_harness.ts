@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for agent instagram harness. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import type {
   AgentHarnessParsedToolCall,
   AgentHarnessTool,

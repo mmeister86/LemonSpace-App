@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Feature UI module for auth page. Keep server data ownership in the relevant Convex/hooks layer and use this file for presentation and local interaction only.
+ */
+
 import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
 

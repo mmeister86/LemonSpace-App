@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Media library UI module for media library dialog. Keep archive display separate from Canvas graph persistence and storage URL resolution.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { AlertCircle, Box, ImageIcon, Loader2, Video } from "lucide-react";

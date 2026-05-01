@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas sync queue flusher. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { CanvasSyncOpPayloadByType } from "@/lib/canvas-op-queue";
 
 type CanvasSyncOpType = keyof CanvasSyncOpPayloadByType;

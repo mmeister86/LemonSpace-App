@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas connection drop target. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";

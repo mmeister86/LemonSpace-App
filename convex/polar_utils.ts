@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for polar utils. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 type IdempotencyScope =
   | "topup_paid"
   | "subscription_activated_cycle"

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Versioned localStorage cache for the usage audit trail; filtering stays client-side after the live query hydrates.
+ */
+
 import {
   createVersionedStorageCache,
   getLocalStorage,

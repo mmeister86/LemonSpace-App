@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for histogram. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 export type HistogramData = {
   rgb: number[];
   red: number[];

@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * Onboarding note:
+ * Design-system primitive for progressive blur. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
+ */
+
 import React from "react"
 
 import { cn } from "@/lib/utils"

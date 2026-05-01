@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Next.js App Router module for page. Keep SSR auth, redirects, and client/server component boundaries explicit.
+ */
+
 import { ManageSubscription } from "@/components/billing/manage-subscription";
 import { PricingCards } from "@/components/billing/pricing-cards";
 import { TopupPanel } from "@/components/billing/topup-panel";

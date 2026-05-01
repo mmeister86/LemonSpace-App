@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas mixer controls node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { ChangeEvent, FormEvent } from "react";
 
 import type { MixerBlendMode } from "@/lib/canvas-mixer-normalization";

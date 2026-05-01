@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for contract. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import { z } from "zod";
 import { parseWithSchema, safeParseWithSchema } from "./parse";
 

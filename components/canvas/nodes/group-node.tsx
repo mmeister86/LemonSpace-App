@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas group node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useState, useCallback, useEffect } from "react";
 import { Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import { FolderMinus } from "lucide-react";

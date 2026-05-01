@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas connection validation. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { Connection, Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import {

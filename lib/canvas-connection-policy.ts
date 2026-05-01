@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Single policy source for valid Canvas connections. Server and client both depend on these rules for parity.
+ */
+
 import { isAdjustmentNodeType } from "@/lib/canvas-node-types";
 
 export const CANVAS_NODE_DND_MIME = "application/lemonspace-node-type";

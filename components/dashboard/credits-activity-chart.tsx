@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard UI module for credits activity chart. It should consume the bundled dashboard snapshot rather than issuing separate Convex queries for the same data.
+ */
+
 import { useMemo } from "react";
 import { useLocale } from "next-intl";
 import { Area, AreaChart, CartesianGrid, Line, XAxis, YAxis } from "recharts";

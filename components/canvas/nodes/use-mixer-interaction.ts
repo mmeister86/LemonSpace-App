@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas use mixer interaction node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 
 import { diffMixerData, roundDiagnosticNumber } from "./mixer-diagnostics";

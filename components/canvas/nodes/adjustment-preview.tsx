@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas adjustment preview node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useMemo } from "react";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 

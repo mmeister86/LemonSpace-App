@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard UI module for dashboard page sections. It should consume the bundled dashboard snapshot rather than issuing separate Convex queries for the same data.
+ */
+
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for auth. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { requireRunMutationCtx } from "@convex-dev/better-auth/utils";

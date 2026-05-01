@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Combines auth readiness, Canvas graph subscription, and storage URL resolution into the data shape consumed by React Flow.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 

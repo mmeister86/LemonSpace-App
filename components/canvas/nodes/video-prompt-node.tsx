@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas video prompt node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useMemo, useState } from "react";
 import { Position, useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";

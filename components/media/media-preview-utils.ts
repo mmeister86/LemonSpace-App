@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Media library UI module for media preview utils. Keep archive display separate from Canvas graph persistence and storage URL resolution.
+ */
+
 type MediaPreviewReference<TStorageId extends string = string> = {
   kind?: "image" | "video" | "asset";
   storageId?: TStorageId;

@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Reusable client hook for use pipeline preview. Keep side effects explicit and expose a stable typed return shape for consuming components.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";

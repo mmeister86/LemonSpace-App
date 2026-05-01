@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas connection drop menu actions. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { Dispatch, SetStateAction } from "react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 

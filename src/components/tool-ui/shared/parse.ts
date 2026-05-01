@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for parse. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import { z } from "zod";
 
 function formatZodPath(path: Array<string | number | symbol>): string {

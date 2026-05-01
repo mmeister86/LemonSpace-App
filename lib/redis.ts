@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Server-side Redis client factory used by infrastructure helpers such as rate limiting. Do not import this into browser bundles.
+ */
+
 import Redis from "ioredis";
 
 function createRedis(): Redis {

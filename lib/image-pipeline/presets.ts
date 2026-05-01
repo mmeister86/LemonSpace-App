@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for presets. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import {
   cloneAdjustmentData,
   DEFAULT_COLOR_ADJUST_DATA,

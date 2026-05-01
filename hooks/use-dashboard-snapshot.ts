@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard data hook that combines the bundled Convex snapshot query with local cache fallback and logout invalidation.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import type { FunctionReturnType } from "convex/server";
 

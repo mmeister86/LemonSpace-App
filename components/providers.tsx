@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Feature UI module for providers. Keep server data ownership in the relevant Convex/hooks layer and use this file for presentation and local interaction only.
+ */
+
 import * as Sentry from "@sentry/nextjs";
 import { ReactNode, useEffect } from "react";
 import { ConvexReactClient } from "convex/react";

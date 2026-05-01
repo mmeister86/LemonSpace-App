@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for pexels. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 "use node";
 
 import { v } from "convex/values";

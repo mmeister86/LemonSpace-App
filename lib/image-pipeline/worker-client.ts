@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Image pipeline utility for worker client. Keep CPU/WebGL/worker behavior deterministic so preview and render tests can assert parity.
+ */
+
 import { renderFull } from "@/lib/image-pipeline/bridge";
 import {
   renderPreview,

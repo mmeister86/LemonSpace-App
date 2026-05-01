@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas sync optimistic updates. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import {
   OPTIMISTIC_EDGE_PREFIX,
   OPTIMISTIC_NODE_PREFIX,

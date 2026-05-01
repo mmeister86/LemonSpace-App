@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas image transform preview utils node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { SourcePreviewMeta } from "./image-transform-node-types";
 
 export function getSourcePreviewMeta(args: {

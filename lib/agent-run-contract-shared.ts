@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for agent run contract shared. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export const SAFE_FALLBACK_TITLE = "Untitled";
 export const SAFE_FALLBACK_CHANNEL = "general";
 export const SAFE_FALLBACK_OUTPUT_TYPE = "text";

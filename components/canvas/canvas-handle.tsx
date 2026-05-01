@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas handle. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import { Handle, useConnection } from "@xyflow/react";
 
 import {

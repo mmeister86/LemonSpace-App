@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Typed optimistic-store helper for the bundled canvasGraph query. All optimistic node/edge mutations should update this cache instead of legacy split queries.
+ */
+
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Owns connection creation and validation from the Canvas UI, including reconnect semantics and policy messages.
+ */
+
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { Connection, Edge as RFEdge, Node as RFNode, OnConnectEnd, OnConnectStart } from "@xyflow/react";
 

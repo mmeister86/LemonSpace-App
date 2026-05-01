@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas editor js text editor node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type EditorJS from "@editorjs/editorjs";
 import type {

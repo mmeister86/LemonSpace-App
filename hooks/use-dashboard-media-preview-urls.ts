@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Reusable client hook for use dashboard media preview urls. Keep side effects explicit and expose a stable typed return shape for consuming components.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 

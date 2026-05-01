@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for browser storage cache. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export type JsonRecord = Record<string, unknown>;
 
 export type VersionedCachePayload<TValue, TValueKey extends string> = {

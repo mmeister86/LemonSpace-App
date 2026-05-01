@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas sync op storage. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import {
   getLocalStorage,
   isJsonRecord,

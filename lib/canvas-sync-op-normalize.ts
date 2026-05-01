@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas sync op normalize. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import type { Id } from "@/convex/_generated/dataModel";
 import { isJsonRecord } from "@/lib/browser-storage-cache";
 import {

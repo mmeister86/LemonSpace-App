@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Supports the Canvas editor workflow for canvas helpers. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
+ */
+
 import type { DefaultEdgeOptions, Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { readCanvasOps } from "@/lib/canvas-local-persistence";

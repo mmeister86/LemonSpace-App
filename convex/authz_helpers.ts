@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Convex backend module for authz helpers. Keep auth checks, ownership validation, and idempotency close to the mutation/query that touches user data.
+ */
+
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 

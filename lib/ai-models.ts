@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Client image-model registry. Keep IDs, tiers, and credit costs synchronized with Convex OpenRouter configuration.
+ */
+
 // Client-side model definitions for the UI.
 // Mirrors the backend config in convex/openrouter.ts — keep in sync.
 

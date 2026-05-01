@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Internationalization module for request. Keep locale routing and message loading centralized here.
+ */
+
 import { getRequestConfig } from 'next-intl/server';
 import { routing } from '../routing';
 

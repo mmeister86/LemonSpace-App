@@ -1,4 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/**
+ * Onboarding note:
+ * Defines the Convex data model and indexes. Keep comments here aligned with every user-facing flow because schema changes ripple into auth, credits, media, and Canvas sync.
+ */
+
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 

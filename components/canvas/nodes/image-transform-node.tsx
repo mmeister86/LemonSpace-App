@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas image transform node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Position, useReactFlow, useStore, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";

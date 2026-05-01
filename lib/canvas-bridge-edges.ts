@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas bridge edges. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import {
   getConnectedEdges,
   getIncomers,

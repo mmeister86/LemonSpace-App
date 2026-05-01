@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for tier credits. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 export const MONTHLY_TIER_CREDITS = {
   free: 50,
   starter: 400,

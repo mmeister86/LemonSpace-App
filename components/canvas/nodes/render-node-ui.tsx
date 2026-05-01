@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Renders and manages the Canvas render node ui node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
+ */
+
 import type { RefObject } from "react";
 import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2, X } from "lucide-react";
 

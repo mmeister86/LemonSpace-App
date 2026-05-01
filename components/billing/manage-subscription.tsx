@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Billing UI module for manage subscription. Keep display logic aligned with Convex credit tiers and route all payment state changes through provider-backed mutations/webhooks.
+ */
+
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useTranslations } from "next-intl";
 import { ExternalLink } from "lucide-react";

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Pure analytics helpers for credit activity charts and recent-transaction prioritization.
+ */
+
 type CreditTransactionType =
   | "subscription"
   | "topup"

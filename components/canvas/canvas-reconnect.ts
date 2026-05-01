@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Tracks React Flow reconnect gestures so failed reconnects do not accidentally remove the original edge.
+ */
+
 import { useCallback } from "react";
 import { useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";

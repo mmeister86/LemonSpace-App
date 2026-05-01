@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Shared TypeScript utility for canvas rf adapters. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
+ */
+
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import type { Doc } from "@/convex/_generated/dataModel";
 import {

@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Loads a complete Canvas graph in one query so the frontend can avoid separate node/edge subscriptions.
+ */
+
 import { v } from "convex/values";
 
 import type { Id } from "./_generated/dataModel";

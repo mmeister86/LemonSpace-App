@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Main Canvas orchestrator. It wires React Flow, Convex sync, local persistence, drag/drop, selection, and panel composition without owning every low-level helper.
+ */
+
 import {
   type CSSProperties,
   useCallback,

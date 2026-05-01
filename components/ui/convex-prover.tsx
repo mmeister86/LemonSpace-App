@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Client provider bridge that wires Convex React to Better Auth. Keep authentication context setup here and avoid treating it as a visual ShadCN primitive.
+ */
+
 import { ReactNode } from "react";
 import { ConvexReactClient } from "convex/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";

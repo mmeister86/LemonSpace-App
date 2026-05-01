@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Centralizes Convex auth helpers. Prefer these helpers over ad-hoc identity checks so unauthenticated fallbacks stay consistent.
+ */
+
 import { QueryCtx, MutationCtx } from "./_generated/server";
 import { authComponent } from "./auth";
 

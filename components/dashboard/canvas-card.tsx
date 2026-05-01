@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Onboarding note:
+ * Dashboard UI module for canvas card. It should consume the bundled dashboard snapshot rather than issuing separate Convex queries for the same data.
+ */
+
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
 import { useTranslations } from "next-intl";

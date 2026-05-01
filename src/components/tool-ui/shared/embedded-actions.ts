@@ -1,3 +1,8 @@
+/**
+ * Onboarding note:
+ * Source module for embedded actions. Keep it isolated from UI concerns unless explicitly used as a client entry point.
+ */
+
 import type { ActionsProp } from "./actions-config";
 
 export type EmbeddedActionHandler<TState> = (
