@@ -36,13 +36,7 @@ import { toast } from "@/lib/toast";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
 
 type AiTextNodeData = {
   instruction?: string;
@@ -435,21 +429,14 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
 
         <div className="space-y-1.5">
           <Label className="text-[11px] text-muted-foreground">{t("modelLabel")}</Label>
-          <Select value={resolvedModelId} onValueChange={handleModelChange}>
-            <SelectTrigger className="h-9 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {availableModels.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {t("modelCreditMeta", {
-                    model: model.label,
-                    credits: model.creditCost,
-                  })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CanvasAiModelSelector
+            kind="ai-text"
+            value={resolvedModelId}
+            onValueChange={handleModelChange}
+            userTier={userTier}
+            className="h-9 w-full"
+            placeholder={t("modelLabel")}
+          />
         </div>
 
         <button

@@ -27,6 +27,7 @@ import {
   getAvailableImageModels,
   getModel,
 } from "@/lib/ai-models";
+import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
 import {
   DEFAULT_ASPECT_RATIO,
   getAiImageNodeOuterSize,
@@ -81,6 +82,7 @@ export default function PromptNode({
   selected,
 }: NodeProps<PromptNode>) {
   const t = useTranslations('toasts');
+  const tModelSelector = useTranslations("aiModelSelector");
   const nodeData = data as PromptNodeData;
   const router = useRouter();
   const { getEdges, getNode } = useReactFlow();
@@ -408,24 +410,16 @@ export default function PromptNode({
             htmlFor={`prompt-model-${id}`}
             className="text-[11px] font-medium text-muted-foreground"
           >
-            Modell
+            {tModelSelector("modelLabel")}
           </Label>
-          <Select value={resolvedModelId} onValueChange={handleModelChange}>
-            <SelectTrigger
-              id={`prompt-model-${id}`}
-              className="nodrag nowheel w-full"
-              size="sm"
-            >
-              <SelectValue placeholder="Modell" />
-            </SelectTrigger>
-            <SelectContent className="nodrag">
-              {availableModels.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CanvasAiModelSelector
+            kind="image"
+            value={resolvedModelId}
+            onValueChange={handleModelChange}
+            userTier={userTier}
+            className="w-full"
+            placeholder={tModelSelector("modelLabel")}
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">

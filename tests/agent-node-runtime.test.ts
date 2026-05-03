@@ -91,6 +91,35 @@ vi.mock("@/components/ui/select", () => ({
     React.createElement("option", { value }, children),
 }));
 
+vi.mock("@/components/canvas/nodes/canvas-ai-model-selector", () => ({
+  CanvasAiModelSelector: ({
+    value,
+    onValueChange,
+    userTier,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    userTier: string;
+  }) =>
+    React.createElement(
+      "select",
+      {
+        "aria-label": "agent-model",
+        value,
+        onChange: (event: Event) => {
+          onValueChange((event.target as HTMLSelectElement).value);
+        },
+      },
+      [
+        React.createElement("option", { key: "mini", value: "openai/gpt-5.4-mini" }, "GPT-5.4 Mini"),
+        React.createElement("option", { key: "full", value: "openai/gpt-5.4" }, "GPT-5.4"),
+        userTier === "max"
+          ? React.createElement("option", { key: "pro", value: "openai/gpt-5.4-pro" }, "GPT-5.4 Pro")
+          : null,
+      ],
+    ),
+}));
+
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
 }));

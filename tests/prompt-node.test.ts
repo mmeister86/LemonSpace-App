@@ -128,6 +128,30 @@ vi.mock("@/components/ui/select", () => ({
     React.createElement("optgroup", { label: String(children) }),
 }));
 
+vi.mock("@/components/canvas/nodes/canvas-ai-model-selector", () => ({
+  CanvasAiModelSelector: ({
+    value,
+    onValueChange,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+  }) =>
+    React.createElement(
+      "select",
+      {
+        "data-testid": "model-select",
+        value,
+        onChange: (event: Event) => {
+          onValueChange((event.target as HTMLSelectElement).value);
+        },
+      },
+      [
+        React.createElement("option", { key: "gemini", value: "google/gemini-2.5-flash-image" }, "Gemini 2.5 Flash"),
+        React.createElement("option", { key: "gpt", value: "openai/gpt-5-image-mini" }, "GPT-5 Image Mini"),
+      ],
+    ),
+}));
+
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
 }));

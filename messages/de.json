@@ -13,6 +13,31 @@
     "next": "Weiter",
     "upgrade": "Upgrade"
   },
+  "aiModelSelector": {
+    "dialogTitle": "KI-Modell auswählen",
+    "dialogDescription": "Suche und wähle ein KI-Modell für diesen Node.",
+    "modelLabel": "Modell",
+    "searchAriaLabel": "KI-Modelle suchen",
+    "searchPlaceholder": "Modelle suchen...",
+    "loading": "Modelle werden geladen...",
+    "emptyTitle": "Keine Modelle verfügbar",
+    "emptyDescription": "Für diesen Node sind aktuell keine Modelle verfügbar.",
+    "noResultsTitle": "Keine Modelle gefunden",
+    "noResultsDescription": "Kein Modell passt zu \"{query}\".",
+    "selectedModelAria": "{model} ist ausgewählt. Klicke, um das Modell zu wechseln.",
+    "selectedStatus": "Ausgewählt",
+    "newBadge": "Neu",
+    "previewBadge": "Vorschau",
+    "features": {
+      "fast": "Schnell",
+      "turbo": "Turbo",
+      "reasoning": "Reasoning",
+      "multimodal": "Multimodal",
+      "long-context": "Langer Kontext",
+      "image": "Bild",
+      "video": "Video"
+    }
+  },
   "auth": {
     "signIn": "Anmelden",
     "signOut": "Abmelden",

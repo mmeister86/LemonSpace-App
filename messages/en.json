@@ -13,6 +13,31 @@
     "next": "Next",
     "upgrade": "Upgrade"
   },
+  "aiModelSelector": {
+    "dialogTitle": "Select AI model",
+    "dialogDescription": "Search and choose an AI model for this node.",
+    "modelLabel": "Model",
+    "searchAriaLabel": "Search AI models",
+    "searchPlaceholder": "Search models...",
+    "loading": "Loading models...",
+    "emptyTitle": "No models available",
+    "emptyDescription": "No models are currently available for this node.",
+    "noResultsTitle": "No models found",
+    "noResultsDescription": "No model matches \"{query}\".",
+    "selectedModelAria": "{model} is selected. Click to change model.",
+    "selectedStatus": "Selected",
+    "newBadge": "New",
+    "previewBadge": "Preview",
+    "features": {
+      "fast": "Fast",
+      "turbo": "Turbo",
+      "reasoning": "Reasoning",
+      "multimodal": "Multimodal",
+      "long-context": "Long context",
+      "image": "Image",
+      "video": "Video"
+    }
+  },
   "auth": {
     "signIn": "Sign in",
     "signOut": "Sign out",

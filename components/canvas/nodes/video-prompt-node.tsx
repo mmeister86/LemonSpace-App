@@ -16,7 +16,6 @@ import { useTranslations } from "next-intl";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import {
   DEFAULT_VIDEO_MODEL_ID,
-  getAvailableVideoModels,
   getVideoModel,
   isVideoModelId,
   type VideoModelDurationSeconds,
@@ -31,13 +30,7 @@ import { toast } from "@/lib/toast";
 import { classifyError } from "@/lib/ai-errors";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 
 type VideoPromptNodeData = {
@@ -356,18 +349,14 @@ export default function VideoPromptNode({
           <Label htmlFor={`video-model-${id}`} className="text-[11px] text-muted-foreground">
             {t("modelLabel")}
           </Label>
-          <Select value={modelId} onValueChange={handleModelChange}>
-            <SelectTrigger id={`video-model-${id}`} className="nodrag nowheel w-full" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="nodrag">
-              {getAvailableVideoModels("pro").map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CanvasAiModelSelector
+            kind="video"
+            value={modelId}
+            onValueChange={handleModelChange}
+            durationSeconds={durationSeconds}
+            className="w-full"
+            placeholder={t("modelLabel")}
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">

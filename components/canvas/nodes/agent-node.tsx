@@ -30,13 +30,7 @@ import { getAgentTemplate } from "@/lib/agent-templates";
 import { normalizePublicTier } from "@/lib/tier-credits";
 import { toast } from "@/lib/toast";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 
@@ -507,18 +501,14 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           <Label htmlFor={`agent-model-${id}`} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("modelLabel")}
           </Label>
-          <Select value={resolvedModelId} onValueChange={handleModelChange}>
-            <SelectTrigger id={`agent-model-${id}`} className="nodrag nowheel w-full" size="sm">
-              <SelectValue placeholder="Model" />
-            </SelectTrigger>
-            <SelectContent className="nodrag">
-              {(availableModels.length > 0 ? availableModels : [selectedModel]).filter(Boolean).map((model) => (
-                <SelectItem key={model!.id} value={model!.id}>
-                  {model!.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CanvasAiModelSelector
+            kind="agent"
+            value={resolvedModelId}
+            onValueChange={handleModelChange}
+            userTier={userTier}
+            className="w-full"
+            placeholder={t("modelLabel")}
+          />
           <p className="text-[11px] text-muted-foreground">
             {t("modelCreditMeta", {
               model: selectedModel?.label ?? resolvedModelId,
