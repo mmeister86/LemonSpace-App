@@ -36,6 +36,26 @@
       "long-context": "Long context",
       "image": "Image",
       "video": "Video"
+    },
+    "modelDescriptions": {
+      "google_gemini_2_5_flash_image": "Fast, high-quality generation",
+      "black_forest_labs_flux_2_klein_4b": "Low-cost image generation for quick drafts",
+      "bytedance_seed_seedream_4_5": "Balanced detail and speed for everyday prompts",
+      "google_gemini_3_1_flash_image_preview": "Fast multimodal image generation",
+      "openai_gpt_5_image_mini": "Higher-fidelity instruction following",
+      "sourceful_riverflow_v2_fast": "Fast premium output for production workflows",
+      "sourceful_riverflow_v2_pro": "Pro quality with stronger composition",
+      "google_gemini_3_pro_image_preview": "Advanced quality and prompt adherence",
+      "openai_gpt_5_image": "Highest quality and best text rendering",
+      "wan_2_2_480p": "Fast and affordable, good for concepts",
+      "wan_2_2_720p": "HD quality, open model",
+      "kling_std_2_1": "Realistic with stable motion",
+      "seedance_pro_1080p": "Full HD with good value",
+      "kling_pro_2_6": "Best quality with cinematic motion",
+      "openai_gpt_5_4_nano": "Fastest option for lightweight agent runs",
+      "openai_gpt_5_4_mini": "Balanced quality and latency for default use",
+      "openai_gpt_5_4": "Higher reasoning quality for complex tasks",
+      "openai_gpt_5_4_pro": "Top-tier capability for hardest workflows"
     }
   },
   "auth": {

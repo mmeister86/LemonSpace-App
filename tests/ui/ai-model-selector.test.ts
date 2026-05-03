@@ -8,7 +8,7 @@ import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model
 import AIModelSelector, { type AIModelSelectorItem } from "@/components/ui/ai-model-selector";
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, unknown>) => {
+  useTranslations: () => {
     const messages: Record<string, string> = {
       dialogTitle: "Select AI model",
       dialogDescription: "Search and choose an AI model for this node.",
@@ -31,12 +31,25 @@ vi.mock("next-intl", () => ({
       "features.long-context": "Long context",
       "features.image": "Image",
       "features.video": "Video",
+      "modelDescriptions.google_gemini_2_5_flash_image": "Schnelle, hochwertige Generierung",
     };
-    let message = messages[key] ?? key;
-    for (const [name, value] of Object.entries(values ?? {})) {
-      message = message.replaceAll(`{${name}}`, String(value));
-    }
-    return message;
+
+    const translator = (key: string, values?: Record<string, unknown>) => {
+      if (key === "noResultsDescription" && !values?.query) {
+        throw new Error('FORMATTING_ERROR: Missing intl variable "query"');
+      }
+      if (key === "selectedModelAria" && !values?.model) {
+        throw new Error('FORMATTING_ERROR: Missing intl variable "model"');
+      }
+
+      let message = messages[key] ?? key;
+      for (const [name, value] of Object.entries(values ?? {})) {
+        message = message.replaceAll(`{${name}}`, String(value));
+      }
+      return message;
+    };
+    translator.has = (key: string) => key in messages;
+    return translator;
   },
 }));
 
@@ -154,8 +167,8 @@ describe("AIModelSelector", () => {
         emptyTitle: "Keine Modelle verfügbar",
         emptyDescription: "Für diesen Node sind aktuell keine Modelle verfügbar.",
         noResultsTitle: "Keine Modelle gefunden",
-        noResultsDescription: 'Kein Modell passt zu "{query}".',
-        selectedModelAria: "{model} ist ausgewählt. Klicke, um das Modell zu wechseln.",
+        noResultsDescription: (query) => `Kein Modell passt zu "${query}".`,
+        selectedModelAria: (model) => `${model} ist ausgewählt. Klicke, um das Modell zu wechseln.`,
         selectedStatus: "Ausgewählt",
         newBadge: "Neu",
         previewBadge: "Vorschau",
@@ -214,5 +227,29 @@ describe("AIModelSelector", () => {
     });
 
     expect(onValueChange).toHaveBeenCalledWith("openai/gpt-5.4-pro");
+  });
+
+  it("localizes canvas model descriptions from aiModelSelector messages", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(CanvasAiModelSelector, {
+          kind: "image",
+          value: "google/gemini-2.5-flash-image",
+          onValueChange: vi.fn(),
+          userTier: "free",
+        }),
+      );
+    });
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>("button")?.click();
+    });
+
+    expect(document.body.textContent).toContain("Schnelle, hochwertige Generierung · 4 Cr");
+    expect(document.body.textContent).not.toContain("Fast, high-quality generation · 4 Cr");
   });
 });

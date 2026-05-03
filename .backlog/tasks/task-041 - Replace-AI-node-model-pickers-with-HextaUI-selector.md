@@ -1,11 +1,11 @@
 ---
 id: TASK-041
 title: Replace AI node model pickers with HextaUI selector
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-05-03 14:15'
-updated_date: '2026-05-03 14:40'
+updated_date: '2026-05-03 19:18'
 labels: []
 dependencies: []
 references:
@@ -53,4 +53,14 @@ Implemented local HextaUI-derived AI model selector, Canvas model adapter, model
 User requested follow-up localization of the picker content in German and English. Using the existing TASK-041 because this is a direct continuation of the picker feature.
 
 Localized the shared AI model selector content through next-intl in German and English. Added aiModelSelector message keys for dialog title/description, search placeholder/aria, loading, empty/no-result states, selected state, New/Preview badges, and feature tooltip labels. Verification: JSON parse check passed, pnpm lint exited 0 with the same four unrelated warnings, and pnpm test passed 131 files / 721 tests.
+
+Fixed localized ICU interpolation in the AI model selector. The Canvas adapter now provides formatter callbacks for no-results descriptions and selected-model aria labels so next-intl receives query/model values at call time. Added a regression test mock that throws when ICU variables are requested without values. Verification: focused selector/node tests passed, pnpm lint exited 0 with the same four unrelated warnings, and pnpm test passed 131 files / 721 tests.
+
+Fixed remaining English model picker content in localized Canvas by translating model descriptions through aiModelSelector.modelDescriptions.* for image, video, AI text, and agent model IDs. The adapter now resolves localized descriptions at Canvas render time and falls back to registry descriptions when no message is present. Added a regression test that verifies a German model description replaces the English registry string. Verification: JSON parse check passed; focused selector/node tests passed 20 tests; pnpm lint exited 0 with the same four unrelated warnings; pnpm test passed 131 files / 722 tests.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replaced the AI model pickers in image prompt, video prompt, AI text, and agent nodes with the HextaUI-derived selector; preserved model persistence fields and Canvas shortcuts; localized picker labels and model descriptions in German/English; fixed next-intl ICU interpolation for dynamic selected/no-results strings. Verification: JSON parse check passed, focused selector/node tests passed, pnpm lint exited 0 with four unrelated existing warnings, and pnpm test passed 131 files / 722 tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

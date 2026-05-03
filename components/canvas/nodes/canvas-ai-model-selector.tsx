@@ -20,6 +20,7 @@ import { getAvailableImageModels, type AiModel } from "@/lib/ai-models";
 import { getAvailableVideoModels, type VideoModelDurationSeconds } from "@/lib/ai-video-models";
 
 export type CanvasModelSelectorKind = "image" | "video" | "ai-text" | "agent";
+type ModelDescriptionFormatter = (modelId: string, fallback: string | undefined) => string | undefined;
 
 export function inferModelProvider(modelId: string): AIModelProvider {
   if (modelId.startsWith("openai/")) return "openai";
@@ -40,6 +41,18 @@ function withCredits(description: string | undefined, credits: number) {
   return description ? `${description} · ${creditText}` : creditText;
 }
 
+function modelDescriptionMessageKey(modelId: string) {
+  return `modelDescriptions.${modelId.replace(/[^a-zA-Z0-9]/g, "_")}`;
+}
+
+function resolveDescription(
+  modelId: string,
+  fallback: string | undefined,
+  formatDescription?: ModelDescriptionFormatter,
+) {
+  return formatDescription?.(modelId, fallback) ?? fallback;
+}
+
 function imageFeatures(model: AiModel): AIModelSelectorItem["features"] {
   const features: AIModelSelectorItem["features"] = ["image"];
   if (model.tier === "budget") features.push("fast");
@@ -51,12 +64,15 @@ function videoFeatures(model: ReturnType<typeof getAvailableVideoModels>[number]
   return model.supportsImageToVideo ? ["multimodal", "video"] : ["video"];
 }
 
-export function buildImageModelSelectorOptions(tier: AiModel["minTier"]): AIModelSelectorItem[] {
+export function buildImageModelSelectorOptions(
+  tier: AiModel["minTier"],
+  formatDescription?: ModelDescriptionFormatter,
+): AIModelSelectorItem[] {
   return getAvailableImageModels(tier).map((model) => ({
     id: model.id,
     name: model.name,
     provider: inferModelProvider(model.id),
-    description: withCredits(model.description, model.creditCost),
+    description: withCredits(resolveDescription(model.id, model.description, formatDescription), model.creditCost),
     features: imageFeatures(model),
     isPreview: model.id.includes("preview"),
   }));
@@ -64,32 +80,42 @@ export function buildImageModelSelectorOptions(tier: AiModel["minTier"]): AIMode
 
 export function buildVideoModelSelectorOptions(
   durationSeconds: VideoModelDurationSeconds = 5,
+  formatDescription?: ModelDescriptionFormatter,
 ): AIModelSelectorItem[] {
   return getAvailableVideoModels("pro").map((model) => ({
     id: model.id,
     name: model.label,
     provider: inferModelProvider(model.id),
-    description: withCredits(model.description, model.creditCost[durationSeconds]),
+    description: withCredits(
+      resolveDescription(model.id, model.description, formatDescription),
+      model.creditCost[durationSeconds],
+    ),
     features: videoFeatures(model),
   }));
 }
 
-export function buildAiTextModelSelectorOptions(tier: AiTextModelAccessTier): AIModelSelectorItem[] {
+export function buildAiTextModelSelectorOptions(
+  tier: AiTextModelAccessTier,
+  formatDescription?: ModelDescriptionFormatter,
+): AIModelSelectorItem[] {
   return getAvailableAiTextModels(tier).map((model) => ({
     id: model.id,
     name: model.label,
     provider: inferModelProvider(model.id),
-    description: withCredits(model.description, model.creditCost),
+    description: withCredits(resolveDescription(model.id, model.description, formatDescription), model.creditCost),
     features: model.id.includes("nano") || model.id.includes("mini") ? ["fast"] : ["reasoning"],
   }));
 }
 
-export function buildAgentModelSelectorOptions(tier: AgentModelAccessTier): AIModelSelectorItem[] {
+export function buildAgentModelSelectorOptions(
+  tier: AgentModelAccessTier,
+  formatDescription?: ModelDescriptionFormatter,
+): AIModelSelectorItem[] {
   return getAvailableAgentModels(tier).map((model) => ({
     id: model.id,
     name: model.label,
     provider: inferModelProvider(model.id),
-    description: withCredits(model.description, model.creditCost),
+    description: withCredits(resolveDescription(model.id, model.description, formatDescription), model.creditCost),
     features: model.id.includes("nano") || model.id.includes("mini") ? ["fast"] : ["reasoning"],
   }));
 }
@@ -113,17 +139,31 @@ export function CanvasAiModelSelector({
 }) {
   const t = useTranslations("aiModelSelector");
   const models = useMemo(() => {
+    const formatDescription: ModelDescriptionFormatter = (modelId, fallback) => {
+      const key = modelDescriptionMessageKey(modelId);
+      const translator = t as unknown as {
+        (translationKey: string): string;
+        has?: (translationKey: string) => boolean;
+      };
+      if (typeof translator.has === "function") {
+        return translator.has(key) ? translator(key) : fallback;
+      }
+
+      const translated = translator(key);
+      return translated === key ? fallback : translated;
+    };
+
     if (kind === "image") {
-      return buildImageModelSelectorOptions(userTier as AiModel["minTier"]);
+      return buildImageModelSelectorOptions(userTier as AiModel["minTier"], formatDescription);
     }
     if (kind === "video") {
-      return buildVideoModelSelectorOptions(durationSeconds);
+      return buildVideoModelSelectorOptions(durationSeconds, formatDescription);
     }
     if (kind === "ai-text") {
-      return buildAiTextModelSelectorOptions(userTier as AiTextModelAccessTier);
+      return buildAiTextModelSelectorOptions(userTier as AiTextModelAccessTier, formatDescription);
     }
-    return buildAgentModelSelectorOptions(userTier as AgentModelAccessTier);
-  }, [durationSeconds, kind, userTier]);
+    return buildAgentModelSelectorOptions(userTier as AgentModelAccessTier, formatDescription);
+  }, [durationSeconds, kind, t, userTier]);
   const labels = useMemo<AIModelSelectorLabels>(() => {
     const featureKeys: AIModelFeature[] = [
       "fast",
@@ -147,8 +187,8 @@ export function CanvasAiModelSelector({
       emptyTitle: t("emptyTitle"),
       emptyDescription: t("emptyDescription"),
       noResultsTitle: t("noResultsTitle"),
-      noResultsDescription: t("noResultsDescription"),
-      selectedModelAria: t("selectedModelAria"),
+      noResultsDescription: (query) => t("noResultsDescription", { query }),
+      selectedModelAria: (model) => t("selectedModelAria", { model }),
       selectedStatus: t("selectedStatus"),
       newBadge: t("newBadge"),
       previewBadge: t("previewBadge"),

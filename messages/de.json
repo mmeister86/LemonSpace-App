@@ -36,6 +36,26 @@
       "long-context": "Langer Kontext",
       "image": "Bild",
       "video": "Video"
+    },
+    "modelDescriptions": {
+      "google_gemini_2_5_flash_image": "Schnelle, hochwertige Generierung",
+      "black_forest_labs_flux_2_klein_4b": "Günstige Bildgenerierung für schnelle Entwürfe",
+      "bytedance_seed_seedream_4_5": "Ausgewogene Details und Tempo für alltägliche Prompts",
+      "google_gemini_3_1_flash_image_preview": "Schnelle multimodale Bildgenerierung",
+      "openai_gpt_5_image_mini": "Präzisere Befolgung von Anweisungen",
+      "sourceful_riverflow_v2_fast": "Schneller Premium-Output für Produktions-Workflows",
+      "sourceful_riverflow_v2_pro": "Pro-Qualität mit stärkerer Komposition",
+      "google_gemini_3_pro_image_preview": "Fortgeschrittene Qualität und Prompt-Treue",
+      "openai_gpt_5_image": "Höchste Qualität und beste Textdarstellung",
+      "wan_2_2_480p": "Schnell und günstig, gut für Konzepte",
+      "wan_2_2_720p": "HD-Qualität, offenes Modell",
+      "kling_std_2_1": "Realistisch mit stabiler Bewegung",
+      "seedance_pro_1080p": "Full-HD mit gutem Preis-Leistungs-Verhältnis",
+      "kling_pro_2_6": "Beste Qualität mit cineastischer Bewegung",
+      "openai_gpt_5_4_nano": "Schnellste Option für leichte Agent-Läufe",
+      "openai_gpt_5_4_mini": "Ausgewogene Qualität und Latenz für Standardaufgaben",
+      "openai_gpt_5_4": "Bessere Reasoning-Qualität für komplexe Aufgaben",
+      "openai_gpt_5_4_pro": "Spitzenmodell für die anspruchsvollsten Workflows"
     }
   },
   "auth": {

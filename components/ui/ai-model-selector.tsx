@@ -74,8 +74,8 @@ export interface AIModelSelectorLabels {
   emptyTitle: string;
   emptyDescription: string;
   noResultsTitle: string;
-  noResultsDescription: string;
-  selectedModelAria: string;
+  noResultsDescription: (query: string) => string;
+  selectedModelAria: (model: string) => string;
   selectedStatus: string;
   newBadge: string;
   previewBadge: string;
@@ -91,8 +91,8 @@ const DEFAULT_LABELS: AIModelSelectorLabels = {
   emptyTitle: "No models available",
   emptyDescription: "There are no AI models available at this time.",
   noResultsTitle: "No models found",
-  noResultsDescription: 'No models match "{query}".',
-  selectedModelAria: "Selected model: {model}. Click to change model.",
+  noResultsDescription: (query) => `No models match "${query}".`,
+  selectedModelAria: (model) => `Selected model: ${model}. Click to change model.`,
   selectedStatus: "Selected",
   newBadge: "New",
   previewBadge: "Preview",
@@ -177,9 +177,7 @@ function EmptyState({
         </EmptyMedia>
         <EmptyTitle>{searchQuery ? labels.noResultsTitle : labels.emptyTitle}</EmptyTitle>
         <EmptyDescription>
-          {searchQuery
-            ? labels.noResultsDescription.replace("{query}", searchQuery)
-            : labels.emptyDescription}
+          {searchQuery ? labels.noResultsDescription(searchQuery) : labels.emptyDescription}
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -197,11 +195,11 @@ function DefaultTrigger({
   className?: string;
   placeholder: string;
   onClick: () => void;
-  selectedModelAria: string;
+  selectedModelAria: (model: string) => string;
 }) {
   return (
     <Button
-      aria-label={selectedModel ? selectedModelAria.replace("{model}", selectedModel.name) : placeholder}
+      aria-label={selectedModel ? selectedModelAria(selectedModel.name) : placeholder}
       className={cn("nodrag nowheel min-h-8 w-full justify-between gap-2", className)}
       onClick={onClick}
       type="button"
