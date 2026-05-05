@@ -5,10 +5,15 @@
  * Renders and manages the Canvas agent output node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
+import { useSyncExternalStore } from "react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 
 import { InstagramPost } from "@/components/agents/instagram/ui/instagram-post";
+import {
+  getLocalNodeStreamSnapshot,
+  subscribeToLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 
@@ -206,6 +211,11 @@ function partitionSections(
 export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentOutputNodeType>) {
   const t = useTranslations("agentOutputNode");
   const nodeData = data as AgentOutputNodeData;
+  const localStream = useSyncExternalStore(
+    (listener) => subscribeToLocalNodeStream(id, listener),
+    () => getLocalNodeStreamSnapshot(id),
+    () => undefined,
+  );
   const isSkeleton = nodeData.isSkeleton === true;
   const hasStepCounter =
     typeof nodeData.stepIndex === "number" &&
@@ -288,7 +298,16 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             ) : null}
         </header>
 
-        {isSkeleton ? (
+        {localStream?.text ? (
+          <section data-testid="agent-output-stream-draft" className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("bodyLabel")}
+            </p>
+            <div className="max-h-48 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
+              <p className="whitespace-pre-wrap break-words">{localStream.text}</p>
+            </div>
+          </section>
+        ) : isSkeleton ? (
           <section className="space-y-1">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               {t("bodyLabel")}

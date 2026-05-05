@@ -10,6 +10,7 @@ import {
   action,
   internalAction,
   internalMutation,
+  type ActionCtx,
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -854,6 +855,15 @@ function getSelectedModelOrThrow(modelId: string): AgentModel {
   return selectedModel;
 }
 
+type PreparedAgentRun = {
+  canvas: Doc<"canvases">;
+  node: Doc<"nodes">;
+  definition: ReturnType<typeof getAgentDefinitionOrThrow>;
+  selectedModel: AgentModel;
+  reservationId?: Id<"creditTransactions">;
+  shouldDecrementConcurrency: boolean;
+};
+
 function getAgentDefinitionOrThrow(templateId: unknown) {
   const resolvedId = trimText(templateId) || "instagram-post-agent";
   const definition = getAgentDefinition(resolvedId);
@@ -868,6 +878,74 @@ function assertAgentModelTier(model: AgentModel, tier: string | undefined): void
   if (!isAgentModelAvailableForTier(normalizedTier, model.id)) {
     throw new Error(`Model ${model.id} requires ${model.minTier} tier`);
   }
+}
+
+async function prepareAgentRunOrThrow(
+  ctx: ActionCtx,
+  args: {
+    canvasId: Id<"canvases">;
+    nodeId: Id<"nodes">;
+    modelId: string;
+  },
+): Promise<PreparedAgentRun> {
+  const canvas = await ctx.runQuery(api.canvases.get, {
+    canvasId: args.canvasId,
+  });
+  if (!canvas) {
+    throw new Error("Canvas not found");
+  }
+
+  const node = await ctx.runQuery(api.nodes.get, {
+    nodeId: args.nodeId,
+    includeStorageUrl: false,
+  });
+  if (!node) {
+    throw new Error("Node not found");
+  }
+  assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
+  if (node.type !== "agent") {
+    throw new Error("Node must be an agent node");
+  }
+
+  const nodeData = getNodeDataRecord(node.data);
+  const definition = getAgentDefinitionOrThrow(nodeData.templateId);
+  const selectedModel = getSelectedModelOrThrow(args.modelId);
+  const subscription = await ctx.runQuery(api.credits.getSubscription, {});
+  assertAgentModelTier(selectedModel, subscription?.tier);
+
+  const {
+    reservationId,
+    shouldDecrementConcurrency,
+  } = await startPublicJobCreditFlow(ctx, {
+    estimatedCost: selectedModel.creditCost,
+    description: `Agent-Lauf - ${selectedModel.label}`,
+    nodeId: args.nodeId,
+    canvasId: args.canvasId,
+    model: selectedModel.id,
+    provider: "openrouter",
+  });
+
+  try {
+    await ctx.runMutation(internalApi.agents.setAgentAnalyzing, {
+      nodeId: args.nodeId,
+      modelId: selectedModel.id,
+      reservationId: reservationId ?? undefined,
+      shouldDecrementConcurrency,
+    });
+  } catch (error) {
+    await releasePublicReservationBestEffort(ctx, reservationId, "agents");
+    await decrementConcurrencyIfNeeded(ctx, shouldDecrementConcurrency, canvas.ownerId);
+    throw error;
+  }
+
+  return {
+    canvas,
+    node,
+    definition,
+    selectedModel,
+    reservationId: reservationId ?? undefined,
+    shouldDecrementConcurrency,
+  };
 }
 
 export const setAgentAnalyzing = internalMutation({
@@ -1930,71 +2008,33 @@ export const runAgent = action({
     locale: v.union(v.literal("de"), v.literal("en")),
   },
   handler: async (ctx, args): Promise<{ queued: true; nodeId: Id<"nodes"> }> => {
-    const canvas = await ctx.runQuery(api.canvases.get, {
+    const prepared = await prepareAgentRunOrThrow(ctx, {
       canvasId: args.canvasId,
-    });
-    if (!canvas) {
-      throw new Error("Canvas not found");
-    }
-
-    const node = await ctx.runQuery(api.nodes.get, {
       nodeId: args.nodeId,
-      includeStorageUrl: false,
-    });
-    if (!node) {
-      throw new Error("Node not found");
-    }
-    assertNodeBelongsToCanvasOrThrow(node, args.canvasId);
-    if (node.type !== "agent") {
-      throw new Error("Node must be an agent node");
-    }
-
-    const nodeData = getNodeDataRecord(node.data);
-    const definition = getAgentDefinitionOrThrow(nodeData.templateId);
-    const selectedModel = getSelectedModelOrThrow(args.modelId);
-    const subscription = await ctx.runQuery(api.credits.getSubscription, {});
-    assertAgentModelTier(selectedModel, subscription?.tier);
-
-    const {
-      reservationId,
-      shouldDecrementConcurrency: usageIncremented,
-    } = await startPublicJobCreditFlow(ctx, {
-      estimatedCost: selectedModel.creditCost,
-      description: `Agent-Lauf - ${selectedModel.label}`,
-      nodeId: args.nodeId,
-      canvasId: args.canvasId,
-      model: selectedModel.id,
-      provider: "openrouter",
+      modelId: args.modelId,
     });
 
     let scheduled = false;
     try {
-      await ctx.runMutation(internalApi.agents.setAgentAnalyzing, {
-        nodeId: args.nodeId,
-        modelId: selectedModel.id,
-        reservationId: reservationId ?? undefined,
-        shouldDecrementConcurrency: usageIncremented,
-      });
-
       const scheduledAction =
-        definition.runtime.kind === "tool-harness"
+        prepared.definition.runtime.kind === "tool-harness"
           ? internalApi.agents.runToolHarnessAgent
           : internalApi.agents.analyzeAgent;
 
       await ctx.scheduler.runAfter(0, scheduledAction, {
         canvasId: args.canvasId,
         nodeId: args.nodeId,
-        modelId: selectedModel.id,
+        modelId: prepared.selectedModel.id,
         locale: normalizeAgentLocale(args.locale),
-        userId: canvas.ownerId,
-        reservationId: reservationId ?? undefined,
-        shouldDecrementConcurrency: usageIncremented,
+        userId: prepared.canvas.ownerId,
+        reservationId: prepared.reservationId,
+        shouldDecrementConcurrency: prepared.shouldDecrementConcurrency,
       });
       scheduled = true;
       return { queued: true, nodeId: args.nodeId };
     } catch (error) {
-      logAgentFailure("runAgent", { nodeId: args.nodeId, modelId: selectedModel.id }, error);
-      await releasePublicReservationBestEffort(ctx, reservationId, "agents");
+      logAgentFailure("runAgent", { nodeId: args.nodeId, modelId: prepared.selectedModel.id }, error);
+      await releasePublicReservationBestEffort(ctx, prepared.reservationId, "agents");
       await ctx.runMutation(internalApi.agents.setAgentError, {
         nodeId: args.nodeId,
         statusMessage: formatTerminalStatusMessage(error),
@@ -2002,8 +2042,168 @@ export const runAgent = action({
 
       throw error;
     } finally {
-      await decrementConcurrencyIfNeeded(ctx, usageIncremented && !scheduled, canvas.ownerId);
+      await decrementConcurrencyIfNeeded(
+        ctx,
+        prepared.shouldDecrementConcurrency && !scheduled,
+        prepared.canvas.ownerId,
+      );
     }
+  },
+});
+
+export const prepareAgentStream = action({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    modelId: v.string(),
+    locale: v.union(v.literal("de"), v.literal("en")),
+  },
+  handler: async (ctx, args): Promise<{
+    modelId: string;
+    outputNodeId: Id<"nodes">;
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    userId: string;
+  }> => {
+    const prepared = await prepareAgentRunOrThrow(ctx, args);
+    let scheduled = false;
+
+    try {
+      if (prepared.definition.runtime.kind !== "tool-harness") {
+        throw new Error(
+          `Agent ${prepared.definition.id} is not configured for streaming harness output`,
+        );
+      }
+
+      const { outputNodeIds } = await ctx.runMutation(
+        internalApi.agents.createExecutionSkeletonOutputs,
+        {
+          canvasId: args.canvasId,
+          nodeId: args.nodeId,
+          analysisSummary: "Streaming agent output",
+          definitionVersion: prepared.definition.version,
+          executionPlan: {
+            summary: "Streaming agent output",
+            steps: [
+              {
+                id: "stream-summary",
+                title: "Agent run summary",
+                channel: "canvas",
+                outputType: "text",
+                artifactType: "agent-stream-summary",
+                goal: "Show the running agent output locally while durable harness outputs are created.",
+                requiredSections: ["Summary"],
+                qualityChecks: ["Concise", "Context aware"],
+              },
+            ],
+          },
+        },
+      );
+      const outputNodeId = outputNodeIds[0];
+      if (!outputNodeId) {
+        throw new Error("Agent stream output node was not created");
+      }
+
+      await ctx.scheduler.runAfter(0, internalApi.agents.runToolHarnessAgent, {
+        canvasId: args.canvasId,
+        nodeId: args.nodeId,
+        modelId: prepared.selectedModel.id,
+        locale: normalizeAgentLocale(args.locale),
+        userId: prepared.canvas.ownerId,
+        reservationId: prepared.reservationId,
+        shouldDecrementConcurrency: prepared.shouldDecrementConcurrency,
+      });
+      scheduled = true;
+
+      return {
+        modelId: prepared.selectedModel.id,
+        outputNodeId,
+        userId: prepared.canvas.ownerId,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are LemonSpace. Write a concise live summary of what this agent run is preparing. Return plain text only.",
+          },
+          {
+            role: "user",
+            content: [
+              `Agent: ${prepared.definition.metadata.name}`,
+              `Locale: ${args.locale}`,
+              "Status: The durable tool harness has started and will create the final canvas artifacts.",
+            ].join("\n"),
+          },
+        ],
+      };
+    } catch (error) {
+      logAgentFailure(
+        "prepareAgentStream",
+        { nodeId: args.nodeId, modelId: prepared.selectedModel.id },
+        error,
+      );
+      await releasePublicReservationBestEffort(ctx, prepared.reservationId, "agents");
+      await ctx.runMutation(internalApi.agents.setAgentError, {
+        nodeId: args.nodeId,
+        statusMessage: formatTerminalStatusMessage(error),
+      });
+      throw error;
+    } finally {
+      await decrementConcurrencyIfNeeded(
+        ctx,
+        prepared.shouldDecrementConcurrency && !scheduled,
+        prepared.canvas.ownerId,
+      );
+    }
+  },
+});
+
+export const finalizeAgentStreamSummary = action({
+  args: {
+    nodeId: v.id("nodes"),
+    outputNodeId: v.id("nodes"),
+    outputText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const node = await ctx.runQuery(api.nodes.get, {
+      nodeId: args.nodeId,
+      includeStorageUrl: false,
+    });
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    const outputNode = await ctx.runQuery(api.nodes.get, {
+      nodeId: args.outputNodeId,
+      includeStorageUrl: false,
+    });
+    if (!outputNode) {
+      throw new Error("Output node not found");
+    }
+
+    const body = trimText(args.outputText);
+    if (!body) {
+      throw new Error("Agent stream summary returned an empty result");
+    }
+
+    await ctx.runMutation(internalApi.agents.completeExecutionStepOutput, {
+      nodeId: args.nodeId,
+      outputNodeId: args.outputNodeId,
+      stepId: "stream-summary",
+      stepIndex: 0,
+      stepTotal: 1,
+      title: "Agent run summary",
+      channel: "canvas",
+      outputType: "text",
+      artifactType: "agent-stream-summary",
+      goal: "Show the running agent output locally while durable harness outputs are created.",
+      requiredSections: ["Summary"],
+      qualityChecks: ["Concise", "Context aware"],
+      previewText: body.slice(0, 240),
+      sections: [{ id: "summary", label: "Summary", content: body }],
+      metadata: {},
+      metadataLabels: {},
+      body,
+    });
+
+    return { ok: true as const };
   },
 });
 

@@ -16,8 +16,11 @@ import {
 } from "./ai_image_pipeline";
 import {
   defineFinalizeTextFailure,
+  defineFinalizeTextStreamFailure,
+  defineFinalizeTextStreamSuccess,
   defineFinalizeTextSuccess,
   defineGenerateText,
+  definePrepareTextStream,
   defineProcessTextGeneration,
 } from "./ai_text_pipeline";
 import {
@@ -50,6 +53,9 @@ export const finalizeTextSuccess = defineFinalizeTextSuccess(internalMutation);
 export const finalizeTextFailure = defineFinalizeTextFailure(internalMutation);
 export const processTextGeneration = defineProcessTextGeneration(internalAction);
 export const generateText = defineGenerateText(action);
+export const prepareTextStream = definePrepareTextStream(action);
+export const finalizeTextStreamSuccess = defineFinalizeTextStreamSuccess(action);
+export const finalizeTextStreamFailure = defineFinalizeTextStreamFailure(action);
 
 export const setVideoTaskInfo = defineSetVideoTaskInfo(internalMutation);
 export const markVideoPollingRetry = defineMarkVideoPollingRetry(internalMutation);

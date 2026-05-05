@@ -9,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
   runAgent: vi.fn(async () => ({ queued: true })),
   resumeAgent: vi.fn(async () => ({ queued: true })),
+  fetch: vi.fn(
+    async () =>
+      new Response("Agent stream", {
+        headers: { "x-lemonspace-output-node-id": "agent-output-stream-1" },
+      }),
+  ),
   toastWarning: vi.fn(),
   subscription: { tier: "starter" as const },
   isOffline: false,
@@ -181,6 +187,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import AgentNode from "@/components/canvas/nodes/agent-node";
+import { resetLocalNodeStreamsForTests } from "@/lib/ai-stream/local-node-streams";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -196,7 +203,10 @@ describe("AgentNode runtime", () => {
     mocks.queueNodeDataUpdate.mockClear();
     mocks.runAgent.mockClear();
     mocks.resumeAgent.mockClear();
+    mocks.fetch.mockClear();
     mocks.toastWarning.mockClear();
+    vi.stubGlobal("fetch", mocks.fetch);
+    resetLocalNodeStreamsForTests();
   });
 
   afterEach(() => {
@@ -394,12 +404,20 @@ describe("AgentNode runtime", () => {
       runButton.click();
     });
 
-    expect(mocks.runAgent).toHaveBeenCalledWith({
-      canvasId: "canvas-1",
-      nodeId: "agent-1",
-      modelId: "openai/gpt-5.4",
-      locale: "de",
-    });
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/ai-stream/agent",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          canvasId: "canvas-1",
+          nodeId: "agent-1",
+          modelId: "openai/gpt-5.4",
+          locale: "de",
+        }),
+      }),
+    );
+    expect(mocks.runAgent).not.toHaveBeenCalled();
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((element) =>
       element.textContent?.includes("Submit clarification"),

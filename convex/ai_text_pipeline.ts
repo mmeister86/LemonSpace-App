@@ -318,3 +318,178 @@ export function defineGenerateText(register: typeof action) {
   },
   });
 }
+
+export function definePrepareTextStream(register: typeof action) {
+  return register({
+    args: {
+      canvasId: v.id("canvases"),
+      sourceNodeId: v.id("nodes"),
+      outputNodeId: v.id("nodes"),
+      modelId: v.string(),
+      instruction: v.optional(v.string()),
+      inputText: v.optional(v.string()),
+    },
+    handler: async (
+      ctx,
+      args,
+    ): Promise<{
+      outputNodeId: Id<"nodes">;
+      modelId: string;
+      instruction?: string;
+      inputText?: string;
+      reservationId?: Id<"creditTransactions">;
+      shouldDecrementConcurrency: boolean;
+      userId: string;
+      creditCost: number;
+    }> => {
+      const canvas = await ctx.runQuery(api.canvases.get, {
+        canvasId: args.canvasId,
+      });
+      if (!canvas) {
+        throw new Error("Canvas not found");
+      }
+
+      const sourceNode = await ctx.runQuery(
+        api.nodes.get as FunctionReference<"query", "public">,
+        {
+          nodeId: args.sourceNodeId,
+          includeStorageUrl: false,
+        },
+      );
+      if (!sourceNode) {
+        throw new Error("Source node not found");
+      }
+      assertNodeBelongsToCanvasOrThrow(sourceNode, args.canvasId);
+      if (sourceNode.type !== "ai-text") {
+        throw new Error("Source node must be an AI text node");
+      }
+
+      const outputNode = await ctx.runQuery(
+        api.nodes.get as FunctionReference<"query", "public">,
+        {
+          nodeId: args.outputNodeId,
+          includeStorageUrl: false,
+        },
+      );
+      if (!outputNode) {
+        throw new Error("Output node not found");
+      }
+      assertNodeBelongsToCanvasOrThrow(outputNode, args.canvasId);
+      if (outputNode.type !== "ai-text-output") {
+        throw new Error("Output node must be an AI text output node");
+      }
+
+      const instruction = trimOptionalText(args.instruction);
+      const inputText = trimOptionalText(args.inputText);
+      if (!instruction && !inputText) {
+        throw new Error("AI text generation needs instructions or input text");
+      }
+
+      const selectedModel = getAiTextModel(args.modelId);
+      if (!selectedModel) {
+        throw new Error(`Unknown AI text model: ${args.modelId}`);
+      }
+
+      const subscription = await ctx.runQuery(api.credits.getSubscription, {});
+      const userTier = normalizePublicTier(subscription?.tier);
+      if (!isAiTextModelAvailableForTier(userTier, selectedModel.id)) {
+        throw new Error(`Model ${selectedModel.id} requires ${selectedModel.minTier} tier`);
+      }
+
+      const {
+        reservationId,
+        shouldDecrementConcurrency: usageIncremented,
+      } = await startPublicJobCreditFlow(ctx, {
+        estimatedCost: selectedModel.creditCost,
+        description: `KI-Text - ${selectedModel.label}`,
+        model: selectedModel.id,
+        nodeId: args.outputNodeId,
+        canvasId: args.canvasId,
+        provider: "openrouter",
+      });
+
+      try {
+        await ctx.runMutation(internal.ai.markNodeExecuting, {
+          nodeId: args.outputNodeId,
+        });
+      } catch (error) {
+        await releasePublicReservationBestEffort(ctx, reservationId, "ai");
+        await decrementConcurrencyIfNeeded(ctx, usageIncremented, canvas.ownerId);
+        throw error;
+      }
+
+      return {
+        outputNodeId: args.outputNodeId,
+        modelId: selectedModel.id,
+        instruction,
+        inputText,
+        reservationId: reservationId ?? undefined,
+        shouldDecrementConcurrency: usageIncremented,
+        userId: canvas.ownerId,
+        creditCost: selectedModel.creditCost,
+      };
+    },
+  });
+}
+
+export function defineFinalizeTextStreamSuccess(register: typeof action) {
+  return register({
+    args: {
+      outputNodeId: v.id("nodes"),
+      modelId: v.string(),
+      instruction: v.optional(v.string()),
+      inputText: v.optional(v.string()),
+      outputText: v.string(),
+      reservationId: v.optional(v.id("creditTransactions")),
+      shouldDecrementConcurrency: v.boolean(),
+      userId: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const outputText = trimOptionalText(args.outputText);
+      if (!outputText) {
+        throw new Error("AI text generation returned an empty result");
+      }
+
+      const { creditCost } = await ctx.runMutation(internal.ai.finalizeTextSuccess, {
+        nodeId: args.outputNodeId,
+        modelId: args.modelId,
+        instruction: args.instruction,
+        inputText: args.inputText,
+        outputText,
+      });
+
+      await commitInternalReservationIfNeeded(ctx, args.reservationId, creditCost);
+      await decrementConcurrencyIfNeeded(
+        ctx,
+        args.shouldDecrementConcurrency,
+        args.userId,
+      );
+      return { ok: true as const };
+    },
+  });
+}
+
+export function defineFinalizeTextStreamFailure(register: typeof action) {
+  return register({
+    args: {
+      outputNodeId: v.id("nodes"),
+      statusMessage: v.string(),
+      reservationId: v.optional(v.id("creditTransactions")),
+      shouldDecrementConcurrency: v.boolean(),
+      userId: v.string(),
+    },
+    handler: async (ctx, args) => {
+      await releasePublicReservationBestEffort(ctx, args.reservationId, "ai");
+      await ctx.runMutation(internal.ai.finalizeTextFailure, {
+        nodeId: args.outputNodeId,
+        statusMessage: args.statusMessage,
+      });
+      await decrementConcurrencyIfNeeded(
+        ctx,
+        args.shouldDecrementConcurrency,
+        args.userId,
+      );
+      return { ok: true as const };
+    },
+  });
+}

@@ -23,6 +23,12 @@ import {
   getAvailableAgentModels,
 } from "@/lib/agent-models";
 import {
+  appendLocalNodeStreamChunk,
+  clearLocalNodeStream,
+  markLocalNodeStreamError,
+  setLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
+import {
   type AgentClarificationAnswerMap,
   type AgentClarificationQuestion,
 } from "@/lib/agent-run-contract";
@@ -67,6 +73,28 @@ type AgentBriefConstraints = {
 type AgentNodeType = Node<AgentNodeData, "agent">;
 
 const DEFAULT_AGENT_TEMPLATE_ID = "instagram-post-agent";
+
+async function readTextStream(response: Response, outputNodeId: string): Promise<void> {
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  if (!response.body) {
+    throw new Error("Agent stream response had no body");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    appendLocalNodeStreamChunk(outputNodeId, decoder.decode(value, { stream: true }));
+  }
+
+  const tail = decoder.decode();
+  if (tail) {
+    appendLocalNodeStreamChunk(outputNodeId, tail);
+  }
+}
 
 function useSafeCanvasSync() {
   try {
@@ -260,7 +288,6 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     };
   };
 
-  const runAgent = useSafeAction(agentActionsApi.agents.runAgent);
   const resumeAgent = useSafeAction(agentActionsApi.agents.resumeAgent);
   const normalizedLocale = locale === "en" ? "en" : "de";
 
@@ -425,12 +452,37 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       return;
     }
 
-    await runAgent({
-      canvasId,
-      nodeId: id as Id<"nodes">,
-      modelId: resolvedModelId,
-      locale: normalizedLocale,
-    });
+    let outputNodeId: string | null = null;
+    try {
+      const response = await fetch("/api/ai-stream/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          canvasId,
+          nodeId: id,
+          modelId: resolvedModelId,
+          locale: normalizedLocale,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      outputNodeId = response.headers.get("x-lemonspace-output-node-id");
+      if (!outputNodeId) {
+        throw new Error("Agent stream did not return an output node id");
+      }
+      setLocalNodeStream(outputNodeId, { text: "", status: "streaming" });
+      await readTextStream(response, outputNodeId);
+      clearLocalNodeStream(outputNodeId);
+    } catch (error) {
+      if (outputNodeId) {
+        markLocalNodeStreamError(
+          outputNodeId,
+          error instanceof Error ? error.message : t("executingPlannedFallback"),
+        );
+      }
+      throw error;
+    }
   };
 
   const handleSubmitClarification = async () => {

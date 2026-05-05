@@ -5,7 +5,7 @@
  * Renders and manages the Canvas ai text output node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -16,6 +16,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { classifyError } from "@/lib/ai-errors";
+import {
+  getLocalNodeStreamSnapshot,
+  subscribeToLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
 import { getAiTextModel } from "@/lib/ai-text-models";
 import { toast } from "@/lib/toast";
 import BaseNodeWrapper from "./base-node-wrapper";
@@ -73,11 +77,19 @@ export default function AiTextOutputNode({
       };
     }).ai.generateText,
   );
+  const localStream = useSyncExternalStore(
+    (listener) => subscribeToLocalNodeStream(id, listener),
+    () => getLocalNodeStreamSnapshot(id),
+    () => undefined,
+  );
 
   const status = (nodeData._status ?? "idle") as NodeStatus;
   const isLoading =
-    status === "executing" || status === "analyzing" || status === "clarifying" || isRetrying;
-  const outputText = typeof nodeData.outputText === "string" ? nodeData.outputText.trim() : "";
+    !localStream &&
+    (status === "executing" || status === "analyzing" || status === "clarifying" || isRetrying);
+  const persistedOutputText =
+    typeof nodeData.outputText === "string" ? nodeData.outputText.trim() : "";
+  const outputText = localStream?.text.trim() || persistedOutputText;
   const modelLabel =
     typeof nodeData.modelId === "string"
       ? getAiTextModel(nodeData.modelId)?.label ?? nodeData.modelId

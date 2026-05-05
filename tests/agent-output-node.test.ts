@@ -5,6 +5,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  resetLocalNodeStreamsForTests,
+  setLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
+
 const handleCalls: Array<{ type: string; id?: string }> = [];
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
@@ -70,6 +75,7 @@ describe("AgentOutputNode", () => {
 
   beforeEach(() => {
     handleCalls.length = 0;
+    resetLocalNodeStreamsForTests();
   });
 
   afterEach(() => {
@@ -146,6 +152,42 @@ describe("AgentOutputNode", () => {
       | null;
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
+  });
+
+  it("renders local agent stream draft before persisted body", async () => {
+    setLocalNodeStream("agent-output-streaming", {
+      text: "Live agent draft",
+      status: "streaming",
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-streaming",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Agent output",
+            body: "Persisted body",
+            _status: "executing",
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Live agent draft");
+    expect(container.textContent).not.toContain("Persisted body");
   });
 
   it("renders instagram post artifacts through the Instagram preview component", async () => {

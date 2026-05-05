@@ -13,8 +13,6 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useAction } from "convex/react";
-import type { FunctionReference } from "convex/server";
 import { Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -25,6 +23,12 @@ import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
+import {
+  appendLocalNodeStreamChunk,
+  clearLocalNodeStream,
+  markLocalNodeStreamError,
+  setLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
 import {
   DEFAULT_AI_TEXT_MODEL_ID,
   getAiTextModel,
@@ -54,6 +58,29 @@ type SourceTextNodeData = {
 
 export type AiTextNodeType = Node<AiTextNodeData, "ai-text">;
 
+async function readTextStream(response: Response, outputNodeId: string): Promise<void> {
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  if (!response.body) {
+    throw new Error("AI text stream response had no body");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    appendLocalNodeStreamChunk(outputNodeId, decoder.decode(value, { stream: true }));
+  }
+
+  const tail = decoder.decode();
+  if (tail) {
+    appendLocalNodeStreamChunk(outputNodeId, tail);
+  }
+}
+
 function getNodeTextContent(node: { type?: string; data?: unknown } | undefined): string {
   if (!node || !node.data || typeof node.data !== "object") {
     return "";
@@ -79,26 +106,6 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const subscription = useAuthQuery(api.credits.getSubscription);
   const edges = useStore((store) => store.edges);
   const nodes = useStore((store) => store.nodes);
-
-  const generateText = useAction(
-    (api as unknown as {
-      ai: {
-        generateText: FunctionReference<
-          "action",
-          "public",
-          {
-            canvasId: Id<"canvases">;
-            sourceNodeId: Id<"nodes">;
-            outputNodeId: Id<"nodes">;
-            modelId: string;
-            instruction?: string;
-            inputText?: string;
-          },
-          { queued: true; outputNodeId: Id<"nodes"> }
-        >;
-      };
-    }).ai.generateText,
-  );
 
   const [instruction, setInstruction] = useState(nodeData.instruction ?? "");
   const [inputText, setInputText] = useState(nodeData.inputText ?? "");
@@ -274,6 +281,7 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
 
     setLocalError(null);
     setIsGenerating(true);
+    let outputNodeId: Id<"nodes"> | null = null;
 
     try {
       const effectiveInputText = (inputText.trim() || connectedText.trim()).trim();
@@ -285,7 +293,7 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
       };
       const clientRequestId = crypto.randomUUID();
 
-      const outputNodeId = await createNodeConnectedFromSource({
+      outputNodeId = await createNodeConnectedFromSource({
         type: "ai-text-output",
         position,
         data: {
@@ -301,15 +309,21 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
         targetHandle: "ai-text-output-in",
       });
 
+      setLocalNodeStream(outputNodeId, { text: "", status: "streaming" });
+
       await toast.promise(
-        generateText({
-          canvasId,
-          sourceNodeId: id as Id<"nodes">,
-          outputNodeId,
-          modelId: resolvedModelId,
-          instruction: instruction.trim() || undefined,
-          inputText: effectiveInputText || undefined,
-        }),
+        fetch("/api/ai-stream/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            canvasId,
+            sourceNodeId: id,
+            outputNodeId,
+            modelId: resolvedModelId,
+            instruction: instruction.trim() || undefined,
+            inputText: effectiveInputText || undefined,
+          }),
+        }).then((response) => readTextStream(response, outputNodeId!)),
         {
           loading: t("generating"),
           success: t("generationQueuedTitle"),
@@ -319,8 +333,15 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           },
         },
       );
+      clearLocalNodeStream(outputNodeId);
     } catch (error) {
       const classified = classifyError(error);
+      if (outputNodeId) {
+        markLocalNodeStreamError(
+          outputNodeId,
+          classified.rawMessage ?? t("generationFailed"),
+        );
+      }
       setLocalError(classified.rawMessage ?? t("generationFailed"));
     } finally {
       setIsGenerating(false);
@@ -330,7 +351,6 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     connectedText,
     createNodeConnectedFromSource,
     creditCost,
-    generateText,
     getNode,
     hasAnyInput,
     hasEnoughCredits,

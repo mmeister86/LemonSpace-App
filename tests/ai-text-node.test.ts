@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
   createNodeConnectedFromSource: vi.fn(async () => "ai-text-output-1" as Id<"nodes">),
   generateText: vi.fn(async () => ({ queued: true, outputNodeId: "ai-text-output-1" })),
+  fetch: vi.fn(async () => new Response("Streamed text")),
   getNode: vi.fn((id: string) =>
     id === "ai-text-1"
       ? { id, position: { x: 100, y: 50 }, measured: { width: 360, height: 360 } }
@@ -137,6 +138,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import AiTextNode from "@/components/canvas/nodes/ai-text-node";
+import { resetLocalNodeStreamsForTests } from "@/lib/ai-stream/local-node-streams";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -178,6 +180,9 @@ describe("AiTextNode", () => {
     mocks.queueNodeDataUpdate.mockClear();
     mocks.createNodeConnectedFromSource.mockClear();
     mocks.generateText.mockClear();
+    mocks.fetch.mockClear();
+    vi.stubGlobal("fetch", mocks.fetch);
+    resetLocalNodeStreamsForTests();
     mocks.getNode.mockClear();
     mocks.push.mockClear();
     mocks.toastPromise.mockClear();
@@ -283,13 +288,21 @@ describe("AiTextNode", () => {
         }),
       }),
     );
-    expect(mocks.generateText).toHaveBeenCalledWith(
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/ai-stream/text",
       expect.objectContaining({
-        canvasId: "canvas-1",
-        sourceNodeId: "ai-text-1",
-        outputNodeId: "ai-text-output-1",
-        inputText: "Bitte knackiger machen.",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          canvasId: "canvas-1",
+          sourceNodeId: "ai-text-1",
+          outputNodeId: "ai-text-output-1",
+          modelId: "openai/gpt-5.4-mini",
+          instruction: "Verbessere den Text",
+          inputText: "Bitte knackiger machen.",
+        }),
       }),
     );
+    expect(mocks.generateText).not.toHaveBeenCalled();
   });
 });

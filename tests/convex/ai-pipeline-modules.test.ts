@@ -29,8 +29,14 @@ describe("AI pipeline module boundaries", () => {
     expect(imageSource).not.toContain("createVideoTask");
 
     expect(textSource).toContain("generateStructuredObjectViaOpenRouter");
+    expect(textSource).toContain("definePrepareTextStream");
+    expect(textSource).toContain("defineFinalizeTextStreamSuccess");
+    expect(textSource).toContain("defineFinalizeTextStreamFailure");
     expect(textSource).not.toContain("generateImageViaOpenRouter");
     expect(textSource).not.toContain("createVideoTask");
+    expect(aiSource).toContain("prepareTextStream");
+    expect(aiSource).toContain("finalizeTextStreamSuccess");
+    expect(aiSource).toContain("finalizeTextStreamFailure");
 
     expect(videoSource).toContain("createVideoTask");
     expect(videoSource).toContain("pollVideoTask");
