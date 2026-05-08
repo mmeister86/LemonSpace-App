@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v2.2 | Draft | April 2026 | lemonspace.app |
+| v2.3 | Draft | Mai 2026 | lemonspace.app |
 
 ---
 
@@ -29,6 +29,7 @@
 | v2.0 | **Phase-1-Umfang erweitert:** Video- und Asset-Nodes vorgezogen (Phase 2→1). Bildbearbeitungs-Nodes (Kurven, Farbe, Licht, Detail, Render) vorgezogen (Phase 2→1). Vollständige WebGL-basierte Image-Pipeline implementiert (`lib/image-pipeline/`). Node-Taxonomie hat 6 Kategorien mit 27 Node-Typen. Phase-1-Status-Tabelle aktualisiert. |
 | v2.1 | **Alle 9 Image-Modelle aktiviert (Phase 2→1):** Vollständige OpenRouter Image Gen Integration mit serverseitigem Tier-Enforcement und modellspezifischen Request-Modalities. Tier-aware Model Selector im Prompt-Node. AI-Modularisierung: `ai_errors.ts`, `ai_node_data.ts`, `ai_retry.ts` aus `ai.ts` extrahiert. Dashboard Snapshot Cache (`convex/dashboard.ts`): Gebündelte Query mit localStorage-Cache (`lib/dashboard-snapshot-cache.ts`). Credits Activity Analytics: `lib/credits-activity.ts` + `CreditsActivityChart` (Recharts). Canvas Graph Query Cache (`convex/canvasGraph.ts` + `canvas-graph-query-cache.ts`): Performance-Optimierung durch separaten Graph-Endpunkt mit Optimistic Store. Neuer Hook `use-dashboard-snapshot.ts`. ShadCN Chart-Komponente (`components/ui/chart.tsx`) + Recharts 3.8. |
 | v2.2 | **Codebase-Aktualisierung:** Crop-Node implementiert (Phase 2). Agent-Modelle: GPT-5.4 Nano/Mini/Pro (statt Claude 3.5 Sonnet). Schema: `mediaItems`-, `webhookIdempotencyEvents`-, `userSettings`-Tabellen. Image Pipeline: `crop-node-data.ts`, `geometry-transform.ts`. Neue Lib-Dateien: `agent-models.ts`, `canvas-render-preview.ts`, `canvas-node-favorite.ts`, `media-archive.ts`, `mixer-crop-layout.ts`. Canvas Modularisierung: 13 neue Hooks/Contexts für Flow-Reconciliation, Sync-Engine, Drop, Edge-Insertions. Convex: `media.ts`, `migrations.ts`, `polar_utils.ts`, `presets.ts`, `users.ts`. |
+| v2.3 | **Node- und Pipeline-Abgleich mit Codebase:** Taxonomie auf 7 Kategorien und 36 technische Node-Typen aktualisiert. KI-Video (`video-prompt` + `ai-video`) und KI-Text (`ai-text` + `ai-text-output`) dokumentiert. Agent Nodes sind implementiert: Analyze/Clarification/Execution, Skeleton-Outputs, Streaming-Route und Instagram Tool-Harness. Freepik-Transform-Pipeline für BG entfernen, Upscale, Style Transfer, Gesicht und Kamera ändern ergänzt. Mixer, Kommentar-Node, Media Library, Pexels Video Browser, Provider-Polling und Image-Transform-Credits synchronisiert. |
 
 ---
 
@@ -74,7 +75,7 @@ Freepik Spaces ist ein leiststarkes Tool für KI-gestützte kreative Workflows, 
 
 ### 4.2 Node-System
 
-Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt **sechs Kategorien** mit insgesamt **27 Node-Typen**.
+Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt **sieben Kategorien** mit insgesamt **36 technischen Node-Typen**.
 
 > **Single Source of Truth:** Die Node-Taxonomie wird zentral in `lib/canvas-node-types.ts` (Typen), `lib/canvas-node-catalog.ts` (Katalog) und `components/canvas/node-types.ts` (React-Flow-Registrierung) verwaltet. Der Katalog bestimmt automatisch den `implemented`-Status basierend auf vorhandenen React-Flow-Komponenten.
 
@@ -88,31 +89,43 @@ Quelle-Nodes bringen Inhalte in den Canvas.
 | Text | Freitextfeld mit Markdown-Support. Enthält Inhalte (Copy, Brief, Beschreibung) — semantisch verschieden vom Prompt-Node. | 1 | ✅ |
 | Video | Upload von Videodateien oder Einbindung per Link. Darstellung als Thumbnail-Node, Playback im Panel. | 2 | ✅ |
 | Asset | Stock-Assets (Fotos, Vektoren, Icons), direkt aus dem Asset Browser auf den Canvas gezogen. | 2 | ✅ |
+| Asset-Video | Stock- oder Pexels-Videos aus dem Video Browser. Kann als Quelle für Video-Workflows dienen. | 2 | ✅ |
 | Farbe / Palette | Definiert Farben oder Farbpaletten als Style-Referenz. Kann an KI-Nodes oder Style-Transfer übergeben werden. | 2 | ☐ |
-| Prompt | Dedizierter Node für Modellinstruktionen. Verbindet sich ausschließlich mit KI-Nodes. Kategorie: KI-Ausgabe. | 1 | ✅ |
 
 #### Kategorie 2: KI-Ausgabe
 
-KI-Ausgabe-Nodes sind das Ergebnis einer Modell-Operation. Sie werden vom System erzeugt, nicht vom Nutzer angelegt.
+KI-Ausgabe enthält steuernde Generierungs-Nodes und systemseitig erzeugte Output-Nodes.
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
-| KI-Bild (`ai-image`) | Output eines Bildgenerierungs-Calls. Speichert Prompt, verwendetes Modell und Generierungsparameter. | 1 | ✅ |
-| KI-Text | Output eines Text/Reasoning-Calls. Enthält generierten Copy, Captions, strukturierte Texte. | 2 | ☐ |
-| KI-Video | Output eines Videogenerierungs-Calls. Keyframe-basierte Generierung aus Bild-Input möglich. | 2 | ☐ |
-| Agent-Ausgabe | Bundle-Output eines Agent Nodes. Kann mehrere typisierte Sub-Outputs enthalten. | 3 | ☐ |
+| Prompt / KI-Bild-Steuerung (`prompt`) | Dedizierter Node für Bildgenerierungs-Instruktionen, Modellwahl, Aspect Ratio und Credit-Anzeige. Erzeugt `ai-image` Outputs. | 1 | ✅ |
+| KI-Bild (`ai-image`) | System-Output eines Bildgenerierungs-Calls. Speichert Prompt, Modell, Parameter, Latenz und Credit-Kosten. | 1 | ✅ |
+| KI-Video-Steuerung (`video-prompt`) | Prompt-, Modell-, Dauer- und Audio-Steuerung für Freepik Video-Generierung. Erzeugt `ai-video` Outputs. | 1 | ✅ |
+| KI-Video (`ai-video`) | System-Output eines Video-Generierungs-Calls mit Convex-Storage, Polling-Metadaten und Retry-State. | 2 | ✅ |
+| KI-Text (`ai-text`) | Text/Reasoning Node mit Modellwahl und optionalem Input-Text. Unterstützt Action- und Streaming-Flow. | 2 | ✅ |
+| KI-Text-Ausgabe (`ai-text-output`) | System-Output für generierte Copy, Captions oder strukturierte Texte. | 2 | ✅ |
 
-#### Kategorie 3: Transformation
+#### Kategorie 3: Agents
+
+Agent Nodes orchestrieren Multi-Step-Workflows über ein Text/Reasoning-Modell und erzeugen strukturierte Outputs direkt auf dem Canvas.
+
+| Node | Beschreibung | Phase | Implementiert |
+|------|--------------|-------|---------------|
+| Agent | Canvas-nativer LLM-Orchestrator. Analysiert verbundene Inputs, stellt Clarification-Fragen, plant Execution-Steps und erzeugt Output-Nodes. | 2 | ✅ |
+| Agent-Ausgabe | System-Output eines Agent Steps. Enthält strukturierte Sections, Metadaten, Quality Checks und Preview-Text. | 2 | ✅ |
+
+#### Kategorie 4: Transformation
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
 | Crop / Resize | Freie Bildausschnitt-Auswahl direkt auf dem Canvas, mit Aspect-Ratio-Lock. | 2 | ✅ |
-| BG entfernen | Hintergrundentfernung via rembg. Output ist ein freigestelltes Bild. Batch-Modus möglich. | 2 | ☐ |
-| Upscale | Hochskalierung via Real-ESRGAN. Unterstützt Faktoren 2×, 4×, 8×. | 2 | ☐ |
-| Style Transfer | Überträgt visuellen Stil eines Referenzbildes auf einen anderen Input. | 3 | ☐ |
-| Gesicht | Face Restoration via GFPGAN. Verbessert Gesichtsdetails in generierten oder degradierten Bildern. | 3 | ☐ |
+| BG entfernen | Hintergrundentfernung via Freepik-Transform-Pipeline. Output ist ein freigestelltes Bild. | 2 | ✅ |
+| Upscale | Hochskalierung via Freepik-Transform-Pipeline mit einstellbarem Scale und Ausgabeformat. | 2 | ✅ |
+| Style Transfer | Überträgt visuellen Stil eines Referenzbildes auf einen anderen Input; nutzt getrennte `image`- und `reference`-Handles. | 2 | ✅ |
+| Gesicht | Face Restoration / Skin Enhancer mit `faithful`-, `creative`- und `flexible`-Modi. | 2 | ✅ |
+| Kamera ändern | Ändert Perspektive, Winkel und Zoom eines Bildes über Freepik Change Camera. | 2 | ✅ |
 
-#### Kategorie 4: Bildbearbeitung
+#### Kategorie 5: Bildbearbeitung
 
 Bildbearbeitungs-Nodes arbeiten **non-destruktiv**. Sie verändern das Originalbild nicht, sondern definieren Adjustments, die als Stack auf das Eingangsbild angewendet werden. Erst der Render-Node materialisiert das Ergebnis als neues Bild.
 
@@ -176,17 +189,16 @@ Bild-Node (Original)
 
 > **Technische Umsetzung:** Die Entscheidung für WebGL als primäre Rendering-Engine ist getroffen. GLSL-Shader für alle vier Adjustment-Typen sind implementiert. Ein WASM-Backend ist als Alternative vorbereitet (`wasm-backend.ts`), aber noch nicht aktiv.
 
-#### Kategorie 5: Steuerung & Flow
+#### Kategorie 6: Steuerung & Flow
 
 | Node | Semantik | Beschreibung | Phase | Implementiert |
 |------|----------|--------------|-------|---------------|
 | Splitter | 1 → N | Verteilt 1 Input auf N identische oder abgeleitete Outputs. | 2 | ☐ |
 | Loop | Liste → N | Iteriert über eine Liste von Inputs und führt dieselbe verknüpfte Operation für jeden Eintrag aus. | 2 | ☐ |
-| Agent | N → Plan → N | LLM-Orchestrator. Analysiert Inputs, plant strukturierten Ausführungsplan, delegiert Operationen. | 2 | ☐ |
-| Mixer / Merge | N → 1 | Kombiniert N Inputs zu 1 Output durch Überblendung, Komposition oder Selektion. | 3 | ☐ |
+| Mixer / Merge | 2 → 1 | Kombiniert Base- und Overlay-Input zu einer clientseitigen Pseudo-Image-Komposition mit Blend Mode, Opacity und Crop/Frame-Kontrollen. | 1 | ✅ |
 | Weiche | 1 → Pfad A/B/... | Bedingter Router. Leitet den Input anhand einer definierbaren Bedingung auf einen von mehreren Ausgangspfaden. | 3 | ☐ |
 
-#### Kategorie 6: Canvas & Layout
+#### Kategorie 7: Canvas & Layout
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
@@ -195,7 +207,7 @@ Bild-Node (Original)
 | Notiz | Annotation auf dem Canvas. Markdown-Support, kein Datenanschluss. | 1 | ✅ |
 | Compare | Stellt zwei Bilder nebeneinander mit interaktivem Slider dar. | 1 | ✅ |
 | Text-Overlay | Editierbarer Text-Layer über Bild- oder Video-Nodes innerhalb eines Frames. | 2 | ☐ |
-| Kommentar | Kollaborations-Node für Reviews. Unterstützt Threads, @mentions und Resolve-Status. | 3 | ☐ |
+| Kommentar | Kollaborations-Node für Reviews. Unterstützt Rich-Text-Inhalt, Replies und Resolve-Status. | 3 | ✅ |
 | Präsentation | Definiert Canvas-Bereiche als geordnete Slideshow. Export als PDF möglich. | 3 | ☐ |
 
 ### 4.3 Agent Nodes
@@ -206,8 +218,16 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 
 1. **Analyse:** Agent erhält alle verbundenen Inputs, LLM prüft ob alle nötigen Informationen vorhanden sind
 2. **Clarification (optional):** Fehlen Angaben, stellt der Agent gezielt Rückfragen direkt am Node
-3. **Execution:** LLM plant einen strukturierten Output-Plan (JSON), der dann als Batch abgearbeitet wird
-4. **Output:** Ergebnisse landen als neue Nodes auf dem Canvas, verbunden mit dem Agent Node
+3. **Execution-Plan:** LLM erzeugt einen strukturierten Plan; Skeleton-Output-Nodes werden sofort auf dem Canvas angelegt
+4. **Execution:** LLM erzeugt strukturierte Deliverables pro Step; Tool-Harnesses können zusätzliche Nodes erzeugen
+5. **Output:** Ergebnisse landen als `agent-output`-Nodes oder als vom Harness erzeugte Text/Prompt/Preview-Nodes, verbunden mit dem Agent Node
+
+**Implementierungsstand:**
+
+- `convex/agents.ts` orchestriert Analyze, Clarification, Execution, Resume und Streaming-Prepare/Finalize.
+- `lib/agent-definitions.ts`, `lib/agent-prompting.ts` und `lib/agent-run-contract.ts` definieren Templates, Prompts und normalisierte Output-Verträge.
+- `app/api/ai-stream/agent/route.ts` streamt Agent-Zusammenfassungen, während Convex Status, Credits und Outputs persistiert.
+- Der Instagram-Agent besitzt ein Tool-Harness (`convex/agent_instagram_harness.ts`) für Instagram-Preview, Text-Node und Prompt-Node-Erzeugung.
 
 **Vordefinierte Agent Templates:**
 
@@ -243,9 +263,8 @@ Agent Nodes sind ein spezieller Node-Typ auf dem Canvas. Sie fungieren als Smart
 | Offline Sync | IndexedDB + localStorage | Canvas-Sync-Queue, Snapshot-Persistenz, Optimistic Updates |
 | Package Manager | pnpm | Je Repo |
 | Charts / Visualization | Recharts + ShadCN Chart | v3.8.0 — Dashboard Credits Activity Chart |
-| Server-Side Canvas | @napi-rs/canvas | Server-side Canvas Rendering für Export |
-| Image Processing | Jimp | Bildverarbeitung (Resize, Konvertierung) |
-| ZIP Export | JSZip | ZIP-Archiv-Generierung für Batch-Export |
+| Server-Side Canvas | @napi-rs/canvas | Server-side Canvas Rendering für Export-/Bake-Pfade |
+| DOM Export | html-to-image | Clientseitige Frame- und Preview-Exports |
 | Internationalisierung | next-intl | i18n (de/en) |
 | Animationen | Framer Motion | UI-Animationen und Transitions |
 
@@ -264,7 +283,7 @@ Statt eines Monorepos werden zwei unabhängige Repositories gepflegt. Zwischen d
 
 Self-Hosting richtet sich primär an technisch versierte Nutzer und Entwickler. Die gehostete Version (lemonspace.app) ist der empfohlene Weg für alle anderen — insbesondere für Designer und kreative Teams ohne DevOps-Erfahrung.
 
-Das Self-Hosting-Paket umfasst:
+Das geplante Self-Hosting-Paket umfasst:
 
 - **`docker-compose.yml`** — fasst alle Services zusammen: Next.js, Convex, Redis, Stalwart, Rybbit, rembg, Real-ESRGAN, GFPGAN
 - **`.env.example`** — alle Umgebungsvariablen mit Kommentaren und Standardwerten
@@ -288,8 +307,10 @@ Dokumentierter Migrationspfad bei Skalierung: Convex Cloud mit EU-Standort. Conv
 
 | Rolle | Zweck | Beispielmodelle | Aufgerufen von |
 |-------|-------|-----------------|----------------|
-| Text / Reasoning | Agent-Logik, Planung, Clarification, Copywriting | GPT-5.4 Nano, GPT-5.4 Mini, GPT-5.4, GPT-5.4 Pro | Agent Node |
-| Image Generation | Bildgenerierung auf dem Canvas | Gemini 2.5 Flash Image, Flux.1 Pro, GPT-5 Image | Canvas-Aktionen + Agent Node |
+| Text / Reasoning | Agent-Logik, Planung, Clarification, Copywriting, KI-Text | GPT-5.4 Nano, GPT-5.4 Mini, GPT-5.4, GPT-5.4 Pro | Agent Node, KI-Text Node |
+| Image Generation | Bildgenerierung auf dem Canvas | Gemini 2.5 Flash Image, FLUX.2 Klein 4B, GPT-5 Image | Prompt Node + Agent Node |
+| Video Generation | Text/Image-to-Video via Freepik Async Tasks | WAN 2.2, Kling, Seedance | Video-Prompt Node |
+| Image Transforms | Server-seitige Bildtransformation via Freepik | BG Remove, Upscale, Style Transfer, Face Restore, Change Camera | Transform Nodes |
 
 ### OpenRouter — Image Generation
 
@@ -341,7 +362,7 @@ Alle 9 Image-Modelle sind aktiviert. Server-seitiges Tier-Enforcement prüft `mi
 │ Infinite Canvas (@xyflow/react + dnd-kit)                │
 │                                                          │
 │ Node-Kategorien:                                         │
-│ [Quelle] [KI-Ausgabe] [Transformation]                   │
+│ [Quelle] [KI-Ausgabe] [Agents] [Transformation]          │
 │ [Bildbearbeitung] [Steuerung] [Canvas & Layout]          │
 │                                                          │
 │ Image Pipeline:                                          │
@@ -379,11 +400,12 @@ Canvas
 
 Node (Basis)
 ├── id, canvasId
-├── type (image | text | prompt | color | video | asset |
-│        ai-image | ai-text | ai-video | agent-output |
-│        crop | bg-remove | upscale | style-transfer | face-restore |
+├── type (image | text | prompt | video-prompt | color | video |
+│        asset-video | asset | ai-image | ai-text | ai-text-output |
+│        ai-video | agent | agent-output |
+│        crop | bg-remove | upscale | style-transfer | face-restore | change-camera |
 │        curves | color-adjust | light-adjust | detail-adjust | render |
-│        splitter | loop | agent | mixer | switch |
+│        splitter | loop | mixer | switch |
 │        group | frame | note | compare | text-overlay | comment | presentation)
 ├── position { x, y }
 ├── size { width, height }
@@ -539,9 +561,12 @@ Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup
 | Agent Reasoning (Mini) | GPT-5.4 Mini | ~€0,05 | 3× | 15 Cr | Ab Starter |
 | Agent Reasoning (Standard) | GPT-5.4 | ~€0,13 | 3× | 38 Cr | Ab Starter |
 | Agent Reasoning (Pro) | GPT-5.4 Pro | ~€0,60 | 3× | 180 Cr | Ab Max |
-| BG-Entfernung | rembg (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
-| Upscaling | Real-ESRGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
-| Face Restoration | GFPGAN (self-hosted) | €0 | — | 0 Cr | Alle Tiers |
+| KI-Video | WAN 2.2 / Kling / Seedance | Freepik API | fix | 28–118 Cr | Modellabhängig |
+| BG-Entfernung | Freepik Transform | Providerkosten | fix | 4 Cr | Alle Tiers |
+| Upscaling | Freepik Transform | Providerkosten | fix | 8–40 Cr | Alle Tiers |
+| Style Transfer | Freepik Transform | Providerkosten | fix | 12 Cr | Alle Tiers |
+| Face Restoration | Freepik Transform | Providerkosten | fix | 10 Cr | Alle Tiers |
+| Kamera ändern | Freepik Transform | Providerkosten | fix | 10 Cr | Alle Tiers |
 | Canvas-Operationen | — | €0 | — | 0 Cr | Alle Tiers |
 | Bildbearbeitung (Kurven, Farbe, Licht, Detail) | WebGL (client-seitig) | €0 | — | 0 Cr | Alle Tiers |
 | Render (Adjustment-Stack materialisieren) | Server-seitig (Canvas API) | €0 | — | 0 Cr | Alle Tiers |
@@ -623,11 +648,14 @@ Agent Status: analyzing
 
 ### Phase 1 — Foundation (MVP)
 
-**Nodes (15 implementiert):**
-- Quelle: Bild ✅, Text ✅, Video ✅ (Phase 2 vorgezogen), Asset ✅ (Phase 2 vorgezogen)
-- KI-Ausgabe: Prompt ✅, KI-Bild (`ai-image`) ✅
-- Bildbearbeitung: Kurven ✅ (Phase 2 vorgezogen), Farbe ✅ (Phase 2 vorgezogen), Licht ✅ (Phase 2 vorgezogen), Detail ✅ (Phase 2 vorgezogen), Render ✅ (Phase 2 vorgezogen)
-- Canvas & Layout: Gruppe ✅, Frame ✅, Notiz ✅, Compare ✅
+**Nodes (30 implementiert, 6 offen):**
+- Quelle: Bild ✅, Text ✅, Video ✅, Asset ✅, Asset-Video ✅, Farbe/Palette ☐
+- KI-Ausgabe: Prompt ✅, KI-Bild ✅, Video-Prompt ✅, KI-Video ✅, KI-Text ✅, KI-Text-Ausgabe ✅
+- Agents: Agent ✅, Agent-Ausgabe ✅
+- Transformation: Crop ✅, BG entfernen ✅, Upscale ✅, Style Transfer ✅, Gesicht ✅, Kamera ändern ✅
+- Bildbearbeitung: Kurven ✅, Farbe ✅, Licht ✅, Detail ✅, Render ✅
+- Steuerung & Flow: Mixer ✅, Splitter ☐, Loop ☐, Weiche ☐
+- Canvas & Layout: Gruppe ✅, Frame ✅, Notiz ✅, Compare ✅, Kommentar ✅, Text-Overlay ☐, Präsentation ☐
 
 **Infrastruktur & Features:**
 
@@ -660,26 +688,33 @@ Agent Status: analyzing
 | Credits Activity Analytics (Recharts Chart) | ✅ Erledigt |
 | Canvas Graph Query Cache (Performance-Optimierung) | ✅ Erledigt |
 | AI Modularisierung (`ai_errors.ts`, `ai_retry.ts`, `ai_node_data.ts`) | ✅ Erledigt |
+| KI-Video-Pipeline (Freepik Async Tasks + Polling) | ✅ Erledigt |
+| KI-Text-Pipeline (Action + Streaming-Route) | ✅ Erledigt |
+| Agent Node: Analyse, Clarification, Execution, Output | ✅ Erledigt |
+| Skeleton-Outputs für Agent Execution Plans | ✅ Erledigt |
+| Instagram Agent Tool-Harness | ✅ Erledigt |
+| Freepik Image Transform Pipeline | ✅ Erledigt |
+| Mixer / Merge Node V1 | ✅ Erledigt |
+| Kommentar-Node V1 | ✅ Erledigt |
 | docker-compose.yml + .env.example + Setup-README | ☐ Offen |
 
-### Phase 2 — KI-Features
+### Phase 2 — Fokus-Lücken
 
 **Nodes:**
 - Quelle: Farbe / Palette
-- KI-Ausgabe: KI-Text, KI-Video
-- Transformation: Crop / Resize ✅ (implementiert), BG entfernen, Upscale
-- Steuerung: Splitter, Loop, Agent
+- Steuerung: Splitter, Loop
 - Canvas & Layout: Text-Overlay
+- Agent-Ausbau: weitere Templates, bessere Clarification UX, Browser Notifications
 
 **Infrastruktur & Features:**
 
 | Task | Status |
 |------|--------|
-| OpenRouter Text/Reasoning Integration (GPT-5.4 Nano/Mini/Pro) | ☐ Offen |
-| Agent Node: Analyse, Clarification, Execution, Output | ☐ Offen |
-| Skeleton-Nodes: Platzierung nach Plan-Erstellung | ☐ Offen |
+| OpenRouter Text/Reasoning Integration (GPT-5.4 Nano/Mini/Pro) | ✅ Erledigt |
+| Agent Node: Analyse, Clarification, Execution, Output | ✅ Erledigt |
+| Skeleton-Nodes: Platzierung nach Plan-Erstellung | ✅ Erledigt |
 | Browser Notifications API (opt-in, Tab-Wechsel) | ☐ Offen |
-| Erster Agent Template: Instagram Curator | ☐ Offen |
+| Erster Agent Template: Instagram Curator | ✅ Erledigt |
 | Self-hosted KI-Services (rembg, Real-ESRGAN) | ☐ Offen |
 | Prompt-History und Re-Generation | ☐ Offen |
 | Text-Overlay Node | ☐ Offen |
@@ -687,16 +722,16 @@ Agent Status: analyzing
 ### Phase 3 — Kollaboration & Polish
 
 **Nodes:**
-- Transformation: Style Transfer, Gesicht (GFPGAN)
-- Steuerung: Mixer, Weiche
-- Canvas & Layout: Kommentar, Präsentation
+- Steuerung: Weiche
+- Canvas & Layout: Präsentation
+- Kollaboration: Echtzeit-Reviews, Versionen, Team-Flows
 
 **Infrastruktur & Features:**
 
 | Task | Status |
 |------|--------|
 | Echtzeit-Kollaboration via Convex Subscriptions | ☐ Offen |
-| Kommentar- und Annotations-System | ☐ Offen |
+| Kommentar- und Annotations-System | ✅ Teilweise erledigt (Kommentar-Node V1) |
 | Versions-History | ☐ Offen |
 | Weitere Agent Templates | ☐ Offen |
 | Export-Funktionen (PNG, PDF, ZIP) | ☐ Offen |
@@ -712,7 +747,7 @@ Agent Status: analyzing
 | Tailwind v4 | ✅ v4 ist Standard, keine Migration nötig |
 | Pricing / Credit-System | ✅ Credit-Abstraktion (1 Cr = €0,01 intern), 4 Tiers, Reservation+Commit, Top-Up |
 | Payment Provider | ✅ Polar (Merchant of Record, VAT-Handling) |
-| Self-Hosting-Strategie | ✅ docker-compose.yml + .env.example + README |
+| Self-Hosting-Strategie | ⏳ docker-compose.yml + .env.example + README noch auszuarbeiten |
 | Convex Lock-in | ✅ Bewusst akzeptiert; Migrations-Pfad: Convex Cloud EU |
 | OpenRouter Image-Modelle | ✅ Alle 9 Modelle aktiv mit serverseitigem Tier-Enforcement |
 | Lizenz | ✅ BSL 1.1, 3 Jahre Change Date, Apache 2.0 |
@@ -729,12 +764,12 @@ Agent Status: analyzing
 | Bildbearbeitung: Preset-Persistierung | ✅ User-Presets in Convex (`adjustmentPresets`-Tabelle) |
 | Offline Sync | ✅ IndexedDB Queue + localStorage Cache + Optimistic Updates |
 | Kollaborationstiefe | ⏳ Cursor-Sync, gleichzeitige Edits, Kommentare |
-| Agent Clarification UX | ⏳ Inline am Node vs. Modal vs. Chat-Sidebar |
-| Agent Template Format | ⏳ Markdown-Datei vs. strukturiertes JSON-Schema |
+| Agent Clarification UX | ✅ Inline am Agent Node mit Resume-Flow; weitere UX-Politur offen |
+| Agent Template Format | ✅ Strukturierte Definitionen in `lib/agent-definitions.ts` + Markdown-Quellen für Agent-Spezifikationen |
 | Weiche: Bedingungslogik | ⏳ Visueller Rule-Builder vs. Ausdruckssprache |
-| Mixer: Blend Modes | ⏳ min. Normal, Multiply, Screen, Overlay |
+| Mixer: Blend Modes | ✅ Normal, Multiply, Screen, Overlay in Mixer V1 |
 | OpenRouter Text/Reasoning | ✅ GPT-5.4 Nano/Mini/Pro als Agent-Modelle (via `agent-models.ts`) |
-| Canvas-Export | ✅ PNG, ZIP (via @napi-rs/canvas + JSZip) |
+| Canvas-Export | ✅ PNG/Frame-Export; ZIP/PDF bleiben spätere Export-Ausbaustufen |
 
 ---
 
@@ -757,11 +792,11 @@ Agent Status: analyzing
 ## 14. Nächste Schritte
 
 1. docker-compose.yml + .env.example + Setup-README ausarbeiten
-2. Agent Node: Analyse, Clarification, Execution, Output
-3. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN)
-4. Transformation-Nodes (BG entfernen, Upscale)
-5. Echtzeit-Kollaboration via Convex Subscriptions
-6. Weitere KI-Modelle (KI-Text, KI-Video)
+2. Farbe/Palette, Splitter, Loop und Text-Overlay als verbleibende Phase-2-Nodes umsetzen
+3. Browser Notifications API für lange KI-/Agent-Jobs ergänzen
+4. Agent Clarification UX und weitere Agent Templates ausbauen
+5. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN) als optionale Provider-Alternative evaluieren
+6. Echtzeit-Kollaboration, Versions-History und Präsentations-Export ausarbeiten
 
 ---
 
@@ -790,4 +825,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v2.2 — April 2026*
+*LemonSpace PRD v2.3 — Mai 2026*

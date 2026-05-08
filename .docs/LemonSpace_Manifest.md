@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — Produkt-Manifest
 
-**v2.1 — April 2026**
+**v2.3 — Mai 2026**
 
 *Self-Hosted, Source-Available Creative Workspace*
 
@@ -42,7 +42,7 @@ Freepik Spaces zeigt, dass KI-gestützte Canvas-Workflows funktionieren. Aber:
 
 ## 4. Der eine MVP-Job
 
-Phase 1 löst genau einen End-to-End-Job so gut, dass Nutzer wiederkommen oder zahlen:
+Der aktuelle MVP löst genau einen End-to-End-Job so gut, dass Nutzer wiederkommen oder zahlen:
 
 > **Upload Bilder → Prompt / Brief → Bildvarianten generieren → Bearbeiten (Adjustments) → Vergleichen → Export**
 >
@@ -58,12 +58,14 @@ Phase 1 löst genau einen End-to-End-Job so gut, dass Nutzer wiederkommen oder z
 6. Exportiert fertige Varianten als PNG (Export)
 
 > **Phase-1-Umfang erweitert (v2.0):** Video- und Asset-Nodes wurden vorgezogen, Bildbearbeitungs-Nodes (Kurven, Farbe, Licht, Detail, Render) mit vollständiger WebGL-Pipeline implementiert. Der MVP-Job umfasst jetzt auch die non-destruktive Bildbearbeitung als integralen Bestandteil.
+>
+> **Codebase-Stand v2.3:** KI-Text, KI-Video, Agent Node, Freepik-Transformationen, Mixer und Kommentar-Node sind implementiert. Sie erweitern den Kern-Job, ohne den Fokus auf kampagnenfähige Bildvarianten zu ersetzen.
 
 ---
 
-## 5. Node-System — Phase 1
+## 5. Node-System — aktueller Stand
 
-15 Node-Typen sind in Phase 1 implementiert. Die vollständige Node-Taxonomie (6 Kategorien, 27 Node-Typen) wird im PRD dokumentiert.
+30 von 36 technischen Node-Typen sind implementiert. Die vollständige Node-Taxonomie (7 Kategorien, 36 Node-Typen) wird im PRD dokumentiert.
 
 | Node | Kategorie | Implementiert | Rolle im MVP-Job |
 |------|-----------|---------------|------------------|
@@ -71,23 +73,36 @@ Phase 1 löst genau einen End-to-End-Job so gut, dass Nutzer wiederkommen oder z
 | Text | Quelle | ✅ | Freitextfeld für Copy, Brief, Beschreibungen |
 | Video | Quelle | ✅ | Video-Upload und Playback |
 | Asset | Quelle | ✅ | Stock-Assets aus Asset Browser |
-| Prompt | KI-Ausgabe | ✅ | Dedizierter Node für Modellinstruktionen |
+| Asset-Video | Quelle | ✅ | Pexels-/Stock-Video als Canvas-Quelle |
+| Prompt | KI-Ausgabe | ✅ | Dedizierter Node für Bildgenerierung |
 | KI-Bild | KI-Ausgabe | ✅ | Output eines Bildgenerierungs-Calls |
+| KI-Video | KI-Ausgabe | ✅ | Prompt- und Output-Flow für Freepik Video-Generierung |
+| KI-Text | KI-Ausgabe | ✅ | Text/Reasoning Node mit Action- und Streaming-Flow |
+| Agent | Agents | ✅ | Analyze/Clarification/Execution für strukturierte Workflows |
+| Agent-Ausgabe | Agents | ✅ | Strukturierte Outputs aus Agent-Steps |
+| Crop / Resize | Transformation | ✅ | Ausschnitt und Geometrie direkt am Canvas |
+| BG entfernen | Transformation | ✅ | Freepik Transform für Hintergrundentfernung |
+| Upscale | Transformation | ✅ | Freepik Transform für Hochskalierung |
+| Style Transfer | Transformation | ✅ | Stilübertragung mit Referenzbild |
+| Gesicht | Transformation | ✅ | Face-Restore / Skin-Enhancer |
+| Kamera ändern | Transformation | ✅ | Perspektive, Winkel und Zoom ändern |
 | Kurven | Bildbearbeitung | ✅ | Tonwert-Kurven, Levels, Histogram |
 | Farbe | Bildbearbeitung | ✅ | HSL, Color Balance, Temperature/Tint |
 | Licht | Bildbearbeitung | ✅ | Brightness, Contrast, Exposure, HDR, Vignette |
 | Detail | Bildbearbeitung | ✅ | Sharpen, Clarity, Denoise, Grain |
 | Render | Bildbearbeitung | ✅ | Materialisiert den Adjustment-Stack als neues Bild |
+| Mixer / Merge | Steuerung | ✅ | 2-Layer-Komposition mit Blend Mode und Opacity |
 | Gruppe | Layout | ✅ | Container für Nodes, Collapse/Expand |
 | Frame | Layout | ✅ | Artboard mit definierter Auflösung |
 | Notiz | Layout | ✅ | Annotation auf dem Canvas |
 | Compare | Layout | ✅ | Zwei Bilder nebeneinander mit Slider |
+| Kommentar | Layout | ✅ | Review-Kommentar mit Replies und Resolve-Status |
 
-### Ausblick: Spätere Phasen
+### Noch offene Node-Lücken
 
-**Phase 2:** Farbe/Palette (Quelle), KI-Text, KI-Video (KI-Ausgabe), Crop/Resize, BG entfernen, Upscale (Transformation), Splitter, Loop, Agent (Steuerung), Text-Overlay (Layout).
+**Phase 2:** Farbe/Palette (Quelle), Splitter, Loop, Text-Overlay.
 
-**Phase 3:** Style Transfer, Gesicht (Transformation), Mixer, Weiche (Steuerung), Kommentar, Präsentation (Layout).
+**Phase 3:** Weiche, Präsentation, tiefere Kollaborations- und Export-Flows.
 
 ---
 
@@ -130,7 +145,8 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 | Backend | Convex (self-hosted). Bewusster Lock-in für Realtime, Storage, Jobs. Migrations-Pfad: Convex Cloud EU. | ✅ |
 | Auth | Better Auth + Magic Link (via polar-sh/better-auth plugin) | ✅ |
 | AI Layer | OpenRouter als primäre AI-Schicht. Alle 9 Image-Modelle aktiv, serverseitiges Tier-Enforcement, tier-aware Model Selector. | ✅ |
-| Self-hosted KI | rembg, Real-ESRGAN, GFPGAN — kostenlos, separate Repos | ✅ |
+| Video & Transform Provider | Freepik Async Tasks für KI-Video und Bildtransformationen; Polling mit Timeout/Retry. | ✅ |
+| Self-hosted KI | rembg, Real-ESRGAN, GFPGAN bleiben optionale spätere Provider-Alternative. | ⏳ |
 | Payment | Polar.sh (MoR, VAT, Better Auth Plugin @polar-sh/better-auth) | ✅ |
 | Credits | Reservation + Commit. Credit-Abstraktion (1 Cr = €0,01 OR intern). Markup: 2× Bild, 2,5–3× Agent. | ✅ |
 | Pricing | 4 Tiers: Free (50 Cr) / Starter €8 (400 Cr) / Pro €59 (3.300 Cr) / Max €119 (6.700 Cr). ≥29% Marge. Top-Up: fix + Custom. | ✅ |
@@ -142,7 +158,8 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 | Preset-Persistierung | User-Presets in Convex (`adjustmentPresets`-Tabelle) | ✅ |
 | Offline Sync | IndexedDB Queue + localStorage Cache + Optimistic Updates | ✅ |
 | Sidebar | Resizable via react-resizable-panels, Rail-Mode (collapsible) | ✅ |
-| E-Mail | useSend + Stalwart (Self-Hosted). Für lemonspace.app pragmatisch externer SMTP möglich. | ✅ |
+| E-Mail | Unsend/Stalwart als Self-Hosting-Ziel; gehostete App kann pragmatisch externen SMTP nutzen. | ✅ |
+| Agent Node | Analyze/Clarification/Execution, Skeleton-Outputs, Streaming-Route, Instagram Tool-Harness. | ✅ |
 | Kollaboration | Phase 3. Phase 1 fokussiert auf Solo-/Kleinteam-Workflows. | ⏳ |
 
 ---
@@ -154,9 +171,9 @@ Fokus heißt Nein sagen. Diese Features sind bewusst ausgeklammert, nicht verges
 | Feature | Warum nicht jetzt |
 |---------|-------------------|
 | Echtzeit-Kollaboration | Kein Kernbedürfnis des primären ICP in Phase 1. Solo-/Kleinteam reicht. |
-| Agent Nodes | Zu komplex für MVP. Erst bauen, wenn der Basis-Job validiert ist. |
-| Video-Generierung | Anderer Job, andere Kosten, anderer ICP. |
-| Style Transfer / GFPGAN | Transformation-Nodes kommen in Phase 2–3. |
+| Vollständige Agent-Automation | Agent Node ist da; autonome Mehrkanal-Kampagnen bleiben später. |
+| Video-first Workflows | KI-Video ist da; das Produkt bleibt aber bildvarianten-zentriert. |
+| Self-hosted Transform-Provider | Freepik deckt den aktuellen Transform-Pfad ab; eigene Services bleiben optional. |
 | Team-Features | Workspaces, Rollen, Rechte, Seat-Management — erst wenn Business-Tier validiert. |
 | docker-compose.yml | Self-Hosting dokumentieren, aber nicht den Hosted-MVP verzögern. |
 | E2E-Testing | Neubewertung bei Skalierung. |
@@ -236,10 +253,11 @@ Priorisiert nach Abhängigkeiten. Jeder Schritt hat ein klares Artefakt.
 | 7 | Polar Webhook-Handling | Subscription-Events, automatische Credit-Zuweisung | ✅ |
 | 8 | WebGL Image Pipeline | Adjustment-Nodes mit GLSL-Shadern | ✅ |
 | 9 | Vollständige OpenRouter Integration | Alle 9 Modelle + Modellauswahl-UI | ✅ |
-| 10 | Agent Node | Analyse, Clarification, Execution, Output | ☐ |
-| 11 | Self-hosted KI-Services | rembg, Real-ESRGAN, GFPGAN | ☐ |
-| 12 | docker-compose.yml + Setup-README | Self-Hosting-Anleitung | ☐ |
-| 13 | Dashboard Snapshot + Analytics | Gebündelte Query, localStorage-Cache, Credits-Activity-Chart | ✅ |
+| 10 | Agent Node | Analyse, Clarification, Execution, Output | ✅ |
+| 11 | KI-Video + Transform-Pipeline | Freepik Tasks, Polling, Credits | ✅ |
+| 12 | Dashboard Snapshot + Analytics | Gebündelte Query, localStorage-Cache, Credits-Activity-Chart | ✅ |
+| 13 | docker-compose.yml + Setup-README | Self-Hosting-Anleitung | ☐ |
+| 14 | Verbleibende Node-Lücken | Farbe/Palette, Splitter, Loop, Text-Overlay, Weiche, Präsentation | ☐ |
 
 ---
 
@@ -258,4 +276,4 @@ Folgende Themen werden in eigenen Dokumenten vertieft. Das Manifest bleibt schla
 
 ---
 
-*LemonSpace Manifest v2.1 — April 2026*
+*LemonSpace Manifest v2.3 — Mai 2026*
