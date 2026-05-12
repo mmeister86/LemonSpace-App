@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Loader2, Coins } from "lucide-react";
+import { Sparkles, Loader2, Coins, ImageIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { classifyError } from "@/lib/ai-errors";
@@ -74,6 +74,29 @@ function getSourceTextValue(node: { type?: string; data?: unknown } | undefined)
   }
 
   return typeof data.content === "string" ? data.content : "";
+}
+
+function getSourceImageReference(
+  node: { type?: string; data?: unknown } | undefined,
+): { storageId?: Id<"_storage">; imageUrl?: string; label: string } | null {
+  if (!node || !node.data || typeof node.data !== "object") {
+    return null;
+  }
+
+  if (node.type === "image") {
+    const data = node.data as { storageId?: string };
+    return data.storageId
+      ? { storageId: data.storageId as Id<"_storage">, label: "Bild" }
+      : null;
+  }
+
+  if (node.type === "asset") {
+    const data = node.data as { previewUrl?: string; url?: string };
+    const imageUrl = data.url ?? data.previewUrl;
+    return imageUrl ? { imageUrl, label: "Asset" } : null;
+  }
+
+  return null;
 }
 
 export default function PromptNode({
@@ -120,9 +143,15 @@ export default function PromptNode({
     const incomingEdges = edges.filter((edge) => edge.target === id);
     let textPrompt: string | undefined;
     let hasTextInput = false;
+    let imageReference: ReturnType<typeof getSourceImageReference> | null = null;
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
+      const sourceImageReference = getSourceImageReference(sourceNode);
+      if (sourceImageReference && !imageReference) {
+        imageReference = sourceImageReference;
+      }
+
       if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
 
       hasTextInput = true;
@@ -136,6 +165,7 @@ export default function PromptNode({
     return {
       hasTextInput,
       textPrompt: textPrompt ?? "",
+      imageReference,
     };
   }, [edges, id, nodes]);
 
@@ -260,15 +290,10 @@ export default function PromptNode({
             connectedTextPrompt = textValue;
           }
         }
-        if (sourceNode?.type === "image") {
-          const srcData = sourceNode.data as { storageId?: string };
-          if (srcData.storageId) {
-            referenceStorageId = srcData.storageId as Id<"_storage">;
-          }
-        }
-        if (sourceNode?.type === "asset") {
-          const srcData = sourceNode.data as { previewUrl?: string; url?: string };
-          referenceImageUrl = srcData.url ?? srcData.previewUrl;
+        const imageReference = getSourceImageReference(sourceNode);
+        if (imageReference) {
+          referenceStorageId = imageReference.storageId;
+          referenceImageUrl = imageReference.imageUrl;
         }
       }
 
@@ -403,6 +428,15 @@ export default function PromptNode({
             placeholder="Beschreibe, was du generieren willst…"
             className="nodrag nowheel min-h-[72px] w-full flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
           />
+        )}
+
+        {inputMeta.imageReference && (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300">
+            <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              Referenzbild verbunden · {inputMeta.imageReference.label}
+            </span>
+          </div>
         )}
 
         <div className="flex flex-col gap-1.5">

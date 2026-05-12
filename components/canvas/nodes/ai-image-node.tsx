@@ -67,6 +67,32 @@ type NodeStatus =
   | "done"
   | "error";
 
+type RegenerateReference = {
+  storageId?: Id<"_storage">;
+  imageUrl?: string;
+};
+
+function getImageReferenceFromNode(
+  node: { type?: string; data?: unknown } | undefined,
+): RegenerateReference | null {
+  if (!node || !node.data || typeof node.data !== "object") {
+    return null;
+  }
+
+  if (node.type === "image") {
+    const data = node.data as { storageId?: string };
+    return data.storageId ? { storageId: data.storageId as Id<"_storage"> } : null;
+  }
+
+  if (node.type === "asset") {
+    const data = node.data as { previewUrl?: string; url?: string };
+    const imageUrl = data.url ?? data.previewUrl;
+    return imageUrl ? { imageUrl } : null;
+  }
+
+  return null;
+}
+
 export default function AiImageNode({
   id,
   data,
@@ -122,18 +148,29 @@ export default function AiImageNode({
       const incomingEdges = edges.filter((e) => e.target === id);
       let referenceStorageId: Id<"_storage"> | undefined;
       let referenceImageUrl: string | undefined;
+      const applyReference = (reference: RegenerateReference | null) => {
+        if (!reference) return false;
+        referenceStorageId = reference.storageId;
+        referenceImageUrl = reference.imageUrl;
+        return true;
+      };
+
       for (const edge of incomingEdges) {
         const src = getNode(edge.source);
-        if (src?.type === "image") {
-          const srcData = src.data as { storageId?: string };
-          if (srcData.storageId) {
-            referenceStorageId = srcData.storageId as Id<"_storage">;
+        if (applyReference(getImageReferenceFromNode(src))) {
+          break;
+        }
+
+        if (src?.type === "prompt") {
+          const promptIncomingEdges = edges.filter((candidate) => candidate.target === src.id);
+          for (const promptEdge of promptIncomingEdges) {
+            if (applyReference(getImageReferenceFromNode(getNode(promptEdge.source)))) {
+              break;
+            }
+          }
+          if (referenceStorageId || referenceImageUrl) {
             break;
           }
-        }
-        if (src?.type === "asset") {
-          const srcData = src.data as { previewUrl?: string; url?: string };
-          referenceImageUrl = srcData.url ?? srcData.previewUrl;
         }
       }
 

@@ -187,6 +187,12 @@ describe("PromptNode", () => {
     mocks.generateImage.mockClear();
     mocks.getEdges.mockClear();
     mocks.getNode.mockClear();
+    mocks.getEdges.mockImplementation(() => mocks.edges);
+    mocks.getNode.mockImplementation((id: string) =>
+      id === "prompt-1"
+        ? { id, position: { x: 100, y: 50 }, measured: { width: 280, height: 220 } }
+        : (mocks.nodes.find((node) => node.id === id) ?? null),
+    );
     mocks.push.mockClear();
     mocks.toastPromise.mockClear();
     mocks.toastWarning.mockClear();
@@ -276,5 +282,204 @@ describe("PromptNode", () => {
         model: "openai/gpt-5-image-mini",
       }),
     );
+  });
+
+  it("passes a connected image node storage id as generation reference", async () => {
+    mocks.edges = [{ source: "image-1", target: "prompt-1" }];
+    mocks.nodes = [
+      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "mach daraus eine goldene produktvariante",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Bild generieren"),
+    );
+
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "mach daraus eine goldene produktvariante",
+        referenceStorageId: "storage-image-1",
+      }),
+    );
+  });
+
+  it("passes a connected asset URL as generation reference", async () => {
+    mocks.edges = [{ source: "asset-1", target: "prompt-1" }];
+    mocks.nodes = [
+      {
+        id: "asset-1",
+        type: "asset",
+        data: { url: "https://assets.test/full.png", previewUrl: "https://assets.test/preview.png" },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "variiere die lichtstimmung",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Bild generieren"),
+    );
+
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "variiere die lichtstimmung",
+        referenceImageUrl: "https://assets.test/full.png",
+      }),
+    );
+  });
+
+  it("uses a connected text node as prompt while keeping the image reference", async () => {
+    mocks.edges = [
+      { source: "image-1", target: "prompt-1" },
+      { source: "text-1", target: "prompt-1" },
+    ];
+    mocks.nodes = [
+      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+      { id: "text-1", type: "text", data: { content: "text prompt aus node" } },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "lokaler prompt",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Bild generieren"),
+    );
+
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "text prompt aus node",
+        referenceStorageId: "storage-image-1",
+      }),
+    );
+  });
+
+  it("shows a compact reference image hint when an image source is connected", async () => {
+    mocks.edges = [{ source: "image-1", target: "prompt-1" }];
+    mocks.nodes = [
+      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "variante",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Referenzbild verbunden");
   });
 });

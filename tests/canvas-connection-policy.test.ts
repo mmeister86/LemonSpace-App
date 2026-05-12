@@ -32,6 +32,62 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows one image or asset reference into prompt nodes", () => {
+    for (const sourceType of ["image", "asset"]) {
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType,
+          targetType: "prompt",
+          targetIncomingCount: 0,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("allows one text source into prompt nodes", () => {
+    for (const sourceType of ["text", "ai-text-output"]) {
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType,
+          targetType: "prompt",
+          targetIncomingCount: 0,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("blocks a second image reference into prompt nodes", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset",
+        targetType: "prompt",
+        targetIncomingCount: 1,
+        targetIncomingSourceTypes: ["image"],
+      }),
+    ).toBe("prompt-image-incoming-limit");
+  });
+
+  it("blocks a second text source into prompt nodes", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "ai-text-output",
+        targetType: "prompt",
+        targetIncomingCount: 1,
+        targetIncomingSourceTypes: ["text"],
+      }),
+    ).toBe("prompt-text-incoming-limit");
+  });
+
+  it("blocks unsupported inputs into prompt nodes", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "render",
+        targetType: "prompt",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("prompt-source-invalid");
+  });
+
   it("allows video-prompt to ai-video", () => {
     expect(
       validateCanvasConnectionPolicy({

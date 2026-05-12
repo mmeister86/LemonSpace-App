@@ -57,6 +57,7 @@ export function buildConnectionDropMenuNodeAction(args: {
   fromNode: RFNode;
   template: CanvasNodeTemplate;
   edges: RFEdge[];
+  nodes?: RFNode[];
   clientRequestId: string;
 }): ConnectionDropMenuNodeAction | { validationError: CanvasConnectionValidationReason } {
   const defaults = NODE_DEFAULTS[args.template.type] ?? {
@@ -95,6 +96,7 @@ export function buildConnectionDropMenuNodeAction(args: {
       targetNodeId: `__pending_${args.template.type}_${Date.now()}`,
       targetHandle: handles?.target,
       edges: args.edges,
+      nodes: args.nodes,
     });
     if (validationError) return { validationError };
 
@@ -120,6 +122,7 @@ export function buildConnectionDropMenuNodeAction(args: {
     targetNodeId: args.fromNode.id,
     targetHandle: args.ctx.fromHandleId,
     edges: args.edges,
+    nodes: args.nodes,
   });
   if (validationError) return { validationError };
 

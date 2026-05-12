@@ -35,6 +35,7 @@ export function validateCanvasConnection(
     targetNodeId: connection.target,
     targetHandle: connection.targetHandle,
     edges,
+    nodes,
     edgeToReplaceId,
     includeOptimisticEdges: options?.includeOptimisticEdges,
   });
@@ -46,6 +47,7 @@ export function validateCanvasConnectionByType(args: {
   targetNodeId: string;
   targetHandle?: string | null;
   edges: RFEdge[];
+  nodes?: RFNode[];
   edgeToReplaceId?: string;
   includeOptimisticEdges?: boolean;
 }): CanvasConnectionValidationReason | null {
@@ -56,6 +58,9 @@ export function validateCanvasConnectionByType(args: {
       edge.target === args.targetNodeId &&
       edge.id !== args.edgeToReplaceId,
   );
+  const nodeTypeById = new Map(
+    args.nodes?.map((node) => [node.id, node.type ?? ""] as const) ?? [],
+  );
 
   return validateCanvasConnectionPolicy({
     sourceType: args.sourceType,
@@ -63,6 +68,9 @@ export function validateCanvasConnectionByType(args: {
     targetIncomingCount: targetIncomingEdges.length,
     targetHandle: args.targetHandle,
     targetIncomingHandles: targetIncomingEdges.map((edge) => edge.targetHandle),
+    targetIncomingSourceTypes: targetIncomingEdges.map(
+      (edge) => nodeTypeById.get(edge.source) ?? "",
+    ),
   });
 }
 
@@ -88,6 +96,7 @@ export function validateCanvasEdgeSplit(args: {
       targetNodeId: args.middleNode.id,
       targetHandle: middleNodeHandles?.target,
       edges: args.edges,
+      nodes: args.nodes,
     }) ??
     validateCanvasConnectionByType({
       sourceType: args.middleNode.type ?? "",
@@ -95,6 +104,7 @@ export function validateCanvasEdgeSplit(args: {
       targetNodeId: targetNode.id,
       targetHandle: args.splitEdge.targetHandle,
       edges: args.edges,
+      nodes: args.nodes,
       edgeToReplaceId: args.splitEdge.id,
     })
   );

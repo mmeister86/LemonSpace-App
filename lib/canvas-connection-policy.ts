@@ -87,6 +87,9 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
 
 const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
+const PROMPT_IMAGE_SOURCE_TYPES = new Set<string>(["image", "asset"]);
+const PROMPT_TEXT_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
+
 const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
@@ -112,6 +115,9 @@ export type CanvasConnectionValidationReason =
   | "incomplete"
   | "self-loop"
   | "unknown-node"
+  | "prompt-source-invalid"
+  | "prompt-image-incoming-limit"
+  | "prompt-text-incoming-limit"
   | "ai-video-source-invalid"
   | "video-prompt-target-invalid"
   | "adjustment-source-invalid"
@@ -143,6 +149,7 @@ export function validateCanvasConnectionPolicy(args: {
   targetIncomingCount: number;
   targetHandle?: string | null;
   targetIncomingHandles?: Array<string | null | undefined>;
+  targetIncomingSourceTypes?: string[];
 }): CanvasConnectionValidationReason | null {
   const {
     sourceType,
@@ -150,7 +157,38 @@ export function validateCanvasConnectionPolicy(args: {
     targetIncomingCount,
     targetHandle,
     targetIncomingHandles,
+    targetIncomingSourceTypes,
   } = args;
+
+  if (sourceType === "video-prompt" && targetType !== "ai-video") {
+    return "video-prompt-target-invalid";
+  }
+
+  if (targetType === "prompt") {
+    const isImageSource = PROMPT_IMAGE_SOURCE_TYPES.has(sourceType);
+    const isTextSource = PROMPT_TEXT_SOURCE_TYPES.has(sourceType);
+
+    if (!isImageSource && !isTextSource) {
+      return "prompt-source-invalid";
+    }
+
+    const incomingSourceTypes = targetIncomingSourceTypes ?? [];
+    if (
+      isImageSource &&
+      incomingSourceTypes.some((type) => PROMPT_IMAGE_SOURCE_TYPES.has(type))
+    ) {
+      return "prompt-image-incoming-limit";
+    }
+
+    if (
+      isTextSource &&
+      incomingSourceTypes.some((type) => PROMPT_TEXT_SOURCE_TYPES.has(type))
+    ) {
+      return "prompt-text-incoming-limit";
+    }
+
+    return null;
+  }
 
   if (targetType === "mixer") {
     if (!MIXER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
@@ -214,10 +252,6 @@ export function validateCanvasConnectionPolicy(args: {
 
   if (targetType === "ai-video" && sourceType !== "video-prompt") {
     return "ai-video-source-invalid";
-  }
-
-  if (sourceType === "video-prompt" && targetType !== "ai-video") {
-    return "video-prompt-target-invalid";
   }
 
   if (targetType === "render" && !RENDER_ALLOWED_SOURCE_TYPES.has(sourceType)) {
@@ -297,6 +331,12 @@ export function getCanvasConnectionValidationMessage(
       return "Node kann nicht mit sich selbst verbunden werden.";
     case "unknown-node":
       return "Verbindung enthaelt unbekannte Nodes.";
+    case "prompt-source-invalid":
+      return "KI-Bild akzeptiert nur Bild-, Asset-, Text- oder KI-Text-Input.";
+    case "prompt-image-incoming-limit":
+      return "KI-Bild erlaubt nur eine Bild- oder Asset-Referenz.";
+    case "prompt-text-incoming-limit":
+      return "KI-Bild erlaubt nur eine Text-Quelle.";
     case "ai-video-source-invalid":
       return "KI-Video-Ausgabe akzeptiert nur Eingaben von KI-Video.";
     case "video-prompt-target-invalid":

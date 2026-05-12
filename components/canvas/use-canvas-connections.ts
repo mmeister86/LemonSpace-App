@@ -487,6 +487,7 @@ export function useCanvasConnections({
         fromNode,
         template,
         edges: edgesRef.current,
+        nodes: nodesRef.current,
         clientRequestId,
       });
 
