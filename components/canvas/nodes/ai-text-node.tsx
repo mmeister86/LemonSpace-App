@@ -5,7 +5,7 @@
  * Renders and manages the Canvas ai text node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   Position,
   useReactFlow,
@@ -25,9 +25,11 @@ import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import {
   appendLocalNodeStreamChunk,
-  clearLocalNodeStream,
+  appendLocalNodeStreamEvent,
+  getLocalNodeStreamSnapshot,
   markLocalNodeStreamError,
   setLocalNodeStream,
+  subscribeToLocalNodeStream,
 } from "@/lib/ai-stream/local-node-streams";
 import {
   DEFAULT_AI_TEXT_MODEL_ID,
@@ -41,6 +43,8 @@ import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { Label } from "@/components/ui/label";
 import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
+import { AiRunStatusPanel } from "@/components/ui/ai-run-status";
+import { createAiRunEvent, type AiRunEvent, type AiRunPhase } from "@/lib/ai-run-history";
 
 type AiTextNodeData = {
   instruction?: string;
@@ -49,6 +53,12 @@ type AiTextNodeData = {
   canvasId?: string;
   _status?: string;
   _statusMessage?: string;
+};
+
+type AiTextOutputState = {
+  status?: string;
+  statusMessage?: string;
+  runFinishedAt?: number;
 };
 
 type SourceTextNodeData = {
@@ -113,6 +123,11 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInputEditing, setIsInputEditing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const localStream = useSyncExternalStore(
+    (listener) => subscribeToLocalNodeStream(id, listener),
+    () => getLocalNodeStreamSnapshot(id),
+    () => undefined,
+  );
 
   useEffect(() => {
     setInstruction(nodeData.instruction ?? "");
@@ -282,6 +297,21 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     setLocalError(null);
     setIsGenerating(true);
     let outputNodeId: Id<"nodes"> | null = null;
+    const runStartedAt = Date.now();
+    const initialEvents: AiRunEvent[] = [
+      createAiRunEvent({
+        phase: "preparing",
+        message: t("run.preparingMessage"),
+        createdAt: runStartedAt,
+      }),
+    ];
+    setLocalNodeStream(id, {
+      text: "",
+      status: "streaming",
+      phase: "preparing",
+      startedAt: runStartedAt,
+      events: initialEvents,
+    });
 
     try {
       const effectiveInputText = (inputText.trim() || connectedText.trim()).trim();
@@ -302,6 +332,8 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           modelId: resolvedModelId,
           creditCost,
           canvasId,
+          runStartedAt,
+          runEvents: initialEvents,
         },
         clientRequestId,
         sourceNodeId: id as Id<"nodes">,
@@ -309,7 +341,23 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
         targetHandle: "ai-text-output-in",
       });
 
-      setLocalNodeStream(outputNodeId, { text: "", status: "streaming" });
+      setLocalNodeStream(outputNodeId, {
+        text: "",
+        status: "streaming",
+        phase: "streaming",
+        startedAt: runStartedAt,
+        events: [
+          ...initialEvents,
+          createAiRunEvent({
+            phase: "streaming",
+            message: t("run.streamingMessage"),
+          }),
+        ],
+      });
+      appendLocalNodeStreamEvent(id, {
+        phase: "streaming",
+        message: t("run.streamingMessage"),
+      });
 
       await toast.promise(
         fetch("/api/ai-stream/text", {
@@ -333,7 +381,11 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           },
         },
       );
-      clearLocalNodeStream(outputNodeId);
+      appendLocalNodeStreamEvent(id, {
+        phase: "finalizing",
+        message: t("run.finalizingMessage"),
+        status: "running",
+      });
     } catch (error) {
       const classified = classifyError(error);
       if (outputNodeId) {
@@ -342,6 +394,11 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           classified.rawMessage ?? t("generationFailed"),
         );
       }
+      appendLocalNodeStreamEvent(id, {
+        phase: "error",
+        message: classified.rawMessage ?? t("generationFailed"),
+        status: "error",
+      });
       setLocalError(classified.rawMessage ?? t("generationFailed"));
     } finally {
       setIsGenerating(false);
@@ -373,6 +430,94 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const isBusy = isGenerating;
   const errorMessage = nodeData._statusMessage ?? localError;
   const generateDisabled = isBusy || !hasAnyInput;
+  const connectedOutputStates = useMemo<AiTextOutputState[]>(() => {
+    const outputEdges = edges.filter((edge) => edge.source === id);
+    return outputEdges
+      .map((edge) => nodes.find((node) => node.id === edge.target))
+      .filter((node) => node?.type === "ai-text-output")
+      .map((node) => {
+        const outputData =
+          node && typeof node.data === "object" && node.data !== null
+            ? (node.data as Record<string, unknown>)
+            : {};
+        return {
+          status: typeof outputData._status === "string" ? outputData._status : undefined,
+          statusMessage:
+            typeof outputData._statusMessage === "string"
+              ? outputData._statusMessage
+              : undefined,
+          runFinishedAt:
+            typeof outputData.runFinishedAt === "number"
+              ? outputData.runFinishedAt
+              : undefined,
+        };
+      });
+  }, [edges, id, nodes]);
+  const connectedOutputPhase = useMemo<AiRunPhase | undefined>(() => {
+    if (
+      connectedOutputStates.some((output) =>
+        output.status === "executing" ||
+        output.status === "analyzing" ||
+        output.status === "clarifying",
+      )
+    ) {
+      return undefined;
+    }
+    if (connectedOutputStates.some((output) => output.status === "error")) {
+      return "error";
+    }
+    if (connectedOutputStates.some((output) => output.status === "done")) {
+      return "done";
+    }
+    return undefined;
+  }, [connectedOutputStates]);
+  const runPhase = connectedOutputPhase ?? localStream?.phase;
+  const runEvents = useMemo(() => {
+    if (!localStream?.events || !connectedOutputPhase) {
+      return localStream?.events;
+    }
+    const lastEvent = localStream.events.at(-1);
+    if (lastEvent?.phase === connectedOutputPhase) {
+      return localStream.events;
+    }
+    const terminalOutput = connectedOutputStates.find(
+      (output) => output.status === connectedOutputPhase,
+    );
+    return [
+      ...localStream.events,
+      createAiRunEvent({
+        phase: connectedOutputPhase,
+        message:
+          connectedOutputPhase === "done"
+            ? t("run.doneMessage")
+            : terminalOutput?.statusMessage ?? t("generationFailed"),
+        createdAt: terminalOutput?.runFinishedAt,
+        status: connectedOutputPhase === "done" ? "success" : "error",
+      }),
+    ];
+  }, [connectedOutputPhase, connectedOutputStates, localStream?.events, t]);
+  const runLabels = {
+    phase: {
+      preparing: t("run.phase.preparing"),
+      "reading-context": t("run.phase.readingContext"),
+      streaming: t("run.phase.streaming"),
+      "calling-tools": t("run.phase.callingTools"),
+      finalizing: t("run.phase.finalizing"),
+      done: t("run.phase.done"),
+      error: t("run.phase.error"),
+    } satisfies Record<AiRunPhase, string>,
+    progressTitle: t("run.progressTitle"),
+    eventsTitle: t("run.eventsTitle"),
+    toolCallsTitle: t("run.toolCallsTitle"),
+    noEvents: t("run.noEvents"),
+    running: t("run.running"),
+    success: t("run.success"),
+    error: t("run.error"),
+    details: t("run.details"),
+    input: t("run.input"),
+    output: t("run.output"),
+    elapsed: t("run.elapsed", { time: "{time}" }),
+  };
 
   return (
     <BaseNodeWrapper
@@ -468,6 +613,15 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           {t("generateButton")}
         </button>
+
+        <AiRunStatusPanel
+          phase={runPhase}
+          startedAt={localStream?.startedAt}
+          events={runEvents}
+          toolCalls={localStream?.toolCalls}
+          labels={runLabels}
+          accent="violet"
+        />
 
         {availableCredits !== null && !hasEnoughCredits ? (
           <div className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">

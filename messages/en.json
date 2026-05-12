@@ -402,7 +402,33 @@
     "offlineTitle": "Offline currently not available",
     "offlineDescription": "AI text requires an active connection.",
     "missingCanvas": "Canvas ID is missing on this node.",
-    "legacyOutputHint": "This older AI text output is preserved. New runs appear as separate output nodes."
+    "legacyOutputHint": "This older AI text output is preserved. New runs appear as separate output nodes.",
+    "run": {
+      "preparingMessage": "Preparing the text run",
+      "streamingMessage": "Streaming the response",
+      "finalizingMessage": "Saving generated text",
+      "doneMessage": "Text run finished",
+      "progressTitle": "Run progress",
+      "eventsTitle": "Events",
+      "toolCallsTitle": "Tool calls",
+      "noEvents": "Waiting for the run to start",
+      "running": "Running",
+      "success": "Done",
+      "error": "Failed",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Preparing",
+        "readingContext": "Reading context",
+        "streaming": "Streaming",
+        "callingTools": "Calling tools",
+        "finalizing": "Finalizing",
+        "done": "Done",
+        "error": "Failed"
+      }
+    }
   },
   "aiTextOutputNode": {
     "label": "AI text output",
@@ -420,7 +446,29 @@
     "creditMeta": "{credits} credits",
     "errorFallback": "Text generation failed",
     "offlineTitle": "Offline currently not available",
-    "offlineDescription": "AI text requires an active connection."
+    "offlineDescription": "AI text requires an active connection.",
+    "run": {
+      "progressTitle": "Run progress",
+      "eventsTitle": "Events",
+      "toolCallsTitle": "Tool calls",
+      "noEvents": "No run events yet",
+      "running": "Running",
+      "success": "Done",
+      "error": "Failed",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Preparing",
+        "readingContext": "Reading context",
+        "streaming": "Streaming",
+        "callingTools": "Calling tools",
+        "finalizing": "Finalizing",
+        "done": "Done",
+        "error": "Failed"
+      }
+    }
   },
   "agentNode": {
     "templates": {
@@ -452,6 +500,32 @@
     "executingPlannedFallback": "Executing planned outputs",
     "offlineTitle": "Offline currently not supported",
     "offlineDescription": "Agent run requires an active connection.",
+    "run": {
+      "preparingMessage": "Preparing the agent run",
+      "readingContextMessage": "Reading connected context",
+      "streamingMessage": "Streaming a live summary",
+      "doneMessage": "Agent run handed off to durable outputs",
+      "progressTitle": "Run progress",
+      "eventsTitle": "Events",
+      "toolCallsTitle": "Tool calls",
+      "noEvents": "Waiting for the run to start",
+      "running": "Running",
+      "success": "Done",
+      "error": "Failed",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Preparing",
+        "readingContext": "Reading context",
+        "streaming": "Streaming",
+        "callingTools": "Calling tools",
+        "finalizing": "Finalizing",
+        "done": "Done",
+        "error": "Failed"
+      }
+    },
     "clarificationPrompts": {
       "briefing": "What should the agent produce? Provide the brief in one or two sentences.",
       "targetChannels": "Which channels should this run target? List at least one channel.",
@@ -474,7 +548,29 @@
     "previewFallback": "No preview available",
     "emptyValue": "-",
     "bodyLabel": "Body",
-    "plannedContent": "Planned content"
+    "plannedContent": "Planned content",
+    "run": {
+      "progressTitle": "Run progress",
+      "eventsTitle": "Events",
+      "toolCallsTitle": "Tool calls",
+      "noEvents": "No run events yet",
+      "running": "Running",
+      "success": "Done",
+      "error": "Failed",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Preparing",
+        "readingContext": "Reading context",
+        "streaming": "Streaming",
+        "callingTools": "Calling tools",
+        "finalizing": "Finalizing",
+        "done": "Done",
+        "error": "Failed"
+      }
+    }
   },
   "credits": {
     "balance": "Balance",

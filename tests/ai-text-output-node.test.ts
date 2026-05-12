@@ -63,7 +63,21 @@ describe("AiTextOutputNode streaming draft", () => {
   });
 
   it("renders local stream draft before persisted output text", async () => {
-    setLocalNodeStream("output-1", { text: "Streaming draft", status: "streaming" });
+    setLocalNodeStream("output-1", {
+      text: "Streaming draft",
+      status: "streaming",
+      phase: "streaming",
+      startedAt: 10,
+      events: [
+        {
+          id: "event-1",
+          phase: "streaming",
+          message: "Streaming response",
+          createdAt: 10,
+          status: "running",
+        },
+      ],
+    });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -89,5 +103,70 @@ describe("AiTextOutputNode streaming draft", () => {
 
     expect(container.textContent).toContain("Streaming draft");
     expect(container.textContent).not.toContain("Persisted text");
+    expect(container.querySelector('[data-testid="ai-run-status-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="ai-streaming-response"]')).not.toBeNull();
+  });
+
+  it("does not keep old preparation events visually running after completion", async () => {
+    setLocalNodeStream("output-done", {
+      text: "Streaming draft",
+      status: "streaming",
+      phase: "streaming",
+      startedAt: 10,
+      events: [
+        {
+          id: "event-1",
+          phase: "preparing",
+          message: "Preparing text run",
+          createdAt: 10,
+          status: "running",
+        },
+      ],
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AiTextOutputNode, {
+          id: "output-done",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "ai-text-output",
+          data: {
+            outputText: "Persisted text",
+            _status: "done",
+            runEvents: [
+              {
+                id: "event-1",
+                phase: "preparing",
+                message: "Preparing text run",
+                createdAt: 10,
+                status: "running",
+              },
+              {
+                id: "event-2",
+                phase: "done",
+                message: "Text generation finished",
+                createdAt: 20,
+                status: "success",
+              },
+            ],
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("run.phase.done");
+    expect(container.textContent).not.toContain("run.phase.streaming");
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 });

@@ -5,7 +5,7 @@
  * Renders and manages the Canvas agent node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Bot } from "lucide-react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
@@ -24,9 +24,12 @@ import {
 } from "@/lib/agent-models";
 import {
   appendLocalNodeStreamChunk,
+  appendLocalNodeStreamEvent,
   clearLocalNodeStream,
+  getLocalNodeStreamSnapshot,
   markLocalNodeStreamError,
   setLocalNodeStream,
+  subscribeToLocalNodeStream,
 } from "@/lib/ai-stream/local-node-streams";
 import {
   type AgentClarificationAnswerMap,
@@ -37,8 +40,10 @@ import { normalizePublicTier } from "@/lib/tier-credits";
 import { toast } from "@/lib/toast";
 import { Label } from "@/components/ui/label";
 import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
+import { AiRunStatusPanel, AiToolCallsSection } from "@/components/ui/ai-run-status";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { createAiRunEvent, type AiRunEvent, type AiRunPhase, type ToolCallTrace } from "@/lib/ai-run-history";
 
 type AgentNodeData = {
   templateId?: string;
@@ -58,6 +63,10 @@ type AgentNodeData = {
   _executionStepTotal?: number;
   clarificationQuestions?: AgentClarificationQuestion[];
   clarificationAnswers?: AgentClarificationAnswerMap | Array<{ id: string; value: string }>;
+  runStartedAt?: number;
+  runFinishedAt?: number;
+  runEvents?: AiRunEvent[];
+  toolCalls?: ToolCallTrace[];
   _status?: string;
   _statusMessage?: string;
 };
@@ -248,6 +257,11 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     useState<AgentClarificationAnswerMap | null>(null);
   const [briefConstraintsDraft, setBriefConstraintsDraft] =
     useState<AgentBriefConstraints | null>(null);
+  const localStream = useSyncExternalStore(
+    (listener) => subscribeToLocalNodeStream(id, listener),
+    () => getLocalNodeStreamSnapshot(id),
+    () => undefined,
+  );
 
   const modelId = modelDraftId === nodeModelId ? nodeModelId : modelDraftId ?? nodeModelId;
   const clarificationAnswers =
@@ -453,6 +467,21 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     }
 
     let outputNodeId: string | null = null;
+    const runStartedAt = Date.now();
+    const initialEvents = [
+      createAiRunEvent({
+        phase: "preparing",
+        message: t("run.preparingMessage"),
+        createdAt: runStartedAt,
+      }),
+    ];
+    setLocalNodeStream(id, {
+      text: "",
+      status: "streaming",
+      phase: "preparing",
+      startedAt: runStartedAt,
+      events: initialEvents,
+    });
     try {
       const response = await fetch("/api/ai-stream/agent", {
         method: "POST",
@@ -471,8 +500,29 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       if (!outputNodeId) {
         throw new Error("Agent stream did not return an output node id");
       }
-      setLocalNodeStream(outputNodeId, { text: "", status: "streaming" });
+      appendLocalNodeStreamEvent(id, {
+        phase: "reading-context",
+        message: t("run.readingContextMessage"),
+      });
+      setLocalNodeStream(outputNodeId, {
+        text: "",
+        status: "streaming",
+        phase: "streaming",
+        startedAt: runStartedAt,
+        events: [
+          ...initialEvents,
+          createAiRunEvent({
+            phase: "streaming",
+            message: t("run.streamingMessage"),
+          }),
+        ],
+      });
       await readTextStream(response, outputNodeId);
+      appendLocalNodeStreamEvent(id, {
+        phase: "done",
+        message: t("run.doneMessage"),
+        status: "success",
+      });
       clearLocalNodeStream(outputNodeId);
     } catch (error) {
       if (outputNodeId) {
@@ -481,6 +531,11 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
           error instanceof Error ? error.message : t("executingPlannedFallback"),
         );
       }
+      appendLocalNodeStreamEvent(id, {
+        phase: "error",
+        message: error instanceof Error ? error.message : t("executingPlannedFallback"),
+        status: "error",
+      });
       throw error;
     }
   };
@@ -514,6 +569,28 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   if (!template) {
     return null;
   }
+  const runLabels = {
+    phase: {
+      preparing: t("run.phase.preparing"),
+      "reading-context": t("run.phase.readingContext"),
+      streaming: t("run.phase.streaming"),
+      "calling-tools": t("run.phase.callingTools"),
+      finalizing: t("run.phase.finalizing"),
+      done: t("run.phase.done"),
+      error: t("run.phase.error"),
+    } satisfies Record<AiRunPhase, string>,
+    progressTitle: t("run.progressTitle"),
+    eventsTitle: t("run.eventsTitle"),
+    toolCallsTitle: t("run.toolCallsTitle"),
+    noEvents: t("run.noEvents"),
+    running: t("run.running"),
+    success: t("run.success"),
+    error: t("run.error"),
+    details: t("run.details"),
+    input: t("run.input"),
+    output: t("run.output"),
+    elapsed: t("run.elapsed", { time: "{time}" }),
+  };
 
   return (
     <BaseNodeWrapper
@@ -668,6 +745,19 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
             <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90">{executionProgressLine}</p>
           ) : null}
         </section>
+
+        <AiRunStatusPanel
+          phase={localStream?.phase}
+          startedAt={localStream?.startedAt ?? nodeData.runStartedAt}
+          events={localStream?.events ?? nodeData.runEvents}
+          toolCalls={localStream?.toolCalls ?? nodeData.toolCalls}
+          labels={runLabels}
+          accent="amber"
+        />
+        <AiToolCallsSection
+          toolCalls={localStream?.toolCalls ?? nodeData.toolCalls}
+          labels={runLabels}
+        />
 
         {clarificationQuestions.length > 0 ? (
           <section className="space-y-2">

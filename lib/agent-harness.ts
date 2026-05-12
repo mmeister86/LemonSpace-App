@@ -3,6 +3,12 @@
  * Shared TypeScript utility for agent harness. Keep it framework-light and reusable from both frontend and Convex-adjacent code where applicable.
  */
 
+import {
+  completeToolCallTrace,
+  createToolCallTrace,
+  type ToolCallTrace,
+} from "@/lib/ai-run-history";
+
 export type AgentHarnessMessage =
   | {
       role: "system" | "user";
@@ -96,6 +102,7 @@ export async function runAgentHarnessLoop<TFinal>(args: {
   ) => Promise<AgentHarnessModelResponse>;
   executeTool: (call: AgentHarnessParsedToolCall) => Promise<AgentHarnessToolResult>;
   parseFinal: (content: string) => TFinal;
+  onToolCallTrace?: (trace: ToolCallTrace) => void | Promise<void>;
 }): Promise<AgentHarnessLoopResult<TFinal>> {
   const allowedToolNames = new Set(args.tools.map((tool) => tool.name));
   const messages = [...args.initialMessages];
@@ -133,7 +140,34 @@ export async function runAgentHarnessLoop<TFinal>(args: {
         name: toolCall.name,
         arguments: parseToolArguments(toolCall),
       };
-      const result = await args.executeTool(parsedCall);
+      const runningTrace = createToolCallTrace({
+        id: parsedCall.id,
+        toolName: parsedCall.name,
+        status: "running",
+        input: parsedCall.arguments,
+      });
+      await args.onToolCallTrace?.(runningTrace);
+
+      let result: AgentHarnessToolResult;
+      try {
+        result = await args.executeTool(parsedCall);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Tool execution failed";
+        await args.onToolCallTrace?.(
+          completeToolCallTrace(runningTrace, {
+            status: "error",
+            error: message,
+          }),
+        );
+        throw error;
+      }
+      await args.onToolCallTrace?.(
+        completeToolCallTrace(runningTrace, {
+          status: result.ok ? "success" : "error",
+          output: result.result,
+          error: result.error,
+        }),
+      );
 
       toolResults.push({
         toolCallId: parsedCall.id,

@@ -402,7 +402,33 @@
     "offlineTitle": "Offline derzeit nicht verfügbar",
     "offlineDescription": "KI-Text benötigt eine aktive Verbindung.",
     "missingCanvas": "Canvas-ID fehlt in der Node.",
-    "legacyOutputHint": "Dieser ältere KI-Text-Output bleibt erhalten. Neue Runs erscheinen als separate Ausgabe-Nodes."
+    "legacyOutputHint": "Dieser ältere KI-Text-Output bleibt erhalten. Neue Runs erscheinen als separate Ausgabe-Nodes.",
+    "run": {
+      "preparingMessage": "Textlauf wird vorbereitet",
+      "streamingMessage": "Antwort wird gestreamt",
+      "finalizingMessage": "Generierter Text wird gespeichert",
+      "doneMessage": "Textlauf abgeschlossen",
+      "progressTitle": "Run-Fortschritt",
+      "eventsTitle": "Ereignisse",
+      "toolCallsTitle": "Tool-Calls",
+      "noEvents": "Wartet auf den Start",
+      "running": "Läuft",
+      "success": "Fertig",
+      "error": "Fehlgeschlagen",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Vorbereitung",
+        "readingContext": "Kontext lesen",
+        "streaming": "Streaming",
+        "callingTools": "Tools ausführen",
+        "finalizing": "Finalisieren",
+        "done": "Fertig",
+        "error": "Fehlgeschlagen"
+      }
+    }
   },
   "aiTextOutputNode": {
     "label": "KI-Text-Ausgabe",
@@ -420,7 +446,29 @@
     "creditMeta": "{credits} Credits",
     "errorFallback": "Textgenerierung fehlgeschlagen",
     "offlineTitle": "Offline derzeit nicht verfügbar",
-    "offlineDescription": "KI-Text benötigt eine aktive Verbindung."
+    "offlineDescription": "KI-Text benötigt eine aktive Verbindung.",
+    "run": {
+      "progressTitle": "Run-Fortschritt",
+      "eventsTitle": "Ereignisse",
+      "toolCallsTitle": "Tool-Calls",
+      "noEvents": "Noch keine Run-Ereignisse",
+      "running": "Läuft",
+      "success": "Fertig",
+      "error": "Fehlgeschlagen",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Vorbereitung",
+        "readingContext": "Kontext lesen",
+        "streaming": "Streaming",
+        "callingTools": "Tools ausführen",
+        "finalizing": "Finalisieren",
+        "done": "Fertig",
+        "error": "Fehlgeschlagen"
+      }
+    }
   },
   "agentNode": {
     "templates": {
@@ -452,6 +500,32 @@
     "executingPlannedFallback": "Geplante Outputs werden erstellt",
     "offlineTitle": "Offline derzeit nicht verfuegbar",
     "offlineDescription": "Ein Agent-Lauf benoetigt eine aktive Verbindung.",
+    "run": {
+      "preparingMessage": "Agent-Lauf wird vorbereitet",
+      "readingContextMessage": "Verbundener Kontext wird gelesen",
+      "streamingMessage": "Live-Zusammenfassung wird gestreamt",
+      "doneMessage": "Agent-Lauf wurde an dauerhafte Outputs übergeben",
+      "progressTitle": "Run-Fortschritt",
+      "eventsTitle": "Ereignisse",
+      "toolCallsTitle": "Tool-Calls",
+      "noEvents": "Wartet auf den Start",
+      "running": "Läuft",
+      "success": "Fertig",
+      "error": "Fehlgeschlagen",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Vorbereitung",
+        "readingContext": "Kontext lesen",
+        "streaming": "Streaming",
+        "callingTools": "Tools ausführen",
+        "finalizing": "Finalisieren",
+        "done": "Fertig",
+        "error": "Fehlgeschlagen"
+      }
+    },
     "clarificationPrompts": {
       "briefing": "Was soll der Agent liefern? Bitte formuliere das Briefing in ein bis zwei Saetzen.",
       "targetChannels": "Welche Kanaele soll dieser Lauf bedienen? Bitte nenne mindestens einen Kanal.",
@@ -474,7 +548,29 @@
     "previewFallback": "Keine Vorschau verfuegbar",
     "emptyValue": "-",
     "bodyLabel": "Inhalt",
-    "plannedContent": "Geplanter Inhalt"
+    "plannedContent": "Geplanter Inhalt",
+    "run": {
+      "progressTitle": "Run-Fortschritt",
+      "eventsTitle": "Ereignisse",
+      "toolCallsTitle": "Tool-Calls",
+      "noEvents": "Noch keine Run-Ereignisse",
+      "running": "Läuft",
+      "success": "Fertig",
+      "error": "Fehlgeschlagen",
+      "details": "Details",
+      "input": "Input",
+      "output": "Output",
+      "elapsed": "{time}",
+      "phase": {
+        "preparing": "Vorbereitung",
+        "readingContext": "Kontext lesen",
+        "streaming": "Streaming",
+        "callingTools": "Tools ausführen",
+        "finalizing": "Finalisieren",
+        "done": "Fertig",
+        "error": "Fehlgeschlagen"
+      }
+    }
   },
   "credits": {
     "balance": "Guthaben",

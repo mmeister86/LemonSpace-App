@@ -14,8 +14,14 @@ import {
   getLocalNodeStreamSnapshot,
   subscribeToLocalNodeStream,
 } from "@/lib/ai-stream/local-node-streams";
+import {
+  AiRunStatusPanel,
+  AiStreamingResponse,
+  AiToolCallsSection,
+} from "@/components/ui/ai-run-status";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import type { AiRunEvent, AiRunPhase, ToolCallTrace } from "@/lib/ai-run-history";
 
 type AgentOutputNodeData = {
   isSkeleton?: boolean;
@@ -46,6 +52,10 @@ type AgentOutputNodeData = {
     caption?: string;
     hashtags?: string[];
   };
+  runStartedAt?: number;
+  runFinishedAt?: number;
+  runEvents?: AiRunEvent[];
+  toolCalls?: ToolCallTrace[];
   _status?: string;
   _statusMessage?: string;
 };
@@ -217,6 +227,31 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
     () => undefined,
   );
   const isSkeleton = nodeData.isSkeleton === true;
+  const terminalPhase =
+    nodeData._status === "done" ? "done" : nodeData._status === "error" ? "error" : undefined;
+  const activeLocalStream = terminalPhase ? undefined : localStream;
+  const runLabels = {
+    phase: {
+      preparing: t("run.phase.preparing"),
+      "reading-context": t("run.phase.readingContext"),
+      streaming: t("run.phase.streaming"),
+      "calling-tools": t("run.phase.callingTools"),
+      finalizing: t("run.phase.finalizing"),
+      done: t("run.phase.done"),
+      error: t("run.phase.error"),
+    } satisfies Record<AiRunPhase, string>,
+    progressTitle: t("run.progressTitle"),
+    eventsTitle: t("run.eventsTitle"),
+    toolCallsTitle: t("run.toolCallsTitle"),
+    noEvents: t("run.noEvents"),
+    running: t("run.running"),
+    success: t("run.success"),
+    error: t("run.error"),
+    details: t("run.details"),
+    input: t("run.input"),
+    output: t("run.output"),
+    elapsed: t("run.elapsed", { time: "{time}" }),
+  };
   const hasStepCounter =
     typeof nodeData.stepIndex === "number" &&
     Number.isFinite(nodeData.stepIndex) &&
@@ -298,14 +333,25 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             ) : null}
         </header>
 
-        {localStream?.text ? (
+        <AiRunStatusPanel
+          phase={terminalPhase ?? activeLocalStream?.phase}
+          startedAt={activeLocalStream?.startedAt ?? nodeData.runStartedAt}
+          events={activeLocalStream?.events ?? nodeData.runEvents}
+          toolCalls={activeLocalStream?.toolCalls ?? nodeData.toolCalls}
+          labels={runLabels}
+          accent="amber"
+        />
+
+        {activeLocalStream?.text ? (
           <section data-testid="agent-output-stream-draft" className="space-y-1">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               {t("bodyLabel")}
             </p>
-            <div className="max-h-48 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
-              <p className="whitespace-pre-wrap break-words">{localStream.text}</p>
-            </div>
+            <AiStreamingResponse
+              text={activeLocalStream.text}
+              empty={t("plannedContent")}
+              className="max-h-48 rounded-md border border-border/70 bg-background/70 text-[13px] text-foreground/90"
+            />
           </section>
         ) : isSkeleton ? (
           <section className="space-y-1">
@@ -459,6 +505,11 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             </div>
           </section>
         )}
+
+        <AiToolCallsSection
+          toolCalls={activeLocalStream?.toolCalls ?? nodeData.toolCalls}
+          labels={runLabels}
+        />
       </div>
     </BaseNodeWrapper>
   );

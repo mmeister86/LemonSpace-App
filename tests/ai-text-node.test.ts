@@ -28,7 +28,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) => {
+    if (key === "run.elapsed" && !values?.time) {
+      throw new Error('FORMATTING_ERROR: The intl string context variable "time" was not provided');
+    }
+    return values?.time ? String(values.time) : key;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -138,7 +143,11 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import AiTextNode from "@/components/canvas/nodes/ai-text-node";
-import { resetLocalNodeStreamsForTests } from "@/lib/ai-stream/local-node-streams";
+import {
+  getLocalNodeStreamSnapshot,
+  resetLocalNodeStreamsForTests,
+  setLocalNodeStream,
+} from "@/lib/ai-stream/local-node-streams";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -285,6 +294,13 @@ describe("AiTextNode", () => {
         data: expect.objectContaining({
           inputText: "Bitte knackiger machen.",
           modelId: "openai/gpt-5.4-mini",
+          runStartedAt: expect.any(Number),
+          runEvents: [
+            expect.objectContaining({
+              phase: "preparing",
+              message: "run.preparingMessage",
+            }),
+          ],
         }),
       }),
     );
@@ -304,5 +320,46 @@ describe("AiTextNode", () => {
       }),
     );
     expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="ai-run-status-panel"]')).not.toBeNull();
+    expect(container.textContent).toContain("run.finalizingMessage");
+    expect(container.textContent).not.toContain("run.doneMessage");
+    expect(getLocalNodeStreamSnapshot("ai-text-output-1")?.text).toBe("Streamed text");
+  });
+
+  it("marks the source run done only after the connected output is persisted", async () => {
+    setLocalNodeStream("ai-text-1", {
+      text: "",
+      status: "streaming",
+      phase: "finalizing",
+      startedAt: 10,
+      events: [
+        {
+          id: "event-1",
+          phase: "finalizing",
+          message: "run.finalizingMessage",
+          createdAt: 10,
+          status: "running",
+        },
+      ],
+    });
+    mocks.edges = [{ source: "ai-text-1", target: "ai-text-output-1" }];
+    mocks.nodes = [
+      {
+        id: "ai-text-output-1",
+        type: "ai-text-output",
+        data: { _status: "done", runFinishedAt: 20 },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!, { inputText: "Bitte knackiger machen." });
+    });
+
+    expect(container.textContent).toContain("run.phase.done");
+    expect(container.textContent).toContain("run.doneMessage");
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 });

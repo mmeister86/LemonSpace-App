@@ -5,7 +5,7 @@
  * Renders and manages the Canvas ai text output node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -17,13 +17,19 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { classifyError } from "@/lib/ai-errors";
 import {
+  clearLocalNodeStream,
   getLocalNodeStreamSnapshot,
   subscribeToLocalNodeStream,
 } from "@/lib/ai-stream/local-node-streams";
 import { getAiTextModel } from "@/lib/ai-text-models";
 import { toast } from "@/lib/toast";
+import {
+  AiRunStatusPanel,
+  AiStreamingResponse,
+} from "@/components/ui/ai-run-status";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import type { AiRunEvent, AiRunPhase, ToolCallTrace } from "@/lib/ai-run-history";
 
 type AiTextOutputNodeData = {
   instruction?: string;
@@ -32,6 +38,10 @@ type AiTextOutputNodeData = {
   modelId?: string;
   creditCost?: number;
   generatedAt?: number;
+  runStartedAt?: number;
+  runFinishedAt?: number;
+  runEvents?: AiRunEvent[];
+  toolCalls?: ToolCallTrace[];
   canvasId?: string;
   _status?: string;
   _statusMessage?: string;
@@ -84,12 +94,42 @@ export default function AiTextOutputNode({
   );
 
   const status = (nodeData._status ?? "idle") as NodeStatus;
+  const terminalPhase =
+    status === "done" ? "done" : status === "error" ? "error" : undefined;
+  const activeLocalStream = terminalPhase ? undefined : localStream;
+  useEffect(() => {
+    if (terminalPhase && localStream) {
+      clearLocalNodeStream(id);
+    }
+  }, [id, localStream, terminalPhase]);
+  const runLabels = {
+    phase: {
+      preparing: t("run.phase.preparing"),
+      "reading-context": t("run.phase.readingContext"),
+      streaming: t("run.phase.streaming"),
+      "calling-tools": t("run.phase.callingTools"),
+      finalizing: t("run.phase.finalizing"),
+      done: t("run.phase.done"),
+      error: t("run.phase.error"),
+    } satisfies Record<AiRunPhase, string>,
+    progressTitle: t("run.progressTitle"),
+    eventsTitle: t("run.eventsTitle"),
+    toolCallsTitle: t("run.toolCallsTitle"),
+    noEvents: t("run.noEvents"),
+    running: t("run.running"),
+    success: t("run.success"),
+    error: t("run.error"),
+    details: t("run.details"),
+    input: t("run.input"),
+    output: t("run.output"),
+    elapsed: t("run.elapsed", { time: "{time}" }),
+  };
   const isLoading =
-    !localStream &&
+    !activeLocalStream &&
     (status === "executing" || status === "analyzing" || status === "clarifying" || isRetrying);
   const persistedOutputText =
     typeof nodeData.outputText === "string" ? nodeData.outputText.trim() : "";
-  const outputText = localStream?.text.trim() || persistedOutputText;
+  const outputText = activeLocalStream?.text.trim() || persistedOutputText;
   const modelLabel =
     typeof nodeData.modelId === "string"
       ? getAiTextModel(nodeData.modelId)?.label ?? nodeData.modelId
@@ -240,9 +280,21 @@ export default function AiTextOutputNode({
         ) : null}
 
         {!isLoading && status !== "error" ? (
-          <div className="h-full overflow-auto p-3 text-sm">
+          <div className="space-y-3 p-3">
+            <AiRunStatusPanel
+              phase={terminalPhase ?? activeLocalStream?.phase}
+              startedAt={activeLocalStream?.startedAt ?? nodeData.runStartedAt}
+              events={activeLocalStream?.events ?? nodeData.runEvents}
+              toolCalls={activeLocalStream?.toolCalls ?? nodeData.toolCalls}
+              labels={runLabels}
+              accent="violet"
+            />
             {outputText ? (
-              <div className="whitespace-pre-wrap break-words">{outputText}</div>
+              activeLocalStream ? (
+                <AiStreamingResponse text={outputText} empty={t("emptyHint")} className="p-0" />
+              ) : (
+                <div className="whitespace-pre-wrap break-words">{outputText}</div>
+              )
             ) : (
               <p className="text-muted-foreground">{t("emptyHint")}</p>
             )}

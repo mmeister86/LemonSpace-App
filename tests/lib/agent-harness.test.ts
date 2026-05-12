@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runAgentHarnessLoop, type AgentHarnessTool } from "@/lib/agent-harness";
 
@@ -18,6 +18,7 @@ describe("agent harness loop", () => {
 
   it("executes model-requested tools and feeds results back before finalizing", async () => {
     const seenMessageCounts: number[] = [];
+    const onToolCallTrace = vi.fn();
 
     const result = await runAgentHarnessLoop({
       initialMessages: [{ role: "user", content: "Create a post" }],
@@ -48,6 +49,7 @@ describe("agent harness loop", () => {
         result: { echoed: call.arguments.value },
       }),
       parseFinal: (content) => JSON.parse(content) as { status: string; toolResultSeen: boolean },
+      onToolCallTrace,
     });
 
     expect(result.final).toEqual({ status: "done", toolResultSeen: true });
@@ -58,6 +60,73 @@ describe("agent harness loop", () => {
       }),
     ]);
     expect(seenMessageCounts).toEqual([1, 3]);
+    expect(onToolCallTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "call-1",
+        toolName: "echo",
+        status: "running",
+        input: { value: "hello" },
+      }),
+    );
+    expect(onToolCallTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "call-1",
+        toolName: "echo",
+        status: "success",
+        output: { echoed: "hello" },
+      }),
+    );
+  });
+
+  it("traces tool result errors without stopping the loop", async () => {
+    const onToolCallTrace = vi.fn();
+
+    const result = await runAgentHarnessLoop({
+      initialMessages: [{ role: "user", content: "Create a post" }],
+      tools: [echoTool],
+      maxRounds: 4,
+      callModel: async (messages) => {
+        if (messages.length === 1) {
+          return {
+            content: "",
+            toolCalls: [
+              {
+                id: "call-error",
+                name: "echo",
+                argumentsJson: JSON.stringify({ value: "hello" }),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: JSON.stringify({ status: "done", toolResultSeen: true }),
+          toolCalls: [],
+        };
+      },
+      executeTool: async () => ({
+        ok: false,
+        error: "Tool rejected the request",
+      }),
+      parseFinal: (content) => JSON.parse(content) as { status: string; toolResultSeen: boolean },
+      onToolCallTrace,
+    });
+
+    expect(result.toolResults).toEqual([
+      expect.objectContaining({
+        toolName: "echo",
+        ok: false,
+        error: "Tool rejected the request",
+      }),
+    ]);
+    expect(onToolCallTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "call-error",
+        toolName: "echo",
+        status: "error",
+        error: "Tool rejected the request",
+      }),
+    );
   });
 
   it("rejects tool calls outside the registered harness tool set", async () => {
@@ -83,6 +152,8 @@ describe("agent harness loop", () => {
   });
 
   it("stops when the model keeps requesting tools past the harness round limit", async () => {
+    const onToolCallTrace = vi.fn();
+
     await expect(
       runAgentHarnessLoop({
         initialMessages: [{ role: "user", content: "Create a post" }],
@@ -100,7 +171,15 @@ describe("agent harness loop", () => {
         }),
         executeTool: async () => ({ ok: true, result: {} }),
         parseFinal: (content) => JSON.parse(content) as unknown,
+        onToolCallTrace,
       }),
     ).rejects.toThrow("Agent harness exceeded max rounds");
+    expect(onToolCallTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "call-1",
+        toolName: "echo",
+        status: "success",
+      }),
+    );
   });
 });

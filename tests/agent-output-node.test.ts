@@ -49,6 +49,21 @@ const translations: Record<string, string> = {
   "agentOutputNode.emptyValue": "-",
   "agentOutputNode.bodyLabel": "Body",
   "agentOutputNode.plannedContent": "Planned content",
+  "agentOutputNode.run.toolCallsTitle": "Tool calls",
+  "agentOutputNode.run.running": "Running",
+  "agentOutputNode.run.success": "Done",
+  "agentOutputNode.run.error": "Failed",
+  "agentOutputNode.run.input": "Input",
+  "agentOutputNode.run.output": "Output",
+  "agentOutputNode.run.elapsed": "{time}",
+  "agentOutputNode.run.noEvents": "No run events yet",
+  "agentOutputNode.run.phase.preparing": "Preparing",
+  "agentOutputNode.run.phase.readingContext": "Reading context",
+  "agentOutputNode.run.phase.streaming": "Streaming",
+  "agentOutputNode.run.phase.callingTools": "Calling tools",
+  "agentOutputNode.run.phase.finalizing": "Finalizing",
+  "agentOutputNode.run.phase.done": "Done",
+  "agentOutputNode.run.phase.error": "Failed",
 };
 
 vi.mock("next-intl", () => ({
@@ -188,6 +203,56 @@ describe("AgentOutputNode", () => {
 
     expect(container.textContent).toContain("Live agent draft");
     expect(container.textContent).not.toContain("Persisted body");
+  });
+
+  it("renders expandable tool-call traces on agent outputs", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentOutputNode, {
+          id: "agent-output-tools",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent-output",
+          data: {
+            title: "Agent output",
+            body: "Persisted body",
+            _status: "done",
+            toolCalls: [
+              {
+                id: "call-1",
+                toolName: "read_connected_context",
+                category: "read",
+                message: "Read connected context",
+                status: "success",
+                startedAt: 10,
+                finishedAt: 12,
+                input: { nodeCount: 2 },
+                output: { count: 2 },
+              },
+            ],
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const toolSection = container.querySelector('[data-testid="ai-tool-calls-section"]');
+    expect(toolSection).not.toBeNull();
+    expect(toolSection?.textContent).toContain("Tool calls");
+    expect(toolSection?.textContent).toContain("Read connected context");
+    expect(toolSection?.textContent).toContain("Done");
+    expect(toolSection?.textContent).toContain("nodeCount");
+    expect(toolSection?.textContent).toContain("count");
   });
 
   it("renders instagram post artifacts through the Instagram preview component", async () => {

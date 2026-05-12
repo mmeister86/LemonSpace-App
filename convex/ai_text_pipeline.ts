@@ -29,6 +29,10 @@ import {
   isAiTextModelAvailableForTier,
 } from "../lib/ai-text-models";
 import { normalizePublicTier } from "../lib/tier-credits";
+import {
+  appendAiRunEvent,
+  normalizeAiRunEvents,
+} from "../lib/ai-run-history";
 
 const AI_TEXT_RESULT_SCHEMA = {
   type: "object",
@@ -113,6 +117,7 @@ export function defineFinalizeTextSuccess(register: typeof internalMutation) {
     }
 
     const prev = getNodeDataRecord(node.data);
+    const finishedAt = Date.now();
     await ctx.db.patch(args.nodeId, {
       ...buildNodeDonePatch(),
       data: mergeNodeData(prev, {
@@ -121,7 +126,14 @@ export function defineFinalizeTextSuccess(register: typeof internalMutation) {
         inputText: args.inputText,
         outputText: args.outputText,
         creditCost: model.creditCost,
-        generatedAt: Date.now(),
+        generatedAt: finishedAt,
+        runFinishedAt: finishedAt,
+        runEvents: appendAiRunEvent(normalizeAiRunEvents(prev.runEvents), {
+          phase: "done",
+          message: "Text generation finished",
+          createdAt: finishedAt,
+          status: "success",
+        }),
       }),
     });
 
@@ -137,10 +149,21 @@ export function defineFinalizeTextFailure(register: typeof internalMutation) {
     statusMessage: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(
-      args.nodeId,
-      buildNodeErrorPatch({ retryCount: 0, statusMessage: args.statusMessage }),
-    );
+    const node = await ctx.db.get(args.nodeId);
+    const prev = node ? getNodeDataRecord(node.data) : {};
+    const finishedAt = Date.now();
+    await ctx.db.patch(args.nodeId, {
+      ...buildNodeErrorPatch({ retryCount: 0, statusMessage: args.statusMessage }),
+      data: mergeNodeData(prev, {
+        runFinishedAt: finishedAt,
+        runEvents: appendAiRunEvent(normalizeAiRunEvents(prev.runEvents), {
+          phase: "error",
+          message: args.statusMessage,
+          createdAt: finishedAt,
+          status: "error",
+        }),
+      }),
+    });
   },
   });
 }

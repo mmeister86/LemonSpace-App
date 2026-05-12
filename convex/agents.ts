@@ -73,6 +73,13 @@ import {
   type AgentHarnessMessage,
 } from "../lib/agent-harness";
 import {
+  appendAiRunEvent,
+  normalizeAiRunEvents,
+  normalizeToolCallTraces,
+  upsertToolCallTrace,
+  type ToolCallTrace,
+} from "../lib/ai-run-history";
+import {
   createInstagramHarnessToolState,
   executeInstagramHarnessTool,
   INSTAGRAM_AGENT_TOOLS,
@@ -242,6 +249,7 @@ type InternalApiShape = {
       {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
+        streamOutputNodeId?: Id<"nodes">;
         modelId: string;
         locale: AgentLocale;
         userId: string;
@@ -270,6 +278,7 @@ type InternalApiShape = {
       {
         canvasId: Id<"canvases">;
         nodeId: Id<"nodes">;
+        streamOutputNodeId?: Id<"nodes">;
         modelId: string;
         locale: AgentLocale;
         userId: string;
@@ -320,6 +329,12 @@ type InternalApiShape = {
       "mutation",
       "internal",
       { nodeId: Id<"nodes">; statusMessage?: string },
+      unknown
+    >;
+    appendAgentRunToolTrace: FunctionReference<
+      "mutation",
+      "internal",
+      { nodeId: Id<"nodes">; outputNodeId?: Id<"nodes">; trace: ToolCallTrace },
       unknown
     >;
     createExecutionSkeletonOutputs: FunctionReference<
@@ -436,6 +451,10 @@ const internalApi = internal as unknown as InternalApiShape;
 
 function trimText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeRunEventsFromData(value: unknown) {
+  return normalizeAiRunEvents(value);
 }
 
 function logAgentFailure(stage: string, context: Record<string, unknown>, error: unknown): void {
@@ -1036,6 +1055,70 @@ export const setAgentExecuting = internalMutation({
       retryCount: undefined,
       data: mergeNodeData(prev, {
         clarificationQuestions: [],
+      }),
+    });
+  },
+});
+
+export const appendAgentRunToolTrace = internalMutation({
+  args: {
+    nodeId: v.id("nodes"),
+    outputNodeId: v.optional(v.id("nodes")),
+    trace: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const normalized = normalizeToolCallTraces([args.trace]);
+    const trace = normalized[0];
+    if (!trace) {
+      return;
+    }
+
+    const now = Date.now();
+    const agentNode = await ctx.db.get(args.nodeId);
+    if (agentNode) {
+      const prev = getNodeDataRecord(agentNode.data);
+      const nextToolCalls = upsertToolCallTrace(
+        normalizeToolCallTraces(prev.toolCalls),
+        trace,
+      );
+      await ctx.db.patch(args.nodeId, {
+        data: mergeNodeData(prev, {
+          runStartedAt: typeof prev.runStartedAt === "number" ? prev.runStartedAt : trace.startedAt,
+          runFinishedAt: trace.status === "running" ? undefined : now,
+          toolCalls: nextToolCalls,
+          runEvents: appendAiRunEvent(normalizeRunEventsFromData(prev.runEvents), {
+            phase: trace.status === "running" ? "calling-tools" : "finalizing",
+            message: trace.status === "running"
+              ? `Calling ${trace.message}`
+              : `${trace.message} ${trace.status === "success" ? "finished" : "failed"}`,
+            createdAt: trace.finishedAt ?? now,
+            status: trace.status === "success" ? "success" : trace.status,
+          }),
+        }),
+      });
+    }
+
+    if (!args.outputNodeId) {
+      return;
+    }
+    const outputNode = await ctx.db.get(args.outputNodeId);
+    if (!outputNode) {
+      return;
+    }
+    const prev = getNodeDataRecord(outputNode.data);
+    await ctx.db.patch(args.outputNodeId, {
+      data: mergeNodeData(prev, {
+        runStartedAt: typeof prev.runStartedAt === "number" ? prev.runStartedAt : trace.startedAt,
+        runFinishedAt: trace.status === "running" ? undefined : now,
+        toolCalls: upsertToolCallTrace(normalizeToolCallTraces(prev.toolCalls), trace),
+        runEvents: appendAiRunEvent(normalizeRunEventsFromData(prev.runEvents), {
+          phase: trace.status === "running" ? "calling-tools" : "finalizing",
+          message: trace.status === "running"
+            ? `Calling ${trace.message}`
+            : `${trace.message} ${trace.status === "success" ? "finished" : "failed"}`,
+          createdAt: trace.finishedAt ?? now,
+          status: trace.status === "success" ? "success" : trace.status,
+        }),
       }),
     });
   },
@@ -1891,6 +1974,7 @@ export const runToolHarnessAgent = internalAction({
   args: {
     canvasId: v.id("canvases"),
     nodeId: v.id("nodes"),
+    streamOutputNodeId: v.optional(v.id("nodes")),
     modelId: v.string(),
     locale: v.union(v.literal("de"), v.literal("en")),
     userId: v.string(),
@@ -1970,6 +2054,13 @@ export const runToolHarnessAgent = internalAction({
             },
           }),
         parseFinal: parseInstagramHarnessFinal,
+        onToolCallTrace: async (trace) => {
+          await ctx.runMutation(internalApi.agents.appendAgentRunToolTrace, {
+            nodeId: args.nodeId,
+            outputNodeId: args.streamOutputNodeId,
+            trace,
+          });
+        },
       });
 
       await ctx.runMutation(internalApi.agents.finalizeAgentSuccessWithOutputs, {
@@ -2106,6 +2197,7 @@ export const prepareAgentStream = action({
       await ctx.scheduler.runAfter(0, internalApi.agents.runToolHarnessAgent, {
         canvasId: args.canvasId,
         nodeId: args.nodeId,
+        streamOutputNodeId: outputNodeId,
         modelId: prepared.selectedModel.id,
         locale: normalizeAgentLocale(args.locale),
         userId: prepared.canvas.ownerId,
