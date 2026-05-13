@@ -35,6 +35,7 @@ import {
   invalidateDashboardSnapshotForLastSignedInUser,
 } from "@/lib/dashboard-snapshot-cache";
 import { toast } from "@/lib/toast";
+import { MediaBacklight } from "./media-backlight";
 
 const ALLOWED_VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -411,10 +412,29 @@ export default function VideoNode({
         : "Video wird geladen...";
   const effectiveUploadProgress = isWaitingForCanvasSync ? 100 : uploadProgress;
   const showFilename = Boolean(data.filename && (hasResolvedVideoUrl || isNodeLoading));
+  const mediaBacklight = hasResolvedVideoUrl ? (
+    <MediaBacklight>
+      <video
+        key={data.url}
+        src={data.url}
+        className="h-full w-full object-cover"
+        muted
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+    </MediaBacklight>
+  ) : undefined;
 
   return (
     <>
-      <BaseNodeWrapper nodeType="video" selected={selected} status={data._status}>
+      <BaseNodeWrapper
+        nodeType="video"
+        selected={selected}
+        status={data._status}
+        backlight={mediaBacklight}
+      >
         <CanvasHandle
           nodeId={id}
           nodeType="video"

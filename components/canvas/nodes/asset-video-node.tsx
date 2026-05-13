@@ -18,6 +18,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MediaBacklight } from "./media-backlight";
 
 type AssetVideoNodeData = {
   canvasId?: string;
@@ -155,9 +156,29 @@ export default function AssetVideoNode({
     d.mp4Url != null && d.mp4Url.length > 0
       ? `/api/pexels-video?u=${encodeURIComponent(d.mp4Url)}`
       : undefined;
+  const mediaBacklight =
+    showPreview && playbackSrc ? (
+      <MediaBacklight>
+        <video
+          key={d.mp4Url}
+          src={playbackSrc}
+          poster={d.thumbnailUrl}
+          className="h-full w-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+      </MediaBacklight>
+    ) : undefined;
 
   return (
-    <BaseNodeWrapper nodeType="asset-video" selected={selected}>
+    <BaseNodeWrapper
+      nodeType="asset-video"
+      selected={selected}
+      backlight={mediaBacklight}
+    >
       <CanvasHandle
         nodeId={id}
         nodeType="asset-video"

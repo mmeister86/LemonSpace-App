@@ -43,6 +43,7 @@ import {
 } from "@/components/canvas/canvas-media-utils";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MediaBacklight } from "./media-backlight";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -511,6 +512,21 @@ export default function ImageNode({
       : dropUploadState === "uploading"
         ? "Bild wird hochgeladen…"
         : "Bild wird geladen…";
+  const mediaBacklight =
+    data.url && !isNodeLoading ? (
+      <MediaBacklight>
+        {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the Canvas media preview */}
+        <img
+          src={data.url}
+          alt=""
+          aria-hidden="true"
+          className={`h-full w-full object-center ${
+            shouldPreserveImageAspect ? "object-contain" : "object-cover"
+          }`}
+          draggable={false}
+        />
+      </MediaBacklight>
+    ) : undefined;
 
   return (
     <>
@@ -518,6 +534,7 @@ export default function ImageNode({
         nodeType="image"
         selected={selected}
         status={data._status}
+        backlight={mediaBacklight}
         toolbarActions={[
           {
             id: "fullscreen",
@@ -597,15 +614,17 @@ export default function ImageNode({
               </div>
             </div>
           ) : data.url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node
-            <img
-              src={data.url}
-              alt={data.filename ?? "Bild"}
-              className={`h-full w-full object-center ${
-                shouldPreserveImageAspect ? "object-contain" : "object-cover"
-              }`}
-              draggable={false}
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node */}
+              <img
+                src={data.url}
+                alt={data.filename ?? "Bild"}
+                className={`h-full w-full object-center ${
+                  shouldPreserveImageAspect ? "object-contain" : "object-cover"
+                }`}
+                draggable={false}
+              />
+            </>
           ) : (
             <div
               onClick={handleClick}

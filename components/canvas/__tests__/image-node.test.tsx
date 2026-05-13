@@ -25,7 +25,18 @@ vi.mock("@/components/canvas/canvas-sync-context", () => ({
 }));
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({
+    children,
+    backlight,
+  }: {
+    children: React.ReactNode;
+    backlight?: React.ReactNode;
+  }) => (
+    <div>
+      {backlight}
+      <div>{children}</div>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/canvas/canvas-handle", () => ({
@@ -119,10 +130,22 @@ describe("ImageNode", () => {
       _uploadState: "resolving-url",
     });
 
-    const image = container?.querySelector("img");
+    const images = Array.from(container?.querySelectorAll("img") ?? []);
+    const image = images.at(-1);
     expect(image).toBeTruthy();
     expect(image?.getAttribute("src")).toBe("https://cdn.example.com/photo.png");
+    expect(container?.querySelector('[data-testid="canvas-media-backlight"] img')).toBeTruthy();
     expect(container?.textContent).not.toContain("Bild wird geladen…");
+  });
+
+  it("does not render the media backlight before an image URL is available", async () => {
+    await renderImageNode({
+      filename: "photo.png",
+      mimeType: "image/png",
+      _uploadState: "uploading",
+    });
+
+    expect(container?.querySelector('[data-testid="canvas-media-backlight"]')).toBeNull();
   });
 
   it("keeps the filename visible while the dropped image is loading", async () => {

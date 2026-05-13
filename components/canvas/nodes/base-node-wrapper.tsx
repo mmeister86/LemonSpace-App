@@ -260,6 +260,7 @@ interface BaseNodeWrapperProps {
   toolbarActions?: NodeToolbarAction[];
   children: ReactNode;
   className?: string;
+  backlight?: ReactNode;
 }
 
 export default function BaseNodeWrapper({
@@ -270,6 +271,7 @@ export default function BaseNodeWrapper({
   toolbarActions,
   children,
   className = "",
+  backlight,
 }: BaseNodeWrapperProps) {
   const config = RESIZE_CONFIGS[nodeType] ?? DEFAULT_CONFIG;
   const nodeId = useNodeId();
@@ -286,7 +288,7 @@ export default function BaseNodeWrapper({
     error: "border-red-500",
   };
 
-  return (
+  const nodeChrome = (
     <div
       className={`
         h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
@@ -357,6 +359,22 @@ export default function BaseNodeWrapper({
         </div>
       )}
       <NodeToolbarActions actions={toolbarActions} />
+    </div>
+  );
+
+  if (!backlight) {
+    return nodeChrome;
+  }
+
+  return (
+    <div className="relative h-full w-full overflow-visible">
+      <div
+        data-testid="canvas-node-backlight"
+        className="pointer-events-none absolute inset-0 z-0 overflow-visible rounded-xl"
+      >
+        {backlight}
+      </div>
+      <div className="relative z-10 h-full w-full">{nodeChrome}</div>
     </div>
   );
 }

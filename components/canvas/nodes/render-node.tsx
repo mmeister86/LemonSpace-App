@@ -29,6 +29,7 @@ import {
   RenderNodePreviewSurface,
   RenderNodeStatusOverlay,
 } from "./render-node-ui";
+import { MediaBacklight } from "./media-backlight";
 import { useRenderNodePreview } from "./use-render-node-preview";
 import { useRenderNodeRendering } from "./use-render-node-rendering";
 
@@ -145,6 +146,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   }, [isMenuOpen]);
 
   const wrapperStatus = renderState === "rendering" ? "executing" : renderState;
+  const renderBacklight = hasSource ? (
+    <MediaBacklight>
+      <div className="h-full w-full bg-sky-500/25 dark:bg-sky-400/20" />
+    </MediaBacklight>
+  ) : undefined;
 
   return (
     <>
@@ -163,6 +169,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
           },
         ]}
         className="flex h-full min-w-[280px] flex-col overflow-hidden border-sky-500/30"
+        backlight={renderBacklight}
       >
         <CanvasHandle
           nodeId={id}

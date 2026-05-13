@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MediaBacklight } from "./media-backlight";
 
 type AssetNodeData = {
   assetId?: number;
@@ -152,6 +153,19 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
   };
 
   const showPreview = Boolean(hasAsset && previewUrl);
+  const mediaBacklight =
+    showPreview && !isPreviewLoading && !previewLoadError && previewUrl ? (
+      <MediaBacklight>
+        {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the Freepik asset preview */}
+        <img
+          src={previewUrl}
+          alt=""
+          aria-hidden="true"
+          className="h-full w-full object-contain"
+          draggable={false}
+        />
+      </MediaBacklight>
+    ) : undefined;
 
   return (
     <BaseNodeWrapper
@@ -159,6 +173,7 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
       selected={selected}
       status={data._status}
       statusMessage={data._statusMessage}
+      backlight={mediaBacklight}
     >
       <CanvasHandle
         nodeId={id}

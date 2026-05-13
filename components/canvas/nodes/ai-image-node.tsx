@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MediaBacklight } from "./media-backlight";
 
 type AiImageNodeData = {
   storageId?: string;
@@ -221,6 +222,19 @@ export default function AiImageNode({
         return <AlertCircle className="h-8 w-8 text-destructive" />;
     }
   };
+  const mediaBacklight =
+    nodeData.url && !isLoading ? (
+      <MediaBacklight>
+        {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the generated image preview */}
+        <img
+          src={nodeData.url}
+          alt=""
+          aria-hidden="true"
+          className="h-full w-full object-contain"
+          draggable={false}
+        />
+      </MediaBacklight>
+    ) : undefined;
 
   return (
     <BaseNodeWrapper
@@ -236,6 +250,7 @@ export default function AiImageNode({
         },
       ]}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
+      backlight={mediaBacklight}
     >
       <CanvasHandle
         nodeId={id}
@@ -324,13 +339,15 @@ export default function AiImageNode({
         )}
 
         {nodeData.url && !isLoading && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={nodeData.url}
-            alt={nodeData.prompt ?? "AI generated image"}
-            className="absolute inset-0 h-full w-full object-contain"
-            draggable={false}
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={nodeData.url}
+              alt={nodeData.prompt ?? "AI generated image"}
+              className="absolute inset-0 h-full w-full object-contain"
+              draggable={false}
+            />
+          </>
         )}
 
         {status === "done" && nodeData.url && !isLoading && (

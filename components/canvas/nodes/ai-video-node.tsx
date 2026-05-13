@@ -20,6 +20,7 @@ import { getVideoModel, type VideoModelDurationSeconds } from "@/lib/ai-video-mo
 import { toast } from "@/lib/toast";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MediaBacklight } from "./media-backlight";
 
 type AiVideoNodeData = {
   prompt?: string;
@@ -157,6 +158,20 @@ export default function AiVideoNode({ id, data, selected }: NodeProps<AiVideoNod
     t,
     tToast,
   ]);
+  const mediaBacklight =
+    nodeData.url && !isLoading ? (
+      <MediaBacklight>
+        <video
+          src={nodeData.url}
+          className="h-full w-full object-contain"
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+      </MediaBacklight>
+    ) : undefined;
 
   return (
     <BaseNodeWrapper
@@ -165,6 +180,7 @@ export default function AiVideoNode({ id, data, selected }: NodeProps<AiVideoNod
       status={nodeData._status}
       statusMessage={nodeData._statusMessage}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
+      backlight={mediaBacklight}
     >
       <CanvasHandle
         nodeId={id}

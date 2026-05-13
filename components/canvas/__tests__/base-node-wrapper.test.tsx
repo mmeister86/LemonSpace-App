@@ -131,4 +131,32 @@ describe("BaseNodeWrapper", () => {
     const rootElement = container?.firstElementChild;
     expect(rootElement?.className).toContain("node-favorite-chrome");
   });
+
+  it("renders optional backlight behind the node chrome", async () => {
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "image",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: {},
+    });
+
+    await act(async () => {
+      root?.render(
+        <BaseNodeWrapper
+          nodeType="image"
+          selected={false}
+          backlight={<div data-testid="backlight-fixture" />}
+        >
+          <div>Inner node content</div>
+        </BaseNodeWrapper>,
+      );
+    });
+
+    const backlightLayer = container?.querySelector('[data-testid="canvas-node-backlight"]');
+    expect(backlightLayer).toBeTruthy();
+    expect(backlightLayer?.className).toContain("z-0");
+    expect(backlightLayer?.querySelector('[data-testid="backlight-fixture"]')).toBeTruthy();
+    expect(backlightLayer?.nextElementSibling?.className).toContain("z-10");
+  });
 });
