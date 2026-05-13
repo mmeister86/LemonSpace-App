@@ -76,9 +76,17 @@ export function useCanvasData({
       ...new Set(
         convexNodes.flatMap((node) => {
           const data = node.data as Record<string, unknown> | undefined;
-          return typeof data?.storageId === "string" && data.storageId.length > 0
-            ? [data.storageId as Id<"_storage">]
-            : [];
+          const ids: Id<"_storage">[] = [];
+          if (typeof data?.storageId === "string" && data.storageId.length > 0) {
+            ids.push(data.storageId as Id<"_storage">);
+          }
+          if (
+            typeof data?.lastUploadStorageId === "string" &&
+            data.lastUploadStorageId.length > 0
+          ) {
+            ids.push(data.lastUploadStorageId as Id<"_storage">);
+          }
+          return ids;
         }),
       ),
     ].sort();

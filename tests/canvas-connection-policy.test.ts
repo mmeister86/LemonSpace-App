@@ -32,13 +32,14 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
-  it("allows one image or asset reference into prompt nodes", () => {
-    for (const sourceType of ["image", "asset"]) {
+  it("allows up to six image-like references into prompt nodes", () => {
+    for (const sourceType of ["image", "asset", "ai-image", "render"]) {
       expect(
         validateCanvasConnectionPolicy({
           sourceType,
           targetType: "prompt",
-          targetIncomingCount: 0,
+          targetIncomingCount: 5,
+          targetIncomingSourceTypes: ["image", "asset", "ai-image", "render", "image"],
         }),
       ).toBeNull();
     }
@@ -56,15 +57,15 @@ describe("canvas connection policy", () => {
     }
   });
 
-  it("blocks a second image reference into prompt nodes", () => {
+  it("blocks a seventh image-like reference into prompt nodes", () => {
     expect(
       validateCanvasConnectionPolicy({
-        sourceType: "asset",
+        sourceType: "render",
         targetType: "prompt",
-        targetIncomingCount: 1,
-        targetIncomingSourceTypes: ["image"],
+        targetIncomingCount: 6,
+        targetIncomingSourceTypes: ["image", "asset", "ai-image", "render", "image", "asset"],
       }),
-    ).toBe("prompt-image-incoming-limit");
+    ).toBe("prompt-visual-incoming-limit");
   });
 
   it("blocks a second text source into prompt nodes", () => {
@@ -81,7 +82,7 @@ describe("canvas connection policy", () => {
   it("blocks unsupported inputs into prompt nodes", () => {
     expect(
       validateCanvasConnectionPolicy({
-        sourceType: "render",
+        sourceType: "video",
         targetType: "prompt",
         targetIncomingCount: 0,
       }),

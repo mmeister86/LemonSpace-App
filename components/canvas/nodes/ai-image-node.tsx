@@ -37,6 +37,11 @@ import {
 } from "@/components/ui/dialog";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { MediaBacklight } from "./media-backlight";
+import {
+  isAiImageReferenceSourceType,
+  MAX_AI_IMAGE_REFERENCES,
+  type AiImageReferenceInput,
+} from "@/lib/ai-image-references";
 
 type AiImageNodeData = {
   storageId?: string;
@@ -53,6 +58,9 @@ type AiImageNodeData = {
   aspectRatio?: string;
   outputWidth?: number;
   outputHeight?: number;
+  referenceImages?: AiImageReferenceInput[];
+  referenceStorageId?: string;
+  referenceImageUrl?: string;
   retryCount?: number;
   _status?: string;
   _statusMessage?: string;
@@ -68,30 +76,148 @@ type NodeStatus =
   | "done"
   | "error";
 
-type RegenerateReference = {
-  storageId?: Id<"_storage">;
-  imageUrl?: string;
-};
-
 function getImageReferenceFromNode(
-  node: { type?: string; data?: unknown } | undefined,
-): RegenerateReference | null {
+  node: {
+    id?: string;
+    type?: string;
+    data?: unknown;
+    position?: { x?: number; y?: number };
+  } | undefined,
+  label: string,
+): AiImageReferenceInput | null {
   if (!node || !node.data || typeof node.data !== "object") {
     return null;
   }
 
   if (node.type === "image") {
-    const data = node.data as { storageId?: string };
-    return data.storageId ? { storageId: data.storageId as Id<"_storage"> } : null;
+    const data = node.data as { storageId?: string; url?: string };
+    if (data.storageId) {
+      return {
+        sourceNodeId: node.id ?? "",
+        sourceType: "image",
+        label,
+        storageId: data.storageId,
+      };
+    }
+    return data.url
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "image",
+          label,
+          imageUrl: data.url,
+        }
+      : null;
   }
 
   if (node.type === "asset") {
     const data = node.data as { previewUrl?: string; url?: string };
     const imageUrl = data.url ?? data.previewUrl;
-    return imageUrl ? { imageUrl } : null;
+    return imageUrl
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "asset",
+          label,
+          imageUrl,
+        }
+      : null;
+  }
+
+  if (node.type === "ai-image") {
+    const data = node.data as { storageId?: string; url?: string };
+    if (data.storageId) {
+      return {
+        sourceNodeId: node.id ?? "",
+        sourceType: "ai-image",
+        label,
+        storageId: data.storageId,
+      };
+    }
+    return data.url
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "ai-image",
+          label,
+          imageUrl: data.url,
+        }
+      : null;
+  }
+
+  if (node.type === "render") {
+    const data = node.data as {
+      storageId?: string;
+      url?: string;
+      lastUploadStorageId?: string;
+      lastUploadUrl?: string;
+      lastUploadedHash?: string;
+    };
+    const storageId = data.storageId ?? data.lastUploadStorageId;
+    const imageUrl = data.url ?? data.lastUploadUrl;
+    if (!storageId && !imageUrl) {
+      return null;
+    }
+    return {
+      sourceNodeId: node.id ?? "",
+      sourceType: "render",
+      label,
+      ...(storageId ? { storageId } : {}),
+      ...(imageUrl ? { imageUrl } : {}),
+      ...(data.lastUploadedHash ? { renderPipelineHash: data.lastUploadedHash } : {}),
+    };
   }
 
   return null;
+}
+
+type RegenerateSourceNode = {
+  id: string;
+  type?: string;
+  data?: unknown;
+  position?: { x?: number; y?: number };
+};
+
+function compareRegenerateSourceNodes(
+  left: RegenerateSourceNode,
+  right: RegenerateSourceNode,
+): number {
+  const leftY = typeof left.position?.y === "number" ? left.position.y : 0;
+  const rightY = typeof right.position?.y === "number" ? right.position.y : 0;
+  if (leftY !== rightY) return leftY - rightY;
+
+  const leftX = typeof left.position?.x === "number" ? left.position.x : 0;
+  const rightX = typeof right.position?.x === "number" ? right.position.x : 0;
+  if (leftX !== rightX) return leftX - rightX;
+
+  return left.id.localeCompare(right.id);
+}
+
+function buildLegacyReferenceImage(data: AiImageNodeData): AiImageReferenceInput[] {
+  if (Array.isArray(data.referenceImages) && data.referenceImages.length > 0) {
+    return data.referenceImages.slice(0, MAX_AI_IMAGE_REFERENCES);
+  }
+
+  if (data.referenceStorageId) {
+    return [
+      {
+        sourceNodeId: "legacy-reference",
+        sourceType: "image",
+        label: "Ref 1",
+        storageId: data.referenceStorageId,
+      },
+    ];
+  }
+
+  if (data.referenceImageUrl) {
+    return [
+      {
+        sourceNodeId: "legacy-reference",
+        sourceType: "image",
+        label: "Ref 1",
+        imageUrl: data.referenceImageUrl,
+      },
+    ];
+  }
+
+  return [];
 }
 
 export default function AiImageNode({
@@ -147,33 +273,34 @@ export default function AiImageNode({
 
       const edges = getEdges();
       const incomingEdges = edges.filter((e) => e.target === id);
-      let referenceStorageId: Id<"_storage"> | undefined;
-      let referenceImageUrl: string | undefined;
-      const applyReference = (reference: RegenerateReference | null) => {
-        if (!reference) return false;
-        referenceStorageId = reference.storageId;
-        referenceImageUrl = reference.imageUrl;
-        return true;
-      };
+      const sourceNodes: RegenerateSourceNode[] = [];
 
       for (const edge of incomingEdges) {
-        const src = getNode(edge.source);
-        if (applyReference(getImageReferenceFromNode(src))) {
-          break;
+        const src = getNode(edge.source) as RegenerateSourceNode | undefined;
+        if (src?.type && isAiImageReferenceSourceType(src.type)) {
+          sourceNodes.push(src);
         }
 
         if (src?.type === "prompt") {
           const promptIncomingEdges = edges.filter((candidate) => candidate.target === src.id);
           for (const promptEdge of promptIncomingEdges) {
-            if (applyReference(getImageReferenceFromNode(getNode(promptEdge.source)))) {
-              break;
+            const promptSource = getNode(promptEdge.source) as RegenerateSourceNode | undefined;
+            if (promptSource?.type && isAiImageReferenceSourceType(promptSource.type)) {
+              sourceNodes.push(promptSource);
             }
-          }
-          if (referenceStorageId || referenceImageUrl) {
-            break;
           }
         }
       }
+
+      const referenceImages = sourceNodes
+        .sort(compareRegenerateSourceNodes)
+        .slice(0, MAX_AI_IMAGE_REFERENCES)
+        .map((sourceNode, index) =>
+          getImageReferenceFromNode(sourceNode, `Ref ${index + 1}`),
+        )
+        .filter((reference): reference is AiImageReferenceInput => reference !== null);
+      const resolvedReferenceImages =
+        referenceImages.length > 0 ? referenceImages : buildLegacyReferenceImage(nodeData);
 
       const modelId = nodeData.model ?? DEFAULT_MODEL_ID;
 
@@ -182,8 +309,7 @@ export default function AiImageNode({
           canvasId,
           nodeId: id as Id<"nodes">,
           prompt,
-          referenceStorageId,
-          referenceImageUrl,
+          referenceImages: resolvedReferenceImages,
           model: modelId,
           aspectRatio: nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO,
         }),

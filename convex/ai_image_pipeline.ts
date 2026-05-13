@@ -37,8 +37,72 @@ import { generateImageWithAutoRetry } from "./ai_retry";
 import { upsertMediaItemByOwnerAndDedupe } from "./media";
 import { buildStoredMediaDedupeKey } from "../lib/media-archive";
 import { normalizePublicTier } from "../lib/tier-credits";
+import {
+  MAX_AI_IMAGE_REFERENCES,
+  type AiImageReferenceInput,
+} from "../lib/ai-image-references";
 
 const MAX_IMAGE_RETRIES = 2;
+
+const aiImageReferenceSourceTypeValidator = v.union(
+  v.literal("image"),
+  v.literal("asset"),
+  v.literal("ai-image"),
+  v.literal("render"),
+);
+
+const imageReferenceInputValidator = v.object({
+  sourceNodeId: v.string(),
+  sourceType: aiImageReferenceSourceTypeValidator,
+  label: v.string(),
+  storageId: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+  renderPipelineHash: v.optional(v.string()),
+});
+
+type NormalizeImageReferenceArgs = {
+  referenceImages?: AiImageReferenceInput[];
+  referenceStorageId?: string;
+  referenceImageUrl?: string;
+};
+
+export function normalizeImageReferenceInputs(
+  args: NormalizeImageReferenceArgs,
+): AiImageReferenceInput[] {
+  if (Array.isArray(args.referenceImages) && args.referenceImages.length > 0) {
+    return args.referenceImages
+      .filter((reference) => reference.storageId || reference.imageUrl)
+      .slice(0, MAX_AI_IMAGE_REFERENCES)
+      .map((reference, index) => ({
+        ...reference,
+        label: reference.label.trim() || `Ref ${index + 1}`,
+      }));
+  }
+
+  if (args.referenceStorageId) {
+    return [
+      {
+        sourceNodeId: "legacy-reference",
+        sourceType: "image",
+        label: "Ref 1",
+        storageId: args.referenceStorageId,
+      },
+    ];
+  }
+
+  if (args.referenceImageUrl) {
+    return [
+      {
+        sourceNodeId: "legacy-reference",
+        sourceType: "image",
+        label: "Ref 1",
+        imageUrl: args.referenceImageUrl,
+      },
+    ];
+  }
+
+  return [];
+}
 
 function isImageModelAllowedForTier(
   minTier: "free" | "starter" | "pro" | "max",
@@ -46,6 +110,35 @@ function isImageModelAllowedForTier(
 ) {
   const tierOrder = { free: 0, starter: 1, pro: 2, max: 3 } as const;
   return tierOrder[userTier] >= tierOrder[minTier];
+}
+
+type StorageUrlCtx = {
+  storage: {
+    getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
+  };
+};
+
+async function resolveReferenceImageUrls(
+  ctx: StorageUrlCtx,
+  referenceImages: AiImageReferenceInput[],
+): Promise<AiImageReferenceInput[]> {
+  const resolved: AiImageReferenceInput[] = [];
+
+  for (const reference of referenceImages) {
+    let imageUrl = reference.imageUrl?.trim() || undefined;
+    if (!imageUrl && reference.storageId) {
+      imageUrl = (await ctx.storage.getUrl(reference.storageId as Id<"_storage">)) ?? undefined;
+    }
+    if (!imageUrl) {
+      continue;
+    }
+    resolved.push({
+      ...reference,
+      imageUrl,
+    });
+  }
+
+  return resolved;
 }
 
 export function defineMarkNodeRetry(register: typeof internalMutation) {
@@ -77,11 +170,12 @@ export function defineFinalizeImageSuccess(register: typeof internalMutation) {
     modelId: v.string(),
     storageId: v.id("_storage"),
     aspectRatio: v.optional(v.string()),
+    referenceImages: v.optional(v.array(imageReferenceInputValidator)),
     retryCount: v.number(),
   },
   handler: async (
     ctx,
-    { nodeId, prompt, modelId, storageId, aspectRatio, retryCount },
+    { nodeId, prompt, modelId, storageId, aspectRatio, referenceImages, retryCount },
   ) => {
     const modelConfig = IMAGE_MODELS[modelId];
     if (!modelConfig) {
@@ -109,6 +203,7 @@ export function defineFinalizeImageSuccess(register: typeof internalMutation) {
         modelTier: modelConfig.tier,
         generatedAt: Date.now(),
         creditCost,
+        referenceImages: referenceImages ?? [],
         ...(resolvedAspectRatio ? { aspectRatio: resolvedAspectRatio } : {}),
       }),
     });
@@ -155,6 +250,7 @@ export function defineGenerateAndStoreImage(register: typeof internalAction) {
     prompt: v.string(),
     referenceStorageId: v.optional(v.id("_storage")),
     referenceImageUrl: v.optional(v.string()),
+    referenceImages: v.optional(v.array(imageReferenceInputValidator)),
     model: v.string(),
     aspectRatio: v.optional(v.string()),
   },
@@ -170,23 +266,30 @@ export function defineGenerateAndStoreImage(register: typeof internalAction) {
       model: args.model,
       hasReferenceStorageId: Boolean(args.referenceStorageId),
       hasReferenceImageUrl: Boolean(args.referenceImageUrl?.trim()),
+      referenceImageCount:
+        args.referenceImages?.length ??
+        (args.referenceStorageId || args.referenceImageUrl?.trim() ? 1 : 0),
       aspectRatio: args.aspectRatio?.trim() || null,
       promptLength: args.prompt.length,
     });
 
     let retryCount = 0;
-    let referenceImageUrl = args.referenceImageUrl?.trim() || undefined;
-    if (args.referenceStorageId) {
-      referenceImageUrl =
-        (await ctx.storage.getUrl(args.referenceStorageId)) ?? undefined;
-    }
+    const referenceImages = normalizeImageReferenceInputs({
+      referenceImages: args.referenceImages,
+      referenceStorageId: args.referenceStorageId,
+      referenceImageUrl: args.referenceImageUrl,
+    });
+    const resolvedReferenceImages = await resolveReferenceImageUrls(
+      ctx,
+      referenceImages,
+    );
 
     try {
       const result = await generateImageWithAutoRetry(
         () =>
           generateImageViaOpenRouter(apiKey, {
             prompt: args.prompt,
-            referenceImageUrl,
+            referenceImages: resolvedReferenceImages,
             model: args.model,
             aspectRatio: args.aspectRatio,
           }),
@@ -252,6 +355,7 @@ export function defineProcessImageGeneration(register: typeof internalAction) {
     modelId: v.string(),
     referenceStorageId: v.optional(v.id("_storage")),
     referenceImageUrl: v.optional(v.string()),
+    referenceImages: v.optional(v.array(imageReferenceInputValidator)),
     aspectRatio: v.optional(v.string()),
     reservationId: v.optional(v.id("creditTransactions")),
     shouldDecrementConcurrency: v.boolean(),
@@ -274,6 +378,7 @@ export function defineProcessImageGeneration(register: typeof internalAction) {
         prompt: args.prompt,
         referenceStorageId: args.referenceStorageId,
         referenceImageUrl: args.referenceImageUrl,
+        referenceImages: args.referenceImages,
         model: args.modelId,
         aspectRatio: args.aspectRatio,
       });
@@ -285,6 +390,11 @@ export function defineProcessImageGeneration(register: typeof internalAction) {
         modelId: args.modelId,
         storageId: result.storageId,
         aspectRatio: args.aspectRatio,
+        referenceImages: normalizeImageReferenceInputs({
+          referenceImages: args.referenceImages,
+          referenceStorageId: args.referenceStorageId,
+          referenceImageUrl: args.referenceImageUrl,
+        }),
         retryCount,
       });
 
@@ -335,6 +445,7 @@ export function defineGenerateImage(register: typeof action) {
     prompt: v.string(),
     referenceStorageId: v.optional(v.id("_storage")),
     referenceImageUrl: v.optional(v.string()),
+    referenceImages: v.optional(v.array(imageReferenceInputValidator)),
     model: v.optional(v.string()),
     aspectRatio: v.optional(v.string()),
   },
@@ -377,6 +488,19 @@ export function defineGenerateImage(register: typeof action) {
     if (!isImageModelAllowedForTier(modelConfig.minTier, userTier)) {
       throw new Error(`Model ${modelId} requires ${modelConfig.minTier} tier`);
     }
+    const referenceImages = normalizeImageReferenceInputs({
+      referenceImages: args.referenceImages,
+      referenceStorageId: args.referenceStorageId,
+      referenceImageUrl: args.referenceImageUrl,
+    });
+    if (referenceImages.length > 0 && !modelConfig.supportsImageReferences) {
+      throw new Error(`Model ${modelId} does not support image references`);
+    }
+    if (referenceImages.length > modelConfig.maxReferenceImages) {
+      throw new Error(
+        `Model ${modelId} supports at most ${modelConfig.maxReferenceImages} image references`,
+      );
+    }
 
     const {
       reservationId,
@@ -404,6 +528,7 @@ export function defineGenerateImage(register: typeof action) {
         modelId,
         referenceStorageId: args.referenceStorageId,
         referenceImageUrl: args.referenceImageUrl,
+        referenceImages,
         aspectRatio: args.aspectRatio,
         reservationId: reservationId ?? undefined,
         shouldDecrementConcurrency: usageIncremented,

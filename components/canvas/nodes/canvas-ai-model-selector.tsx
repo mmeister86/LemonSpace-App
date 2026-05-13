@@ -67,8 +67,9 @@ function videoFeatures(model: ReturnType<typeof getAvailableVideoModels>[number]
 export function buildImageModelSelectorOptions(
   tier: AiModel["minTier"],
   formatDescription?: ModelDescriptionFormatter,
+  options?: { requiresImageReferences?: boolean },
 ): AIModelSelectorItem[] {
-  return getAvailableImageModels(tier).map((model) => ({
+  return getAvailableImageModels(tier, options).map((model) => ({
     id: model.id,
     name: model.name,
     provider: inferModelProvider(model.id),
@@ -128,6 +129,7 @@ export function CanvasAiModelSelector({
   durationSeconds = 5,
   className,
   placeholder,
+  requiresImageReferences = false,
 }: {
   kind: CanvasModelSelectorKind;
   value: string;
@@ -136,6 +138,7 @@ export function CanvasAiModelSelector({
   durationSeconds?: VideoModelDurationSeconds;
   className?: string;
   placeholder?: string;
+  requiresImageReferences?: boolean;
 }) {
   const t = useTranslations("aiModelSelector");
   const models = useMemo(() => {
@@ -154,7 +157,9 @@ export function CanvasAiModelSelector({
     };
 
     if (kind === "image") {
-      return buildImageModelSelectorOptions(userTier as AiModel["minTier"], formatDescription);
+      return buildImageModelSelectorOptions(userTier as AiModel["minTier"], formatDescription, {
+        requiresImageReferences,
+      });
     }
     if (kind === "video") {
       return buildVideoModelSelectorOptions(durationSeconds, formatDescription);
@@ -163,7 +168,7 @@ export function CanvasAiModelSelector({
       return buildAiTextModelSelectorOptions(userTier as AiTextModelAccessTier, formatDescription);
     }
     return buildAgentModelSelectorOptions(userTier as AgentModelAccessTier, formatDescription);
-  }, [durationSeconds, kind, t, userTier]);
+  }, [durationSeconds, kind, requiresImageReferences, t, userTier]);
   const labels = useMemo<AIModelSelectorLabels>(() => {
     const featureKeys: AIModelFeature[] = [
       "fast",

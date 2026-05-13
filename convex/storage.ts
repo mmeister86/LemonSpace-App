@@ -381,11 +381,15 @@ function collectStorageIds(
     const data = node.data as Record<string, unknown> | undefined;
     const storageId = data?.storageId;
     const previewStorageId = data?.previewStorageId;
+    const lastUploadStorageId = data?.lastUploadStorageId;
     if (typeof storageId === "string" && storageId.length > 0) {
       ids.add(storageId as Id<"_storage">);
     }
     if (typeof previewStorageId === "string" && previewStorageId.length > 0) {
       ids.add(previewStorageId as Id<"_storage">);
+    }
+    if (typeof lastUploadStorageId === "string" && lastUploadStorageId.length > 0) {
+      ids.add(lastUploadStorageId as Id<"_storage">);
     }
   }
 

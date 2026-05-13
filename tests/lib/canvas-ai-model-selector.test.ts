@@ -28,6 +28,17 @@ describe("canvas AI model selector mapping", () => {
     );
   });
 
+  it("filters image selector options to reference-capable models when references are connected", () => {
+    const options = buildImageModelSelectorOptions("starter", undefined, {
+      requiresImageReferences: true,
+    });
+
+    expect(options.some((model) => model.id === "google/gemini-2.5-flash-image")).toBe(true);
+    expect(options.some((model) => model.id === "openai/gpt-5-image-mini")).toBe(true);
+    expect(options.some((model) => model.id === "black-forest-labs/flux.2-klein-4b")).toBe(false);
+    expect(options.some((model) => model.id === "sourceful/riverflow-v2-pro")).toBe(false);
+  });
+
   it("maps video models with LemonSpace-specific providers", () => {
     const options = buildVideoModelSelectorOptions(10);
 

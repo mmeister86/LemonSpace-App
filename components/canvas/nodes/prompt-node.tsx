@@ -13,7 +13,7 @@ import {
   type NodeProps,
   type Node,
 } from "@xyflow/react";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useTranslations } from "next-intl";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "@/convex/_generated/api";
@@ -21,6 +21,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import BaseNodeWrapper from "./base-node-wrapper";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import {
   DEFAULT_MODEL_ID,
@@ -51,6 +52,13 @@ import { toast } from "@/lib/toast";
 import { classifyError } from "@/lib/ai-errors";
 import { normalizePublicTier } from "@/lib/tier-credits";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import {
+  isAiImageReferenceSourceType,
+  MAX_AI_IMAGE_REFERENCES,
+  type AiImageReferenceInput,
+  type AiImageReferenceSourceType,
+} from "@/lib/ai-image-references";
+import { materializeRenderReference } from "./render-reference-materialization";
 
 type PromptNodeData = {
   prompt?: string;
@@ -77,26 +85,80 @@ function getSourceTextValue(node: { type?: string; data?: unknown } | undefined)
 }
 
 function getSourceImageReference(
-  node: { type?: string; data?: unknown } | undefined,
-): { storageId?: Id<"_storage">; imageUrl?: string; label: string } | null {
+  node: { id?: string; type?: string; data?: unknown } | undefined,
+): Omit<AiImageReferenceInput, "label"> | null {
   if (!node || !node.data || typeof node.data !== "object") {
     return null;
   }
 
   if (node.type === "image") {
-    const data = node.data as { storageId?: string };
-    return data.storageId
-      ? { storageId: data.storageId as Id<"_storage">, label: "Bild" }
+    const data = node.data as { storageId?: string; url?: string };
+    if (data.storageId) {
+      return {
+        sourceNodeId: node.id ?? "",
+        sourceType: "image",
+        storageId: data.storageId,
+      };
+    }
+    return data.url
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "image",
+          imageUrl: data.url,
+        }
       : null;
   }
 
   if (node.type === "asset") {
     const data = node.data as { previewUrl?: string; url?: string };
     const imageUrl = data.url ?? data.previewUrl;
-    return imageUrl ? { imageUrl, label: "Asset" } : null;
+    return imageUrl
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "asset",
+          imageUrl,
+        }
+      : null;
+  }
+
+  if (node.type === "ai-image") {
+    const data = node.data as { storageId?: string; url?: string };
+    if (data.storageId) {
+      return {
+        sourceNodeId: node.id ?? "",
+        sourceType: "ai-image",
+        storageId: data.storageId,
+      };
+    }
+    return data.url
+      ? {
+          sourceNodeId: node.id ?? "",
+          sourceType: "ai-image",
+          imageUrl: data.url,
+        }
+      : null;
   }
 
   return null;
+}
+
+type PromptSourceNode = {
+  id: string;
+  type?: string;
+  data?: unknown;
+  position?: { x?: number; y?: number };
+};
+
+function comparePromptSourceNodes(left: PromptSourceNode, right: PromptSourceNode): number {
+  const leftY = typeof left.position?.y === "number" ? left.position.y : 0;
+  const rightY = typeof right.position?.y === "number" ? right.position.y : 0;
+  if (leftY !== rightY) return leftY - rightY;
+
+  const leftX = typeof left.position?.x === "number" ? left.position.x : 0;
+  const rightX = typeof right.position?.x === "number" ? right.position.x : 0;
+  if (leftX !== rightX) return leftX - rightX;
+
+  return left.id.localeCompare(right.id);
 }
 
 export default function PromptNode({
@@ -109,6 +171,7 @@ export default function PromptNode({
   const nodeData = data as PromptNodeData;
   const router = useRouter();
   const { getEdges, getNode } = useReactFlow();
+  const graph = useCanvasGraph();
 
   const [prompt, setPrompt] = useState(nodeData.prompt ?? "");
   const [modelId, setModelId] = useState(nodeData.model ?? DEFAULT_MODEL_ID);
@@ -143,13 +206,16 @@ export default function PromptNode({
     const incomingEdges = edges.filter((edge) => edge.target === id);
     let textPrompt: string | undefined;
     let hasTextInput = false;
-    let imageReference: ReturnType<typeof getSourceImageReference> | null = null;
+    const visualSourceNodes: PromptSourceNode[] = [];
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
-      const sourceImageReference = getSourceImageReference(sourceNode);
-      if (sourceImageReference && !imageReference) {
-        imageReference = sourceImageReference;
+      if (
+        sourceNode?.type &&
+        isAiImageReferenceSourceType(sourceNode.type) &&
+        visualSourceNodes.length < MAX_AI_IMAGE_REFERENCES
+      ) {
+        visualSourceNodes.push(sourceNode);
       }
 
       if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
@@ -165,7 +231,14 @@ export default function PromptNode({
     return {
       hasTextInput,
       textPrompt: textPrompt ?? "",
-      imageReference,
+      visualReferences: visualSourceNodes
+        .sort(comparePromptSourceNodes)
+        .slice(0, MAX_AI_IMAGE_REFERENCES)
+        .map((node, index) => ({
+          sourceNodeId: node.id,
+          sourceType: node.type as AiImageReferenceSourceType,
+          label: `Ref ${index + 1}`,
+        })),
     };
   }, [edges, id, nodes]);
 
@@ -178,8 +251,11 @@ export default function PromptNode({
   const subscription = useAuthQuery(api.credits.getSubscription);
   const userTier = normalizePublicTier(subscription?.tier ?? "free");
   const availableModels = useMemo(
-    () => getAvailableImageModels(userTier),
-    [userTier],
+    () =>
+      getAvailableImageModels(userTier, {
+        requiresImageReferences: inputMeta.visualReferences.length > 0,
+      }),
+    [inputMeta.visualReferences.length, userTier],
   );
 
   useEffect(() => {
@@ -206,6 +282,7 @@ export default function PromptNode({
 
   const { queueNodeDataUpdate, status } = useCanvasSync();
   const generateImage = useAction(api.ai.generateImage);
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const { createNodeConnectedFromSource } = useCanvasPlacement();
 
   const debouncedSave = useDebouncedCallback(() => {
@@ -279,21 +356,50 @@ export default function PromptNode({
       const currentEdges = getEdges();
       const incomingEdges = currentEdges.filter((e) => e.target === id);
       let connectedTextPrompt: string | undefined;
-      let referenceStorageId: Id<"_storage"> | undefined;
-      let referenceImageUrl: string | undefined;
+      const visualSourceNodes: PromptSourceNode[] = [];
 
       for (const edge of incomingEdges) {
-        const sourceNode = getNode(edge.source);
+        const sourceNode = getNode(edge.source) as PromptSourceNode | undefined;
         if (sourceNode?.type === "text" || sourceNode?.type === "ai-text-output") {
           const textValue = getSourceTextValue(sourceNode);
           if (textValue.trim().length > 0) {
             connectedTextPrompt = textValue;
           }
         }
+        if (sourceNode?.type && isAiImageReferenceSourceType(sourceNode.type)) {
+          visualSourceNodes.push(sourceNode);
+        }
+      }
+
+      const sortedVisualSourceNodes = visualSourceNodes
+        .sort(comparePromptSourceNodes)
+        .slice(0, MAX_AI_IMAGE_REFERENCES);
+      const referenceImages: AiImageReferenceInput[] = [];
+      for (const [index, sourceNode] of sortedVisualSourceNodes.entries()) {
+        const label = `Ref ${index + 1}`;
+        if (sourceNode.type === "render") {
+          const graphNode = graph.nodesById.get(sourceNode.id);
+          if (!graphNode) continue;
+          const materialized = await materializeRenderReference({
+            node: graphNode,
+            graph,
+            label,
+            generateUploadUrl,
+            queueNodeDataUpdate,
+          });
+          if (materialized) {
+            referenceImages.push(materialized);
+          }
+          continue;
+        }
+
         const imageReference = getSourceImageReference(sourceNode);
         if (imageReference) {
-          referenceStorageId = imageReference.storageId;
-          referenceImageUrl = imageReference.imageUrl;
+          referenceImages.push({
+            ...imageReference,
+            sourceNodeId: sourceNode.id,
+            label,
+          });
         }
       }
 
@@ -335,8 +441,7 @@ export default function PromptNode({
           canvasId,
           nodeId: aiNodeId,
           prompt: promptToUse,
-          referenceStorageId,
-          referenceImageUrl,
+          referenceImages,
           model: resolvedModelId,
           aspectRatio,
         }),
@@ -379,8 +484,11 @@ export default function PromptNode({
     id,
     getEdges,
     getNode,
+    graph,
     createNodeConnectedFromSource,
     generateImage,
+    generateUploadUrl,
+    queueNodeDataUpdate,
     selectedModel?.tier,
     creditCost,
     availableCredits,
@@ -430,11 +538,14 @@ export default function PromptNode({
           />
         )}
 
-        {inputMeta.imageReference && (
+        {inputMeta.visualReferences.length > 0 && (
           <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300">
             <ImageIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">
-              Referenzbild verbunden · {inputMeta.imageReference.label}
+              Referenzbilder verbunden ·{" "}
+              {inputMeta.visualReferences
+                .map((reference) => reference.label)
+                .join(", ")}
             </span>
           </div>
         )}
@@ -451,6 +562,7 @@ export default function PromptNode({
             value={resolvedModelId}
             onValueChange={handleModelChange}
             userTier={userTier}
+            requiresImageReferences={inputMeta.visualReferences.length > 0}
             className="w-full"
             placeholder={tModelSelector("modelLabel")}
           />

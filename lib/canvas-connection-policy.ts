@@ -4,6 +4,10 @@
  */
 
 import { isAdjustmentNodeType } from "@/lib/canvas-node-types";
+import {
+  isAiImageReferenceSourceType,
+  MAX_AI_IMAGE_REFERENCES,
+} from "@/lib/ai-image-references";
 
 export const CANVAS_NODE_DND_MIME = "application/lemonspace-node-type";
 
@@ -87,7 +91,6 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
 
 const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
-const PROMPT_IMAGE_SOURCE_TYPES = new Set<string>(["image", "asset"]);
 const PROMPT_TEXT_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
 const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
@@ -117,6 +120,7 @@ export type CanvasConnectionValidationReason =
   | "unknown-node"
   | "prompt-source-invalid"
   | "prompt-image-incoming-limit"
+  | "prompt-visual-incoming-limit"
   | "prompt-text-incoming-limit"
   | "ai-video-source-invalid"
   | "video-prompt-target-invalid"
@@ -165,7 +169,7 @@ export function validateCanvasConnectionPolicy(args: {
   }
 
   if (targetType === "prompt") {
-    const isImageSource = PROMPT_IMAGE_SOURCE_TYPES.has(sourceType);
+    const isImageSource = isAiImageReferenceSourceType(sourceType);
     const isTextSource = PROMPT_TEXT_SOURCE_TYPES.has(sourceType);
 
     if (!isImageSource && !isTextSource) {
@@ -173,11 +177,13 @@ export function validateCanvasConnectionPolicy(args: {
     }
 
     const incomingSourceTypes = targetIncomingSourceTypes ?? [];
-    if (
-      isImageSource &&
-      incomingSourceTypes.some((type) => PROMPT_IMAGE_SOURCE_TYPES.has(type))
-    ) {
-      return "prompt-image-incoming-limit";
+    if (isImageSource) {
+      const visualIncomingCount = incomingSourceTypes.filter((type) =>
+        isAiImageReferenceSourceType(type),
+      ).length;
+      if (visualIncomingCount >= MAX_AI_IMAGE_REFERENCES) {
+        return "prompt-visual-incoming-limit";
+      }
     }
 
     if (
@@ -332,9 +338,11 @@ export function getCanvasConnectionValidationMessage(
     case "unknown-node":
       return "Verbindung enthaelt unbekannte Nodes.";
     case "prompt-source-invalid":
-      return "KI-Bild akzeptiert nur Bild-, Asset-, Text- oder KI-Text-Input.";
+      return "KI-Bild akzeptiert nur Bild-, Asset-, KI-Bild-, Render-, Text- oder KI-Text-Input.";
     case "prompt-image-incoming-limit":
-      return "KI-Bild erlaubt nur eine Bild- oder Asset-Referenz.";
+      return `KI-Bild erlaubt maximal ${MAX_AI_IMAGE_REFERENCES} visuelle Referenzen.`;
+    case "prompt-visual-incoming-limit":
+      return `KI-Bild erlaubt maximal ${MAX_AI_IMAGE_REFERENCES} visuelle Referenzen.`;
     case "prompt-text-incoming-limit":
       return "KI-Bild erlaubt nur eine Text-Quelle.";
     case "ai-video-source-invalid":

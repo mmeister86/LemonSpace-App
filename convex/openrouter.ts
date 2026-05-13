@@ -9,6 +9,11 @@ import type {
   AgentHarnessModelResponse,
   AgentHarnessTool,
 } from "../lib/agent-harness";
+import {
+  buildReferencePromptPreamble,
+  MAX_AI_IMAGE_REFERENCES,
+  type AiImageReferenceInput,
+} from "../lib/ai-image-references";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -553,10 +558,20 @@ export interface OpenRouterModel {
   creditCost: number;
   minTier: "free" | "starter" | "pro" | "max";
   requestModalities?: readonly ("image" | "text")[];
+  supportsImageReferences: boolean;
+  maxReferenceImages: number;
 }
 
 const IMAGE_AND_TEXT_MODALITIES = ["image", "text"] as const;
 const IMAGE_ONLY_MODALITIES = ["image"] as const;
+const IMAGE_REFERENCE_CAPABILITY = {
+  supportsImageReferences: true,
+  maxReferenceImages: MAX_AI_IMAGE_REFERENCES,
+} as const;
+const NO_IMAGE_REFERENCE_CAPABILITY = {
+  supportsImageReferences: false,
+  maxReferenceImages: 0,
+} as const;
 export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
   "google/gemini-2.5-flash-image": {
     id: "google/gemini-2.5-flash-image",
@@ -565,6 +580,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 4, // ~€0.04 in Euro-Cent
     creditCost: 4,
     minTier: "free",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   "black-forest-labs/flux.2-klein-4b": {
     id: "black-forest-labs/flux.2-klein-4b",
@@ -574,6 +590,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     creditCost: 2,
     minTier: "free",
     requestModalities: IMAGE_ONLY_MODALITIES,
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   "bytedance-seed/seedream-4.5": {
     id: "bytedance-seed/seedream-4.5",
@@ -583,6 +600,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     creditCost: 5,
     minTier: "free",
     requestModalities: IMAGE_ONLY_MODALITIES,
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   "google/gemini-3.1-flash-image-preview": {
     id: "google/gemini-3.1-flash-image-preview",
@@ -591,6 +609,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 6,
     creditCost: 6,
     minTier: "free",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   "openai/gpt-5-image-mini": {
     id: "openai/gpt-5-image-mini",
@@ -599,6 +618,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 8,
     creditCost: 8,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   "sourceful/riverflow-v2-fast": {
     id: "sourceful/riverflow-v2-fast",
@@ -608,6 +628,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     creditCost: 9,
     minTier: "starter",
     requestModalities: IMAGE_ONLY_MODALITIES,
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   "sourceful/riverflow-v2-pro": {
     id: "sourceful/riverflow-v2-pro",
@@ -617,6 +638,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     creditCost: 12,
     minTier: "starter",
     requestModalities: IMAGE_ONLY_MODALITIES,
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   "google/gemini-3-pro-image-preview": {
     id: "google/gemini-3-pro-image-preview",
@@ -625,6 +647,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 13,
     creditCost: 13,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   "openai/gpt-5-image": {
     id: "openai/gpt-5-image",
@@ -633,6 +656,7 @@ export const IMAGE_MODELS: Record<string, OpenRouterModel> = {
     estimatedCostPerImage: 15,
     creditCost: 15,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
 };
 
@@ -641,6 +665,7 @@ export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 export interface GenerateImageParams {
   prompt: string;
   referenceImageUrl?: string; // optional image-to-image input
+  referenceImages?: AiImageReferenceInput[];
   model?: string;
   /** OpenRouter image_config.aspect_ratio e.g. "16:9", "1:1" */
   aspectRatio?: string;
@@ -708,28 +733,46 @@ export async function generateImageViaOpenRouter(
   const model = IMAGE_MODELS[modelId];
   const requestModalities = model?.requestModalities ?? IMAGE_AND_TEXT_MODALITIES;
   const requestStartedAt = Date.now();
+  const referenceImages = (params.referenceImages ?? [])
+    .filter((reference) => typeof reference.imageUrl === "string" && reference.imageUrl.trim().length > 0)
+    .slice(0, MAX_AI_IMAGE_REFERENCES);
+  const legacyReferenceImageUrl = params.referenceImageUrl?.trim();
+  if (referenceImages.length === 0 && legacyReferenceImageUrl) {
+    referenceImages.push({
+      sourceNodeId: "legacy-reference",
+      sourceType: "image",
+      label: "Ref 1",
+      imageUrl: legacyReferenceImageUrl,
+    });
+  }
 
   console.info("[openrouter] request start", {
     modelId,
-    hasReferenceImageUrl: Boolean(params.referenceImageUrl),
+    hasReferenceImageUrl: referenceImages.length > 0,
+    referenceImageCount: referenceImages.length,
     aspectRatio: params.aspectRatio?.trim() || null,
     promptLength: params.prompt.length,
   });
 
   // Ohne Referenzbild: einfacher String als content — bei Gemini/OpenRouter sonst oft nur Text (refusal/reasoning) statt Bild.
   const userMessage =
-    params.referenceImageUrl != null && params.referenceImageUrl !== ""
+    referenceImages.length > 0
       ? {
           role: "user" as const,
           content: [
             {
-              type: "image_url" as const,
-              image_url: { url: params.referenceImageUrl },
-            },
-            {
               type: "text" as const,
-              text: params.prompt,
+              text: [
+                buildReferencePromptPreamble(referenceImages),
+                "",
+                "User request:",
+                params.prompt,
+              ].join("\n"),
             },
+            ...referenceImages.map((reference) => ({
+              type: "image_url" as const,
+              image_url: { url: reference.imageUrl!.trim() },
+            })),
           ],
         }
       : {

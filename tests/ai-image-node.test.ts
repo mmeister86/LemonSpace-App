@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   edges: [] as Array<{ source: string; target: string }>,
-  nodes: [] as Array<{ id: string; type: string; data: Record<string, unknown> }>,
+  nodes: [] as Array<{
+    id: string;
+    type: string;
+    data: Record<string, unknown>;
+    position?: { x: number; y: number };
+  }>,
   generateImage: vi.fn(async () => ({ queued: true, nodeId: "ai-image-1" })),
   getEdges: vi.fn(() => [] as Array<{ source: string; target: string }>),
   getNode: vi.fn((id: string) => mocks.nodes.find((node) => node.id === id) ?? null),
@@ -113,14 +118,16 @@ describe("AiImageNode", () => {
     root = null;
   });
 
-  it("reuses the prompt node image reference when regenerating", async () => {
+  it("reuses prompt node visual references when regenerating", async () => {
     mocks.edges = [
       { source: "prompt-1", target: "ai-image-1" },
       { source: "image-1", target: "prompt-1" },
+      { source: "asset-1", target: "prompt-1" },
     ];
     mocks.nodes = [
       { id: "prompt-1", type: "prompt", data: {} },
-      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+      { id: "asset-1", type: "asset", position: { x: 0, y: 0 }, data: { url: "https://asset.test/ref.png" } },
+      { id: "image-1", type: "image", position: { x: 0, y: 200 }, data: { storageId: "storage-image-1" } },
     ];
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -169,7 +176,78 @@ describe("AiImageNode", () => {
         canvasId: "canvas-1",
         nodeId: "ai-image-1",
         prompt: "neue variante",
-        referenceStorageId: "storage-image-1",
+        referenceImages: [
+          expect.objectContaining({
+            sourceNodeId: "asset-1",
+            sourceType: "asset",
+            label: "Ref 1",
+            imageUrl: "https://asset.test/ref.png",
+          }),
+          expect.objectContaining({
+            sourceNodeId: "image-1",
+            sourceType: "image",
+            label: "Ref 2",
+            storageId: "storage-image-1",
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("falls back to persisted legacy single-reference data when regenerating", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AiImageNode, {
+          id: "ai-image-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "ai-image",
+          data: {
+            canvasId: "canvas-1",
+            prompt: "alte variante",
+            model: "google/gemini-2.5-flash-image",
+            aspectRatio: "1:1",
+            url: "https://generated.test/image.png",
+            referenceStorageId: "legacy-storage-1",
+            _status: "done",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Regenerate"),
+    );
+
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Regenerate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceImages: [
+          expect.objectContaining({
+            sourceNodeId: "legacy-reference",
+            sourceType: "image",
+            label: "Ref 1",
+            storageId: "legacy-storage-1",
+          }),
+        ],
       }),
     );
   });

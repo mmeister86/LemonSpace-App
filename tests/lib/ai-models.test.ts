@@ -39,6 +39,30 @@ describe("ai image models registry", () => {
 
     for (const model of IMAGE_MODELS) {
       expect(OPENROUTER_MODELS[model.id]?.creditCost).toBe(model.creditCost);
+      expect(OPENROUTER_MODELS[model.id]?.supportsImageReferences).toBe(
+        model.supportsImageReferences,
+      );
+      expect(OPENROUTER_MODELS[model.id]?.maxReferenceImages).toBe(model.maxReferenceImages);
     }
+  });
+
+  it("only enables verified image-reference models for the six-reference workflow", () => {
+    const enabled = IMAGE_MODELS.filter((model) => model.supportsImageReferences);
+
+    expect(enabled.map((model) => model.id)).toEqual([
+      "google/gemini-2.5-flash-image",
+      "google/gemini-3.1-flash-image-preview",
+      "openai/gpt-5-image-mini",
+      "google/gemini-3-pro-image-preview",
+      "openai/gpt-5-image",
+    ]);
+    expect(enabled.every((model) => model.maxReferenceImages === 6)).toBe(true);
+    expect(getAvailableImageModels("starter", { requiresImageReferences: true }).map((model) => model.id)).toEqual([
+      "google/gemini-2.5-flash-image",
+      "google/gemini-3.1-flash-image-preview",
+      "openai/gpt-5-image-mini",
+      "google/gemini-3-pro-image-preview",
+      "openai/gpt-5-image",
+    ]);
   });
 });

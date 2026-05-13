@@ -105,6 +105,49 @@ describe("split canvas utility modules", () => {
     });
   });
 
+  it("merges render last upload URLs from batched storage resolution", () => {
+    const renderNode = nodeDoc({
+      type: "render",
+      data: { lastUploadStorageId: "storage-render-1" },
+    });
+
+    expect(
+      convexNodeDocWithMergedStorageUrl(
+        renderNode,
+        { "storage-render-1": "https://cdn.example.com/render.png" },
+        new Map(),
+      ).data,
+    ).toMatchObject({
+      lastUploadStorageId: "storage-render-1",
+      lastUploadUrl: "https://cdn.example.com/render.png",
+    });
+  });
+
+  it("keeps the previous render last upload URL while batch resolution is pending", () => {
+    const renderNode = nodeDoc({
+      type: "render",
+      data: { lastUploadStorageId: "storage-render-1" },
+    });
+
+    expect(
+      convexNodeDocWithMergedStorageUrl(
+        renderNode,
+        undefined,
+        new Map([
+          [
+            renderNode._id,
+            {
+              lastUploadStorageId: "storage-render-1",
+              lastUploadUrl: "https://cdn.example.com/previous-render.png",
+            },
+          ],
+        ]),
+      ).data,
+    ).toMatchObject({
+      lastUploadUrl: "https://cdn.example.com/previous-render.png",
+    });
+  });
+
   it("isolates handle style and glow helpers while preserving legacy exports", () => {
     const args = { nodeType: "compare", handleId: "left", handleType: "target" as const };
 

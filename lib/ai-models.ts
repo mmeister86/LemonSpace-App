@@ -15,7 +15,19 @@ export interface AiModel {
   /** Credits pro Generierung — gleiche Einheit wie Convex reserve/commit (Euro-Cent). */
   creditCost: number;
   minTier: "free" | "starter" | "pro" | "max" | "business"; // minimum subscription tier
+  supportsImageReferences: boolean;
+  maxReferenceImages: number;
 }
+
+const IMAGE_REFERENCE_CAPABILITY = {
+  supportsImageReferences: true,
+  maxReferenceImages: 6,
+} as const;
+
+const NO_IMAGE_REFERENCE_CAPABILITY = {
+  supportsImageReferences: false,
+  maxReferenceImages: 0,
+} as const;
 
 export const IMAGE_MODELS: AiModel[] = [
   {
@@ -26,6 +38,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.04",
     creditCost: 4,
     minTier: "free",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "black-forest-labs/flux.2-klein-4b",
@@ -35,6 +48,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.02",
     creditCost: 2,
     minTier: "free",
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "bytedance-seed/seedream-4.5",
@@ -44,6 +58,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.05",
     creditCost: 5,
     minTier: "free",
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "google/gemini-3.1-flash-image-preview",
@@ -53,6 +68,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.06",
     creditCost: 6,
     minTier: "free",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "openai/gpt-5-image-mini",
@@ -62,6 +78,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.08",
     creditCost: 8,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "sourceful/riverflow-v2-fast",
@@ -71,6 +88,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.09",
     creditCost: 9,
     minTier: "starter",
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "sourceful/riverflow-v2-pro",
@@ -80,6 +98,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.12",
     creditCost: 12,
     minTier: "starter",
+    ...NO_IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "google/gemini-3-pro-image-preview",
@@ -89,6 +108,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.13",
     creditCost: 13,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
   {
     id: "openai/gpt-5-image",
@@ -98,6 +118,7 @@ export const IMAGE_MODELS: AiModel[] = [
     estimatedCost: "~€0.15",
     creditCost: 15,
     minTier: "starter",
+    ...IMAGE_REFERENCE_CAPABILITY,
   },
 ];
 
@@ -115,7 +136,18 @@ const IMAGE_MODEL_TIER_ORDER: Record<AiModel["minTier"], number> = {
   business: 4,
 };
 
-export function getAvailableImageModels(tier: AiModel["minTier"]): AiModel[] {
+export function getAvailableImageModels(
+  tier: AiModel["minTier"],
+  options?: { requiresImageReferences?: boolean },
+): AiModel[] {
   const maxTier = IMAGE_MODEL_TIER_ORDER[tier];
-  return IMAGE_MODELS.filter((model) => IMAGE_MODEL_TIER_ORDER[model.minTier] <= maxTier);
+  return IMAGE_MODELS.filter((model) => {
+    if (IMAGE_MODEL_TIER_ORDER[model.minTier] > maxTier) {
+      return false;
+    }
+    if (options?.requiresImageReferences && !model.supportsImageReferences) {
+      return false;
+    }
+    return true;
+  });
 }

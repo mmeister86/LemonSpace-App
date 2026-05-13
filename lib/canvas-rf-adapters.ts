@@ -22,29 +22,55 @@ export function convexNodeDocWithMergedStorageUrl(
 ): Doc<"nodes"> {
   const data = node.data as Record<string, unknown> | undefined;
   const sid = data?.storageId;
-  if (typeof sid !== "string") {
+  const lastUploadStorageId = data?.lastUploadStorageId;
+  if (typeof sid !== "string" && typeof lastUploadStorageId !== "string") {
     return node;
   }
 
+  let nextData: Record<string, unknown> | null = null;
   if (urlByStorage) {
-    const fromBatch = urlByStorage[sid];
-    if (fromBatch !== undefined) {
-      return {
-        ...node,
-        data: { ...data, url: fromBatch },
-      };
+    if (typeof sid === "string") {
+      const fromBatch = urlByStorage[sid];
+      if (fromBatch !== undefined) {
+        nextData = { ...(nextData ?? data), url: fromBatch };
+      }
+    }
+
+    if (typeof lastUploadStorageId === "string") {
+      const fromBatch = urlByStorage[lastUploadStorageId];
+      if (fromBatch !== undefined) {
+        nextData = { ...(nextData ?? data), lastUploadUrl: fromBatch };
+      }
+    }
+
+    if (nextData) {
+      return { ...node, data: nextData };
     }
   }
 
   const prev = previousDataByNodeId.get(node._id);
   if (
+    typeof sid === "string" &&
     prev?.url !== undefined &&
     typeof prev.storageId === "string" &&
     prev.storageId === sid
   ) {
+    nextData = { ...(nextData ?? data), url: prev.url };
+  }
+
+  if (
+    typeof lastUploadStorageId === "string" &&
+    prev?.lastUploadUrl !== undefined &&
+    typeof prev.lastUploadStorageId === "string" &&
+    prev.lastUploadStorageId === lastUploadStorageId
+  ) {
+    nextData = { ...(nextData ?? data), lastUploadUrl: prev.lastUploadUrl };
+  }
+
+  if (nextData) {
     return {
       ...node,
-      data: { ...data, url: prev.url },
+      data: nextData,
     };
   }
 
