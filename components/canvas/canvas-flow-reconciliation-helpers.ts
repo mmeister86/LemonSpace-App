@@ -12,6 +12,7 @@ import {
   convexNodeDocWithMergedStorageUrl,
   convexNodeToRF,
 } from "@/lib/canvas-utils";
+import { assignDisplayHandlesToRepeatingInputEdges } from "@/lib/canvas-repeating-input-handles";
 
 import {
   applyPinnedNodePositionsReadOnly,
@@ -299,8 +300,12 @@ export function reconcileCanvasFlowEdges(args: {
     }
   }
 
+  const reconciledEdges = [...mapped, ...carriedOptimistic, ...tempEdges];
+
   return {
-    edges: [...mapped, ...carriedOptimistic, ...tempEdges],
+    edges: sourceTypeByNodeId
+      ? assignDisplayHandlesToRepeatingInputEdges(reconciledEdges, sourceTypeByNodeId)
+      : reconciledEdges,
     nextConvexNodeIdsSnapshot: args.convexNodes
       ? currentConvexIdSet
       : new Set(args.previousConvexNodeIdsSnapshot),

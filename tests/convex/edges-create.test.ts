@@ -202,6 +202,96 @@ describe("edges.create", () => {
     expect(incomingToTarget[0]?._id).not.toBe(oldEdgeId);
     expect(mock.deletes).toEqual([oldEdgeId]);
   });
+
+  it("rejects a seventh visual prompt reference using existing incoming source types", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ userId: "user-1" } as never);
+    const canvasId = "canvas-1" as Id<"canvases">;
+    const promptNodeId = "prompt-1" as Id<"nodes">;
+    const existingImages = Array.from({ length: 6 }, (_, index) => ({
+      _id: `image-${index + 1}` as Id<"nodes">,
+      canvasId,
+      type: "image",
+    }));
+    const mock = createMockCtx({
+      canvases: [{ _id: canvasId, ownerId: "user-1", updatedAt: 1 }],
+      nodes: [
+        ...existingImages,
+        { _id: "image-new" as Id<"nodes">, canvasId, type: "image" },
+        { _id: promptNodeId, canvasId, type: "prompt" },
+      ],
+      edges: existingImages.map((node, index) => ({
+        _id: `edge-${index + 1}` as Id<"edges">,
+        canvasId,
+        sourceNodeId: node._id,
+        targetNodeId: promptNodeId,
+        targetHandle: index === 0 ? "image-in" : `image-in-${index + 1}`,
+      })),
+    });
+
+    await expect(
+      (create as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            canvasId: Id<"canvases">;
+            sourceNodeId: Id<"nodes">;
+            targetNodeId: Id<"nodes">;
+            targetHandle?: string;
+          },
+        ) => Promise<Id<"edges">>;
+      })._handler(mock.ctx, {
+        canvasId,
+        sourceNodeId: "image-new" as Id<"nodes">,
+        targetNodeId: promptNodeId,
+        targetHandle: "image-in-7",
+      }),
+    ).rejects.toThrow("KI-Bild erlaubt maximal 6 visuelle Referenzen.");
+  });
+
+  it("rejects a ninth agent context input using existing incoming count", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ userId: "user-1" } as never);
+    const canvasId = "canvas-1" as Id<"canvases">;
+    const agentNodeId = "agent-1" as Id<"nodes">;
+    const existingTextNodes = Array.from({ length: 8 }, (_, index) => ({
+      _id: `text-${index + 1}` as Id<"nodes">,
+      canvasId,
+      type: "text",
+    }));
+    const mock = createMockCtx({
+      canvases: [{ _id: canvasId, ownerId: "user-1", updatedAt: 1 }],
+      nodes: [
+        ...existingTextNodes,
+        { _id: "text-new" as Id<"nodes">, canvasId, type: "text" },
+        { _id: agentNodeId, canvasId, type: "agent" },
+      ],
+      edges: existingTextNodes.map((node, index) => ({
+        _id: `edge-${index + 1}` as Id<"edges">,
+        canvasId,
+        sourceNodeId: node._id,
+        targetNodeId: agentNodeId,
+        targetHandle: index === 0 ? "agent-in" : `agent-in-${index + 1}`,
+      })),
+    });
+
+    await expect(
+      (create as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            canvasId: Id<"canvases">;
+            sourceNodeId: Id<"nodes">;
+            targetNodeId: Id<"nodes">;
+            targetHandle?: string;
+          },
+        ) => Promise<Id<"edges">>;
+      })._handler(mock.ctx, {
+        canvasId,
+        sourceNodeId: "text-new" as Id<"nodes">,
+        targetNodeId: agentNodeId,
+        targetHandle: "agent-in-9",
+      }),
+    ).rejects.toThrow("Agent-Nodes akzeptieren maximal 8 Kontext-Inputs.");
+  });
 });
 
 describe("edges.swapMixerInputs", () => {

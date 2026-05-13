@@ -89,6 +89,12 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "ai-video",
 ]);
 
+export const MAX_AGENT_CONTEXT_INPUTS = 8;
+
+export function isAgentContextSourceType(sourceType: string): boolean {
+  return AGENT_ALLOWED_SOURCE_TYPES.has(sourceType);
+}
+
 const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
 const PROMPT_TEXT_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
@@ -137,6 +143,7 @@ export type CanvasConnectionValidationReason =
   | "style-transfer-handle-incoming-limit"
   | "style-transfer-incoming-limit"
   | "agent-source-invalid"
+  | "agent-incoming-limit"
   | "ai-text-source-invalid"
   | "ai-text-incoming-limit"
   | "ai-text-output-source-invalid"
@@ -282,8 +289,14 @@ export function validateCanvasConnectionPolicy(args: {
     }
   }
 
-  if (targetType === "agent" && !AGENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
-    return "agent-source-invalid";
+  if (targetType === "agent") {
+    if (!isAgentContextSourceType(sourceType)) {
+      return "agent-source-invalid";
+    }
+
+    if (targetIncomingCount >= MAX_AGENT_CONTEXT_INPUTS) {
+      return "agent-incoming-limit";
+    }
   }
 
   if (targetType === "ai-text") {
@@ -375,6 +388,8 @@ export function getCanvasConnectionValidationMessage(
       return "Style-Transfer-Nodes erlauben maximal zwei eingehende Verbindungen.";
     case "agent-source-invalid":
       return "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.";
+    case "agent-incoming-limit":
+      return "Agent-Nodes akzeptieren maximal 8 Kontext-Inputs.";
     case "ai-text-source-invalid":
       return "KI-Text akzeptiert nur Text- oder KI-Text-Ausgabe-Input.";
     case "ai-text-incoming-limit":

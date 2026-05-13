@@ -6,6 +6,7 @@
 import type { Connection, Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { validateCanvasConnectionPolicy } from "@/lib/canvas-connection-policy";
+import { resolveNextRepeatingInputHandleId } from "@/lib/canvas-repeating-input-handles";
 
 export const HANDLE_GLOW_RADIUS_PX = 56;
 export const HANDLE_SNAP_RADIUS_PX = 40;
@@ -105,6 +106,23 @@ function isValidConnectionCandidate(args: {
       !isOptimisticEdgeId(edge.id) &&
       edge.target === connection.target,
   );
+  const nodeTypeById = new Map(nodes.map((node) => [node.id, node.type ?? ""]));
+  const nextRepeatingHandleId = resolveNextRepeatingInputHandleId({
+    sourceType: sourceNode.type ?? "",
+    targetType: targetNode.type ?? "",
+    targetNodeId: targetNode.id,
+    edges,
+    nodeTypeById,
+  });
+  if (nextRepeatingHandleId === null) {
+    return false;
+  }
+  if (
+    nextRepeatingHandleId !== undefined &&
+    normalizeHandleId(connection.targetHandle ?? undefined) !== nextRepeatingHandleId
+  ) {
+    return false;
+  }
 
   return (
     validateCanvasConnectionPolicy({
@@ -113,6 +131,9 @@ function isValidConnectionCandidate(args: {
       targetHandle: connection.targetHandle,
       targetIncomingCount: incomingEdges.length,
       targetIncomingHandles: incomingEdges.map((edge) => edge.targetHandle),
+      targetIncomingSourceTypes: incomingEdges.map(
+        (edge) => nodeTypeById.get(edge.source) ?? "",
+      ),
     }) === null
   );
 }

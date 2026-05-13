@@ -7,7 +7,7 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Bot } from "lucide-react";
-import { Position, type Node, type NodeProps } from "@xyflow/react";
+import { Position, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { useTranslations } from "next-intl";
@@ -44,6 +44,8 @@ import { AiRunStatusPanel, AiToolCallsSection } from "@/components/ui/ai-run-sta
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { createAiRunEvent, type AiRunEvent, type AiRunPhase, type ToolCallTrace } from "@/lib/ai-run-history";
+import { RepeatingInputHandles } from "@/components/canvas/repeating-input-handles";
+import { resolveVisibleRepeatingInputHandles } from "@/lib/canvas-repeating-input-handles";
 
 type AgentNodeData = {
   templateId?: string;
@@ -232,6 +234,8 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
   const t = useTranslations("agentNode");
   const locale = useLocale();
   const nodeData = data as AgentNodeData;
+  const edges = useStore((store) => store.edges);
+  const nodes = useStore((store) => store.nodes);
   const template =
     getAgentTemplate(nodeData.templateId ?? DEFAULT_AGENT_TEMPLATE_ID) ??
     getAgentTemplate(DEFAULT_AGENT_TEMPLATE_ID);
@@ -316,6 +320,20 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
     getAgentModel(resolvedModelId) ??
     availableModels[0] ??
     getAgentModel(DEFAULT_AGENT_MODEL_ID);
+  const nodeTypeById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node.type ?? ""] as const)),
+    [nodes],
+  );
+  const inputHandles = useMemo(
+    () =>
+      resolveVisibleRepeatingInputHandles({
+        nodeType: "agent",
+        nodeId: id,
+        edges,
+        nodeTypeById,
+      }),
+    [edges, id, nodeTypeById],
+  );
   const creditCost = selectedModel?.creditCost ?? 0;
   const clarificationQuestions = nodeData.clarificationQuestions ?? [];
   const templateTranslationKey = `templates.${toTemplateTranslationKey(template?.id ?? DEFAULT_AGENT_TEMPLATE_ID)}`;
@@ -600,12 +618,10 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
       statusMessage={nodeData._statusMessage}
       className="min-w-[300px] border-amber-500/30"
     >
-      <CanvasHandle
+      <RepeatingInputHandles
         nodeId={id}
         nodeType="agent"
-        type="target"
-        position={Position.Left}
-        id="agent-in"
+        handles={inputHandles}
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
       />
       <CanvasHandle

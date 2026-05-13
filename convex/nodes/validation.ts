@@ -12,6 +12,7 @@ import {
 } from "../../lib/canvas-connection-policy";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
+const INCOMING_EDGE_POLICY_INSPECTION_LIMIT = 8;
 
 export async function getValidatedBatchNodesOrThrow(
   ctx: MutationCtx,
@@ -32,13 +33,19 @@ async function getIncomingEdgePolicyContext(
     targetNodeId: Id<"nodes">;
     edgeIdToIgnore?: Id<"edges">;
   },
-): Promise<{ count: number; targetHandles: Array<string | undefined> }> {
+): Promise<{
+  count: number;
+  targetHandles: Array<string | undefined>;
+  sourceTypes: string[];
+}> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
     .withIndex("by_target", (q) => q.eq("targetNodeId", args.targetNodeId));
 
   const checkStartedAt = Date.now();
-  const incomingEdges = await incomingEdgesQuery.take(3);
+  const incomingEdges = await incomingEdgesQuery.take(
+    INCOMING_EDGE_POLICY_INSPECTION_LIMIT,
+  );
   const checkDurationMs = Date.now() - checkStartedAt;
 
   const filteredIncomingEdges = incomingEdges.filter(
@@ -56,9 +63,14 @@ async function getIncomingEdgePolicyContext(
     });
   }
 
+  const sourceNodes = await Promise.all(
+    filteredIncomingEdges.map((edge) => ctx.db.get(edge.sourceNodeId)),
+  );
+
   return {
     count: incomingCount,
     targetHandles: filteredIncomingEdges.map((edge) => edge.targetHandle),
+    sourceTypes: sourceNodes.map((node) => node?.type ?? ""),
   };
 }
 
@@ -83,6 +95,7 @@ export async function assertConnectionPolicyForTypes(
     targetIncomingCount: targetIncoming.count,
     targetHandle: args.targetHandle,
     targetIncomingHandles: targetIncoming.targetHandles,
+    targetIncomingSourceTypes: targetIncoming.sourceTypes,
   });
 
   if (reason) {

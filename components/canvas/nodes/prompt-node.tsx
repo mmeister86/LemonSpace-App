@@ -59,6 +59,8 @@ import {
   type AiImageReferenceSourceType,
 } from "@/lib/ai-image-references";
 import { materializeRenderReference } from "./render-reference-materialization";
+import { RepeatingInputHandles } from "@/components/canvas/repeating-input-handles";
+import { resolveVisibleRepeatingInputHandles } from "@/lib/canvas-repeating-input-handles";
 
 type PromptNodeData = {
   prompt?: string;
@@ -241,6 +243,21 @@ export default function PromptNode({
         })),
     };
   }, [edges, id, nodes]);
+
+  const nodeTypeById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node.type ?? ""] as const)),
+    [nodes],
+  );
+  const inputHandles = useMemo(
+    () =>
+      resolveVisibleRepeatingInputHandles({
+        nodeType: "prompt",
+        nodeId: id,
+        edges,
+        nodeTypeById,
+      }),
+    [edges, id, nodeTypeById],
+  );
 
   const effectivePrompt = inputMeta.hasTextInput ? inputMeta.textPrompt : prompt;
 
@@ -506,12 +523,10 @@ export default function PromptNode({
       statusMessage={nodeData._statusMessage}
       className="min-w-[240px] border-violet-500/30"
     >
-      <CanvasHandle
+      <RepeatingInputHandles
         nodeId={id}
         nodeType="prompt"
-        type="target"
-        position={Position.Left}
-        id="image-in"
+        handles={inputHandles}
         className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
 

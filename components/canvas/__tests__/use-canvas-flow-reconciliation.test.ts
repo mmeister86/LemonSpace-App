@@ -236,6 +236,7 @@ describe("useCanvasFlowReconciliation", () => {
         id: "optimistic_edge_req-1",
         source: "node-source",
         target: "node-real",
+        targetHandle: "image-in",
       },
     ]);
     expect(latestStateRef.current?.resolvedRealIdByClientRequest).toEqual(

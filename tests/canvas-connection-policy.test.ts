@@ -430,6 +430,24 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows the eighth context input to agent but blocks the ninth", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "agent",
+        targetIncomingCount: 7,
+      }),
+    ).toBeNull();
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "agent",
+        targetIncomingCount: 8,
+      }),
+    ).toBe("agent-incoming-limit");
+  });
+
   it("allows agent to agent-output", () => {
     expect(
       validateCanvasConnectionPolicy({
@@ -506,6 +524,12 @@ describe("canvas connection policy", () => {
     ).toBe(
       "Agent-Nodes akzeptieren nur Content- und Kontext-Inputs, keine Generierungs-Steuerknoten wie Prompt.",
     );
+  });
+
+  it("describes agent incoming limit message", () => {
+    expect(
+      getCanvasConnectionValidationMessage("agent-incoming-limit"),
+    ).toBe("Agent-Nodes akzeptieren maximal 8 Kontext-Inputs.");
   });
 
   it("describes invalid agent-output source message", () => {

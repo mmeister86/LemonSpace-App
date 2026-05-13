@@ -184,6 +184,9 @@ vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
   useConnection: () => ({ inProgress: false }),
+  useStore: <T,>(selector: (store: { nodes: unknown[]; edges: unknown[] }) => T) =>
+    selector({ nodes: [], edges: [] }),
+  useUpdateNodeInternals: () => vi.fn(),
 }));
 
 import AgentNode from "@/components/canvas/nodes/agent-node";

@@ -94,7 +94,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
 | `video-prompt` | 1 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
 | `ai-text` | 2 | 🔲 (systemOutput) | ai-output | source: `text-out`, target: `text-in` |
-| `agent` | 2 | ✅ | agents | target: `agent-in`, source (default) |
+| `agent` | 2 | ✅ | agents | progressive targets: `agent-in`…`agent-in-8`, source (default) |
 | `agent-output` | 2 | ✅ (systemOutput) | agents | target: `agent-output-in` |
 | `crop` | 2 | ✅ | transform | 🔲 |
 | `bg-remove` | 2 | ✅ | transform | source/target (default) |

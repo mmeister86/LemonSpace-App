@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   createNodeConnectedFromSource: vi.fn(async () => "ai-image-node-1" as Id<"nodes">),
   generateImage: vi.fn(async () => ({ queued: true, nodeId: "ai-image-node-1" })),
   generateUploadUrl: vi.fn(async () => "https://upload.test/render"),
+  updateNodeInternals: vi.fn(),
   renderFullWithWorkerFallback: vi.fn(async () => ({
     blob: new Blob(["rendered"], { type: "image/png" }),
     width: 640,
@@ -202,9 +203,24 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
-  Handle: () => null,
+  Handle: ({
+    id,
+    type,
+    style,
+  }: {
+    id?: string;
+    type: "source" | "target";
+    style?: React.CSSProperties;
+  }) =>
+    React.createElement("div", {
+      "data-testid": `handle-${type}-${id ?? "default"}`,
+      "data-handle-id": id ?? "",
+      "data-handle-type": type,
+      "data-top": typeof style?.top === "string" ? style.top : "",
+    }),
   Position: { Left: "left", Right: "right" },
   useConnection: () => ({ inProgress: false }),
+  useUpdateNodeInternals: () => mocks.updateNodeInternals,
   useStore: (selector: (state: { edges: typeof mocks.edges; nodes: typeof mocks.nodes }) => unknown) =>
     selector({ edges: mocks.edges, nodes: mocks.nodes }),
   useReactFlow: () => ({
@@ -231,6 +247,7 @@ describe("PromptNode", () => {
     mocks.createNodeConnectedFromSource.mockClear();
     mocks.generateImage.mockClear();
     mocks.generateUploadUrl.mockClear();
+    mocks.updateNodeInternals.mockClear();
     mocks.renderFullWithWorkerFallback.mockClear();
     mocks.getEdges.mockClear();
     mocks.getNode.mockClear();
@@ -264,6 +281,52 @@ describe("PromptNode", () => {
     container = null;
     root = null;
     vi.unstubAllGlobals();
+  });
+
+  it("renders progressive prompt input handles and updates React Flow internals", async () => {
+    mocks.edges = [{ id: "edge-image-1", source: "image-1", target: "prompt-1" }];
+    mocks.nodes = [
+      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "kombiniere die referenz",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const targetHandles = Array.from(
+      container.querySelectorAll('[data-handle-type="target"]'),
+    ).map((element) => ({
+      id: element.getAttribute("data-handle-id"),
+      top: element.getAttribute("data-top"),
+    }));
+
+    expect(targetHandles).toEqual([
+      { id: "image-in", top: "40%" },
+      { id: "image-in-2", top: "60%" },
+    ]);
+    expect(mocks.updateNodeInternals).toHaveBeenCalledWith("prompt-1");
   });
 
   it("propagates selected image model into node creation and generation action", async () => {

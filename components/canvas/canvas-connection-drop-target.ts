@@ -6,6 +6,7 @@
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
+import { resolveNextRepeatingInputHandleId } from "@/lib/canvas-repeating-input-handles";
 
 import {
   resolveCanvasMagnetTarget,
@@ -77,6 +78,27 @@ function getCompareBodyDropTargetHandle(args: {
   if (!leftTaken) return "left";
   if (!rightTaken) return "right";
   return point.y < midY ? "left" : "right";
+}
+
+function getRepeatingBodyDropTargetHandle(args: {
+  sourceNode: RFNode | undefined;
+  targetNode: RFNode;
+  edges: RFEdge[];
+  nodes: RFNode[];
+}): string | null | undefined {
+  if (!args.sourceNode) {
+    return undefined;
+  }
+
+  return resolveNextRepeatingInputHandleId({
+    sourceType: args.sourceNode.type ?? "",
+    targetType: args.targetNode.type ?? "",
+    targetNodeId: args.targetNode.id,
+    edges: args.edges,
+    nodeTypeById: new Map(
+      args.nodes.map((node) => [node.id, node.type ?? ""] as const),
+    ),
+  });
 }
 
 export function toDroppedConnectionFromMagnetTarget(
@@ -157,6 +179,20 @@ export function resolveDroppedConnectionTarget(args: {
       return null;
     }
 
+    const sourceNode =
+      args.fromHandleType === "source"
+        ? args.nodes.find((node) => node.id === args.fromNodeId)
+        : undefined;
+    const repeatingTargetHandle =
+      args.fromHandleType === "source"
+        ? getRepeatingBodyDropTargetHandle({
+            sourceNode,
+            targetNode,
+            edges: args.edges,
+            nodes: args.nodes,
+          })
+        : undefined;
+
     const droppedConnection =
       args.fromHandleType === "source"
         ? {
@@ -164,14 +200,15 @@ export function resolveDroppedConnectionTarget(args: {
             targetNodeId,
             sourceHandle: args.fromHandleId,
             targetHandle:
-              targetNode.type === "compare"
+              repeatingTargetHandle ??
+              (targetNode.type === "compare"
                 ? getCompareBodyDropTargetHandle({
                     point: args.point,
                     nodeElement,
                     targetNodeId,
                     edges: args.edges,
                   })
-                : handles?.target,
+                : handles?.target),
           }
         : {
             sourceNodeId: targetNodeId,

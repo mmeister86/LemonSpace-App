@@ -41,6 +41,7 @@ describe("canvas flow reconciliation helpers", () => {
         id: "optimistic_edge_req-1",
         source: "node-source",
         target: "node-real",
+        targetHandle: "image-in",
       },
     ]);
     expect(result.inferredRealIdByClientRequest).toEqual(
@@ -78,6 +79,7 @@ describe("canvas flow reconciliation helpers", () => {
         id: "optimistic_edge_req-2",
         source: "node-real",
         target: "node-target",
+        targetHandle: "image-in",
       },
     ]);
   });
@@ -119,6 +121,93 @@ describe("canvas flow reconciliation helpers", () => {
       source: "node-real",
       target: "node-target",
     });
+  });
+
+  it("maps legacy prompt input edges onto compact display handles during reconciliation", () => {
+    const result = reconcileCanvasFlowEdges({
+      previousEdges: [],
+      convexEdges: [
+        {
+          _id: asEdgeId("edge-1"),
+          sourceNodeId: asNodeId("image-1"),
+          targetNodeId: asNodeId("prompt-1"),
+          sourceHandle: undefined,
+          targetHandle: undefined,
+        },
+        {
+          _id: asEdgeId("edge-2"),
+          sourceNodeId: asNodeId("image-2"),
+          targetNodeId: asNodeId("prompt-1"),
+          sourceHandle: undefined,
+          targetHandle: "image-in",
+        },
+        {
+          _id: asEdgeId("edge-3"),
+          sourceNodeId: asNodeId("text-1"),
+          targetNodeId: asNodeId("prompt-1"),
+          sourceHandle: undefined,
+          targetHandle: "image-in",
+        },
+      ],
+      convexNodes: [
+        { _id: asNodeId("image-1"), type: "image" },
+        { _id: asNodeId("image-2"), type: "image" },
+        { _id: asNodeId("text-1"), type: "text" },
+        { _id: asNodeId("prompt-1"), type: "prompt" },
+      ],
+      previousConvexNodeIdsSnapshot: new Set(["image-1", "image-2", "text-1", "prompt-1"]),
+      pendingRemovedEdgeIds: new Set(),
+      pendingConnectionCreateIds: new Set(),
+      resolvedRealIdByClientRequest: new Map(),
+      localNodeIds: new Set(),
+      isAnyNodeDragging: false,
+      colorMode: "light",
+    });
+
+    expect(result.edges.map((edge) => edge.targetHandle)).toEqual([
+      "image-in",
+      "image-in-2",
+      "image-in-3",
+    ]);
+  });
+
+  it("maps legacy agent input edges onto compact display handles during reconciliation", () => {
+    const result = reconcileCanvasFlowEdges({
+      previousEdges: [],
+      convexEdges: [
+        {
+          _id: asEdgeId("edge-1"),
+          sourceNodeId: asNodeId("text-1"),
+          targetNodeId: asNodeId("agent-1"),
+          sourceHandle: undefined,
+          targetHandle: undefined,
+        },
+        {
+          _id: asEdgeId("edge-2"),
+          sourceNodeId: asNodeId("image-1"),
+          targetNodeId: asNodeId("agent-1"),
+          sourceHandle: undefined,
+          targetHandle: "agent-in",
+        },
+      ],
+      convexNodes: [
+        { _id: asNodeId("text-1"), type: "text" },
+        { _id: asNodeId("image-1"), type: "image" },
+        { _id: asNodeId("agent-1"), type: "agent" },
+      ],
+      previousConvexNodeIdsSnapshot: new Set(["text-1", "image-1", "agent-1"]),
+      pendingRemovedEdgeIds: new Set(),
+      pendingConnectionCreateIds: new Set(),
+      resolvedRealIdByClientRequest: new Map(),
+      localNodeIds: new Set(),
+      isAnyNodeDragging: false,
+      colorMode: "light",
+    });
+
+    expect(result.edges.map((edge) => edge.targetHandle)).toEqual([
+      "agent-in",
+      "agent-in-2",
+    ]);
   });
 
   it("preserves temp edges while filtering pending removed convex edges", () => {

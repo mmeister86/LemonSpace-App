@@ -5,7 +5,20 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const handleCalls: Array<{ type: string; id?: string }> = [];
+const handleCalls: Array<{
+  type: string;
+  id?: string;
+  top?: string;
+  isConnectable?: boolean;
+}> = [];
+const updateNodeInternalsMock = vi.fn();
+const reactFlowStoreMock: {
+  nodes: Array<{ id: string; type?: string; data?: unknown; position?: { x: number; y: number } }>;
+  edges: Array<{ id: string; source: string; target: string; targetHandle?: string }>;
+} = {
+  nodes: [],
+  edges: [],
+};
 const getAgentTemplateMock = vi.fn((id: string) => {
   if (id === "future-agent") {
     return {
@@ -52,15 +65,30 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
-  Handle: ({ type, id }: { type: string; id?: string }) => {
-    handleCalls.push({ type, id });
+  Handle: ({
+    type,
+    id,
+    style,
+    isConnectable,
+  }: {
+    type: string;
+    id?: string;
+    style?: { top?: string };
+    isConnectable?: boolean;
+  }) => {
+    handleCalls.push({ type, id, top: style?.top, isConnectable });
     return React.createElement("div", {
       "data-handle-type": type,
       "data-handle-id": id,
+      "data-handle-top": style?.top,
+      "data-handle-connectable": String(isConnectable),
     });
   },
   Position: { Left: "left", Right: "right" },
   useConnection: () => ({ inProgress: false }),
+  useStore: <T,>(selector: (store: typeof reactFlowStoreMock) => T) =>
+    selector(reactFlowStoreMock),
+  useUpdateNodeInternals: () => updateNodeInternalsMock,
 }));
 
 const translations: Record<string, string> = {
@@ -113,6 +141,9 @@ describe("AgentNode", () => {
   beforeEach(() => {
     handleCalls.length = 0;
     getAgentTemplateMock.mockClear();
+    updateNodeInternalsMock.mockClear();
+    reactFlowStoreMock.nodes = [];
+    reactFlowStoreMock.edges = [];
   });
 
   afterEach(() => {
@@ -160,6 +191,73 @@ describe("AgentNode", () => {
     expect(container.textContent).toContain("Template reference");
     expect(handleCalls.filter((call) => call.type === "target")).toHaveLength(1);
     expect(handleCalls.filter((call) => call.type === "source")).toHaveLength(1);
+  });
+
+  it("renders progressive input handles for connected agent context", async () => {
+    reactFlowStoreMock.nodes = [
+      {
+        id: "agent-1",
+        type: "agent",
+        data: {},
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "text-1",
+        type: "text",
+        data: {},
+        position: { x: -240, y: 0 },
+      },
+    ];
+    reactFlowStoreMock.edges = [
+      {
+        id: "edge-1",
+        source: "text-1",
+        target: "agent-1",
+        targetHandle: "agent-in",
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AgentNode, {
+          id: "agent-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "agent",
+          data: {
+            templateId: "instagram-post-agent",
+            _status: "idle",
+          } as Record<string, unknown>,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const targetHandles = handleCalls.filter((call) => call.type === "target");
+    expect(targetHandles).toEqual([
+      {
+        type: "target",
+        id: "agent-in",
+        top: "40%",
+        isConnectable: false,
+      },
+      {
+        type: "target",
+        id: "agent-in-2",
+        top: "60%",
+        isConnectable: true,
+      },
+    ]);
+    expect(updateNodeInternalsMock).toHaveBeenCalledWith("agent-1");
   });
 
   it("falls back to the default template when templateId is missing or unknown", async () => {

@@ -190,7 +190,7 @@ Regeln für erlaubte Verbindungen zwischen Node-Typen.
   - `ai-video` als Target akzeptiert nur `video-prompt` als Source (`ai-video-source-invalid`)
   - `video-prompt` als Source akzeptiert nur `ai-video` als Target (`video-prompt-target-invalid`)
   - `text → video-prompt` ✅ (Prompt-Quelle, über default-Handles)
-- **Agent-MVP:** `agent` akzeptiert nur Content-/Kontext-Quellen (`agent-source-invalid` bei Prompt/Steuerknoten), ohne eingehendes Kantenlimit
+- **Agent-MVP:** `agent` akzeptiert nur Content-/Kontext-Quellen (`agent-source-invalid` bei Prompt/Steuerknoten), maximal 8 eingehende Kontext-Inputs
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
 ---

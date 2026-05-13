@@ -175,6 +175,96 @@ describe("resolveDroppedConnectionTarget", () => {
     });
   });
 
+  it("uses the next free repeating prompt slot when dropping on a prompt node body", () => {
+    const sourceNode = createNode({
+      id: "image-2",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const existingImageNode = createNode({
+      id: "image-1",
+      type: "image",
+      position: { x: 80, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    const promptElement = makeNodeElement("prompt-1");
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => [promptElement]),
+      configurable: true,
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 340, y: 220 },
+      fromNodeId: "image-2",
+      fromHandleType: "source",
+      nodes: [sourceNode, existingImageNode, promptNode],
+      edges: [
+        createEdge({
+          id: "edge-existing",
+          source: "image-1",
+          target: "prompt-1",
+          targetHandle: "image-in",
+        }),
+      ],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "image-2",
+      targetNodeId: "prompt-1",
+      sourceHandle: undefined,
+      targetHandle: "image-in-2",
+    });
+  });
+
+  it("uses the next free repeating agent slot when dropping on an agent node body", () => {
+    const sourceNode = createNode({
+      id: "text-2",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const existingTextNode = createNode({
+      id: "text-1",
+      type: "text",
+      position: { x: 80, y: 0 },
+    });
+    const agentNode = createNode({
+      id: "agent-1",
+      type: "agent",
+      position: { x: 320, y: 200 },
+    });
+    const agentElement = makeNodeElement("agent-1");
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => [agentElement]),
+      configurable: true,
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 340, y: 220 },
+      fromNodeId: "text-2",
+      fromHandleType: "source",
+      nodes: [sourceNode, existingTextNode, agentNode],
+      edges: [
+        createEdge({
+          id: "edge-existing",
+          source: "text-1",
+          target: "agent-1",
+          targetHandle: "agent-in",
+        }),
+      ],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "text-2",
+      targetNodeId: "agent-1",
+      sourceHandle: undefined,
+      targetHandle: "agent-in-2",
+    });
+  });
+
   it("does not resolve body drops onto non-connectable comment nodes", () => {
     const sourceNode = createNode({
       id: "node-source",
@@ -246,6 +336,269 @@ describe("resolveDroppedConnectionTarget", () => {
       sourceHandle: undefined,
       targetHandle: "left",
     });
+  });
+
+  it("does not magnetize a visual source to a prompt that already has six visual references", () => {
+    const sourceNode = createNode({
+      id: "image-new",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    const existingImageNodes = Array.from({ length: 6 }, (_, index) =>
+      createNode({
+        id: `image-${index + 1}`,
+        type: "image",
+        position: { x: index * 20, y: 0 },
+      }),
+    );
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in-7",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "image-new",
+      fromHandleType: "source",
+      nodes: [sourceNode, promptNode, ...existingImageNodes],
+      edges: existingImageNodes.map((node, index) =>
+        createEdge({
+          id: `edge-${index + 1}`,
+          source: node.id,
+          target: "prompt-1",
+          targetHandle: index === 0 ? "image-in" : `image-in-${index + 1}`,
+        }),
+      ),
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("magnetizes a text source to the remaining prompt slot after six visual references", () => {
+    const sourceNode = createNode({
+      id: "text-1",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    const existingImageNodes = Array.from({ length: 6 }, (_, index) =>
+      createNode({
+        id: `image-${index + 1}`,
+        type: "image",
+        position: { x: index * 20, y: 0 },
+      }),
+    );
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in-7",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "text-1",
+      fromHandleType: "source",
+      nodes: [sourceNode, promptNode, ...existingImageNodes],
+      edges: existingImageNodes.map((node, index) =>
+        createEdge({
+          id: `edge-${index + 1}`,
+          source: node.id,
+          target: "prompt-1",
+          targetHandle: index === 0 ? "image-in" : `image-in-${index + 1}`,
+        }),
+      ),
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "text-1",
+      targetNodeId: "prompt-1",
+      sourceHandle: undefined,
+      targetHandle: "image-in-7",
+    });
+  });
+
+  it("skips an occupied repeating prompt handle and magnetizes to the free slot", () => {
+    const sourceNode = createNode({
+      id: "image-2",
+      type: "image",
+      position: { x: 0, y: 0 },
+    });
+    const existingImageNode = createNode({
+      id: "image-1",
+      type: "image",
+      position: { x: 80, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in-2",
+      rect: { left: 378, top: 252, width: 12, height: 12, right: 390, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "image-2",
+      fromHandleType: "source",
+      nodes: [sourceNode, existingImageNode, promptNode],
+      edges: [
+        createEdge({
+          id: "edge-existing",
+          source: "image-1",
+          target: "prompt-1",
+          targetHandle: "image-in",
+        }),
+      ],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "image-2",
+      targetNodeId: "prompt-1",
+      sourceHandle: undefined,
+      targetHandle: "image-in-2",
+    });
+  });
+
+  it("skips an occupied repeating agent handle and magnetizes to the free slot", () => {
+    const sourceNode = createNode({
+      id: "text-2",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const existingTextNode = createNode({
+      id: "text-1",
+      type: "text",
+      position: { x: 80, y: 0 },
+    });
+    const agentNode = createNode({
+      id: "agent-1",
+      type: "agent",
+      position: { x: 320, y: 200 },
+    });
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "agent-1",
+      handleType: "target",
+      handleId: "agent-in",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+    makeHandleElement({
+      nodeId: "agent-1",
+      handleType: "target",
+      handleId: "agent-in-2",
+      rect: { left: 378, top: 252, width: 12, height: 12, right: 390, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "text-2",
+      fromHandleType: "source",
+      nodes: [sourceNode, existingTextNode, agentNode],
+      edges: [
+        createEdge({
+          id: "edge-existing",
+          source: "text-1",
+          target: "agent-1",
+          targetHandle: "agent-in",
+        }),
+      ],
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "text-2",
+      targetNodeId: "agent-1",
+      sourceHandle: undefined,
+      targetHandle: "agent-in-2",
+    });
+  });
+
+  it("does not magnetize to an agent node that already has eight context inputs", () => {
+    const sourceNode = createNode({
+      id: "text-new",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const agentNode = createNode({
+      id: "agent-1",
+      type: "agent",
+      position: { x: 320, y: 200 },
+    });
+    const existingTextNodes = Array.from({ length: 8 }, (_, index) =>
+      createNode({
+        id: `text-${index + 1}`,
+        type: "text",
+        position: { x: index * 20, y: 0 },
+      }),
+    );
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "agent-1",
+      handleType: "target",
+      handleId: "agent-in-8",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "text-new",
+      fromHandleType: "source",
+      nodes: [sourceNode, agentNode, ...existingTextNodes],
+      edges: existingTextNodes.map((node, index) =>
+        createEdge({
+          id: `edge-${index + 1}`,
+          source: node.id,
+          target: "agent-1",
+          targetHandle: index === 0 ? "agent-in" : `agent-in-${index + 1}`,
+        }),
+      ),
+    });
+
+    expect(result).toBeNull();
   });
 
   it("skips a closer invalid handle and picks the nearest valid handle", () => {
