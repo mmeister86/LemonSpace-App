@@ -69,6 +69,15 @@ const CORNERS = [
   "bottom-right",
 ] as const;
 
+function FavoriteNodeBacklight() {
+  return (
+    <div
+      data-testid="canvas-favorite-node-backlight"
+      className="absolute -inset-6 rounded-[inherit] bg-primary/20 opacity-80 blur-2xl dark:bg-primary/25"
+    />
+  );
+}
+
 /** Internal fields to strip when duplicating a node */
 const INTERNAL_FIELDS = new Set([
   "_status",
@@ -277,6 +286,7 @@ export default function BaseNodeWrapper({
   const nodeId = useNodeId();
   const { getNode } = useReactFlow();
   const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
+  const favoriteBacklight = isFavorite ? (backlight ?? <FavoriteNodeBacklight />) : undefined;
 
   const statusStyles: Record<string, string> = {
     idle: "",
@@ -293,7 +303,6 @@ export default function BaseNodeWrapper({
       className={`
         h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
-        ${isFavorite ? "node-favorite-chrome" : ""}
         ${statusStyles[status] ?? ""}
         ${className}
       `}
@@ -362,19 +371,19 @@ export default function BaseNodeWrapper({
     </div>
   );
 
-  if (!backlight) {
-    return nodeChrome;
-  }
-
   return (
     <div className="relative h-full w-full overflow-visible">
-      <div
-        data-testid="canvas-node-backlight"
-        className="pointer-events-none absolute inset-0 z-0 overflow-visible rounded-xl"
-      >
-        {backlight}
+      <div data-testid="canvas-node-content" className="relative z-10 h-full w-full">
+        {nodeChrome}
       </div>
-      <div className="relative z-10 h-full w-full">{nodeChrome}</div>
+      {favoriteBacklight ? (
+        <div
+          data-testid="canvas-node-backlight"
+          className="pointer-events-none absolute inset-0 z-0 overflow-visible rounded-xl"
+        >
+          {favoriteBacklight}
+        </div>
+      ) : null}
     </div>
   );
 }

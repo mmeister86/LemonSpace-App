@@ -27,13 +27,11 @@ vi.mock("@/components/canvas/canvas-sync-context", () => ({
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({
     children,
-    backlight,
   }: {
     children: React.ReactNode;
     backlight?: React.ReactNode;
   }) => (
     <div>
-      {backlight}
       <div>{children}</div>
     </div>
   ),
@@ -134,7 +132,7 @@ describe("ImageNode", () => {
     const image = images.at(-1);
     expect(image).toBeTruthy();
     expect(image?.getAttribute("src")).toBe("https://cdn.example.com/photo.png");
-    expect(container?.querySelector('[data-testid="canvas-media-backlight"] img')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="canvas-media-backlight"]')).toBeNull();
     expect(container?.textContent).not.toContain("Bild wird geladen…");
   });
 

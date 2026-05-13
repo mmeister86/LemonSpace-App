@@ -125,14 +125,16 @@ describe("BaseNodeWrapper", () => {
     expect(container?.querySelector('button[title="Delete"]')).toBeTruthy();
   });
 
-  it("applies favorite chrome marker on favorite nodes", async () => {
+  it("replaces the old favorite chrome marker with a backlight layer", async () => {
     await renderWrapper({ label: "Frame", isFavorite: true }, true);
 
     const rootElement = container?.firstElementChild;
-    expect(rootElement?.className).toContain("node-favorite-chrome");
+    expect(rootElement?.className).not.toContain("node-favorite-chrome");
+    expect(container?.querySelector('[data-testid="canvas-node-backlight"]')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="canvas-favorite-node-backlight"]')).toBeTruthy();
   });
 
-  it("renders optional backlight behind the node chrome", async () => {
+  it("renders media backlight behind the node chrome only for favorite nodes", async () => {
     mocks.getNode.mockReturnValue({
       id: "node-1",
       type: "image",
@@ -153,10 +155,81 @@ describe("BaseNodeWrapper", () => {
       );
     });
 
+    expect(container?.querySelector('[data-testid="canvas-node-backlight"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="backlight-fixture"]')).toBeNull();
+
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "image",
+      data: { isFavorite: true },
+      position: { x: 0, y: 0 },
+      style: {},
+    });
+
+    await act(async () => {
+      root?.render(
+        <BaseNodeWrapper
+          nodeType="image"
+          selected={false}
+          backlight={<div data-testid="backlight-fixture" />}
+        >
+          <div>Inner node content</div>
+        </BaseNodeWrapper>,
+      );
+    });
+
     const backlightLayer = container?.querySelector('[data-testid="canvas-node-backlight"]');
+    const contentLayer = container?.querySelector('[data-testid="canvas-node-content"]');
     expect(backlightLayer).toBeTruthy();
     expect(backlightLayer?.className).toContain("z-0");
     expect(backlightLayer?.querySelector('[data-testid="backlight-fixture"]')).toBeTruthy();
-    expect(backlightLayer?.nextElementSibling?.className).toContain("z-10");
+    expect(contentLayer?.className).toContain("z-10");
+  });
+
+  it("does not render a backlight for non-favorite non-media nodes", async () => {
+    await renderWrapper({ label: "Frame" }, true);
+
+    expect(container?.querySelector('[data-testid="canvas-node-backlight"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="canvas-favorite-node-backlight"]')).toBeNull();
+  });
+
+  it("keeps node content mounted when favorite state adds a backlight", async () => {
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "render",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: {},
+    });
+
+    await act(async () => {
+      root?.render(
+        <BaseNodeWrapper nodeType="render" selected={false}>
+          <canvas data-testid="stable-preview-canvas" />
+        </BaseNodeWrapper>,
+      );
+    });
+
+    const initialCanvas = container?.querySelector('[data-testid="stable-preview-canvas"]');
+    expect(initialCanvas).toBeTruthy();
+
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "render",
+      data: { isFavorite: true },
+      position: { x: 0, y: 0 },
+      style: {},
+    });
+
+    await act(async () => {
+      root?.render(
+        <BaseNodeWrapper nodeType="render" selected={false}>
+          <canvas data-testid="stable-preview-canvas" />
+        </BaseNodeWrapper>,
+      );
+    });
+
+    expect(container?.querySelector('[data-testid="canvas-node-backlight"]')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="stable-preview-canvas"]')).toBe(initialCanvas);
   });
 });

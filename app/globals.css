@@ -391,20 +391,4 @@
     }
   }
 
-  .node-favorite-chrome {
-    position: relative;
-    isolation: isolate;
-  }
-
-  .node-favorite-chrome::after {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    pointer-events: none;
-    box-shadow:
-      0 0 0 1px var(--node-favorite-ring),
-      0 0 0 3px var(--node-favorite-fill),
-      0 0 22px -8px var(--node-favorite-glow);
-  }
 }
