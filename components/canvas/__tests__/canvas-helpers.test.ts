@@ -340,6 +340,75 @@ describe("canvas preview graph helpers", () => {
       },
     ]);
   });
+
+  it("uses local crop overrides when resolving downstream render preview steps", () => {
+    const persistedCrop = {
+      crop: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      },
+      resize: {
+        mode: "source",
+        fit: "cover",
+        keepAspect: true,
+      },
+    };
+    const localCrop = {
+      crop: {
+        x: 0.25,
+        y: 0.1,
+        width: 0.5,
+        height: 0.6,
+      },
+      resize: {
+        mode: "source",
+        fit: "cover",
+        keepAspect: true,
+      },
+    };
+
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "crop-1",
+          type: "crop",
+          data: persistedCrop,
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-1", target: "crop-1" },
+        { source: "crop-1", target: "render-1" },
+      ],
+      {
+        nodeDataOverrides: new Map([["crop-1", localCrop]]),
+      },
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.steps).toEqual([
+      {
+        nodeId: "crop-1",
+        type: "crop",
+        params: localCrop,
+      },
+    ]);
+  });
 });
 
 describe("getSingleCharacterHotkey", () => {

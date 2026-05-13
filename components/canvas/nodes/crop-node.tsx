@@ -240,30 +240,29 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
     [graph, id],
   );
 
-  const steps = useMemo(() => {
+  const inputPreviewSteps = useMemo(() => {
     const collected = collectPipelineFromGraph(graph, {
       nodeId: id,
       isPipelineNode: (node) => PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
     });
 
-    return collected.map((step) => {
-      if (step.nodeId === id && step.type === "crop") {
-        return {
-          ...step,
-          params: localData,
-        };
-      }
-      return step;
-    });
-  }, [graph, id, localData]);
+    const activeCropIndex = collected.findIndex(
+      (step) => step.nodeId === id && step.type === "crop",
+    );
 
-  const previewDebounceMs = shouldFastPathPreviewPipeline(steps, graph.previewNodeDataOverrides)
+    return activeCropIndex >= 0 ? collected.slice(0, activeCropIndex) : collected;
+  }, [graph, id]);
+
+  const previewDebounceMs = shouldFastPathPreviewPipeline(
+    inputPreviewSteps,
+    graph.previewNodeDataOverrides,
+  )
     ? 16
     : undefined;
 
   const { canvasRef, hasSource, isRendering, previewAspectRatio, error } = usePipelinePreview({
     sourceUrl,
-    steps,
+    steps: inputPreviewSteps,
     nodeWidth: Math.max(250, Math.round(width ?? 300)),
     includeHistogram: false,
     debounceMs: previewDebounceMs,
