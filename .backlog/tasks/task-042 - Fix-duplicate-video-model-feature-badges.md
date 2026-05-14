@@ -1,10 +1,10 @@
 ---
 id: TASK-042
 title: Fix duplicate video model feature badges
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-03 14:35'
-updated_date: '2026-05-03 14:36'
+updated_date: '2026-05-14 19:28'
 labels:
   - bug
   - canvas
@@ -45,3 +45,9 @@ Added a regression in tests/lib/canvas-ai-model-selector.test.ts and verified re
 
 Verification: npm test -- tests/lib/canvas-ai-model-selector.test.ts passed 5/5. npm run lint exited 0 with 4 pre-existing warnings in unrelated files.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User confirmed completion. Acceptance criteria were already checked; targeted regression for duplicate-free video model feature badges passed, and lint had only unrelated pre-existing warnings.
+<!-- SECTION:FINAL_SUMMARY:END -->
