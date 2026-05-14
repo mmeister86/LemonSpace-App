@@ -20,6 +20,9 @@ const nodeTypeById = new Map<string, string>([
   ["image-8", "image"],
   ["image-9", "image"],
   ["text-1", "text"],
+  ["text-2", "text"],
+  ["text-3", "text"],
+  ["text-4", "text"],
   ["prompt-source", "prompt"],
 ]);
 
@@ -79,7 +82,7 @@ describe("canvas repeating input handles", () => {
     ]);
   });
 
-  it("omits the free prompt handle once six visual references and one text input are connected", () => {
+  it("omits the free prompt handle once six visual references and three text inputs are connected", () => {
     const edges = [
       "image-1",
       "image-2",
@@ -88,6 +91,8 @@ describe("canvas repeating input handles", () => {
       "image-5",
       "image-6",
       "text-1",
+      "text-2",
+      "text-3",
     ].map((source, index) => ({
       id: `edge-${index + 1}`,
       source,
@@ -102,7 +107,7 @@ describe("canvas repeating input handles", () => {
       nodeTypeById,
     });
 
-    expect(handles).toHaveLength(7);
+    expect(handles).toHaveLength(9);
     expect(handles.every((handle) => handle.isOccupied)).toBe(true);
     expect(handles.map((handle) => handle.handleId)).toEqual([
       "image-in",
@@ -112,6 +117,8 @@ describe("canvas repeating input handles", () => {
       "image-in-5",
       "image-in-6",
       "image-in-7",
+      "image-in-8",
+      "image-in-9",
     ]);
   });
 
@@ -177,6 +184,35 @@ describe("canvas repeating input handles", () => {
         nodeTypeById,
       }),
     ).toBe("image-in-7");
+
+    const visualAndTextEdges = [
+      ...visualEdges,
+      { id: "edge-text-1", source: "text-1", target: "prompt-1", targetHandle: "image-in-7" },
+      { id: "edge-text-2", source: "text-2", target: "prompt-1", targetHandle: "image-in-8" },
+    ];
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "text",
+        targetType: "prompt",
+        targetNodeId: "prompt-1",
+        edges: visualAndTextEdges,
+        nodeTypeById,
+      }),
+    ).toBe("image-in-9");
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "ai-text-output",
+        targetType: "prompt",
+        targetNodeId: "prompt-1",
+        edges: [
+          ...visualAndTextEdges,
+          { id: "edge-text-3", source: "text-3", target: "prompt-1", targetHandle: "image-in-9" },
+        ],
+        nodeTypeById,
+      }),
+    ).toBeNull();
   });
 
   it("starts agent nodes with a single free centered input handle", () => {

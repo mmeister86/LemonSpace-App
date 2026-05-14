@@ -45,13 +45,14 @@ describe("canvas connection policy", () => {
     }
   });
 
-  it("allows one text source into prompt nodes", () => {
+  it("allows up to three text sources into prompt nodes", () => {
     for (const sourceType of ["text", "ai-text-output"]) {
       expect(
         validateCanvasConnectionPolicy({
           sourceType,
           targetType: "prompt",
-          targetIncomingCount: 0,
+          targetIncomingCount: 2,
+          targetIncomingSourceTypes: ["text", "ai-text-output"],
         }),
       ).toBeNull();
     }
@@ -68,15 +69,21 @@ describe("canvas connection policy", () => {
     ).toBe("prompt-visual-incoming-limit");
   });
 
-  it("blocks a second text source into prompt nodes", () => {
+  it("blocks a fourth text source into prompt nodes", () => {
     expect(
       validateCanvasConnectionPolicy({
         sourceType: "ai-text-output",
         targetType: "prompt",
-        targetIncomingCount: 1,
-        targetIncomingSourceTypes: ["text"],
+        targetIncomingCount: 3,
+        targetIncomingSourceTypes: ["text", "ai-text-output", "text"],
       }),
     ).toBe("prompt-text-incoming-limit");
+  });
+
+  it("describes the prompt text source limit", () => {
+    expect(
+      getCanvasConnectionValidationMessage("prompt-text-incoming-limit"),
+    ).toBe("KI-Bild erlaubt maximal 3 Text-Quellen.");
   });
 
   it("blocks unsupported inputs into prompt nodes", () => {

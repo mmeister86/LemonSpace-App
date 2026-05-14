@@ -52,6 +52,7 @@ import { toast } from "@/lib/toast";
 import { classifyError } from "@/lib/ai-errors";
 import { normalizePublicTier } from "@/lib/tier-credits";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { MAX_PROMPT_TEXT_INPUTS } from "@/lib/canvas-connection-policy";
 import {
   isAiImageReferenceSourceType,
   MAX_AI_IMAGE_REFERENCES,
@@ -151,6 +152,12 @@ type PromptSourceNode = {
   position?: { x?: number; y?: number };
 };
 
+type PromptTextInput = {
+  sourceNodeId: string;
+  label: string;
+  text: string;
+};
+
 function comparePromptSourceNodes(left: PromptSourceNode, right: PromptSourceNode): number {
   const leftY = typeof left.position?.y === "number" ? left.position.y : 0;
   const rightY = typeof right.position?.y === "number" ? right.position.y : 0;
@@ -161,6 +168,20 @@ function comparePromptSourceNodes(left: PromptSourceNode, right: PromptSourceNod
   if (leftX !== rightX) return leftX - rightX;
 
   return left.id.localeCompare(right.id);
+}
+
+function buildConnectedTextPrompt(textInputs: readonly PromptTextInput[]): string {
+  const nonEmptyInputs = textInputs
+    .map((input) => input.text.trim())
+    .filter((text) => text.length > 0);
+
+  if (nonEmptyInputs.length <= 1) {
+    return nonEmptyInputs[0] ?? "";
+  }
+
+  return nonEmptyInputs
+    .map((text, index) => [`Text ${index + 1}:`, text].join("\n"))
+    .join("\n\n");
 }
 
 export default function PromptNode({
@@ -206,8 +227,7 @@ export default function PromptNode({
 
   const inputMeta = useMemo(() => {
     const incomingEdges = edges.filter((edge) => edge.target === id);
-    let textPrompt: string | undefined;
-    let hasTextInput = false;
+    const textSourceNodes: PromptSourceNode[] = [];
     const visualSourceNodes: PromptSourceNode[] = [];
 
     for (const edge of incomingEdges) {
@@ -222,17 +242,22 @@ export default function PromptNode({
 
       if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") continue;
 
-      hasTextInput = true;
-      const textValue = getSourceTextValue(sourceNode);
-      if (textValue.trim().length > 0) {
-        textPrompt = textValue;
-        break;
-      }
+      textSourceNodes.push(sourceNode);
     }
 
+    const textInputs = textSourceNodes
+      .sort(comparePromptSourceNodes)
+      .slice(0, MAX_PROMPT_TEXT_INPUTS)
+      .map((node, index) => ({
+        sourceNodeId: node.id,
+        label: `Text ${index + 1}`,
+        text: getSourceTextValue(node),
+      }));
+
     return {
-      hasTextInput,
-      textPrompt: textPrompt ?? "",
+      hasTextInput: textInputs.length > 0,
+      textInputs,
+      textPrompt: buildConnectedTextPrompt(textInputs),
       visualReferences: visualSourceNodes
         .sort(comparePromptSourceNodes)
         .slice(0, MAX_AI_IMAGE_REFERENCES)
@@ -372,16 +397,13 @@ export default function PromptNode({
 
       const currentEdges = getEdges();
       const incomingEdges = currentEdges.filter((e) => e.target === id);
-      let connectedTextPrompt: string | undefined;
+      const textSourceNodes: PromptSourceNode[] = [];
       const visualSourceNodes: PromptSourceNode[] = [];
 
       for (const edge of incomingEdges) {
         const sourceNode = getNode(edge.source) as PromptSourceNode | undefined;
         if (sourceNode?.type === "text" || sourceNode?.type === "ai-text-output") {
-          const textValue = getSourceTextValue(sourceNode);
-          if (textValue.trim().length > 0) {
-            connectedTextPrompt = textValue;
-          }
+          textSourceNodes.push(sourceNode);
         }
         if (sourceNode?.type && isAiImageReferenceSourceType(sourceNode.type)) {
           visualSourceNodes.push(sourceNode);
@@ -420,7 +442,17 @@ export default function PromptNode({
         }
       }
 
-      const promptToUse = (connectedTextPrompt ?? prompt).trim();
+      const connectedTextPrompt = buildConnectedTextPrompt(
+        textSourceNodes
+          .sort(comparePromptSourceNodes)
+          .slice(0, MAX_PROMPT_TEXT_INPUTS)
+          .map((node, index) => ({
+            sourceNodeId: node.id,
+            label: `Text ${index + 1}`,
+            text: getSourceTextValue(node),
+          })),
+      );
+      const promptToUse = (textSourceNodes.length > 0 ? connectedTextPrompt : prompt).trim();
       if (!promptToUse) return;
 
       const currentNode = getNode(id);
@@ -538,11 +570,20 @@ export default function PromptNode({
         {inputMeta.hasTextInput ? (
           <div className="flex-1 overflow-auto rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
             <p className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
-              Prompt aus verbundener Text-Node
+              Prompt aus verbundenen Text-Nodes
             </p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
-              {inputMeta.textPrompt.trim() || "(Verbundene Text-Node ist leer)"}
-            </p>
+            <div className="mt-1 space-y-2">
+              {inputMeta.textInputs.map((input) => (
+                <div key={input.sourceNodeId}>
+                  <p className="text-[10px] font-medium uppercase text-violet-700/80 dark:text-violet-300/80">
+                    {input.label}
+                  </p>
+                  <p className="whitespace-pre-wrap text-sm text-foreground">
+                    {input.text.trim() || "(Verbundene Text-Node ist leer)"}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <textarea

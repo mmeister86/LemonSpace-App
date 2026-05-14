@@ -90,6 +90,7 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
 ]);
 
 export const MAX_AGENT_CONTEXT_INPUTS = 8;
+export const MAX_PROMPT_TEXT_INPUTS = 3;
 
 export function isAgentContextSourceType(sourceType: string): boolean {
   return AGENT_ALLOWED_SOURCE_TYPES.has(sourceType);
@@ -193,11 +194,13 @@ export function validateCanvasConnectionPolicy(args: {
       }
     }
 
-    if (
-      isTextSource &&
-      incomingSourceTypes.some((type) => PROMPT_TEXT_SOURCE_TYPES.has(type))
-    ) {
-      return "prompt-text-incoming-limit";
+    if (isTextSource) {
+      const textIncomingCount = incomingSourceTypes.filter((type) =>
+        PROMPT_TEXT_SOURCE_TYPES.has(type),
+      ).length;
+      if (textIncomingCount >= MAX_PROMPT_TEXT_INPUTS) {
+        return "prompt-text-incoming-limit";
+      }
     }
 
     return null;
@@ -357,7 +360,7 @@ export function getCanvasConnectionValidationMessage(
     case "prompt-visual-incoming-limit":
       return `KI-Bild erlaubt maximal ${MAX_AI_IMAGE_REFERENCES} visuelle Referenzen.`;
     case "prompt-text-incoming-limit":
-      return "KI-Bild erlaubt nur eine Text-Quelle.";
+      return `KI-Bild erlaubt maximal ${MAX_PROMPT_TEXT_INPUTS} Text-Quellen.`;
     case "ai-video-source-invalid":
       return "KI-Video-Ausgabe akzeptiert nur Eingaben von KI-Video.";
     case "video-prompt-target-invalid":

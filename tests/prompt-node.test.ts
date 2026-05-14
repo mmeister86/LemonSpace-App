@@ -663,6 +663,98 @@ describe("PromptNode", () => {
     );
   });
 
+  it("combines up to three connected text sources in canvas order", async () => {
+    mocks.edges = [
+      { source: "image-1", target: "prompt-1" },
+      { source: "text-style", target: "prompt-1" },
+      { source: "ai-system", target: "prompt-1" },
+      { source: "text-main", target: "prompt-1" },
+    ];
+    mocks.nodes = [
+      { id: "image-1", type: "image", data: { storageId: "storage-image-1" } },
+      {
+        id: "text-main",
+        type: "text",
+        position: { x: 0, y: 0 },
+        data: { content: "Prompt: Zitronenlimonade im Glas" },
+      },
+      {
+        id: "text-style",
+        type: "text",
+        position: { x: 240, y: 0 },
+        data: { content: "Styleguide: hell, editorial, klare Schatten" },
+      },
+      {
+        id: "ai-system",
+        type: "ai-text-output",
+        position: { x: 0, y: 160 },
+        data: { outputText: "System: Keine Logos erfinden" },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(PromptNode, {
+          id: "prompt-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "prompt",
+          data: {
+            prompt: "lokaler prompt",
+            aspectRatio: "1:1",
+            canvasId: "canvas-1",
+          },
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("Bild generieren"),
+    );
+
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: [
+          "Text 1:",
+          "Prompt: Zitronenlimonade im Glas",
+          "",
+          "Text 2:",
+          "Styleguide: hell, editorial, klare Schatten",
+          "",
+          "Text 3:",
+          "System: Keine Logos erfinden",
+        ].join("\n"),
+        referenceImages: [
+          expect.objectContaining({
+            sourceNodeId: "image-1",
+            storageId: "storage-image-1",
+          }),
+        ],
+      }),
+    );
+    expect(container.textContent).toContain("Text 1");
+    expect(container.textContent).toContain("Text 3");
+    expect(container.textContent).toContain("Prompt: Zitronenlimonade im Glas");
+  });
+
   it("auto-bakes a stale render preview before passing it as a reference", async () => {
     mocks.edges = [
       { source: "source-image", target: "render-1" },

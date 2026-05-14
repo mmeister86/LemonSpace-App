@@ -12,6 +12,7 @@ import {
 import {
   isAgentContextSourceType,
   MAX_AGENT_CONTEXT_INPUTS,
+  MAX_PROMPT_TEXT_INPUTS,
 } from "@/lib/canvas-connection-policy";
 
 export type RepeatingInputEdgeLike = {
@@ -32,7 +33,6 @@ export type RepeatingInputHandleSlot = {
 type NodeTypeLookup = ReadonlyMap<string, string | undefined>;
 
 const PROMPT_REPEATING_INPUT_BASE_HANDLE_ID = "image-in";
-const PROMPT_MAX_TEXT_INPUTS = 1;
 const PROMPT_TEXT_SOURCE_TYPES = new Set(["text", "ai-text-output"]);
 const AGENT_REPEATING_INPUT_BASE_HANDLE_ID = "agent-in";
 
@@ -45,7 +45,7 @@ type RepeatingInputConfig = {
 const PROMPT_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
   nodeType: "prompt",
   baseHandleId: PROMPT_REPEATING_INPUT_BASE_HANDLE_ID,
-  maxSlots: MAX_AI_IMAGE_REFERENCES + PROMPT_MAX_TEXT_INPUTS,
+  maxSlots: MAX_AI_IMAGE_REFERENCES + MAX_PROMPT_TEXT_INPUTS,
 };
 
 const AGENT_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
@@ -154,7 +154,7 @@ function canAcceptAnyPromptInput(
   nodeTypeById: NodeTypeLookup,
 ): boolean {
   const { visualCount, textCount } = countPromptInputs(edges, nodeTypeById);
-  return visualCount < MAX_AI_IMAGE_REFERENCES || textCount < PROMPT_MAX_TEXT_INPUTS;
+  return visualCount < MAX_AI_IMAGE_REFERENCES || textCount < MAX_PROMPT_TEXT_INPUTS;
 }
 
 function canAcceptPromptSourceType(args: {
@@ -167,7 +167,7 @@ function canAcceptPromptSourceType(args: {
     return visualCount < MAX_AI_IMAGE_REFERENCES;
   }
   if (isPromptTextSourceType(args.sourceType)) {
-    return textCount < PROMPT_MAX_TEXT_INPUTS;
+    return textCount < MAX_PROMPT_TEXT_INPUTS;
   }
   return false;
 }

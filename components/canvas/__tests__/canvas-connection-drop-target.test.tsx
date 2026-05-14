@@ -439,6 +439,114 @@ describe("resolveDroppedConnectionTarget", () => {
     });
   });
 
+  it("magnetizes a third text source to the final prompt text slot", () => {
+    const sourceNode = createNode({
+      id: "text-3",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    const existingImageNodes = Array.from({ length: 6 }, (_, index) =>
+      createNode({
+        id: `image-${index + 1}`,
+        type: "image",
+        position: { x: index * 20, y: 0 },
+      }),
+    );
+    const existingTextNodes = ["text-1", "text-2"].map((id, index) =>
+      createNode({
+        id,
+        type: "text",
+        position: { x: index * 20, y: 120 },
+      }),
+    );
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in-9",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "text-3",
+      fromHandleType: "source",
+      nodes: [sourceNode, promptNode, ...existingImageNodes, ...existingTextNodes],
+      edges: [...existingImageNodes, ...existingTextNodes].map((node, index) =>
+        createEdge({
+          id: `edge-${index + 1}`,
+          source: node.id,
+          target: "prompt-1",
+          targetHandle: index === 0 ? "image-in" : `image-in-${index + 1}`,
+        }),
+      ),
+    });
+
+    expect(result).toEqual({
+      sourceNodeId: "text-3",
+      targetNodeId: "prompt-1",
+      sourceHandle: undefined,
+      targetHandle: "image-in-9",
+    });
+  });
+
+  it("does not magnetize a fourth text source to a prompt", () => {
+    const sourceNode = createNode({
+      id: "text-4",
+      type: "text",
+      position: { x: 0, y: 0 },
+    });
+    const promptNode = createNode({
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 320, y: 200 },
+    });
+    const existingTextNodes = ["text-1", "text-2", "text-3"].map((id, index) =>
+      createNode({
+        id,
+        type: "text",
+        position: { x: index * 20, y: 120 },
+      }),
+    );
+    Object.defineProperty(document, "elementsFromPoint", {
+      value: vi.fn(() => []),
+      configurable: true,
+    });
+
+    makeHandleElement({
+      nodeId: "prompt-1",
+      handleType: "target",
+      handleId: "image-in-4",
+      rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
+    });
+
+    const result = resolveDroppedConnectionTarget({
+      point: { x: 364, y: 258 },
+      fromNodeId: "text-4",
+      fromHandleType: "source",
+      nodes: [sourceNode, promptNode, ...existingTextNodes],
+      edges: existingTextNodes.map((node, index) =>
+        createEdge({
+          id: `edge-text-${index + 1}`,
+          source: node.id,
+          target: "prompt-1",
+          targetHandle: index === 0 ? "image-in" : `image-in-${index + 1}`,
+        }),
+      ),
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("skips an occupied repeating prompt handle and magnetizes to the free slot", () => {
     const sourceNode = createNode({
       id: "image-2",
