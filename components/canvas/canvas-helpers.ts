@@ -826,6 +826,29 @@ export function getSingleCharacterHotkey(event: { key?: string; type: string }):
   return event.key.length === 1 ? event.key.toLowerCase() : "";
 }
 
+export function isCanvasSelectAllHotkey(event: {
+  key?: string;
+  type: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  target: EventTarget | null;
+}): boolean {
+  if (!event.metaKey && !event.ctrlKey) return false;
+  if (event.altKey || event.shiftKey) return false;
+  if (isEditableKeyboardTarget(event.target)) return false;
+  return getSingleCharacterHotkey(event) === "a";
+}
+
+export function selectAllCanvasNodes(nodes: RFNode[]): RFNode[] {
+  return nodes.map((node) => (node.selected ? node : { ...node, selected: true }));
+}
+
+export function deselectCanvasEdges(edges: RFEdge[]): RFEdge[] {
+  return edges.map((edge) => (edge.selected ? { ...edge, selected: false } : edge));
+}
+
 export function isEdgeCuttable(edge: RFEdge): boolean {
   if (edge.className === "temp") return false;
   if (isOptimisticEdgeId(edge.id)) return false;

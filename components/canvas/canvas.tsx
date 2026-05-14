@@ -66,7 +66,10 @@ import {
   getMiniMapNodeStrokeColor,
   getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
+  deselectCanvasEdges,
+  isCanvasSelectAllHotkey,
   isEditableKeyboardTarget,
+  selectAllCanvasNodes,
   withResolvedCompareData,
 } from "./canvas-helpers";
 import { useGenerationFailureWarnings } from "./canvas-generation-failures";
@@ -398,6 +401,19 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [canvasHistory]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isCanvasSelectAllHotkey(event)) return;
+
+      event.preventDefault();
+      setNodes(selectAllCanvasNodes);
+      setEdges(deselectCanvasEdges);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [setEdges, setNodes]);
 
   const { flowPanOnDrag, flowSelectionOnDrag } = useMemo(() => {
     const panMiddleRight: number[] = [1, 2];

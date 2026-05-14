@@ -1,10 +1,15 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from "vitest";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import {
   computeEdgeInsertLayout,
   computeEdgeInsertReflowPlan,
+  deselectCanvasEdges,
+  isCanvasSelectAllHotkey,
   getSingleCharacterHotkey,
+  selectAllCanvasNodes,
   withResolvedCompareData,
 } from "../canvas-helpers";
 import {
@@ -426,6 +431,146 @@ describe("getSingleCharacterHotkey", () => {
       eventType: "keydown",
       key: undefined,
     });
+  });
+});
+
+describe("isCanvasSelectAllHotkey", () => {
+  it("recognizes Cmd+A and Ctrl+A outside editable targets", () => {
+    const target = document.createElement("div");
+
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "a",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        target,
+        type: "keydown",
+      }),
+    ).toBe(true);
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "A",
+        metaKey: false,
+        ctrlKey: true,
+        altKey: false,
+        shiftKey: false,
+        target,
+        type: "keydown",
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores modified or non-select-all shortcuts", () => {
+    const target = document.createElement("div");
+
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "a",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: true,
+        shiftKey: false,
+        target,
+        type: "keydown",
+      }),
+    ).toBe(false);
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "a",
+        metaKey: false,
+        ctrlKey: true,
+        altKey: false,
+        shiftKey: true,
+        target,
+        type: "keydown",
+      }),
+    ).toBe(false);
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "b",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        target,
+        type: "keydown",
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores editable targets so native text selection still works", () => {
+    const input = document.createElement("input");
+    const contentEditable = document.createElement("div");
+    contentEditable.setAttribute("contenteditable", "true");
+
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "a",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        target: input,
+        type: "keydown",
+      }),
+    ).toBe(false);
+    expect(
+      isCanvasSelectAllHotkey({
+        key: "a",
+        metaKey: false,
+        ctrlKey: true,
+        altKey: false,
+        shiftKey: false,
+        target: contentEditable,
+        type: "keydown",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("selectAllCanvasNodes", () => {
+  it("marks every node selected while preserving already-selected node references", () => {
+    const alreadySelected = createNode({
+      id: "node-a",
+      selected: true,
+    });
+    const unselected = createNode({
+      id: "node-b",
+      selected: false,
+    });
+
+    const result = selectAllCanvasNodes([alreadySelected, unselected]);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(alreadySelected);
+    expect(result[1]).not.toBe(unselected);
+    expect(result.map((node) => node.selected)).toEqual([true, true]);
+  });
+});
+
+describe("deselectCanvasEdges", () => {
+  it("clears selected edges while preserving unselected edge references", () => {
+    const selectedEdge = createEdge({
+      id: "edge-a",
+      source: "node-a",
+      target: "node-b",
+      selected: true,
+    });
+    const unselectedEdge = createEdge({
+      id: "edge-b",
+      source: "node-b",
+      target: "node-c",
+      selected: false,
+    });
+
+    const result = deselectCanvasEdges([selectedEdge, unselectedEdge]);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).not.toBe(selectedEdge);
+    expect(result[1]).toBe(unselectedEdge);
+    expect(result.map((edge) => edge.selected)).toEqual([false, false]);
   });
 });
 
