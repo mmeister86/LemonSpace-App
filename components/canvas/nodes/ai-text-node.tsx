@@ -41,10 +41,16 @@ import { normalizePublicTier } from "@/lib/tier-credits";
 import { toast } from "@/lib/toast";
 import BaseNodeWrapper from "./base-node-wrapper";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { RepeatingInputHandles } from "@/components/canvas/repeating-input-handles";
 import { Label } from "@/components/ui/label";
 import { CanvasAiModelSelector } from "@/components/canvas/nodes/canvas-ai-model-selector";
 import { AiRunStatusPanel } from "@/components/ui/ai-run-status";
 import { createAiRunEvent, type AiRunEvent, type AiRunPhase } from "@/lib/ai-run-history";
+import { resolveVisibleRepeatingInputHandles } from "@/lib/canvas-repeating-input-handles";
+import {
+  MAX_AI_TEXT_DRAFT_INPUTS,
+  MAX_AI_TEXT_INSTRUCTION_INPUTS,
+} from "@/lib/canvas-connection-policy";
 
 type AiTextNodeData = {
   instruction?: string;
@@ -64,6 +70,20 @@ type AiTextOutputState = {
 type SourceTextNodeData = {
   content?: string;
   outputText?: string;
+};
+
+type SourceTextNode = {
+  id: string;
+  type?: string;
+  data?: unknown;
+  position?: { x?: number; y?: number };
+};
+
+type ConnectedTextInput = {
+  key: string;
+  sourceNodeId: string;
+  label: string;
+  text: string;
 };
 
 export type AiTextNodeType = Node<AiTextNodeData, "ai-text">;
@@ -104,6 +124,53 @@ function getNodeTextContent(node: { type?: string; data?: unknown } | undefined)
   return typeof data.content === "string" ? data.content.trim() : "";
 }
 
+function isInstructionInputHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && handle.startsWith("ai-text-instruction-in");
+}
+
+function isDraftInputHandle(handle: string | null | undefined): boolean {
+  return (
+    handle == null ||
+    handle === "" ||
+    handle === "null" ||
+    (typeof handle === "string" &&
+      handle.startsWith("ai-text-in") &&
+      !isInstructionInputHandle(handle))
+  );
+}
+
+function compareSourceNodes(
+  left: { id: string; position?: { x?: number; y?: number } },
+  right: { id: string; position?: { x?: number; y?: number } },
+): number {
+  const leftY = typeof left.position?.y === "number" ? left.position.y : 0;
+  const rightY = typeof right.position?.y === "number" ? right.position.y : 0;
+  if (leftY !== rightY) return leftY - rightY;
+
+  const leftX = typeof left.position?.x === "number" ? left.position.x : 0;
+  const rightX = typeof right.position?.x === "number" ? right.position.x : 0;
+  if (leftX !== rightX) return leftX - rightX;
+
+  return left.id.localeCompare(right.id);
+}
+
+function buildConnectedRoleText(
+  inputs: readonly ConnectedTextInput[],
+  labelPrefix: string,
+): string {
+  const nonEmptyInputs = inputs
+    .map((input) => input.text.trim())
+    .filter((text) => text.length > 0);
+
+  if (nonEmptyInputs.length <= 1) {
+    return nonEmptyInputs[0] ?? "";
+  }
+
+  return nonEmptyInputs
+    .map((text, index) => [`${labelPrefix} ${index + 1}:`, text].join("\n"))
+    .join("\n\n");
+}
+
 export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeType>) {
   const t = useTranslations("aiTextNode");
   const tToast = useTranslations("toasts");
@@ -121,7 +188,6 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const [inputText, setInputText] = useState(nodeData.inputText ?? "");
   const [modelId, setModelId] = useState(nodeData.modelId ?? DEFAULT_AI_TEXT_MODEL_ID);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isInputEditing, setIsInputEditing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const localStream = useSyncExternalStore(
     (listener) => subscribeToLocalNodeStream(id, listener),
@@ -163,8 +229,8 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
 
   const connectedInputMeta = useMemo(() => {
     const incomingEdges = edges.filter((edge) => edge.target === id);
-    const texts: string[] = [];
-    let sourceCount = 0;
+    const instructionSourceNodes: Array<{ edgeId?: string; node: SourceTextNode }> = [];
+    const draftSourceNodes: Array<{ edgeId?: string; node: SourceTextNode }> = [];
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
@@ -172,29 +238,71 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
         continue;
       }
 
-      sourceCount += 1;
-      const text = getNodeTextContent(sourceNode);
-      if (text) {
-        texts.push(text);
+      if (isInstructionInputHandle(edge.targetHandle)) {
+        instructionSourceNodes.push({ edgeId: edge.id, node: sourceNode });
+        continue;
+      }
+
+      if (isDraftInputHandle(edge.targetHandle)) {
+        draftSourceNodes.push({ edgeId: edge.id, node: sourceNode });
       }
     }
 
+    const instructionInputs = instructionSourceNodes
+      .sort((left, right) => compareSourceNodes(left.node, right.node))
+      .slice(0, MAX_AI_TEXT_INSTRUCTION_INPUTS)
+      .map(({ edgeId, node }, index) => ({
+        key: edgeId ?? `${node.id}:instruction:${index}`,
+        sourceNodeId: node.id,
+        label: `Vorgabe ${index + 1}`,
+        text: getNodeTextContent(node),
+      }));
+    const draftInputs = draftSourceNodes
+      .sort((left, right) => compareSourceNodes(left.node, right.node))
+      .slice(0, MAX_AI_TEXT_DRAFT_INPUTS)
+      .map(({ edgeId, node }, index) => ({
+        key: edgeId ?? `${node.id}:draft:${index}`,
+        sourceNodeId: node.id,
+        label: `Text ${index + 1}`,
+        text: getNodeTextContent(node),
+      }));
+
     return {
-      sourceCount,
-      text: texts.join("\n\n"),
+      instructionInputs,
+      draftInputs,
+      instructionText: buildConnectedRoleText(instructionInputs, "Vorgabe"),
+      draftText: buildConnectedRoleText(draftInputs, "Text"),
     };
   }, [edges, id, nodes]);
 
-  const connectedText = connectedInputMeta.text;
-  const hasConnectedInput = connectedInputMeta.sourceCount > 0;
+  const connectedInstructionText = connectedInputMeta.instructionText;
+  const connectedText = connectedInputMeta.draftText;
+  const hasConnectedInstructionInput = connectedInputMeta.instructionInputs.length > 0;
+  const hasConnectedInput = connectedInputMeta.draftInputs.length > 0;
+  const effectiveInstruction = hasConnectedInstructionInput
+    ? connectedInstructionText
+    : instruction;
+  const effectiveInputText = hasConnectedInput ? connectedText : inputText;
+  const nodeTypeById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node.type ?? ""] as const)),
+    [nodes],
+  );
+  const inputHandles = useMemo(
+    () =>
+      resolveVisibleRepeatingInputHandles({
+        nodeType: "ai-text",
+        nodeId: id,
+        edges,
+        nodeTypeById,
+      }),
+    [edges, id, nodeTypeById],
+  );
   const availableCredits =
     balance !== undefined ? balance.balance - balance.reserved : null;
   const hasEnoughCredits =
     availableCredits === null ? true : availableCredits >= creditCost;
   const hasAnyInput =
-    instruction.trim().length > 0 ||
-    inputText.trim().length > 0 ||
-    connectedText.trim().length > 0;
+    effectiveInstruction.trim().length > 0 || effectiveInputText.trim().length > 0;
 
   const debouncedSave = useDebouncedCallback(
     (nextInstruction: string, nextInputText: string, nextModelId: string) => {
@@ -215,26 +323,6 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     },
     500,
   );
-
-  useEffect(() => {
-    if (!hasConnectedInput || isInputEditing) {
-      return;
-    }
-    if (connectedText === inputText) {
-      return;
-    }
-
-    setInputText(connectedText);
-    debouncedSave(instruction, connectedText, modelId);
-  }, [
-    connectedText,
-    debouncedSave,
-    hasConnectedInput,
-    inputText,
-    instruction,
-    isInputEditing,
-    modelId,
-  ]);
 
   const handleInstructionChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -314,7 +402,8 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     });
 
     try {
-      const effectiveInputText = (inputText.trim() || connectedText.trim()).trim();
+      const instructionToUse = effectiveInstruction.trim();
+      const inputTextToUse = effectiveInputText.trim();
       const currentNode = getNode(id);
       const offsetX = (currentNode?.measured?.width ?? 360) + 32;
       const position = {
@@ -327,8 +416,8 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
         type: "ai-text-output",
         position,
         data: {
-          instruction: instruction.trim(),
-          inputText: effectiveInputText,
+          instruction: instructionToUse,
+          inputText: inputTextToUse,
           modelId: resolvedModelId,
           creditCost,
           canvasId,
@@ -368,8 +457,8 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
             sourceNodeId: id,
             outputNodeId,
             modelId: resolvedModelId,
-            instruction: instruction.trim() || undefined,
-            inputText: effectiveInputText || undefined,
+            instruction: instructionToUse || undefined,
+            inputText: inputTextToUse || undefined,
           }),
         }).then((response) => readTextStream(response, outputNodeId!)),
         {
@@ -405,15 +494,14 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     }
   }, [
     availableCredits,
-    connectedText,
     createNodeConnectedFromSource,
     creditCost,
+    effectiveInputText,
+    effectiveInstruction,
     getNode,
     hasAnyInput,
     hasEnoughCredits,
     id,
-    inputText,
-    instruction,
     isGenerating,
     nodeData.canvasId,
     resolvedModelId,
@@ -527,13 +615,10 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
       statusMessage={nodeData._statusMessage}
       className="flex h-full min-h-0 w-full min-w-0 flex-col"
     >
-      <CanvasHandle
+      <RepeatingInputHandles
         nodeId={id}
         nodeType="ai-text"
-        type="target"
-        position={Position.Left}
-        id="ai-text-in"
-        className="!h-3 !w-3 !border-2 !border-background !bg-violet-600"
+        handles={inputHandles}
       />
 
       <div className="flex items-center gap-1.5 border-b border-border px-3 py-2 text-xs font-medium text-violet-700 dark:text-violet-300">
@@ -543,52 +628,88 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-instruction`} className="text-[11px] text-muted-foreground">
-            {t("instructionLabel")}
+          <Label
+            htmlFor={`${id}-instruction`}
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          >
+            <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+            <span>{t("instructionLabel")}</span>
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-amber-700 dark:text-amber-300">
+              {t("instructionBadge")}
+            </span>
           </Label>
-          <textarea
-            id={`${id}-instruction`}
-            value={instruction}
-            onChange={handleInstructionChange}
-            placeholder={t("instructionPlaceholder")}
-            className="nodrag nowheel min-h-[68px] w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none transition-colors focus:border-violet-400"
-          />
+          {hasConnectedInstructionInput ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+              <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                {t("instructionFromTextNode")}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {t("instructionRoleHint")}
+              </p>
+              <div className="mt-1 space-y-2">
+                {connectedInputMeta.instructionInputs.map((input) => (
+                  <div key={input.key}>
+                    <p className="text-[10px] font-medium uppercase text-amber-700/80 dark:text-amber-300/80">
+                      {input.label}
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm text-foreground">
+                      {input.text.trim() || t("connectedInstructionEmpty")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <textarea
+              id={`${id}-instruction`}
+              value={instruction}
+              onChange={handleInstructionChange}
+              placeholder={t("instructionPlaceholder")}
+              className="nodrag nowheel min-h-[68px] w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none transition-colors focus:border-violet-400"
+            />
+          )}
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-input`} className="text-[11px] text-muted-foreground">
-            {t("inputLabel")}
+          <Label
+            htmlFor={`${id}-input`}
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          >
+            <span className="h-2 w-2 rounded-full bg-teal-500" aria-hidden="true" />
+            <span>{t("inputLabel")}</span>
+            <span className="rounded-full border border-teal-500/30 bg-teal-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-teal-700 dark:text-teal-300">
+              {t("inputBadge")}
+            </span>
           </Label>
           {hasConnectedInput ? (
-            <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2">
-              <p className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
+            <div className="rounded-md border border-teal-500/30 bg-teal-500/5 px-3 py-2">
+              <p className="text-[11px] font-medium text-teal-700 dark:text-teal-300">
                 {t("inputFromTextNode")}
               </p>
-              {inputText.trim().length === 0 ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("connectedInputEmpty")}
-                </p>
-              ) : null}
-              <textarea
-                id={`${id}-input`}
-                value={inputText}
-                onChange={handleInputTextChange}
-                onFocus={() => setIsInputEditing(true)}
-                onBlur={() => setIsInputEditing(false)}
-                placeholder={t("inputPlaceholder")}
-                className="nodrag nowheel mt-2 min-h-[84px] w-full resize-none rounded-md border-0 bg-transparent p-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              />
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {t("inputRoleHint")}
+              </p>
+              <div className="mt-1 space-y-2">
+                {connectedInputMeta.draftInputs.map((input) => (
+                  <div key={input.key}>
+                    <p className="text-[10px] font-medium uppercase text-teal-700/80 dark:text-teal-300/80">
+                      {input.label}
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm text-foreground">
+                      {input.text.trim() || t("connectedInputEmpty")}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
-          <textarea
-            id={`${id}-input`}
-            value={inputText}
-            onChange={handleInputTextChange}
-            onFocus={() => setIsInputEditing(true)}
-            onBlur={() => setIsInputEditing(false)}
-            placeholder={t("inputPlaceholder")}
-            className="nodrag nowheel min-h-[84px] w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none transition-colors focus:border-violet-400"
-          />
+            <textarea
+              id={`${id}-input`}
+              value={inputText}
+              onChange={handleInputTextChange}
+              placeholder={t("inputPlaceholder")}
+              className="nodrag nowheel min-h-[84px] w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none transition-colors focus:border-violet-400"
+            />
           )}
         </div>
 

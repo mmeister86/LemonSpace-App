@@ -10,7 +10,10 @@ import {
   MAX_AI_IMAGE_REFERENCES,
 } from "@/lib/ai-image-references";
 import {
+  isAiTextInputSourceType,
   isAgentContextSourceType,
+  MAX_AI_TEXT_DRAFT_INPUTS,
+  MAX_AI_TEXT_INSTRUCTION_INPUTS,
   MAX_AGENT_CONTEXT_INPUTS,
   MAX_PROMPT_TEXT_INPUTS,
 } from "@/lib/canvas-connection-policy";
@@ -35,11 +38,15 @@ type NodeTypeLookup = ReadonlyMap<string, string | undefined>;
 const PROMPT_REPEATING_INPUT_BASE_HANDLE_ID = "image-in";
 const PROMPT_TEXT_SOURCE_TYPES = new Set(["text", "ai-text-output"]);
 const AGENT_REPEATING_INPUT_BASE_HANDLE_ID = "agent-in";
+const AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID = "ai-text-in";
+const AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID = "ai-text-instruction-in";
 
 type RepeatingInputConfig = {
   nodeType: string;
   baseHandleId: string;
   maxSlots: number;
+  topRange?: readonly [number, number];
+  defaultForBodyDrop?: boolean;
 };
 
 const PROMPT_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
@@ -54,14 +61,32 @@ const AGENT_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
   maxSlots: MAX_AGENT_CONTEXT_INPUTS,
 };
 
-function getRepeatingInputConfig(nodeType: string | undefined): RepeatingInputConfig | null {
+const AI_TEXT_INSTRUCTION_INPUT_CONFIG: RepeatingInputConfig = {
+  nodeType: "ai-text",
+  baseHandleId: AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID,
+  maxSlots: MAX_AI_TEXT_INSTRUCTION_INPUTS,
+  topRange: [18, 42],
+};
+
+const AI_TEXT_DRAFT_INPUT_CONFIG: RepeatingInputConfig = {
+  nodeType: "ai-text",
+  baseHandleId: AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID,
+  maxSlots: MAX_AI_TEXT_DRAFT_INPUTS,
+  topRange: [58, 82],
+  defaultForBodyDrop: true,
+};
+
+function getRepeatingInputConfigs(nodeType: string | undefined): RepeatingInputConfig[] {
   if (nodeType === PROMPT_REPEATING_INPUT_CONFIG.nodeType) {
-    return PROMPT_REPEATING_INPUT_CONFIG;
+    return [PROMPT_REPEATING_INPUT_CONFIG];
   }
   if (nodeType === AGENT_REPEATING_INPUT_CONFIG.nodeType) {
-    return AGENT_REPEATING_INPUT_CONFIG;
+    return [AGENT_REPEATING_INPUT_CONFIG];
   }
-  return null;
+  if (nodeType === "ai-text") {
+    return [AI_TEXT_INSTRUCTION_INPUT_CONFIG, AI_TEXT_DRAFT_INPUT_CONFIG];
+  }
+  return [];
 }
 
 function nodeTypeForId(nodeTypeById: NodeTypeLookup, nodeId: string): string {
@@ -83,6 +108,9 @@ function isRepeatingSourceForTarget(sourceType: string, targetType: string): boo
   if (targetType === "agent") {
     return isAgentContextSourceType(sourceType);
   }
+  if (targetType === "ai-text") {
+    return isAiTextInputSourceType(sourceType);
+  }
   return false;
 }
 
@@ -101,12 +129,75 @@ export function buildRepeatingInputHandleId(baseHandleId: string, index: number)
   return `${baseHandleId}-${index + 1}`;
 }
 
-export function resolveRepeatingInputHandleTopPercent(index: number, count: number): number {
+export function resolveRepeatingInputHandleTopPercent(
+  index: number,
+  count: number,
+  range: readonly [number, number] = [20, 80],
+): number {
   if (count <= 1) {
-    return 50;
+    return roundHandleTopPercent((range[0] + range[1]) / 2);
   }
 
-  return roundHandleTopPercent(20 + (60 * (index + 1)) / (count + 1));
+  return roundHandleTopPercent(range[0] + ((range[1] - range[0]) * (index + 1)) / (count + 1));
+}
+
+function isInstructionAiTextHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && handle.startsWith(AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID);
+}
+
+function isDraftAiTextHandle(handle: string | null | undefined): boolean {
+  return (
+    handle == null ||
+    handle === "" ||
+    handle === "null" ||
+    (typeof handle === "string" &&
+      handle.startsWith(AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID) &&
+      !isInstructionAiTextHandle(handle))
+  );
+}
+
+function getRepeatingInputConfigForHandle(args: {
+  targetType: string | undefined;
+  targetHandle?: string | null;
+}): RepeatingInputConfig | null {
+  const configs = getRepeatingInputConfigs(args.targetType);
+  if (configs.length === 0) {
+    return null;
+  }
+
+  if (args.targetType === "ai-text") {
+    if (isInstructionAiTextHandle(args.targetHandle)) {
+      return AI_TEXT_INSTRUCTION_INPUT_CONFIG;
+    }
+    if (isDraftAiTextHandle(args.targetHandle)) {
+      return AI_TEXT_DRAFT_INPUT_CONFIG;
+    }
+    return null;
+  }
+
+  return configs[0] ?? null;
+}
+
+function getRepeatingBodyDropConfig(targetType: string | undefined): RepeatingInputConfig | null {
+  const configs = getRepeatingInputConfigs(targetType);
+  return configs.find((config) => config.defaultForBodyDrop) ?? configs[0] ?? null;
+}
+
+function edgeMatchesRepeatingConfig(
+  edge: RepeatingInputEdgeLike,
+  targetType: string,
+  config: RepeatingInputConfig,
+): boolean {
+  if (targetType !== "ai-text") {
+    return true;
+  }
+  if (config.baseHandleId === AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID) {
+    return isInstructionAiTextHandle(edge.targetHandle);
+  }
+  if (config.baseHandleId === AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID) {
+    return isDraftAiTextHandle(edge.targetHandle);
+  }
+  return false;
 }
 
 function collectRepeatingInputEdges(args: {
@@ -114,19 +205,18 @@ function collectRepeatingInputEdges(args: {
   nodeId: string;
   edges: readonly RepeatingInputEdgeLike[];
   nodeTypeById: NodeTypeLookup;
+  config: RepeatingInputConfig;
 }): RepeatingInputEdgeLike[] {
-  const config = getRepeatingInputConfig(args.nodeType);
-  if (!config) {
-    return [];
-  }
-
   return args.edges.filter((edge) => {
     if (!isVisibleEdge(edge) || edge.target !== args.nodeId) {
       return false;
     }
 
     const sourceType = nodeTypeForId(args.nodeTypeById, edge.source);
-    return isRepeatingSourceForTarget(sourceType, args.nodeType);
+    return (
+      isRepeatingSourceForTarget(sourceType, args.nodeType) &&
+      edgeMatchesRepeatingConfig(edge, args.nodeType, args.config)
+    );
   });
 }
 
@@ -181,7 +271,7 @@ function canAcceptAnyRepeatingInput(args: {
     return canAcceptAnyPromptInput(args.edges, args.nodeTypeById);
   }
 
-  const config = getRepeatingInputConfig(args.targetType);
+  const config = getRepeatingBodyDropConfig(args.targetType);
   return config ? args.edges.length < config.maxSlots : false;
 }
 
@@ -199,7 +289,7 @@ function canAcceptRepeatingSourceType(args: {
     });
   }
 
-  const config = getRepeatingInputConfig(args.targetType);
+  const config = getRepeatingBodyDropConfig(args.targetType);
   return (
     config !== null &&
     isRepeatingSourceForTarget(args.sourceType, args.targetType) &&
@@ -213,30 +303,35 @@ export function resolveVisibleRepeatingInputHandles(args: {
   edges: readonly RepeatingInputEdgeLike[];
   nodeTypeById: NodeTypeLookup;
 }): RepeatingInputHandleSlot[] {
-  const config = getRepeatingInputConfig(args.nodeType);
-  if (!config) {
+  const configs = getRepeatingInputConfigs(args.nodeType);
+  if (configs.length === 0) {
     return [];
   }
 
-  const occupiedEdges = collectRepeatingInputEdges(args).slice(0, config.maxSlots);
-  const includeFreeHandle = canAcceptAnyRepeatingInput({
-    targetType: args.nodeType,
-    edges: occupiedEdges,
-    nodeTypeById: args.nodeTypeById,
-  });
-  const visibleCount = Math.min(
-    config.maxSlots,
-    occupiedEdges.length + (includeFreeHandle ? 1 : 0),
-  );
+  return configs.flatMap((config) => {
+    const occupiedEdges = collectRepeatingInputEdges({ ...args, config }).slice(0, config.maxSlots);
+    const includeFreeHandle =
+      args.nodeType === "ai-text"
+        ? occupiedEdges.length < config.maxSlots
+        : canAcceptAnyRepeatingInput({
+            targetType: args.nodeType,
+            edges: occupiedEdges,
+            nodeTypeById: args.nodeTypeById,
+          });
+    const visibleCount = Math.min(
+      config.maxSlots,
+      occupiedEdges.length + (includeFreeHandle ? 1 : 0),
+    );
 
-  return Array.from({ length: visibleCount }, (_, index) => {
-    const edge = occupiedEdges[index];
-    return {
-      ...(edge?.id ? { edgeId: edge.id } : {}),
-      handleId: buildRepeatingInputHandleId(config.baseHandleId, index),
-      isOccupied: edge !== undefined,
-      topPercent: resolveRepeatingInputHandleTopPercent(index, visibleCount),
-    };
+    return Array.from({ length: visibleCount }, (_, index) => {
+      const edge = occupiedEdges[index];
+      return {
+        ...(edge?.id ? { edgeId: edge.id } : {}),
+        handleId: buildRepeatingInputHandleId(config.baseHandleId, index),
+        isOccupied: edge !== undefined,
+        topPercent: resolveRepeatingInputHandleTopPercent(index, visibleCount, config.topRange),
+      };
+    });
   });
 }
 
@@ -244,10 +339,17 @@ export function resolveNextRepeatingInputHandleId(args: {
   sourceType: string;
   targetType: string;
   targetNodeId: string;
+  targetHandle?: string | null;
   edges: readonly RepeatingInputEdgeLike[];
   nodeTypeById: NodeTypeLookup;
 }): string | null | undefined {
-  const config = getRepeatingInputConfig(args.targetType);
+  const config =
+    args.targetHandle !== undefined
+      ? getRepeatingInputConfigForHandle({
+          targetType: args.targetType,
+          targetHandle: args.targetHandle,
+        })
+      : getRepeatingBodyDropConfig(args.targetType);
   if (!config) {
     return undefined;
   }
@@ -257,6 +359,7 @@ export function resolveNextRepeatingInputHandleId(args: {
     nodeId: args.targetNodeId,
     edges: args.edges,
     nodeTypeById: args.nodeTypeById,
+    config,
   }).slice(0, config.maxSlots);
 
   if (
@@ -286,7 +389,10 @@ export function assignDisplayHandlesToRepeatingInputEdges<TEdge extends Repeatin
 
   edges.forEach((edge, index) => {
     const targetType = nodeTypeForId(nodeTypeById, edge.target);
-    const config = getRepeatingInputConfig(targetType);
+    const config = getRepeatingInputConfigForHandle({
+      targetType,
+      targetHandle: edge.targetHandle,
+    });
     if (!config || !isVisibleEdge(edge)) {
       return;
     }
@@ -296,17 +402,21 @@ export function assignDisplayHandlesToRepeatingInputEdges<TEdge extends Repeatin
       return;
     }
 
-    const bucket = groupedEdgeIndexesByTarget.get(edge.target);
+    const groupKey = `${edge.target}:${config.baseHandleId}`;
+    const bucket = groupedEdgeIndexesByTarget.get(groupKey);
     if (bucket) {
       bucket.push(index);
     } else {
-      groupedEdgeIndexesByTarget.set(edge.target, [index]);
+      groupedEdgeIndexesByTarget.set(groupKey, [index]);
     }
   });
 
-  for (const [targetNodeId, edgeIndexes] of groupedEdgeIndexesByTarget) {
+  for (const [groupKey, edgeIndexes] of groupedEdgeIndexesByTarget) {
+    const [targetNodeId, baseHandleId] = groupKey.split(":");
     const targetType = nodeTypeForId(nodeTypeById, targetNodeId);
-    const config = getRepeatingInputConfig(targetType);
+    const config = getRepeatingInputConfigs(targetType).find(
+      (candidate) => candidate.baseHandleId === baseHandleId,
+    );
     if (!config) {
       continue;
     }

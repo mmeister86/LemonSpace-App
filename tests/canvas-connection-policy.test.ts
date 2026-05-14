@@ -515,14 +515,73 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
-  it("limits ai-text to one incoming text source", () => {
+  it("allows up to three draft and three instruction text sources into ai-text", () => {
     expect(
       validateCanvasConnectionPolicy({
         sourceType: "text",
         targetType: "ai-text",
-        targetIncomingCount: 1,
+        targetHandle: "ai-text-in",
+        targetIncomingCount: 5,
+        targetIncomingHandles: [
+          "ai-text-instruction-in",
+          "ai-text-instruction-in-2",
+          "ai-text-in",
+          "ai-text-in-2",
+          "ai-text-instruction-in-3",
+        ],
       }),
-    ).toBe("ai-text-incoming-limit");
+    ).toBeNull();
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "ai-text-output",
+        targetType: "ai-text",
+        targetHandle: "ai-text-instruction-in",
+        targetIncomingCount: 5,
+        targetIncomingHandles: [
+          "ai-text-in",
+          "ai-text-in-2",
+          "ai-text-in-3",
+          "ai-text-instruction-in",
+          "ai-text-instruction-in-2",
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("limits ai-text inputs per target role", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetHandle: "ai-text-in",
+        targetIncomingCount: 3,
+        targetIncomingHandles: ["ai-text-in", "ai-text-in-2", undefined],
+      }),
+    ).toBe("ai-text-draft-incoming-limit");
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetHandle: "ai-text-instruction-in",
+        targetIncomingCount: 3,
+        targetIncomingHandles: [
+          "ai-text-instruction-in",
+          "ai-text-instruction-in-2",
+          "ai-text-instruction-in-3",
+        ],
+      }),
+    ).toBe("ai-text-instruction-incoming-limit");
+  });
+
+  it("describes ai-text role input limits", () => {
+    expect(
+      getCanvasConnectionValidationMessage("ai-text-draft-incoming-limit"),
+    ).toBe("KI-Text erlaubt maximal 3 Rohfassungs-Quellen.");
+    expect(
+      getCanvasConnectionValidationMessage("ai-text-instruction-incoming-limit"),
+    ).toBe("KI-Text erlaubt maximal 3 Vorgaben-Quellen.");
   });
 
   it("describes invalid agent source message", () => {

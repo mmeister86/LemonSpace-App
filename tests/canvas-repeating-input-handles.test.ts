@@ -10,6 +10,7 @@ import {
 const nodeTypeById = new Map<string, string>([
   ["prompt-1", "prompt"],
   ["agent-1", "agent"],
+  ["ai-text-1", "ai-text"],
   ["image-1", "image"],
   ["image-2", "image"],
   ["image-3", "image"],
@@ -23,6 +24,10 @@ const nodeTypeById = new Map<string, string>([
   ["text-2", "text"],
   ["text-3", "text"],
   ["text-4", "text"],
+  ["text-5", "text"],
+  ["text-6", "text"],
+  ["text-7", "text"],
+  ["ai-text-output-1", "ai-text-output"],
   ["prompt-source", "prompt"],
 ]);
 
@@ -347,5 +352,185 @@ describe("canvas repeating input handles", () => {
         nodeTypeById,
       }),
     ).toBeNull();
+  });
+
+  it("starts ai-text nodes with one free instruction handle and one free draft handle", () => {
+    expect(
+      resolveVisibleRepeatingInputHandles({
+        nodeType: "ai-text",
+        nodeId: "ai-text-1",
+        edges: [],
+        nodeTypeById,
+      }),
+    ).toEqual([
+      {
+        handleId: "ai-text-instruction-in",
+        isOccupied: false,
+        topPercent: 30,
+      },
+      {
+        handleId: "ai-text-in",
+        isOccupied: false,
+        topPercent: 70,
+      },
+    ]);
+  });
+
+  it("renders occupied ai-text role handles plus one free handle per role while capacity remains", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "ai-text",
+      nodeId: "ai-text-1",
+      edges: [
+        {
+          id: "edge-instruction",
+          source: "text-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-instruction-in",
+        },
+        {
+          id: "edge-draft",
+          source: "text-2",
+          target: "ai-text-1",
+          targetHandle: "ai-text-in",
+        },
+      ],
+      nodeTypeById,
+    });
+
+    expect(handles).toEqual([
+      {
+        edgeId: "edge-instruction",
+        handleId: "ai-text-instruction-in",
+        isOccupied: true,
+        topPercent: 26,
+      },
+      {
+        handleId: "ai-text-instruction-in-2",
+        isOccupied: false,
+        topPercent: 34,
+      },
+      {
+        edgeId: "edge-draft",
+        handleId: "ai-text-in",
+        isOccupied: true,
+        topPercent: 66,
+      },
+      {
+        handleId: "ai-text-in-2",
+        isOccupied: false,
+        topPercent: 74,
+      },
+    ]);
+  });
+
+  it("omits free ai-text handles once each role has three inputs", () => {
+    const edges = [
+      { source: "text-1", targetHandle: "ai-text-instruction-in" },
+      { source: "text-2", targetHandle: "ai-text-instruction-in-2" },
+      { source: "text-3", targetHandle: "ai-text-instruction-in-3" },
+      { source: "text-4", targetHandle: "ai-text-in" },
+      { source: "text-5", targetHandle: "ai-text-in-2" },
+      { source: "text-6", targetHandle: "ai-text-in-3" },
+    ].map((edge, index) => ({
+      id: `edge-${index + 1}`,
+      source: edge.source,
+      target: "ai-text-1",
+      targetHandle: edge.targetHandle,
+    }));
+
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "ai-text",
+      nodeId: "ai-text-1",
+      edges,
+      nodeTypeById,
+    });
+
+    expect(handles).toHaveLength(6);
+    expect(handles.every((handle) => handle.isOccupied)).toBe(true);
+    expect(handles.map((handle) => handle.handleId)).toEqual([
+      "ai-text-instruction-in",
+      "ai-text-instruction-in-2",
+      "ai-text-instruction-in-3",
+      "ai-text-in",
+      "ai-text-in-2",
+      "ai-text-in-3",
+    ]);
+  });
+
+  it("assigns compact display handles to ai-text roles and keeps legacy edges as draft inputs", () => {
+    const edges = assignDisplayHandlesToRepeatingInputEdges(
+      [
+        {
+          id: "edge-instruction-1",
+          source: "text-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-instruction-in",
+        },
+        {
+          id: "edge-instruction-2",
+          source: "text-2",
+          target: "ai-text-1",
+          targetHandle: "ai-text-instruction-in",
+        },
+        {
+          id: "edge-legacy-draft",
+          source: "text-3",
+          target: "ai-text-1",
+          targetHandle: undefined,
+        },
+        {
+          id: "edge-draft",
+          source: "ai-text-output-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-in",
+        },
+      ],
+      nodeTypeById,
+    );
+
+    expect(edges.map((edge) => edge.targetHandle)).toEqual([
+      "ai-text-instruction-in",
+      "ai-text-instruction-in-2",
+      "ai-text-in",
+      "ai-text-in-2",
+    ]);
+  });
+
+  it("chooses the next ai-text handle by requested role and defaults body drops to draft", () => {
+    const edges = [
+      {
+        id: "edge-instruction",
+        source: "text-1",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in",
+      },
+      {
+        id: "edge-draft",
+        source: "text-2",
+        target: "ai-text-1",
+        targetHandle: "ai-text-in",
+      },
+    ];
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetNodeId: "ai-text-1",
+        targetHandle: "ai-text-instruction-in-2",
+        edges,
+        nodeTypeById,
+      }),
+    ).toBe("ai-text-instruction-in-2");
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "text",
+        targetType: "ai-text",
+        targetNodeId: "ai-text-1",
+        edges,
+        nodeTypeById,
+      }),
+    ).toBe("ai-text-in-2");
   });
 });

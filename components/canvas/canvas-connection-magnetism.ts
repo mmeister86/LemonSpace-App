@@ -111,6 +111,7 @@ function isValidConnectionCandidate(args: {
     sourceType: sourceNode.type ?? "",
     targetType: targetNode.type ?? "",
     targetNodeId: targetNode.id,
+    targetHandle: connection.targetHandle,
     edges,
     nodeTypeById,
   });

@@ -171,6 +171,29 @@ describe("split canvas utility modules", () => {
     );
   });
 
+  it("uses role-specific colors for ai-text instruction and draft input handles", () => {
+    const instruction = canvasHandleAccentRgb({
+      nodeType: "ai-text",
+      handleId: "ai-text-instruction-in-2",
+      handleType: "target",
+    });
+    const draft = canvasHandleAccentRgb({
+      nodeType: "ai-text",
+      handleId: "ai-text-in-2",
+      handleType: "target",
+    });
+    const output = canvasHandleAccentRgb({
+      nodeType: "ai-text",
+      handleId: "ai-text-out",
+      handleType: "source",
+    });
+
+    expect(instruction).toEqual([245, 158, 11]);
+    expect(draft).toEqual([20, 184, 166]);
+    expect(instruction).not.toEqual(draft);
+    expect(output).toEqual(SOURCE_NODE_GLOW_RGB["ai-text"]);
+  });
+
   it("isolates node defaults and media sizing helpers while preserving legacy exports", () => {
     expect(NODE_DEFAULTS["video-prompt"]).toMatchObject({
       width: 288,

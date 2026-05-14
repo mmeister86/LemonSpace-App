@@ -56,6 +56,11 @@ const STYLE_TRANSFER_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
   reference: [236, 72, 153],
 };
 
+const AI_TEXT_HANDLE_CONNECTION_RGB: Record<"instruction" | "draft", RgbColor> = {
+  instruction: [245, 158, 11],
+  draft: [20, 184, 166],
+};
+
 const CONNECTION_LINE_FALLBACK_RGB: RgbColor = [13, 148, 136];
 
 export type EdgeGlowColorMode = "light" | "dark";
@@ -68,6 +73,15 @@ export function canvasHandleAccentRgb(args: {
   const nodeType = args.nodeType;
   const handleId = args.handleId ?? undefined;
   const handleType = args.handleType;
+
+  if (nodeType === "ai-text" && handleType === "target" && handleId) {
+    if (handleId.startsWith("ai-text-instruction-in")) {
+      return AI_TEXT_HANDLE_CONNECTION_RGB.instruction;
+    }
+    if (handleId.startsWith("ai-text-in")) {
+      return AI_TEXT_HANDLE_CONNECTION_RGB.draft;
+    }
+  }
 
   if (nodeType === "compare" && handleId) {
     if (handleType === "target" && handleId === "compare-out") {

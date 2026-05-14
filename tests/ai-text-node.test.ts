@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 
 const mocks = vi.hoisted(() => ({
-  edges: [] as Array<{ source: string; target: string }>,
+  edges: [] as Array<{
+    id?: string;
+    source: string;
+    target: string;
+    targetHandle?: string | null;
+  }>,
   nodes: [] as Array<{ id: string; type: string; data: Record<string, unknown> }>,
   balance: { balance: 100, reserved: 0 } as { balance: number; reserved: number } | undefined,
   subscription: { tier: "starter" as const },
@@ -132,9 +137,22 @@ vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
 }));
 
 vi.mock("@xyflow/react", () => ({
-  Handle: () => null,
+  Handle: ({
+    className,
+    isConnectable,
+    style,
+    ...props
+  }: React.HTMLAttributes<HTMLDivElement> & {
+    className?: string;
+    isConnectable?: boolean;
+    style?: React.CSSProperties;
+  }) => {
+    void isConnectable;
+    return React.createElement("div", { className, style, ...props });
+  },
   Position: { Left: "left", Right: "right" },
   useConnection: () => ({ inProgress: false }),
+  useUpdateNodeInternals: () => vi.fn(),
   useStore: (selector: (state: { edges: typeof mocks.edges; nodes: typeof mocks.nodes }) => unknown) =>
     selector({ edges: mocks.edges, nodes: mocks.nodes }),
   useReactFlow: () => ({
@@ -210,8 +228,8 @@ describe("AiTextNode", () => {
     root = null;
   });
 
-  it("syncs connected text into the draft input", async () => {
-    mocks.edges = [{ source: "text-1", target: "ai-text-1" }];
+  it("shows connected draft text live without copying it into node data", async () => {
+    mocks.edges = [{ source: "text-1", target: "ai-text-1", targetHandle: "ai-text-in" }];
     mocks.nodes = [
       {
         id: "text-1",
@@ -228,20 +246,14 @@ describe("AiTextNode", () => {
     });
 
     const draftInput = container.querySelector("#ai-text-1-input");
-    expect(draftInput).toBeInstanceOf(HTMLTextAreaElement);
-    expect((draftInput as HTMLTextAreaElement).value).toBe("Rohtext aus der Text-Node");
-    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        nodeId: "ai-text-1",
-        data: expect.objectContaining({
-          inputText: "Rohtext aus der Text-Node",
-        }),
-      }),
-    );
+    expect(draftInput).toBeNull();
+    expect(container.textContent).toContain("inputFromTextNode");
+    expect(container.textContent).toContain("Rohtext aus der Text-Node");
+    expect(mocks.queueNodeDataUpdate).not.toHaveBeenCalled();
   });
 
   it("shows connected input feedback for an empty text node", async () => {
-    mocks.edges = [{ source: "text-1", target: "ai-text-1" }];
+    mocks.edges = [{ source: "text-1", target: "ai-text-1", targetHandle: "ai-text-in" }];
     mocks.nodes = [
       {
         id: "text-1",
@@ -259,6 +271,110 @@ describe("AiTextNode", () => {
 
     expect(container.textContent).toContain("inputFromTextNode");
     expect(container.textContent).toContain("connectedInputEmpty");
+  });
+
+  it("shows connected instruction and draft sources separately", async () => {
+    mocks.edges = [
+      {
+        source: "text-instruction",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in",
+      },
+      { source: "text-draft", target: "ai-text-1", targetHandle: "ai-text-in" },
+    ];
+    mocks.nodes = [
+      {
+        id: "text-instruction",
+        type: "text",
+        data: { content: "Schreibe freundlicher" },
+      },
+      {
+        id: "text-draft",
+        type: "text",
+        data: { content: "Das ist die Rohfassung." },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!);
+    });
+
+    expect(container.textContent).toContain("instructionFromTextNode");
+    expect(container.textContent).toContain("inputFromTextNode");
+    expect(container.textContent).toContain("instructionRoleHint");
+    expect(container.textContent).toContain("inputRoleHint");
+    expect(container.textContent).toContain("Schreibe freundlicher");
+    expect(container.textContent).toContain("Das ist die Rohfassung.");
+    expect(container.querySelector("#ai-text-1-instruction")).toBeNull();
+    expect(container.querySelector("#ai-text-1-input")).toBeNull();
+  });
+
+  it("renders instruction and draft input handles with their role colors", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!);
+    });
+
+    const instructionHandle = container.querySelector(
+      "[data-handle-id='ai-text-instruction-in']",
+    );
+    const draftHandle = container.querySelector("[data-handle-id='ai-text-in']");
+
+    expect(instructionHandle).toBeInstanceOf(HTMLElement);
+    expect(draftHandle).toBeInstanceOf(HTMLElement);
+    expect((instructionHandle as HTMLElement).className).not.toContain("!bg-violet-600");
+    expect((draftHandle as HTMLElement).className).not.toContain("!bg-violet-600");
+    expect((instructionHandle as HTMLElement).style.backgroundColor).toBe(
+      "rgb(245, 158, 11)",
+    );
+    expect((draftHandle as HTMLElement).style.backgroundColor).toBe("rgb(20, 184, 166)");
+  });
+
+  it("renders the same source node twice in one role without duplicate React keys", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.edges = [
+      {
+        id: "edge-instruction-1",
+        source: "text-instruction",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in",
+      },
+      {
+        id: "edge-instruction-2",
+        source: "text-instruction",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in-2",
+      },
+    ];
+    mocks.nodes = [
+      {
+        id: "text-instruction",
+        type: "text",
+        data: { content: "Nutze diese Vorgabe zweimal." },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!);
+    });
+
+    const duplicateKeyWarnings = consoleError.mock.calls.filter((call) =>
+      String(call[0]).includes("Encountered two children with the same key"),
+    );
+    expect(duplicateKeyWarnings).toHaveLength(0);
+    expect(container.textContent).toContain("Vorgabe 1");
+    expect(container.textContent).toContain("Vorgabe 2");
+
+    consoleError.mockRestore();
   });
 
   it("creates an ai-text-output node before starting generation", async () => {
@@ -324,6 +440,91 @@ describe("AiTextNode", () => {
     expect(container.textContent).toContain("run.finalizingMessage");
     expect(container.textContent).not.toContain("run.doneMessage");
     expect(getLocalNodeStreamSnapshot("ai-text-output-1")?.text).toBe("Streamed text");
+  });
+
+  it("generates with live connected instructions and drafts", async () => {
+    mocks.edges = [
+      {
+        source: "text-instruction-1",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in",
+      },
+      {
+        source: "text-instruction-2",
+        target: "ai-text-1",
+        targetHandle: "ai-text-instruction-in-2",
+      },
+      { source: "text-draft-1", target: "ai-text-1", targetHandle: "ai-text-in" },
+      { source: "text-draft-2", target: "ai-text-1", targetHandle: undefined },
+    ];
+    mocks.nodes = [
+      {
+        id: "text-instruction-2",
+        type: "text",
+        data: { content: "Kuerze stark." },
+      },
+      {
+        id: "text-instruction-1",
+        type: "text",
+        data: { content: "Schreibe im Du." },
+      },
+      {
+        id: "text-draft-1",
+        type: "text",
+        data: { content: "Erster Absatz." },
+      },
+      {
+        id: "text-draft-2",
+        type: "ai-text-output",
+        data: { outputText: "Zweiter Absatz." },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!, {
+        instruction: "Manuelle Vorgabe ignoriert bei Verbindung",
+        inputText: "Manuelle Rohfassung ignoriert bei Verbindung",
+      });
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("generateButton"),
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    const expectedInstruction = "Vorgabe 1:\nSchreibe im Du.\n\nVorgabe 2:\nKuerze stark.";
+    const expectedInputText = "Text 1:\nErster Absatz.\n\nText 2:\nZweiter Absatz.";
+
+    expect(mocks.createNodeConnectedFromSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          instruction: expectedInstruction,
+          inputText: expectedInputText,
+        }),
+      }),
+    );
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/ai-stream/text",
+      expect.objectContaining({
+        body: JSON.stringify({
+          canvasId: "canvas-1",
+          sourceNodeId: "ai-text-1",
+          outputNodeId: "ai-text-output-1",
+          modelId: "openai/gpt-5.4-mini",
+          instruction: expectedInstruction,
+          inputText: expectedInputText,
+        }),
+      }),
+    );
   });
 
   it("marks the source run done only after the connected output is persisted", async () => {

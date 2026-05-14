@@ -91,12 +91,18 @@ const AGENT_ALLOWED_SOURCE_TYPES = new Set<string>([
 
 export const MAX_AGENT_CONTEXT_INPUTS = 8;
 export const MAX_PROMPT_TEXT_INPUTS = 3;
+export const MAX_AI_TEXT_INSTRUCTION_INPUTS = 3;
+export const MAX_AI_TEXT_DRAFT_INPUTS = 3;
 
 export function isAgentContextSourceType(sourceType: string): boolean {
   return AGENT_ALLOWED_SOURCE_TYPES.has(sourceType);
 }
 
 const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
+
+export function isAiTextInputSourceType(sourceType: string): boolean {
+  return AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType);
+}
 
 const PROMPT_TEXT_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
 
@@ -117,6 +123,33 @@ function normalizeMixerHandle(handle: string | null | undefined): string {
   }
 
   return handle;
+}
+
+function isAiTextInstructionHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && handle.startsWith("ai-text-instruction-in");
+}
+
+function isAiTextDraftHandle(handle: string | null | undefined): boolean {
+  return (
+    handle == null ||
+    handle === "" ||
+    handle === "null" ||
+    (typeof handle === "string" &&
+      handle.startsWith("ai-text-in") &&
+      !isAiTextInstructionHandle(handle))
+  );
+}
+
+function aiTextRoleForHandle(
+  handle: string | null | undefined,
+): "instruction" | "draft" | null {
+  if (isAiTextInstructionHandle(handle)) {
+    return "instruction";
+  }
+  if (isAiTextDraftHandle(handle)) {
+    return "draft";
+  }
+  return null;
 }
 
 const ADJUSTMENT_DISALLOWED_TARGET_TYPES = new Set<string>(["prompt", "ai-image"]);
@@ -147,6 +180,8 @@ export type CanvasConnectionValidationReason =
   | "agent-incoming-limit"
   | "ai-text-source-invalid"
   | "ai-text-incoming-limit"
+  | "ai-text-draft-incoming-limit"
+  | "ai-text-instruction-incoming-limit"
   | "ai-text-output-source-invalid"
   | "ai-text-output-incoming-limit"
   | "agent-output-source-invalid"
@@ -306,8 +341,22 @@ export function validateCanvasConnectionPolicy(args: {
     if (!AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       return "ai-text-source-invalid";
     }
-    if (targetIncomingCount >= 1) {
-      return "ai-text-incoming-limit";
+
+    const role = aiTextRoleForHandle(targetHandle);
+    if (role === null) {
+      return "ai-text-source-invalid";
+    }
+
+    const incomingOnRole = (targetIncomingHandles ?? []).filter(
+      (handle) => aiTextRoleForHandle(handle) === role,
+    ).length;
+
+    if (role === "instruction" && incomingOnRole >= MAX_AI_TEXT_INSTRUCTION_INPUTS) {
+      return "ai-text-instruction-incoming-limit";
+    }
+
+    if (role === "draft" && incomingOnRole >= MAX_AI_TEXT_DRAFT_INPUTS) {
+      return "ai-text-draft-incoming-limit";
     }
   }
 
@@ -397,6 +446,10 @@ export function getCanvasConnectionValidationMessage(
       return "KI-Text akzeptiert nur Text- oder KI-Text-Ausgabe-Input.";
     case "ai-text-incoming-limit":
       return "KI-Text-Nodes erlauben genau eine eingehende Verbindung.";
+    case "ai-text-draft-incoming-limit":
+      return `KI-Text erlaubt maximal ${MAX_AI_TEXT_DRAFT_INPUTS} Rohfassungs-Quellen.`;
+    case "ai-text-instruction-incoming-limit":
+      return `KI-Text erlaubt maximal ${MAX_AI_TEXT_INSTRUCTION_INPUTS} Vorgaben-Quellen.`;
     case "ai-text-output-source-invalid":
       return "KI-Text-Ausgabe akzeptiert nur Eingaben von KI-Text-Nodes.";
     case "ai-text-output-incoming-limit":

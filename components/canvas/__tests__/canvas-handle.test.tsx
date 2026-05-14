@@ -146,6 +146,30 @@ describe("CanvasHandle", () => {
     expect(handle.getAttribute("data-glow-state")).toBe("idle");
   });
 
+  it("labels ai-text role handles for hover and accessibility", async () => {
+    await renderHandle({
+      props: {
+        nodeType: "ai-text",
+        id: "ai-text-instruction-in-2",
+      },
+    });
+
+    let handle = getHandleElement();
+    expect(handle.getAttribute("title")).toBe("Vorgaben-Input 2");
+    expect(handle.getAttribute("aria-label")).toBe("Vorgaben-Input 2");
+
+    await renderHandle({
+      props: {
+        nodeType: "ai-text",
+        id: "ai-text-in",
+      },
+    });
+
+    handle = getHandleElement();
+    expect(handle.getAttribute("title")).toBe("Rohfassung-Input 1");
+    expect(handle.getAttribute("aria-label")).toBe("Rohfassung-Input 1");
+  });
+
   it("turns on near-target glow when this handle is active target", async () => {
     await renderHandle({
       connectionState: { inProgress: true },

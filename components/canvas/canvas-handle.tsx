@@ -30,6 +30,36 @@ function normalizeHandleId(value: string | undefined): string | undefined {
   return value === "" ? undefined : value;
 }
 
+function handleSlotNumber(handleId: string, baseHandleId: string): number {
+  if (handleId === baseHandleId) {
+    return 1;
+  }
+
+  const suffix = handleId.slice(baseHandleId.length + 1);
+  const parsed = Number.parseInt(suffix, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function aiTextTargetHandleLabel(args: {
+  nodeType?: string;
+  handleId?: string;
+  handleType: "source" | "target";
+}): string | undefined {
+  if (args.nodeType !== "ai-text" || args.handleType !== "target" || !args.handleId) {
+    return undefined;
+  }
+
+  if (args.handleId.startsWith("ai-text-instruction-in")) {
+    return `Vorgaben-Input ${handleSlotNumber(args.handleId, "ai-text-instruction-in")}`;
+  }
+
+  if (args.handleId.startsWith("ai-text-in")) {
+    return `Rohfassung-Input ${handleSlotNumber(args.handleId, "ai-text-in")}`;
+  }
+
+  return undefined;
+}
+
 export default function CanvasHandle({
   nodeId,
   nodeType,
@@ -61,6 +91,11 @@ export default function CanvasHandle({
 
   const handleId = normalizeHandleId(id);
   const targetHandleId = normalizeHandleId(activeTarget?.handleId);
+  const roleLabel = aiTextTargetHandleLabel({
+    nodeType,
+    handleId,
+    handleType: type,
+  });
 
   const toNodeId =
     connectionState.toNode &&
@@ -131,6 +166,8 @@ export default function CanvasHandle({
       {...rest}
       id={id}
       type={type}
+      title={rest.title ?? roleLabel}
+      aria-label={rest["aria-label"] ?? roleLabel}
       className={cn(
         "!h-3 !w-3 !border-2 !border-background transition-[box-shadow,background-color] duration-150",
         className,
