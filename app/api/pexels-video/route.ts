@@ -6,6 +6,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import {
+  RATE_LIMIT_POLICIES,
+  applyRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+
 const ALLOWED_HOSTS = new Set([
   "videos.pexels.com",
   "player.vimeo.com",
@@ -18,7 +24,15 @@ const ALLOWED_HOSTS = new Set([
  * Forwards Range for seeking; whitelists known video hosts from the Pexels API.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const raw = request.nextUrl.searchParams.get("u");
+  const decision = await applyRateLimit({
+    policy: RATE_LIMIT_POLICIES["pexels-video:get"],
+    request,
+  });
+  if (!decision.allowed) {
+    return rateLimitResponse(decision) as NextResponse;
+  }
+
+  const raw = new URL(request.url).searchParams.get("u");
   if (!raw) {
     return new NextResponse("Missing u", { status: 400 });
   }

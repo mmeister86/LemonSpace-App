@@ -7,9 +7,22 @@ import { getOpenRouterModel } from "@/lib/ai-stream/openrouter-provider";
 import { parseTextStreamRequest } from "@/lib/ai-stream/stream-protocol";
 import { buildAiTextStreamMessages } from "@/lib/ai-stream/text-messages";
 import { DEFAULT_AI_TEXT_MODEL_ID, getAiTextModel } from "@/lib/ai-text-models";
-import { fetchAuthAction } from "@/lib/auth-server";
+import { fetchAuthAction, getAuthUser } from "@/lib/auth-server";
+import {
+  RATE_LIMIT_POLICIES,
+  applyRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const maxDuration = 60;
+
+async function getRateLimitUserId(): Promise<string | undefined> {
+  try {
+    return (await getAuthUser())?.id;
+  } catch {
+    return undefined;
+  }
+}
 
 async function buildMessagesForPreparedTextRun(prepared: {
   modelId: string;
@@ -62,6 +75,15 @@ async function buildMessagesForPreparedTextRun(prepared: {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const decision = await applyRateLimit({
+    policy: RATE_LIMIT_POLICIES["ai-stream:text"],
+    request,
+    userId: await getRateLimitUserId(),
+  });
+  if (!decision.allowed) {
+    return rateLimitResponse(decision);
+  }
+
   let json: unknown;
   try {
     json = await request.json();

@@ -5,11 +5,33 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getOpenRouterModel } from "@/lib/ai-stream/openrouter-provider";
 import { parseAgentStreamRequest } from "@/lib/ai-stream/stream-protocol";
-import { fetchAuthAction } from "@/lib/auth-server";
+import { fetchAuthAction, getAuthUser } from "@/lib/auth-server";
+import {
+  RATE_LIMIT_POLICIES,
+  applyRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
+async function getRateLimitUserId(): Promise<string | undefined> {
+  try {
+    return (await getAuthUser())?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
+  const decision = await applyRateLimit({
+    policy: RATE_LIMIT_POLICIES["ai-stream:agent"],
+    request,
+    userId: await getRateLimitUserId(),
+  });
+  if (!decision.allowed) {
+    return rateLimitResponse(decision);
+  }
+
   let json: unknown;
   try {
     json = await request.json();
