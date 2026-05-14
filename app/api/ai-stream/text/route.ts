@@ -18,7 +18,8 @@ export const maxDuration = 60;
 
 async function getRateLimitUserId(): Promise<string | undefined> {
   try {
-    return (await getAuthUser())?.id;
+    const user = await getAuthUser();
+    return user?.userId ?? user?._id;
   } catch {
     return undefined;
   }

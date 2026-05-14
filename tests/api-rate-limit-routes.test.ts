@@ -34,7 +34,7 @@ vi.mock("@/lib/auth-server", () => ({
     POST: authHandlerPost,
   },
   fetchAuthAction,
-  getAuthUser: vi.fn().mockResolvedValue({ id: "user-1" }),
+  getAuthUser: vi.fn().mockResolvedValue({ _id: "convex-user-1", userId: "user-1" }),
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
