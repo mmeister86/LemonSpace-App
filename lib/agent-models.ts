@@ -18,6 +18,7 @@ export interface AgentModel {
   minTier: AgentModelMinTier;
   creditCost: number;
   description: string;
+  supportsVision: boolean;
 }
 
 export const AGENT_MODELS = {
@@ -27,6 +28,7 @@ export const AGENT_MODELS = {
     minTier: "starter",
     creditCost: 6,
     description: "Fastest option for lightweight agent runs",
+    supportsVision: true,
   },
   "openai/gpt-5.4-mini": {
     id: "openai/gpt-5.4-mini",
@@ -34,6 +36,7 @@ export const AGENT_MODELS = {
     minTier: "starter",
     creditCost: 15,
     description: "Balanced quality and latency for default use",
+    supportsVision: true,
   },
   "openai/gpt-5.4": {
     id: "openai/gpt-5.4",
@@ -41,6 +44,7 @@ export const AGENT_MODELS = {
     minTier: "starter",
     creditCost: 38,
     description: "Higher reasoning quality for complex tasks",
+    supportsVision: true,
   },
   "openai/gpt-5.4-pro": {
     id: "openai/gpt-5.4-pro",
@@ -48,6 +52,7 @@ export const AGENT_MODELS = {
     minTier: "max",
     creditCost: 180,
     description: "Top-tier capability for hardest workflows",
+    supportsVision: true,
   },
 } as const satisfies Record<AgentModelId, AgentModel>;
 

@@ -7,7 +7,7 @@ import { v } from "convex/values";
 import type { FunctionReference } from "convex/server";
 import type { action, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { generateStructuredObjectViaOpenRouter } from "./openrouter";
 import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
 import {
@@ -33,6 +33,11 @@ import {
   appendAiRunEvent,
   normalizeAiRunEvents,
 } from "../lib/ai-run-history";
+import type {
+  AiImageReferenceInput,
+  AiImageReferenceSourceType,
+} from "../lib/ai-image-references";
+import type { AiTextVisualMode } from "../lib/ai-stream/text-messages";
 
 const AI_TEXT_RESULT_SCHEMA = {
   type: "object",
@@ -48,6 +53,138 @@ const AI_TEXT_RESULT_SCHEMA = {
 function trimOptionalText(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+const aiTextVisualModeValidator = v.optional(
+  v.union(v.literal("context"), v.literal("describe")),
+);
+
+const aiTextVisualReferenceSourceTypeValidator = v.union(
+  v.literal("image"),
+  v.literal("asset"),
+  v.literal("ai-image"),
+  v.literal("render"),
+);
+
+const aiTextVisualReferenceInputValidator = v.object({
+  sourceNodeId: v.string(),
+  sourceType: aiTextVisualReferenceSourceTypeValidator,
+  label: v.string(),
+  storageId: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+  renderPipelineHash: v.optional(v.string()),
+});
+
+type AiTextVisualReferenceInput = AiImageReferenceInput;
+
+type StorageUrlCtx = {
+  storage: {
+    getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
+  };
+};
+
+function getNodeDataText(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+export function resolveVisualReferenceFromNode(args: {
+  node: { _id?: Id<"nodes">; type: string; data: unknown };
+  requested: AiTextVisualReferenceInput;
+}): AiTextVisualReferenceInput | null {
+  if (args.node.type !== args.requested.sourceType) {
+    return null;
+  }
+  if (!args.node.data || typeof args.node.data !== "object" || Array.isArray(args.node.data)) {
+    return null;
+  }
+
+  const data = args.node.data as Record<string, unknown>;
+  const sourceNodeId = args.requested.sourceNodeId;
+  const label = args.requested.label.trim() || sourceNodeId;
+  const sourceType = args.requested.sourceType as AiImageReferenceSourceType;
+  const requestedStorageId = trimOptionalText(args.requested.storageId);
+  const requestedImageUrl = trimOptionalText(args.requested.imageUrl);
+  const renderPipelineHash = trimOptionalText(args.requested.renderPipelineHash);
+  let storageId: string | undefined;
+  let imageUrl: string | undefined;
+
+  if (sourceType === "image" || sourceType === "ai-image") {
+    storageId = getNodeDataText(data, "storageId");
+    imageUrl = getNodeDataText(data, "url") ?? getNodeDataText(data, "imageUrl");
+  } else if (sourceType === "asset") {
+    storageId = getNodeDataText(data, "storageId");
+    imageUrl =
+      getNodeDataText(data, "url") ??
+      getNodeDataText(data, "previewUrl") ??
+      getNodeDataText(data, "imageUrl");
+  } else if (sourceType === "render") {
+    storageId =
+      getNodeDataText(data, "storageId") ??
+      getNodeDataText(data, "lastUploadStorageId") ??
+      requestedStorageId;
+    imageUrl =
+      getNodeDataText(data, "url") ??
+      getNodeDataText(data, "lastUploadUrl") ??
+      requestedImageUrl;
+  }
+
+  if (!storageId && !imageUrl) {
+    return null;
+  }
+
+  return {
+    sourceNodeId,
+    sourceType,
+    label,
+    ...(storageId ? { storageId } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(renderPipelineHash ? { renderPipelineHash } : {}),
+  };
+}
+
+async function resolveAiTextVisualReferences(args: {
+  ctx: StorageUrlCtx & {
+    runQuery: <T>(query: FunctionReference<"query", "public">, args: unknown) => Promise<T>;
+  };
+  canvasId: Id<"canvases">;
+  visualReferences?: AiTextVisualReferenceInput[];
+}): Promise<Array<AiTextVisualReferenceInput & { imageUrl: string }>> {
+  const resolved: Array<AiTextVisualReferenceInput & { imageUrl: string }> = [];
+
+  for (const requested of args.visualReferences ?? []) {
+    const sourceNode = (await args.ctx.runQuery(
+      api.nodes.get as FunctionReference<"query", "public">,
+      {
+        nodeId: requested.sourceNodeId as Id<"nodes">,
+        includeStorageUrl: false,
+      },
+    )) as Doc<"nodes"> | null;
+    if (!sourceNode) {
+      continue;
+    }
+    assertNodeBelongsToCanvasOrThrow(sourceNode, args.canvasId);
+    const reference = resolveVisualReferenceFromNode({ node: sourceNode, requested });
+    if (!reference) {
+      continue;
+    }
+
+    let imageUrl = trimOptionalText(reference.imageUrl);
+    if (!imageUrl && reference.storageId) {
+      imageUrl =
+        (await args.ctx.storage.getUrl(reference.storageId as Id<"_storage">)) ?? undefined;
+    }
+    if (!imageUrl) {
+      continue;
+    }
+
+    resolved.push({
+      ...reference,
+      imageUrl,
+    });
+  }
+
+  return resolved;
 }
 
 function buildAiTextMessages(args: {
@@ -351,6 +488,8 @@ export function definePrepareTextStream(register: typeof action) {
       modelId: v.string(),
       instruction: v.optional(v.string()),
       inputText: v.optional(v.string()),
+      visualMode: aiTextVisualModeValidator,
+      visualReferences: v.optional(v.array(aiTextVisualReferenceInputValidator)),
     },
     handler: async (
       ctx,
@@ -360,6 +499,9 @@ export function definePrepareTextStream(register: typeof action) {
       modelId: string;
       instruction?: string;
       inputText?: string;
+      visualMode?: AiTextVisualMode;
+      visualReferences: Array<AiTextVisualReferenceInput & { imageUrl: string }>;
+      modelSupportsVision: boolean;
       reservationId?: Id<"creditTransactions">;
       shouldDecrementConcurrency: boolean;
       userId: string;
@@ -404,7 +546,12 @@ export function definePrepareTextStream(register: typeof action) {
 
       const instruction = trimOptionalText(args.instruction);
       const inputText = trimOptionalText(args.inputText);
-      if (!instruction && !inputText) {
+      const visualReferences = await resolveAiTextVisualReferences({
+        ctx,
+        canvasId: args.canvasId,
+        visualReferences: args.visualReferences,
+      });
+      if (!instruction && !inputText && visualReferences.length === 0) {
         throw new Error("AI text generation needs instructions or input text");
       }
 
@@ -446,6 +593,9 @@ export function definePrepareTextStream(register: typeof action) {
         modelId: selectedModel.id,
         instruction,
         inputText,
+        visualMode: args.visualMode,
+        visualReferences,
+        modelSupportsVision: selectedModel.supportsVision,
         reservationId: reservationId ?? undefined,
         shouldDecrementConcurrency: usageIncremented,
         userId: canvas.ownerId,

@@ -28,4 +28,58 @@ describe("AI text stream messages", () => {
     expect(messages[0]!.content).not.toContain("Return JSON");
     expect(messages[1]!.content).toContain("Text or draft:\nRaw draft");
   });
+
+  it("builds multimodal messages with image file parts for visual context", () => {
+    const messages = buildAiTextStreamMessages({
+      instruction: "Write a product caption",
+      inputText: "Use a playful tone",
+      visualMode: "context",
+      visualReferences: [
+        {
+          sourceNodeId: "image-1",
+          sourceType: "image",
+          label: "Bild 1",
+          imageUrl: "https://assets.test/source.png",
+        },
+      ],
+    });
+
+    expect(messages[1]!.content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("Use the attached images as visual context."),
+      },
+      {
+        type: "file",
+        mediaType: "image",
+        data: "https://assets.test/source.png",
+      },
+    ]);
+  });
+
+  it("builds describe-mode multimodal messages that ask for image-to-text output", () => {
+    const messages = buildAiTextStreamMessages({
+      visualMode: "describe",
+      visualReferences: [
+        {
+          sourceNodeId: "ai-image-1",
+          sourceType: "ai-image",
+          label: "Bild 1",
+          imageUrl: "https://assets.test/generated.png",
+        },
+      ],
+    });
+
+    expect(messages[1]!.content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("Describe the attached image material"),
+      },
+      {
+        type: "file",
+        mediaType: "image",
+        data: "https://assets.test/generated.png",
+      },
+    ]);
+  });
 });

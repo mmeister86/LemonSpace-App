@@ -25,6 +25,7 @@ describe("agent models registry", () => {
     expect(getAgentModel("openai/gpt-5.4-mini")?.creditCost).toBe(15);
     expect(getAgentModel("openai/gpt-5.4")?.creditCost).toBe(38);
     expect(getAgentModel("openai/gpt-5.4-pro")?.creditCost).toBe(180);
+    expect(getAgentModel("openai/gpt-5.4-mini")?.supportsVision).toBe(true);
     expect(getAgentModel("unknown-model")).toBeUndefined();
   });
 

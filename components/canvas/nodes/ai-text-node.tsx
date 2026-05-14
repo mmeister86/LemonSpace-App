@@ -13,13 +13,15 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { Loader2, Sparkles, Wand2 } from "lucide-react";
+import { useMutation } from "convex/react";
+import { ImageIcon, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
+import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
@@ -51,6 +53,12 @@ import {
   MAX_AI_TEXT_DRAFT_INPUTS,
   MAX_AI_TEXT_INSTRUCTION_INPUTS,
 } from "@/lib/canvas-connection-policy";
+import {
+  isAiImageReferenceSourceType,
+  type AiImageReferenceInput,
+  type AiImageReferenceSourceType,
+} from "@/lib/ai-image-references";
+import { materializeRenderReference } from "./render-reference-materialization";
 
 type AiTextNodeData = {
   instruction?: string;
@@ -70,6 +78,15 @@ type AiTextOutputState = {
 type SourceTextNodeData = {
   content?: string;
   outputText?: string;
+};
+
+type SourceVisualNodeData = {
+  storageId?: string;
+  url?: string;
+  imageUrl?: string;
+  previewUrl?: string;
+  lastUploadStorageId?: string;
+  lastUploadUrl?: string;
 };
 
 type SourceTextNode = {
@@ -122,6 +139,48 @@ function getNodeTextContent(node: { type?: string; data?: unknown } | undefined)
   }
 
   return typeof data.content === "string" ? data.content.trim() : "";
+}
+
+function getSourceVisualReference(
+  node: { id?: string; type?: string; data?: unknown } | undefined,
+): Omit<AiImageReferenceInput, "label"> | null {
+  if (!node?.type || !isAiImageReferenceSourceType(node.type)) {
+    return null;
+  }
+  if (!node.data || typeof node.data !== "object") {
+    return null;
+  }
+
+  const data = node.data as SourceVisualNodeData;
+  const sourceNodeId = node.id ?? "";
+  const sourceType = node.type;
+
+  if (sourceType === "image" || sourceType === "ai-image") {
+    if (data.storageId) {
+      return { sourceNodeId, sourceType, storageId: data.storageId };
+    }
+    const imageUrl = data.url ?? data.imageUrl;
+    return imageUrl ? { sourceNodeId, sourceType, imageUrl } : null;
+  }
+
+  if (sourceType === "asset") {
+    if (data.storageId) {
+      return { sourceNodeId, sourceType, storageId: data.storageId };
+    }
+    const imageUrl = data.url ?? data.previewUrl ?? data.imageUrl;
+    return imageUrl ? { sourceNodeId, sourceType, imageUrl } : null;
+  }
+
+  if (sourceType === "render") {
+    const storageId = data.storageId ?? data.lastUploadStorageId;
+    if (storageId) {
+      return { sourceNodeId, sourceType, storageId };
+    }
+    const imageUrl = data.url ?? data.lastUploadUrl ?? data.imageUrl;
+    return imageUrl ? { sourceNodeId, sourceType, imageUrl } : null;
+  }
+
+  return null;
 }
 
 function isInstructionInputHandle(handle: string | null | undefined): boolean {
@@ -178,7 +237,9 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const nodeData = data as AiTextNodeData;
   const { getNode } = useReactFlow();
   const { createNodeConnectedFromSource } = useCanvasPlacement();
+  const graph = useCanvasGraph();
   const { queueNodeDataUpdate, status } = useCanvasSync();
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const balance = useAuthQuery(api.credits.getBalance);
   const subscription = useAuthQuery(api.credits.getSubscription);
   const edges = useStore((store) => store.edges);
@@ -231,20 +292,32 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     const incomingEdges = edges.filter((edge) => edge.target === id);
     const instructionSourceNodes: Array<{ edgeId?: string; node: SourceTextNode }> = [];
     const draftSourceNodes: Array<{ edgeId?: string; node: SourceTextNode }> = [];
+    const visualSourceNodes: Array<{ edgeId?: string; node: SourceTextNode }> = [];
 
     for (const edge of incomingEdges) {
       const sourceNode = nodes.find((node) => node.id === edge.source);
-      if (sourceNode?.type !== "text" && sourceNode?.type !== "ai-text-output") {
-        continue;
-      }
-
-      if (isInstructionInputHandle(edge.targetHandle)) {
+      if (
+        (sourceNode?.type === "text" || sourceNode?.type === "ai-text-output") &&
+        isInstructionInputHandle(edge.targetHandle)
+      ) {
         instructionSourceNodes.push({ edgeId: edge.id, node: sourceNode });
         continue;
       }
 
-      if (isDraftInputHandle(edge.targetHandle)) {
+      if (
+        (sourceNode?.type === "text" || sourceNode?.type === "ai-text-output") &&
+        isDraftInputHandle(edge.targetHandle)
+      ) {
         draftSourceNodes.push({ edgeId: edge.id, node: sourceNode });
+        continue;
+      }
+
+      if (
+        sourceNode?.type &&
+        isAiImageReferenceSourceType(sourceNode.type) &&
+        isDraftInputHandle(edge.targetHandle)
+      ) {
+        visualSourceNodes.push({ edgeId: edge.id, node: sourceNode });
       }
     }
 
@@ -266,10 +339,20 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
         label: `Text ${index + 1}`,
         text: getNodeTextContent(node),
       }));
+    const visualInputs = visualSourceNodes
+      .sort((left, right) => compareSourceNodes(left.node, right.node))
+      .slice(0, MAX_AI_TEXT_DRAFT_INPUTS)
+      .map(({ edgeId, node }, index) => ({
+        key: edgeId ?? `${node.id}:visual:${index}`,
+        sourceNodeId: node.id,
+        sourceType: node.type as AiImageReferenceSourceType,
+        label: `Bild ${index + 1}`,
+      }));
 
     return {
       instructionInputs,
       draftInputs,
+      visualInputs,
       instructionText: buildConnectedRoleText(instructionInputs, "Vorgabe"),
       draftText: buildConnectedRoleText(draftInputs, "Text"),
     };
@@ -279,6 +362,7 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const connectedText = connectedInputMeta.draftText;
   const hasConnectedInstructionInput = connectedInputMeta.instructionInputs.length > 0;
   const hasConnectedInput = connectedInputMeta.draftInputs.length > 0;
+  const hasConnectedVisualInput = connectedInputMeta.visualInputs.length > 0;
   const effectiveInstruction = hasConnectedInstructionInput
     ? connectedInstructionText
     : instruction;
@@ -302,7 +386,9 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
   const hasEnoughCredits =
     availableCredits === null ? true : availableCredits >= creditCost;
   const hasAnyInput =
-    effectiveInstruction.trim().length > 0 || effectiveInputText.trim().length > 0;
+    effectiveInstruction.trim().length > 0 ||
+    effectiveInputText.trim().length > 0 ||
+    hasConnectedVisualInput;
 
   const debouncedSave = useDebouncedCallback(
     (nextInstruction: string, nextInputText: string, nextModelId: string) => {
@@ -404,6 +490,35 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     try {
       const instructionToUse = effectiveInstruction.trim();
       const inputTextToUse = effectiveInputText.trim();
+      const visualReferences: AiImageReferenceInput[] = [];
+      for (const [index, input] of connectedInputMeta.visualInputs.entries()) {
+        const label = `Bild ${index + 1}`;
+        const sourceNode = nodes.find((node) => node.id === input.sourceNodeId);
+        if (sourceNode?.type === "render") {
+          const graphNode = graph.nodesById.get(sourceNode.id);
+          if (!graphNode) continue;
+          const materialized = await materializeRenderReference({
+            node: graphNode,
+            graph,
+            label,
+            generateUploadUrl,
+            queueNodeDataUpdate,
+          });
+          if (materialized) {
+            visualReferences.push(materialized);
+          }
+          continue;
+        }
+
+        const visualReference = getSourceVisualReference(sourceNode);
+        if (visualReference && sourceNode) {
+          visualReferences.push({
+            ...visualReference,
+            sourceNodeId: sourceNode.id,
+            label,
+          });
+        }
+      }
       const currentNode = getNode(id);
       const offsetX = (currentNode?.measured?.width ?? 360) + 32;
       const position = {
@@ -421,6 +536,7 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
           modelId: resolvedModelId,
           creditCost,
           canvasId,
+          visualReferences,
           runStartedAt,
           runEvents: initialEvents,
         },
@@ -459,6 +575,7 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
             modelId: resolvedModelId,
             instruction: instructionToUse || undefined,
             inputText: inputTextToUse || undefined,
+            visualReferences: visualReferences.length > 0 ? visualReferences : undefined,
           }),
         }).then((response) => readTextStream(response, outputNodeId!)),
         {
@@ -496,19 +613,24 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
     availableCredits,
     createNodeConnectedFromSource,
     creditCost,
+    connectedInputMeta.visualInputs,
     effectiveInputText,
     effectiveInstruction,
+    generateUploadUrl,
     getNode,
+    graph,
     hasAnyInput,
     hasEnoughCredits,
     id,
     isGenerating,
     nodeData.canvasId,
+    nodes,
     resolvedModelId,
     router,
     status.isOffline,
     t,
     tToast,
+    queueNodeDataUpdate,
   ]);
 
   const outputText =
@@ -712,6 +834,25 @@ export default function AiTextNode({ id, data, selected }: NodeProps<AiTextNodeT
             />
           )}
         </div>
+
+        {hasConnectedVisualInput ? (
+          <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+              <ImageIcon className="h-3.5 w-3.5" />
+              <span>{t("visualInputFromImageNode")}</span>
+            </div>
+            <div className="mt-2 space-y-1">
+              {connectedInputMeta.visualInputs.map((input) => (
+                <p
+                  key={input.key}
+                  className="text-[10px] font-medium uppercase text-sky-700/80 dark:text-sky-300/80"
+                >
+                  {input.label} · {input.sourceType}
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="space-y-1.5">
           <Label className="text-[11px] text-muted-foreground">{t("modelLabel")}</Label>

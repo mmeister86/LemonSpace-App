@@ -393,6 +393,11 @@
     "inputBadge": "Material",
     "inputRoleHint": "Material that will be rewritten or processed.",
     "inputFromTextNode": "Draft from connected text node",
+    "visualInputFromImageNode": "Image material from connected nodes",
+    "visualMode": {
+      "context": "Use as context",
+      "describe": "Describe image"
+    },
     "connectedInstructionEmpty": "(Connected instruction node is empty)",
     "connectedInputEmpty": "(Connected text node is empty)",
     "modelLabel": "Model",

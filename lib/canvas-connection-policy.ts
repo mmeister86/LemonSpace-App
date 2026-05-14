@@ -98,9 +98,27 @@ export function isAgentContextSourceType(sourceType: string): boolean {
   return AGENT_ALLOWED_SOURCE_TYPES.has(sourceType);
 }
 
-const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
+const AI_TEXT_TEXT_SOURCE_TYPES = new Set<string>(["text", "ai-text-output"]);
+const AI_TEXT_VISUAL_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "ai-image",
+  "render",
+]);
+const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>([
+  ...AI_TEXT_TEXT_SOURCE_TYPES,
+  ...AI_TEXT_VISUAL_SOURCE_TYPES,
+]);
 
 export function isAiTextInputSourceType(sourceType: string): boolean {
+  return AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType);
+}
+
+export function isAiTextInstructionSourceType(sourceType: string): boolean {
+  return AI_TEXT_TEXT_SOURCE_TYPES.has(sourceType);
+}
+
+export function isAiTextDraftSourceType(sourceType: string): boolean {
   return AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType);
 }
 
@@ -338,12 +356,16 @@ export function validateCanvasConnectionPolicy(args: {
   }
 
   if (targetType === "ai-text") {
-    if (!AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+    const role = aiTextRoleForHandle(targetHandle);
+    if (role === null) {
       return "ai-text-source-invalid";
     }
 
-    const role = aiTextRoleForHandle(targetHandle);
-    if (role === null) {
+    if (role === "instruction" && !AI_TEXT_TEXT_SOURCE_TYPES.has(sourceType)) {
+      return "ai-text-source-invalid";
+    }
+
+    if (role === "draft" && !AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       return "ai-text-source-invalid";
     }
 

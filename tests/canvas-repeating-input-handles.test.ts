@@ -20,6 +20,9 @@ const nodeTypeById = new Map<string, string>([
   ["image-7", "image"],
   ["image-8", "image"],
   ["image-9", "image"],
+  ["asset-1", "asset"],
+  ["ai-image-1", "ai-image"],
+  ["render-1", "render"],
   ["text-1", "text"],
   ["text-2", "text"],
   ["text-3", "text"],
@@ -423,6 +426,59 @@ describe("canvas repeating input handles", () => {
     ]);
   });
 
+  it("renders visual ai-text sources as draft handles only", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "ai-text",
+      nodeId: "ai-text-1",
+      edges: [
+        {
+          id: "edge-image",
+          source: "image-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-in",
+        },
+        {
+          id: "edge-asset",
+          source: "asset-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-in-2",
+        },
+        {
+          id: "edge-render-instruction",
+          source: "render-1",
+          target: "ai-text-1",
+          targetHandle: "ai-text-instruction-in",
+        },
+      ],
+      nodeTypeById,
+    });
+
+    expect(handles).toEqual([
+      {
+        handleId: "ai-text-instruction-in",
+        isOccupied: false,
+        topPercent: 30,
+      },
+      {
+        edgeId: "edge-image",
+        handleId: "ai-text-in",
+        isOccupied: true,
+        topPercent: 64,
+      },
+      {
+        edgeId: "edge-asset",
+        handleId: "ai-text-in-2",
+        isOccupied: true,
+        topPercent: 70,
+      },
+      {
+        handleId: "ai-text-in-3",
+        isOccupied: false,
+        topPercent: 76,
+      },
+    ]);
+  });
+
   it("omits free ai-text handles once each role has three inputs", () => {
     const edges = [
       { source: "text-1", targetHandle: "ai-text-instruction-in" },
@@ -532,5 +588,16 @@ describe("canvas repeating input handles", () => {
         nodeTypeById,
       }),
     ).toBe("ai-text-in-2");
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "ai-image",
+        targetType: "ai-text",
+        targetNodeId: "ai-text-1",
+        targetHandle: "ai-text-instruction-in-2",
+        edges,
+        nodeTypeById,
+      }),
+    ).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { streamText } from "ai";
+import { generateText, streamText, type ModelMessage } from "ai";
 import { NextResponse } from "next/server";
 
 import { api } from "@/convex/_generated/api";
@@ -6,9 +6,60 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { getOpenRouterModel } from "@/lib/ai-stream/openrouter-provider";
 import { parseTextStreamRequest } from "@/lib/ai-stream/stream-protocol";
 import { buildAiTextStreamMessages } from "@/lib/ai-stream/text-messages";
+import { DEFAULT_AI_TEXT_MODEL_ID, getAiTextModel } from "@/lib/ai-text-models";
 import { fetchAuthAction } from "@/lib/auth-server";
 
 export const maxDuration = 60;
+
+async function buildMessagesForPreparedTextRun(prepared: {
+  modelId: string;
+  instruction?: string;
+  inputText?: string;
+  visualMode?: "context" | "describe";
+  visualReferences?: Array<{
+    sourceNodeId: string;
+    sourceType: "image" | "asset" | "ai-image" | "render";
+    label: string;
+    imageUrl: string;
+  }>;
+  modelSupportsVision?: boolean;
+}): Promise<ModelMessage[]> {
+  const visualReferences = prepared.visualReferences ?? [];
+  if (visualReferences.length === 0 || prepared.modelSupportsVision !== false) {
+    return buildAiTextStreamMessages({
+      instruction: prepared.instruction,
+      inputText: prepared.inputText,
+      visualMode: prepared.visualMode,
+      visualReferences,
+    });
+  }
+
+  const fallbackModel = getAiTextModel(DEFAULT_AI_TEXT_MODEL_ID);
+  if (!fallbackModel?.supportsVision) {
+    throw new Error("The selected model cannot read images and no vision fallback model is available");
+  }
+
+  const caption = await generateText({
+    model: getOpenRouterModel(fallbackModel.id),
+    messages: buildAiTextStreamMessages({
+      instruction: "Translate the attached visual material into concise source notes for a later text generation step.",
+      visualMode: "describe",
+      visualReferences,
+    }),
+  });
+  const captionText = caption.text.trim();
+  if (!captionText) {
+    throw new Error("Vision fallback returned an empty image description");
+  }
+
+  return buildAiTextStreamMessages({
+    instruction: prepared.instruction,
+    inputText: [
+      prepared.inputText?.trim(),
+      `Image descriptions:\n${captionText}`,
+    ].filter(Boolean).join("\n\n"),
+  });
+}
 
 export async function POST(request: Request): Promise<Response> {
   let json: unknown;
@@ -30,6 +81,8 @@ export async function POST(request: Request): Promise<Response> {
     modelId: parsed.value.modelId,
     instruction: parsed.value.instruction,
     inputText: parsed.value.inputText,
+    visualMode: parsed.value.visualMode,
+    visualReferences: parsed.value.visualReferences,
   });
 
   let finalized = false;
@@ -48,10 +101,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const result = streamText({
       model: getOpenRouterModel(prepared.modelId),
-      messages: buildAiTextStreamMessages({
-        instruction: prepared.instruction,
-        inputText: prepared.inputText,
-      }),
+      messages: await buildMessagesForPreparedTextRun(prepared),
       onFinish: async ({ text }) => {
         finalized = true;
         await fetchAuthAction(api.ai.finalizeTextStreamSuccess, {

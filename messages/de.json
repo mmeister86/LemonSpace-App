@@ -393,6 +393,11 @@
     "inputBadge": "Material",
     "inputRoleHint": "Material, das umgeschrieben oder verarbeitet wird.",
     "inputFromTextNode": "Rohfassung aus verbundener Text-Node",
+    "visualInputFromImageNode": "Bildmaterial aus verbundenen Nodes",
+    "visualMode": {
+      "context": "Als Kontext nutzen",
+      "describe": "Bild beschreiben"
+    },
     "connectedInstructionEmpty": "(Verbundene Vorgaben-Node ist leer)",
     "connectedInputEmpty": "(Verbundene Text-Node ist leer)",
     "modelLabel": "Modell",

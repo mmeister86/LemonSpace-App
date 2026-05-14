@@ -505,6 +505,28 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("allows visual sources only on ai-text draft inputs", () => {
+    for (const sourceType of ["image", "asset", "ai-image", "render"]) {
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType,
+          targetType: "ai-text",
+          targetHandle: "ai-text-in",
+          targetIncomingCount: 0,
+        }),
+      ).toBeNull();
+
+      expect(
+        validateCanvasConnectionPolicy({
+          sourceType,
+          targetType: "ai-text",
+          targetHandle: "ai-text-instruction-in",
+          targetIncomingCount: 0,
+        }),
+      ).toBe("ai-text-source-invalid");
+    }
+  });
+
   it("allows ai-text to ai-text-output", () => {
     expect(
       validateCanvasConnectionPolicy({

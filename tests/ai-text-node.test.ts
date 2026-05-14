@@ -14,11 +14,17 @@ const mocks = vi.hoisted(() => ({
     target: string;
     targetHandle?: string | null;
   }>,
-  nodes: [] as Array<{ id: string; type: string; data: Record<string, unknown> }>,
+  nodes: [] as Array<{
+    id: string;
+    type: string;
+    data: Record<string, unknown>;
+    position?: { x?: number; y?: number };
+  }>,
   balance: { balance: 100, reserved: 0 } as { balance: number; reserved: number } | undefined,
   subscription: { tier: "starter" as const },
   queueNodeDataUpdate: vi.fn(async () => undefined),
   createNodeConnectedFromSource: vi.fn(async () => "ai-text-output-1" as Id<"nodes">),
+  generateUploadUrl: vi.fn(async () => "https://upload.test/render"),
   generateText: vi.fn(async () => ({ queued: true, outputNodeId: "ai-text-output-1" })),
   fetch: vi.fn(async () => new Response("Streamed text")),
   getNode: vi.fn((id: string) =>
@@ -47,6 +53,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("convex/react", () => ({
   useAction: () => mocks.generateText,
+  useMutation: () => mocks.generateUploadUrl,
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
@@ -57,6 +64,9 @@ vi.mock("@/convex/_generated/api", () => ({
     credits: {
       getBalance: "credits.getBalance",
       getSubscription: "credits.getSubscription",
+    },
+    storage: {
+      generateUploadUrl: "storage.generateUploadUrl",
     },
   },
 }));
@@ -82,6 +92,13 @@ vi.mock("@/components/canvas/canvas-sync-context", () => ({
 vi.mock("@/components/canvas/canvas-placement-context", () => ({
   useCanvasPlacement: () => ({
     createNodeConnectedFromSource: mocks.createNodeConnectedFromSource,
+  }),
+}));
+
+vi.mock("@/components/canvas/canvas-graph-context", () => ({
+  useCanvasGraph: () => ({
+    nodesById: new Map(),
+    edges: [],
   }),
 }));
 
@@ -206,6 +223,7 @@ describe("AiTextNode", () => {
     mocks.subscription = { tier: "starter" };
     mocks.queueNodeDataUpdate.mockClear();
     mocks.createNodeConnectedFromSource.mockClear();
+    mocks.generateUploadUrl.mockClear();
     mocks.generateText.mockClear();
     mocks.fetch.mockClear();
     vi.stubGlobal("fetch", mocks.fetch);
@@ -525,6 +543,98 @@ describe("AiTextNode", () => {
         }),
       }),
     );
+  });
+
+  it("generates with connected visual references without exposing visual mode choices", async () => {
+    mocks.edges = [
+      { source: "image-1", target: "ai-text-1", targetHandle: "ai-text-in" },
+      { source: "ai-image-1", target: "ai-text-1", targetHandle: "ai-text-in-2" },
+    ];
+    mocks.nodes = [
+      {
+        id: "image-1",
+        type: "image",
+        position: { x: 10, y: 200 },
+        data: { storageId: "storage-image-1" },
+      },
+      {
+        id: "ai-image-1",
+        type: "ai-image",
+        position: { x: 20, y: 300 },
+        data: { url: "https://assets.test/generated.png" },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      renderAiTextNode(root!, {
+        instruction: "",
+        inputText: "",
+      });
+    });
+
+    expect(container.textContent).toContain("visualInputFromImageNode");
+    expect(container.textContent).not.toContain("visualMode.context");
+    expect(container.textContent).not.toContain("visualMode.describe");
+
+    const button = Array.from(container.querySelectorAll("button")).find((element) =>
+      element.textContent?.includes("generateButton"),
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Generate button not found");
+    }
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.createNodeConnectedFromSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          visualReferences: [
+            {
+              sourceNodeId: "image-1",
+              sourceType: "image",
+              label: "Bild 1",
+              storageId: "storage-image-1",
+            },
+            {
+              sourceNodeId: "ai-image-1",
+              sourceType: "ai-image",
+              label: "Bild 2",
+              imageUrl: "https://assets.test/generated.png",
+            },
+          ],
+        }),
+      }),
+    );
+    const fetchMock = mocks.fetch as unknown as {
+      mock: { calls: Array<[string, RequestInit]> };
+    };
+    const fetchOptions = fetchMock.mock.calls[0]?.[1];
+    const fetchBody = JSON.parse(String(fetchOptions?.body));
+    expect(fetchBody).toEqual({
+      canvasId: "canvas-1",
+      sourceNodeId: "ai-text-1",
+      outputNodeId: "ai-text-output-1",
+      modelId: "openai/gpt-5.4-mini",
+      visualReferences: [
+        {
+          sourceNodeId: "image-1",
+          sourceType: "image",
+          storageId: "storage-image-1",
+          label: "Bild 1",
+        },
+        {
+          sourceNodeId: "ai-image-1",
+          sourceType: "ai-image",
+          imageUrl: "https://assets.test/generated.png",
+          label: "Bild 2",
+        },
+      ],
+    });
   });
 
   it("marks the source run done only after the connected output is persisted", async () => {

@@ -10,6 +10,8 @@ import {
   MAX_AI_IMAGE_REFERENCES,
 } from "@/lib/ai-image-references";
 import {
+  isAiTextDraftSourceType,
+  isAiTextInstructionSourceType,
   isAiTextInputSourceType,
   isAgentContextSourceType,
   MAX_AI_TEXT_DRAFT_INPUTS,
@@ -185,6 +187,7 @@ function getRepeatingBodyDropConfig(targetType: string | undefined): RepeatingIn
 
 function edgeMatchesRepeatingConfig(
   edge: RepeatingInputEdgeLike,
+  sourceType: string,
   targetType: string,
   config: RepeatingInputConfig,
 ): boolean {
@@ -192,10 +195,10 @@ function edgeMatchesRepeatingConfig(
     return true;
   }
   if (config.baseHandleId === AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID) {
-    return isInstructionAiTextHandle(edge.targetHandle);
+    return isInstructionAiTextHandle(edge.targetHandle) && isAiTextInstructionSourceType(sourceType);
   }
   if (config.baseHandleId === AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID) {
-    return isDraftAiTextHandle(edge.targetHandle);
+    return isDraftAiTextHandle(edge.targetHandle) && isAiTextDraftSourceType(sourceType);
   }
   return false;
 }
@@ -215,9 +218,22 @@ function collectRepeatingInputEdges(args: {
     const sourceType = nodeTypeForId(args.nodeTypeById, edge.source);
     return (
       isRepeatingSourceForTarget(sourceType, args.nodeType) &&
-      edgeMatchesRepeatingConfig(edge, args.nodeType, args.config)
+      edgeMatchesRepeatingConfig(edge, sourceType, args.nodeType, args.config)
     );
   });
+}
+
+function canAcceptAiTextSourceForConfig(
+  sourceType: string,
+  config: RepeatingInputConfig,
+): boolean {
+  if (config.baseHandleId === AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID) {
+    return isAiTextInstructionSourceType(sourceType);
+  }
+  if (config.baseHandleId === AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID) {
+    return isAiTextDraftSourceType(sourceType);
+  }
+  return false;
 }
 
 function countPromptInputs(
@@ -290,6 +306,12 @@ function canAcceptRepeatingSourceType(args: {
   }
 
   const config = getRepeatingBodyDropConfig(args.targetType);
+  if (args.targetType === "ai-text" && config) {
+    return (
+      canAcceptAiTextSourceForConfig(args.sourceType, config) &&
+      args.edges.length < config.maxSlots
+    );
+  }
   return (
     config !== null &&
     isRepeatingSourceForTarget(args.sourceType, args.targetType) &&
@@ -353,6 +375,12 @@ export function resolveNextRepeatingInputHandleId(args: {
   if (!config) {
     return undefined;
   }
+  if (
+    args.targetType === "ai-text" &&
+    !canAcceptAiTextSourceForConfig(args.sourceType, config)
+  ) {
+    return null;
+  }
 
   const occupiedEdges = collectRepeatingInputEdges({
     nodeType: args.targetType,
@@ -399,6 +427,9 @@ export function assignDisplayHandlesToRepeatingInputEdges<TEdge extends Repeatin
 
     const sourceType = nodeTypeForId(nodeTypeById, edge.source);
     if (!isRepeatingSourceForTarget(sourceType, targetType)) {
+      return;
+    }
+    if (targetType === "ai-text" && !canAcceptAiTextSourceForConfig(sourceType, config)) {
       return;
     }
 

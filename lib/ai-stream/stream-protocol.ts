@@ -1,3 +1,18 @@
+import {
+  isAiImageReferenceSourceType,
+  type AiImageReferenceSourceType,
+} from "@/lib/ai-image-references";
+import type { AiTextVisualMode } from "@/lib/ai-stream/text-messages";
+
+export type TextStreamVisualReference = {
+  sourceNodeId: string;
+  sourceType: AiImageReferenceSourceType;
+  label: string;
+  storageId?: string;
+  imageUrl?: string;
+  renderPipelineHash?: string;
+};
+
 export type TextStreamRequest = {
   canvasId: string;
   sourceNodeId: string;
@@ -5,6 +20,8 @@ export type TextStreamRequest = {
   modelId: string;
   instruction?: string;
   inputText?: string;
+  visualMode?: AiTextVisualMode;
+  visualReferences?: TextStreamVisualReference[];
 };
 
 export type AgentStreamRequest = {
@@ -16,6 +33,51 @@ export type AgentStreamRequest = {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function parseVisualMode(value: unknown): AiTextVisualMode | undefined {
+  return value === "describe" ? "describe" : value === "context" ? "context" : undefined;
+}
+
+function parseVisualReferences(value: unknown): TextStreamVisualReference[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const references = value.flatMap((item): TextStreamVisualReference[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const sourceNodeId = optionalString(record.sourceNodeId);
+    const sourceTypeRaw = optionalString(record.sourceType);
+    const storageId = optionalString(record.storageId);
+    const imageUrl = optionalString(record.imageUrl);
+
+    if (!sourceNodeId || !sourceTypeRaw || !isAiImageReferenceSourceType(sourceTypeRaw)) {
+      return [];
+    }
+
+    if (!storageId && !imageUrl) {
+      return [];
+    }
+
+    return [
+      {
+        sourceNodeId,
+        sourceType: sourceTypeRaw,
+        label: optionalString(record.label) ?? sourceNodeId,
+        ...(storageId ? { storageId } : {}),
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(optionalString(record.renderPipelineHash)
+          ? { renderPipelineHash: optionalString(record.renderPipelineHash) }
+          : {}),
+      },
+    ];
+  });
+
+  return references.length > 0 ? references : undefined;
 }
 
 export function parseTextStreamRequest(value: unknown):
@@ -44,6 +106,8 @@ export function parseTextStreamRequest(value: unknown):
       modelId,
       instruction: optionalString(record.instruction),
       inputText: optionalString(record.inputText),
+      visualMode: parseVisualMode(record.visualMode),
+      visualReferences: parseVisualReferences(record.visualReferences),
     },
   };
 }
