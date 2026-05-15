@@ -23,12 +23,12 @@ export const NODE_DEFAULTS: Record<
   text: { width: 256, height: 120, data: { content: "" } },
   prompt: {
     width: 288,
-    height: 220,
+    height: 260,
     data: { prompt: "", model: "google/gemini-2.5-flash-image", aspectRatio: "1:1" },
   },
   "video-prompt": {
     width: 288,
-    height: 220,
+    height: 260,
     data: {
       prompt: "",
       modelId: "wan-2-2-720p",

@@ -321,7 +321,7 @@ export default function VideoPromptNode({
         className="!h-3 !w-3 !bg-violet-600 !border-2 !border-background"
       />
 
-      <div className="flex h-full flex-col gap-2 p-3">
+      <div data-canvas-node-autosize-content className="flex shrink-0 flex-col gap-2 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-violet-700 dark:text-violet-300">
           <Video className="h-3.5 w-3.5" />
           {t("label")}

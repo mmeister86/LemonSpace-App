@@ -150,9 +150,9 @@ Zweistufiger Node-Flow analog `prompt → ai-image`:
 ## Default-Größen (`lib/canvas-utils.ts → NODE_DEFAULTS`)
 
 ```
-image:       280 × 200    prompt:       288 × 220
+image:       280 × 200    prompt:       288 × 260
 text:        256 × 120    ai-image:     320 × 408
-video-prompt: 288 × 220   ai-video:     360 × 280
+video-prompt: 288 × 260   ai-video:     360 × 280
 agent:       360 × 320
 group:       400 × 300    frame:        400 × 300
 note:        208 × 100    compare:      500 × 380

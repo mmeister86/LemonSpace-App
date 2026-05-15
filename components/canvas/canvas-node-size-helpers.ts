@@ -27,8 +27,8 @@ export const CANVAS_NODE_RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   // Chrome 88 + min. viewport 120 => outer minimum height 208.
   "ai-image": { minWidth: 200, minHeight: 208, keepAspectRatio: false },
   compare: { minWidth: 300, minHeight: 200 },
-  prompt: { minWidth: 260, minHeight: 220 },
-  "video-prompt": { minWidth: 260, minHeight: 220 },
+  prompt: { minWidth: 260, minHeight: 260 },
+  "video-prompt": { minWidth: 260, minHeight: 260 },
   "ai-text": { minWidth: 320, minHeight: 320, autoGrowWidth: false },
   "ai-text-output": { minWidth: 320, minHeight: 240, autoGrowWidth: false },
   curves: { minWidth: 300, minHeight: 620 },

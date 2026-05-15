@@ -562,7 +562,7 @@ export default function PromptNode({
         className="!h-3 !w-3 !bg-violet-500 !border-2 !border-background"
       />
 
-      <div className="flex h-full flex-col gap-2 p-3">
+      <div data-canvas-node-autosize-content className="flex shrink-0 flex-col gap-2 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
           <Sparkles className="h-3.5 w-3.5" />
           KI-Bild
