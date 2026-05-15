@@ -312,7 +312,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
       />
 
-      <div className="flex h-full flex-col gap-3 p-3">
+      <div className="flex shrink-0 flex-col gap-3 p-3">
         <header className="space-y-1">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-xs font-semibold text-foreground" title={resolvedTitle}>
@@ -350,7 +350,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             <AiStreamingResponse
               text={activeLocalStream.text}
               empty={t("plannedContent")}
-              className="max-h-48 rounded-md border border-border/70 bg-background/70 text-[13px] text-foreground/90"
+              className="h-auto overflow-visible rounded-md border border-border/70 bg-background/70 text-[13px] text-foreground/90"
             />
           </section>
         ) : isSkeleton ? (
@@ -386,7 +386,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             {previewText !== "" ? (
               <section data-testid="agent-output-preview" className="space-y-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("previewLabel")}</p>
-                <div className="max-h-40 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
+                <div className="rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90">
                   <p className="whitespace-pre-wrap break-words">{previewText}</p>
                 </div>
               </section>
@@ -487,7 +487,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             </p>
             <pre
               data-testid="agent-output-json-body"
-              className="max-h-48 overflow-auto rounded-md border border-border/80 bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground/95"
+              className="overflow-x-auto rounded-md border border-border/80 bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground/95"
             >
               <code>{formattedJsonBody}</code>
             </pre>
@@ -499,7 +499,7 @@ export default function AgentOutputNode({ id, data, selected }: NodeProps<AgentO
             </p>
             <div
               data-testid="agent-output-text-body"
-              className="max-h-48 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90"
+              className="rounded-md border border-border/70 bg-background/70 p-3 text-[13px] leading-relaxed text-foreground/90"
             >
               <p className="whitespace-pre-wrap break-words">{body}</p>
             </div>

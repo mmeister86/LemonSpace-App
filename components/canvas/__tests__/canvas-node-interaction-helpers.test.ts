@@ -1,10 +1,18 @@
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   computeResizeChangesToPersist,
   updateResizeInteractionState,
 } from "@/components/canvas/canvas-node-resize-persistence";
+import { adjustNodeDimensionChanges } from "@/components/canvas/canvas-node-change-helpers";
+import {
+  computeContentAwareNodeMinimumSize,
+  resolveNextContentMinimumSize,
+  type NodeMinimumSize,
+} from "@/components/canvas/canvas-node-size-helpers";
 import {
   findOverlappingGroupTarget,
   markGroupDropTarget,
@@ -17,6 +25,8 @@ import {
 } from "@/components/canvas/canvas-edge-intersection-split";
 
 describe("canvas node interaction helpers", () => {
+  const projectRoot = process.cwd();
+
   it("tracks resize interaction state and persists only completed dimensions", () => {
     const isResizing = { current: false };
     const historyCaptured = { current: false };
@@ -67,6 +77,144 @@ describe("canvas node interaction helpers", () => {
         new Set(["node-c"]),
       ),
     ).toEqual([{ nodeId: "node-a", width: 180, height: 120 }]);
+  });
+
+  it("clamps generic node dimension changes to the configured node minimum", () => {
+    const promptNode: RFNode = {
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 0, y: 0 },
+      style: { width: 288, height: 220 },
+      data: {},
+    };
+
+    expect(
+      adjustNodeDimensionChanges(
+        [
+          {
+            type: "dimensions",
+            id: "prompt-1",
+            resizing: false,
+            dimensions: { width: 120, height: 80 },
+          },
+        ],
+        [promptNode],
+      ),
+    ).toEqual([
+      {
+        type: "dimensions",
+        id: "prompt-1",
+        resizing: false,
+        dimensions: { width: 260, height: 220 },
+      },
+    ]);
+  });
+
+  it("does not request a content minimum state update when measured size is unchanged", () => {
+    const current: NodeMinimumSize = { minWidth: 320, minHeight: 240 };
+
+    expect(resolveNextContentMinimumSize(current, current)).toBeNull();
+    expect(
+      resolveNextContentMinimumSize(current, {
+        minWidth: 300,
+        minHeight: 220,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the grown content minimum when measured content needs more space", () => {
+    expect(
+      resolveNextContentMinimumSize(
+        { minWidth: 320, minHeight: 240 },
+        { minWidth: 348, minHeight: 812 },
+      ),
+    ).toEqual({ minWidth: 348, minHeight: 812 });
+  });
+
+  it("does not grow text nodes horizontally from chrome overflow", () => {
+    expect(
+      computeContentAwareNodeMinimumSize({
+        nodeType: "text",
+        clientWidth: 300,
+        scrollWidth: 306,
+        clientHeight: 120,
+        scrollHeight: 180,
+      }),
+    ).toEqual({ minWidth: 220, minHeight: 180 });
+  });
+
+  it("keeps dynamic text-heavy node widths stable while allowing vertical growth", () => {
+    const cases = [
+      ["ai-text", 320, 640],
+      ["ai-text-output", 320, 560],
+      ["agent", 300, 700],
+      ["agent-output", 320, 620],
+    ] as const;
+
+    for (const [nodeType, expectedMinWidth, expectedMinHeight] of cases) {
+      expect(
+        computeContentAwareNodeMinimumSize({
+          nodeType,
+          clientWidth: 360,
+          scrollWidth: 428,
+          clientHeight: 280,
+          scrollHeight: expectedMinHeight,
+        }),
+      ).toEqual({
+        minWidth: expectedMinWidth,
+        minHeight: expectedMinHeight,
+      });
+    }
+  });
+
+  it("uses measured autosize content bounds when scrollHeight misses flex overflow", () => {
+    const args = {
+      nodeType: "ai-text",
+      clientWidth: 460,
+      scrollWidth: 460,
+      clientHeight: 520,
+      scrollHeight: 520,
+      contentBoundsHeight: 610,
+    } as Parameters<typeof computeContentAwareNodeMinimumSize>[0] & {
+      contentBoundsHeight: number;
+    };
+
+    expect(computeContentAwareNodeMinimumSize(args)).toEqual({
+      minWidth: 320,
+      minHeight: 610,
+    });
+  });
+
+  it("keeps dynamic AI and agent node content in measurable flow layouts", () => {
+    const aiTextSource = readFileSync(
+      join(projectRoot, "components/canvas/nodes/ai-text-node.tsx"),
+      "utf8",
+    );
+    const aiTextOutputSource = readFileSync(
+      join(projectRoot, "components/canvas/nodes/ai-text-output-node.tsx"),
+      "utf8",
+    );
+    const agentSource = readFileSync(
+      join(projectRoot, "components/canvas/nodes/agent-node.tsx"),
+      "utf8",
+    );
+    const agentOutputSource = readFileSync(
+      join(projectRoot, "components/canvas/nodes/agent-output-node.tsx"),
+      "utf8",
+    );
+
+    expect(aiTextSource).not.toContain("className=\"flex h-full min-h-0 w-full min-w-0 flex-col\"");
+    expect(aiTextSource).not.toContain("className=\"flex min-h-0 flex-1 flex-col gap-3 p-3\"");
+    expect(aiTextSource).toContain("data-canvas-node-autosize-content");
+    expect(aiTextSource).toContain("className=\"flex shrink-0 flex-col gap-3 p-3\"");
+
+    expect(aiTextOutputSource).toContain("className=\"relative min-h-32 shrink-0 bg-muted/20\"");
+
+    expect(agentSource).not.toContain("className=\"flex h-full flex-col gap-3 p-3\"");
+    expect(agentSource).toContain("className=\"flex shrink-0 flex-col gap-3 p-3\"");
+
+    expect(agentOutputSource).not.toContain("className=\"flex h-full flex-col gap-3 p-3\"");
+    expect(agentOutputSource).toContain("className=\"flex shrink-0 flex-col gap-3 p-3\"");
   });
 
   it("selects the deepest overlapping group target and marks it", () => {

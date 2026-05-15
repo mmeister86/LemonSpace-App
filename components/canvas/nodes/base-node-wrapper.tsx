@@ -5,7 +5,13 @@
  * Renders and manages the Canvas base node wrapper node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import type { ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   getConnectedEdges,
   NodeResizeControl,
@@ -17,16 +23,17 @@ import {
 import { Trash2, Copy, Star } from "lucide-react";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import {
+  computeContentAwareNodeMinimumSize,
+  getCanvasNodeResizeConfig,
+  growNodeDimensionsToMinimum,
+  resolveNextContentMinimumSize,
+  type NodeMinimumSize,
+} from "@/components/canvas/canvas-node-size-helpers";
 import type { Id } from "@/convex/_generated/dataModel";
 import { readNodeFavorite, setNodeFavorite } from "@/lib/canvas-node-favorite";
 import { isCanvasNodeType } from "@/lib/canvas-node-types";
 import { NodeErrorBoundary } from "./node-error-boundary";
-
-interface ResizeConfig {
-  minWidth: number;
-  minHeight: number;
-  keepAspectRatio?: boolean;
-}
 
 export interface NodeToolbarAction {
   id: string;
@@ -36,31 +43,6 @@ export interface NodeToolbarAction {
   disabled?: boolean;
   className?: string;
 }
-
-const RESIZE_CONFIGS: Record<string, ResizeConfig> = {
-  frame: { minWidth: 200, minHeight: 150 },
-  group: { minWidth: 150, minHeight: 100 },
-  image: { minWidth: 140, minHeight: 120, keepAspectRatio: true },
-  asset: { minWidth: 200, minHeight: 240, keepAspectRatio: false },
-  "asset-video": { minWidth: 200, minHeight: 120, keepAspectRatio: true },
-  video: { minWidth: 200, minHeight: 120, keepAspectRatio: true },
-  // Chrome 88 + min. Viewport 120 → äußere Mindesthöhe 208 (siehe canvas onNodesChange)
-  "ai-image": { minWidth: 200, minHeight: 208, keepAspectRatio: false },
-  compare: { minWidth: 300, minHeight: 200 },
-  prompt: { minWidth: 260, minHeight: 220 },
-  curves: { minWidth: 300, minHeight: 620 },
-  "color-adjust": { minWidth: 300, minHeight: 760 },
-  "light-adjust": { minWidth: 300, minHeight: 860 },
-  "detail-adjust": { minWidth: 300, minHeight: 820 },
-  crop: { minWidth: 320, minHeight: 520 },
-  render: { minWidth: 260, minHeight: 300, keepAspectRatio: true },
-  agent: { minWidth: 300, minHeight: 280 },
-  text: { minWidth: 220, minHeight: 90 },
-  note: { minWidth: 200, minHeight: 90 },
-  comment: { minWidth: 260, minHeight: 180 },
-};
-
-const DEFAULT_CONFIG: ResizeConfig = { minWidth: 80, minHeight: 50 };
 
 const CORNERS = [
   "top-left",
@@ -76,6 +58,36 @@ function FavoriteNodeBacklight() {
       className="absolute -inset-6 rounded-[inherit] bg-primary/20 opacity-80 blur-2xl dark:bg-primary/25"
     />
   );
+}
+
+function numericDimension(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function measureAutosizeContentBoundsHeight(chrome: HTMLDivElement): number | undefined {
+  const probes = chrome.querySelectorAll<HTMLElement>("[data-canvas-node-autosize-content]");
+  if (probes.length === 0) {
+    return undefined;
+  }
+
+  const chromeRect = chrome.getBoundingClientRect();
+  const scaleY =
+    chromeRect.height > 0 && chrome.offsetHeight > 0
+      ? chromeRect.height / chrome.offsetHeight
+      : 1;
+  let maxBottom = 0;
+  probes.forEach((probe) => {
+    const probeRect = probe.getBoundingClientRect();
+    const rawBottom = probeRect.bottom - chromeRect.top;
+    const bottom = scaleY > 0 ? rawBottom / scaleY : rawBottom;
+    if (Number.isFinite(bottom) && bottom > maxBottom) {
+      maxBottom = bottom;
+    }
+  });
+
+  return maxBottom > 0 ? Math.ceil(maxBottom) : undefined;
 }
 
 /** Internal fields to strip when duplicating a node */
@@ -282,11 +294,160 @@ export default function BaseNodeWrapper({
   className = "",
   backlight,
 }: BaseNodeWrapperProps) {
-  const config = RESIZE_CONFIGS[nodeType] ?? DEFAULT_CONFIG;
+  const config = getCanvasNodeResizeConfig(nodeType);
+  const [contentMinimumSize, setContentMinimumSize] = useState<NodeMinimumSize>({
+    minWidth: config.minWidth,
+    minHeight: config.minHeight,
+  });
+  const contentMinimumSizeRef = useRef<NodeMinimumSize>({
+    minWidth: config.minWidth,
+    minHeight: config.minHeight,
+  });
+  const nodeChromeRef = useRef<HTMLDivElement | null>(null);
+  const pendingMeasureFrameRef = useRef<number | null>(null);
+  const lastQueuedAutoSizeRef = useRef<{ width: number; height: number } | null>(null);
   const nodeId = useNodeId();
   const { getNode } = useReactFlow();
+  const { queueNodeResize } = useCanvasSync();
   const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
   const favoriteBacklight = isFavorite ? (backlight ?? <FavoriteNodeBacklight />) : undefined;
+  const resizeMinimum = {
+    minWidth: Math.max(config.minWidth, contentMinimumSize.minWidth),
+    minHeight: Math.max(config.minHeight, contentMinimumSize.minHeight),
+  };
+
+  const measureAndGrowNode = useCallback(() => {
+    const chrome = nodeChromeRef.current;
+    if (!chrome) return;
+
+    const measuredMinimum = computeContentAwareNodeMinimumSize({
+      nodeType,
+      scrollWidth: chrome.scrollWidth,
+      scrollHeight: chrome.scrollHeight,
+      clientWidth: chrome.clientWidth,
+      clientHeight: chrome.clientHeight,
+      contentBoundsHeight: measureAutosizeContentBoundsHeight(chrome),
+    });
+    const nextContentMinimum = resolveNextContentMinimumSize(
+      contentMinimumSizeRef.current,
+      measuredMinimum,
+    );
+    const minimum = nextContentMinimum ?? contentMinimumSizeRef.current;
+
+    if (nextContentMinimum) {
+      contentMinimumSizeRef.current = nextContentMinimum;
+      setContentMinimumSize(nextContentMinimum);
+    }
+
+    if (!nodeId) return;
+
+    const node = getNode(nodeId);
+    const currentWidth =
+      numericDimension(node?.style?.width) ??
+      numericDimension(node?.measured?.width) ??
+      numericDimension(chrome.clientWidth);
+    const currentHeight =
+      numericDimension(node?.style?.height) ??
+      numericDimension(node?.measured?.height) ??
+      numericDimension(chrome.clientHeight);
+
+    if (currentWidth === undefined || currentHeight === undefined) {
+      return;
+    }
+
+    const nextSize = growNodeDimensionsToMinimum({
+      width: currentWidth,
+      height: currentHeight,
+      minimum,
+    });
+    if (!nextSize) {
+      lastQueuedAutoSizeRef.current = null;
+      return;
+    }
+
+    const lastQueued = lastQueuedAutoSizeRef.current;
+    if (
+      lastQueued?.width === nextSize.width &&
+      lastQueued.height === nextSize.height &&
+      currentWidth >= nextSize.width &&
+      currentHeight >= nextSize.height
+    ) {
+      return;
+    }
+
+    lastQueuedAutoSizeRef.current = nextSize;
+    void queueNodeResize({
+      nodeId: nodeId as Id<"nodes">,
+      width: nextSize.width,
+      height: nextSize.height,
+      skipHistory: true,
+    }).catch((error: unknown) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[BaseNodeWrapper] auto resize failed", error);
+      }
+    });
+  }, [getNode, nodeId, nodeType, queueNodeResize]);
+
+  const cancelPendingMeasureFrame = useCallback(() => {
+    const pendingFrame = pendingMeasureFrameRef.current;
+    if (pendingFrame === null || typeof window === "undefined") return;
+    if (typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(pendingFrame);
+    } else {
+      window.clearTimeout(pendingFrame);
+    }
+    pendingMeasureFrameRef.current = null;
+  }, []);
+
+  const scheduleMeasureAndGrowNode = useCallback(() => {
+    if (pendingMeasureFrameRef.current !== null) return;
+    if (typeof window === "undefined") return;
+
+    const runMeasure = () => {
+      pendingMeasureFrameRef.current = null;
+      measureAndGrowNode();
+    };
+
+    if (typeof window.requestAnimationFrame === "function") {
+      pendingMeasureFrameRef.current = window.requestAnimationFrame(runMeasure);
+      return;
+    }
+
+    pendingMeasureFrameRef.current = window.setTimeout(runMeasure, 0);
+  }, [measureAndGrowNode]);
+
+  useEffect(() => {
+    scheduleMeasureAndGrowNode();
+    return cancelPendingMeasureFrame;
+  }, [cancelPendingMeasureFrame, scheduleMeasureAndGrowNode]);
+
+  useEffect(() => {
+    const chrome = nodeChromeRef.current;
+    if (!chrome) return undefined;
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleMeasureAndGrowNode);
+    const mutationObserver =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(scheduleMeasureAndGrowNode);
+
+    resizeObserver?.observe(chrome);
+    mutationObserver?.observe(chrome, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      cancelPendingMeasureFrame();
+    };
+  }, [cancelPendingMeasureFrame, scheduleMeasureAndGrowNode]);
 
   const statusStyles: Record<string, string> = {
     idle: "",
@@ -300,6 +461,8 @@ export default function BaseNodeWrapper({
 
   const nodeChrome = (
     <div
+      ref={nodeChromeRef}
+      data-testid="canvas-node-chrome"
       className={`
         h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
@@ -312,8 +475,8 @@ export default function BaseNodeWrapper({
           <NodeResizeControl
             key={corner}
             position={corner}
-            minWidth={config.minWidth}
-            minHeight={config.minHeight}
+            minWidth={resizeMinimum.minWidth}
+            minHeight={resizeMinimum.minHeight}
             keepAspectRatio={config.keepAspectRatio}
             style={{
               background: "none",

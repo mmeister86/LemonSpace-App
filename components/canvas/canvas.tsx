@@ -258,9 +258,16 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
   );
 
   const runResizeNodeWithHistory = useCallback(
-    async (...args: Parameters<typeof runResizeNodeMutation>) => {
-      canvasHistory.capture();
-      return await runResizeNodeMutation(...args);
+    async (
+      args: Parameters<typeof runResizeNodeMutation>[0] & {
+        skipHistory?: boolean;
+      },
+    ) => {
+      const { skipHistory, ...mutationArgs } = args;
+      if (!skipHistory) {
+        canvasHistory.capture();
+      }
+      return await runResizeNodeMutation(mutationArgs);
     },
     [canvasHistory, runResizeNodeMutation],
   );

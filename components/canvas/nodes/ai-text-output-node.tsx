@@ -225,7 +225,7 @@ export default function AiTextOutputNode({
       selected={selected}
       status={nodeData._status}
       statusMessage={nodeData._statusMessage}
-      className="flex h-full min-h-0 w-full min-w-0 flex-col border-violet-500/30"
+      className="flex w-full min-w-0 flex-col border-violet-500/30"
     >
       <CanvasHandle
         nodeId={id}
@@ -253,16 +253,16 @@ export default function AiTextOutputNode({
         ) : null}
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/20">
+      <div className="relative min-h-32 shrink-0 bg-muted/20">
         {isLoading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+          <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-4 text-center">
             <Loader2 className="h-6 w-6 animate-spin text-violet-500" />
             <p className="text-xs text-muted-foreground">{t("generating")}</p>
           </div>
         ) : null}
 
         {status === "error" && !isLoading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+          <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-4 text-center">
             <AlertCircle className="h-6 w-6 text-destructive" />
             <p className="text-xs text-destructive">
               {classifiedError.rawMessage ?? t("errorFallback")}
@@ -291,7 +291,11 @@ export default function AiTextOutputNode({
             />
             {outputText ? (
               activeLocalStream ? (
-                <AiStreamingResponse text={outputText} empty={t("emptyHint")} className="p-0" />
+                <AiStreamingResponse
+                  text={outputText}
+                  empty={t("emptyHint")}
+                  className="h-auto overflow-visible p-0"
+                />
               ) : (
                 <div className="whitespace-pre-wrap break-words">{outputText}</div>
               )

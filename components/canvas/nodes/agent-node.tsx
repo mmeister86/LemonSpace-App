@@ -632,7 +632,7 @@ export default function AgentNode({ id, data, selected }: NodeProps<AgentNodeTyp
         className="!h-3 !w-3 !bg-amber-500 !border-2 !border-background"
       />
 
-      <div className="flex h-full flex-col gap-3 p-3">
+      <div className="flex shrink-0 flex-col gap-3 p-3">
         <header className="space-y-1">
           <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
             <Bot className="h-3.5 w-3.5" />

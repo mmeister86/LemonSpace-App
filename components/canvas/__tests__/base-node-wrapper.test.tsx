@@ -6,19 +6,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
+  queueNodeResize: vi.fn(async () => undefined),
   createNodeWithIntersection: vi.fn(async () => undefined),
   getNode: vi.fn(),
   getNodes: vi.fn(() => []),
   getEdges: vi.fn(() => []),
   setNodes: vi.fn(),
   deleteElements: vi.fn(async () => undefined),
+  nodeResizeControlProps: [] as Array<{
+    minWidth?: number;
+    minHeight?: number;
+    keepAspectRatio?: boolean;
+  }>,
 }));
 
 vi.mock("@xyflow/react", () => ({
   NodeToolbar: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="node-toolbar">{children}</div>
   ),
-  NodeResizeControl: () => null,
+  NodeResizeControl: (props: {
+    minWidth?: number;
+    minHeight?: number;
+    keepAspectRatio?: boolean;
+  }) => {
+    mocks.nodeResizeControlProps.push(props);
+    return <div data-testid="node-resize-control" />;
+  },
   Position: { Top: "top" },
   useNodeId: () => "node-1",
   useReactFlow: () => ({
@@ -34,6 +47,7 @@ vi.mock("@xyflow/react", () => ({
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
   useCanvasSync: () => ({
     queueNodeDataUpdate: mocks.queueNodeDataUpdate,
+    queueNodeResize: mocks.queueNodeResize,
   }),
 }));
 
@@ -53,12 +67,14 @@ describe("BaseNodeWrapper", () => {
 
   beforeEach(() => {
     mocks.queueNodeDataUpdate.mockClear();
+    mocks.queueNodeResize.mockClear();
     mocks.createNodeWithIntersection.mockClear();
     mocks.getNode.mockReset();
     mocks.getNodes.mockClear();
     mocks.getEdges.mockClear();
     mocks.setNodes.mockClear();
     mocks.deleteElements.mockClear();
+    mocks.nodeResizeControlProps.length = 0;
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -76,18 +92,22 @@ describe("BaseNodeWrapper", () => {
     root = null;
   });
 
-  async function renderWrapper(nodeData: Record<string, unknown>, selected = true) {
+  async function renderWrapper(
+    nodeData: Record<string, unknown>,
+    selected = true,
+    nodeType = "text",
+  ) {
     mocks.getNode.mockReturnValue({
       id: "node-1",
-      type: "text",
+      type: nodeType,
       data: nodeData,
       position: { x: 0, y: 0 },
-      style: {},
+      style: { width: 300, height: 200 },
     });
 
     await act(async () => {
       root?.render(
-        <BaseNodeWrapper nodeType="text" selected={selected}>
+        <BaseNodeWrapper nodeType={nodeType} selected={selected}>
           <div>Inner node content</div>
         </BaseNodeWrapper>,
       );
@@ -231,5 +251,398 @@ describe("BaseNodeWrapper", () => {
 
     expect(container?.querySelector('[data-testid="canvas-node-backlight"]')).toBeTruthy();
     expect(container?.querySelector('[data-testid="stable-preview-canvas"]')).toBe(initialCanvas);
+  });
+
+  it("grows undersized nodes to the measured content minimum", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 300 },
+      clientHeight: { configurable: true, get: () => 200 },
+      scrollWidth: { configurable: true, get: () => 348 },
+      scrollHeight: { configurable: true, get: () => 812 },
+    });
+
+    try {
+      await renderWrapper({}, true, "color-adjust");
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+        nodeId: "node-1",
+        width: 348,
+        height: 812,
+        skipHistory: true,
+      });
+      expect(
+        mocks.nodeResizeControlProps.some(
+          (props) => props.minWidth === 348 && props.minHeight === 812,
+        ),
+      ).toBe(true);
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("does not auto-resize text nodes from horizontal chrome overflow", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 300 },
+      clientHeight: { configurable: true, get: () => 120 },
+      scrollWidth: { configurable: true, get: () => 306 },
+      scrollHeight: { configurable: true, get: () => 120 },
+    });
+
+    try {
+      await renderWrapper({}, true, "text");
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).not.toHaveBeenCalled();
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("auto-resizes dynamic text-heavy nodes vertically without growing width", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 360 },
+      clientHeight: { configurable: true, get: () => 280 },
+      scrollWidth: { configurable: true, get: () => 428 },
+      scrollHeight: { configurable: true, get: () => 640 },
+    });
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "ai-text-output",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: { width: 360, height: 280 },
+    });
+
+    try {
+      await act(async () => {
+        root?.render(
+          <BaseNodeWrapper nodeType="ai-text-output" selected>
+            <div>Generated content</div>
+          </BaseNodeWrapper>,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+        nodeId: "node-1",
+        width: 360,
+        height: 640,
+        skipHistory: true,
+      });
+      expect(
+        mocks.nodeResizeControlProps.some(
+          (props) => props.minWidth === 320 && props.minHeight === 640,
+        ),
+      ).toBe(true);
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("uses autosize content probes when chrome scrollHeight misses dynamic overflow", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+      ["offsetHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")],
+    ];
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock() {
+        const element = this as HTMLElement;
+        const isProbe = element.hasAttribute("data-canvas-node-autosize-content");
+        const height = isProbe ? 610 : 520;
+        return {
+          x: 0,
+          y: 0,
+          width: 460,
+          height,
+          top: 0,
+          right: 460,
+          bottom: height,
+          left: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 460 },
+      clientHeight: { configurable: true, get: () => 520 },
+      scrollWidth: { configurable: true, get: () => 460 },
+      scrollHeight: { configurable: true, get: () => 520 },
+      offsetHeight: { configurable: true, get: () => 520 },
+    });
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "ai-text",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: { width: 460, height: 520 },
+    });
+
+    try {
+      await act(async () => {
+        root?.render(
+          <BaseNodeWrapper nodeType="ai-text" selected>
+            <div data-canvas-node-autosize-content>Dynamic status content</div>
+          </BaseNodeWrapper>,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+        nodeId: "node-1",
+        width: 460,
+        height: 610,
+        skipHistory: true,
+      });
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+      getBoundingClientRectSpy.mockRestore();
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("requeues autosize when a stale node height is replayed after the first resize request", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+      ["offsetHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")],
+    ];
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRect(this: HTMLElement) {
+        const isProbe = this.hasAttribute("data-canvas-node-autosize-content");
+        const height = isProbe ? 610 : 520;
+        return {
+          x: 0,
+          y: 0,
+          width: 460,
+          height,
+          top: 0,
+          right: 460,
+          bottom: height,
+          left: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 460 },
+      clientHeight: { configurable: true, get: () => 520 },
+      scrollWidth: { configurable: true, get: () => 460 },
+      scrollHeight: { configurable: true, get: () => 520 },
+      offsetHeight: { configurable: true, get: () => 520 },
+    });
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "ai-text",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: { width: 460, height: 520 },
+    });
+
+    try {
+      await act(async () => {
+        root?.render(
+          <BaseNodeWrapper nodeType="ai-text" selected>
+            <div data-canvas-node-autosize-content>Dynamic status content</div>
+          </BaseNodeWrapper>,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        root?.render(
+          <BaseNodeWrapper nodeType="ai-text" selected>
+            <div data-canvas-node-autosize-content>
+              Dynamic status content still taller than replayed node height
+            </div>
+          </BaseNodeWrapper>,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).toHaveBeenCalledTimes(2);
+      expect(mocks.queueNodeResize).toHaveBeenLastCalledWith({
+        nodeId: "node-1",
+        width: 460,
+        height: 610,
+        skipHistory: true,
+      });
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+      getBoundingClientRectSpy.mockRestore();
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("does not enqueue layout state updates for already-sized nodes during canvas load", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 320 },
+      clientHeight: { configurable: true, get: () => 240 },
+      scrollWidth: { configurable: true, get: () => 320 },
+      scrollHeight: { configurable: true, get: () => 240 },
+    });
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "text",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: { width: 320, height: 240 },
+    });
+
+    try {
+      await expect(
+        act(async () => {
+          root?.render(
+            <>
+              {Array.from({ length: 80 }, (_, index) => (
+                <BaseNodeWrapper
+                  key={index}
+                  nodeType="text"
+                  selected={false}
+                >
+                  <div>Node {index}</div>
+                </BaseNodeWrapper>
+              ))}
+            </>,
+          );
+        }),
+      ).resolves.toBeUndefined();
+      expect(mocks.queueNodeResize).not.toHaveBeenCalled();
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+        }
+      }
+    }
   });
 });

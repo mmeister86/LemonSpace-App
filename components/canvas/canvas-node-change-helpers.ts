@@ -12,6 +12,7 @@ import {
   parseAspectRatioString,
 } from "@/lib/image-formats";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
+import { clampNodeDimensionsToMinimum } from "./canvas-node-size-helpers";
 
 function isActiveResizeChange(change: NodeChange): boolean {
   return change.type === "dimensions" &&
@@ -199,6 +200,35 @@ function adjustAiImageNodeDimensionsChange(
   };
 }
 
+function clampGenericNodeDimensionsChange(
+  change: NodeChange,
+  node: RFNode,
+): NodeChange {
+  if (change.type !== "dimensions" || !change.dimensions) return change;
+
+  const clamped = clampNodeDimensionsToMinimum({
+    nodeType: node.type,
+    width: change.dimensions.width,
+    height: change.dimensions.height,
+  });
+
+  if (
+    clamped.width === change.dimensions.width &&
+    clamped.height === change.dimensions.height
+  ) {
+    return change;
+  }
+
+  return {
+    ...change,
+    dimensions: {
+      ...change.dimensions,
+      width: clamped.width,
+      height: clamped.height,
+    },
+  };
+}
+
 export function adjustNodeDimensionChanges(
   changes: NodeChange[],
   nodes: RFNode[],
@@ -222,7 +252,7 @@ export function adjustNodeDimensionChanges(
         return adjustAiImageNodeDimensionsChange(change, node);
       }
 
-      return change;
+      return clampGenericNodeDimensionsChange(change, node);
     })
     .filter((change): change is NodeChange => change !== null);
 }

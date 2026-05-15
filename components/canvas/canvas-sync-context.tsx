@@ -21,6 +21,7 @@ type CanvasSyncContextValue = {
     nodeId: Id<"nodes">;
     width: number;
     height: number;
+    skipHistory?: boolean;
   }) => Promise<void>;
   ungroupNodes?: (args: {
     groupNodeIds: Id<"nodes">[];
