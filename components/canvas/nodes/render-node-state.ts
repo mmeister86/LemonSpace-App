@@ -45,6 +45,7 @@ export type RenderNodeData = {
   lastUploadError?: string;
   lastUploadErrorHash?: string;
   isFavorite?: true;
+  isBypassed?: true;
   _status?: string;
   _statusMessage?: string;
 };
@@ -82,6 +83,7 @@ export type PersistedRenderData = {
   lastUploadError?: string;
   lastUploadErrorHash?: string;
   isFavorite?: true;
+  isBypassed?: true;
 };
 
 export const DEFAULT_OUTPUT_RESOLUTION: RenderResolutionOption = "original";

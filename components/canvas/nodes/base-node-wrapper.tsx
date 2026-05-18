@@ -20,7 +20,8 @@ import {
   useNodeId,
   useReactFlow,
 } from "@xyflow/react";
-import { Trash2, Copy, Star } from "lucide-react";
+import { Trash2, Copy, Eye, EyeOff, Star } from "lucide-react";
+import { logCanvasDebug } from "@/components/canvas/canvas-debug";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import {
@@ -31,7 +32,12 @@ import {
   type NodeMinimumSize,
 } from "@/components/canvas/canvas-node-size-helpers";
 import type { Id } from "@/convex/_generated/dataModel";
-import { readNodeFavorite, setNodeFavorite } from "@/lib/canvas-node-favorite";
+import {
+  readNodeBypassed,
+  readNodeFavorite,
+  setNodeBypassed,
+  setNodeFavorite,
+} from "@/lib/canvas-node-favorite";
 import { isCanvasNodeType } from "@/lib/canvas-node-types";
 import { NodeErrorBoundary } from "./node-error-boundary";
 
@@ -66,21 +72,21 @@ function numericDimension(value: unknown): number | undefined {
     : undefined;
 }
 
-function measureAutosizeContentBoundsHeight(chrome: HTMLDivElement): number | undefined {
-  const probes = chrome.querySelectorAll<HTMLElement>("[data-canvas-node-autosize-content]");
+function measureAutosizeContentBoundsHeight(root: HTMLElement): number | undefined {
+  const probes = root.querySelectorAll<HTMLElement>("[data-canvas-node-autosize-content]");
   if (probes.length === 0) {
     return undefined;
   }
 
-  const chromeRect = chrome.getBoundingClientRect();
+  const rootRect = root.getBoundingClientRect();
   const scaleY =
-    chromeRect.height > 0 && chrome.offsetHeight > 0
-      ? chromeRect.height / chrome.offsetHeight
+    rootRect.height > 0 && root.offsetHeight > 0
+      ? rootRect.height / root.offsetHeight
       : 1;
   let maxBottom = 0;
   probes.forEach((probe) => {
     const probeRect = probe.getBoundingClientRect();
-    const rawBottom = probeRect.bottom - chromeRect.top;
+    const rawBottom = probeRect.bottom - rootRect.top;
     const bottom = scaleY > 0 ? rawBottom / scaleY : rawBottom;
     if (Number.isFinite(bottom) && bottom > maxBottom) {
       maxBottom = bottom;
@@ -123,7 +129,19 @@ function NodeToolbarActions({
   const { deleteElements, getNode, getNodes, getEdges, setNodes } = useReactFlow();
   const { createNodeWithIntersection } = useCanvasPlacement();
   const { queueNodeDataUpdate } = useCanvasSync();
-  const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
+  const currentData = nodeId ? getNode(nodeId)?.data : undefined;
+  const isBypassed = readNodeBypassed(currentData);
+  const isFavorite = readNodeFavorite(currentData);
+
+  const handleBypassToggle = () => {
+    if (!nodeId) return;
+    const currentNodeData = getNode(nodeId)?.data;
+    const nextData = setNodeBypassed(!readNodeBypassed(currentNodeData), currentNodeData);
+    void queueNodeDataUpdate({
+      nodeId: nodeId as Id<"nodes">,
+      data: nextData,
+    });
+  };
 
   const handleFavoriteToggle = () => {
     if (!nodeId) return;
@@ -217,7 +235,7 @@ function NodeToolbarActions({
 
   return (
     <NodeToolbar position={Position.Top} offset={8}>
-      <div className="flex items-center gap-1 rounded-lg border bg-card p-1 shadow-md">
+      <div className="relative z-30 flex items-center gap-1 rounded-lg border bg-card p-1 shadow-md">
         {actions.map((action) => (
           <button
             key={action.id}
@@ -234,6 +252,24 @@ function NodeToolbarActions({
             {action.icon}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={(e) => {
+            stopPropagation(e);
+            handleBypassToggle();
+          }}
+          onPointerDown={stopPropagation}
+          title={isBypassed ? "Einblenden" : "Ausblenden"}
+          aria-label={isBypassed ? "Einblenden" : "Ausblenden"}
+          aria-pressed={isBypassed}
+          className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+            isBypassed
+              ? "bg-accent text-foreground hover:bg-accent"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          {isBypassed ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
         <button
           type="button"
           onClick={(e) => {
@@ -304,12 +340,15 @@ export default function BaseNodeWrapper({
     minHeight: config.minHeight,
   });
   const nodeChromeRef = useRef<HTMLDivElement | null>(null);
+  const nodeMeasureRef = useRef<HTMLDivElement | null>(null);
   const pendingMeasureFrameRef = useRef<number | null>(null);
   const lastQueuedAutoSizeRef = useRef<{ width: number; height: number } | null>(null);
   const nodeId = useNodeId();
   const { getNode } = useReactFlow();
   const { queueNodeResize } = useCanvasSync();
-  const isFavorite = readNodeFavorite(nodeId ? getNode(nodeId)?.data : undefined);
+  const currentData = nodeId ? getNode(nodeId)?.data : undefined;
+  const isBypassed = readNodeBypassed(currentData);
+  const isFavorite = readNodeFavorite(currentData);
   const favoriteBacklight = isFavorite ? (backlight ?? <FavoriteNodeBacklight />) : undefined;
   const resizeMinimum = {
     minWidth: Math.max(config.minWidth, contentMinimumSize.minWidth),
@@ -318,15 +357,16 @@ export default function BaseNodeWrapper({
 
   const measureAndGrowNode = useCallback(() => {
     const chrome = nodeChromeRef.current;
-    if (!chrome) return;
+    const measuredRoot = nodeMeasureRef.current;
+    if (!chrome || !measuredRoot) return;
 
     const measuredMinimum = computeContentAwareNodeMinimumSize({
       nodeType,
-      scrollWidth: chrome.scrollWidth,
-      scrollHeight: chrome.scrollHeight,
-      clientWidth: chrome.clientWidth,
-      clientHeight: chrome.clientHeight,
-      contentBoundsHeight: measureAutosizeContentBoundsHeight(chrome),
+      scrollWidth: measuredRoot.scrollWidth,
+      scrollHeight: measuredRoot.scrollHeight,
+      clientWidth: measuredRoot.clientWidth,
+      clientHeight: measuredRoot.clientHeight,
+      contentBoundsHeight: measureAutosizeContentBoundsHeight(measuredRoot),
     });
     const nextContentMinimum = resolveNextContentMinimumSize(
       contentMinimumSizeRef.current,
@@ -376,6 +416,35 @@ export default function BaseNodeWrapper({
     }
 
     lastQueuedAutoSizeRef.current = nextSize;
+    const contentBoundsHeight = measureAutosizeContentBoundsHeight(measuredRoot);
+    logCanvasDebug(
+      "autosize-queue-resize",
+      {
+        nodeId,
+        nodeType,
+        currentSize: { width: currentWidth, height: currentHeight },
+        nextSize,
+        minimum,
+        measuredMinimum,
+        nextContentMinimum,
+        nodeStyle: node?.style ?? null,
+        nodeMeasured: node?.measured ?? null,
+        chrome: {
+          clientWidth: chrome.clientWidth,
+          clientHeight: chrome.clientHeight,
+          scrollWidth: chrome.scrollWidth,
+          scrollHeight: chrome.scrollHeight,
+        },
+        measuredRoot: {
+          clientWidth: measuredRoot.clientWidth,
+          clientHeight: measuredRoot.clientHeight,
+          scrollWidth: measuredRoot.scrollWidth,
+          scrollHeight: measuredRoot.scrollHeight,
+          contentBoundsHeight,
+        },
+      },
+      { nodeType, trace: true },
+    );
     void queueNodeResize({
       nodeId: nodeId as Id<"nodes">,
       width: nextSize.width,
@@ -464,8 +533,9 @@ export default function BaseNodeWrapper({
       ref={nodeChromeRef}
       data-testid="canvas-node-chrome"
       className={`
-        h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
+        relative h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
+        ${isBypassed ? "border-dashed border-muted-foreground/45" : ""}
         ${statusStyles[status] ?? ""}
         ${className}
       `}
@@ -483,6 +553,7 @@ export default function BaseNodeWrapper({
               border: "none",
               width: 12,
               height: 12,
+              zIndex: 30,
             }}
           >
             <svg
@@ -524,12 +595,24 @@ export default function BaseNodeWrapper({
             </svg>
           </NodeResizeControl>
         ))}
-      <NodeErrorBoundary nodeType={nodeType}>{children}</NodeErrorBoundary>
-      {status === "error" && statusMessage && (
-        <div className="px-3 pb-2 text-xs text-red-500 truncate">
-          {statusMessage}
-        </div>
-      )}
+      <div
+        ref={nodeMeasureRef}
+        data-testid="canvas-node-measure"
+        className="relative h-full w-full"
+      >
+        <NodeErrorBoundary nodeType={nodeType}>{children}</NodeErrorBoundary>
+        {status === "error" && statusMessage && (
+          <div className="px-3 pb-2 text-xs text-red-500 truncate">
+            {statusMessage}
+          </div>
+        )}
+        {isBypassed ? (
+          <div
+            data-testid="canvas-node-body"
+            className="pointer-events-none absolute inset-0 z-20 rounded-[inherit] bg-card opacity-45 saturate-50 backdrop-saturate-50"
+          />
+        ) : null}
+      </div>
       <NodeToolbarActions actions={toolbarActions} />
     </div>
   );

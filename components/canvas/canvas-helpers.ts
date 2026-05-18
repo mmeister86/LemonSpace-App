@@ -12,6 +12,7 @@ import {
   buildGraphSnapshot,
   getSourceImageFromGraph,
 } from "@/lib/canvas-render-preview";
+import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import { resolveCanvasMagnetTarget } from "@/components/canvas/canvas-connection-magnetism";
 
@@ -579,6 +580,30 @@ export type PendingEdgeSplit = {
   positionY: number;
 };
 
+const COMPARE_ENDPOINT_ABSENT_WHEN_BYPASSED_TYPES = new Set([
+  "image",
+  "ai-image",
+  "asset",
+  "video",
+  "asset-video",
+  "ai-video",
+  "change-camera",
+  "render",
+  "mixer",
+  "compare",
+  "frame",
+  "group",
+  "text",
+  "note",
+]);
+
+function isCompareEndpointAbsentWhenBypassed(node: { type?: string; data?: unknown }): boolean {
+  return (
+    readNodeBypassed(node.data) &&
+    COMPARE_ENDPOINT_ABSENT_WHEN_BYPASSED_TYPES.has(node.type ?? "")
+  );
+}
+
 function resolveStorageFallbackUrl(storageId: string): string | undefined {
   const convexBaseUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
   if (!convexBaseUrl) {
@@ -610,6 +635,10 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
   );
 
   const resolveImageFromNode = (node: RFNode): string | undefined => {
+    if (readNodeBypassed(node.data)) {
+      return undefined;
+    }
+
     const nodeData = node.data as { url?: string; previewUrl?: string };
     if (typeof nodeData.url === "string" && nodeData.url.length > 0) {
       return nodeData.url;
@@ -621,6 +650,10 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
   };
 
   const resolveRenderOutputUrl = (node: RFNode): string | undefined => {
+    if (readNodeBypassed(node.data)) {
+      return undefined;
+    }
+
     const nodeData = node.data as {
       url?: string;
       lastUploadUrl?: string;
@@ -687,6 +720,7 @@ export function withResolvedCompareData(nodes: RFNode[], edges: RFEdge[]): RFNod
     for (const edge of incoming) {
       const source = graph.nodesById.get(edge.source);
       if (!source) continue;
+      if (isCompareEndpointAbsentWhenBypassed(source)) continue;
 
       const srcData = source.data as { url?: string; label?: string };
       const sourceDataRecord = source.data as Record<string, unknown>;
@@ -1007,6 +1041,37 @@ function isRemoveEdgeOpPayload(
   return typeof record.edgeId === "string";
 }
 
+function isBatchRemoveNodesOpPayload(
+  payload: unknown,
+): payload is {
+  nodeIds: Id<"nodes">[];
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  return (
+    Array.isArray(record.nodeIds) &&
+    record.nodeIds.every((nodeId) => typeof nodeId === "string")
+  );
+}
+
+function isResizeNodeOpPayload(
+  payload: unknown,
+): payload is {
+  nodeId: Id<"nodes">;
+  width: number;
+  height: number;
+} {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  return (
+    typeof record.nodeId === "string" &&
+    typeof record.width === "number" &&
+    Number.isFinite(record.width) &&
+    typeof record.height === "number" &&
+    Number.isFinite(record.height)
+  );
+}
+
 function isSplitEdgeOpPayload(
   payload: unknown,
 ): payload is {
@@ -1071,6 +1136,44 @@ export function getPendingRemovedEdgeIdsFromLocalOps(
     }
   }
   return edgeIds;
+}
+
+export function getPendingRemovedNodeIdsFromLocalOps(
+  canvasId: string,
+): Set<string> {
+  const nodeIds = new Set<string>();
+  for (const op of readCanvasOps(canvasId)) {
+    if (op.type !== "batchRemoveNodes" || !isBatchRemoveNodesOpPayload(op.payload)) {
+      continue;
+    }
+    for (const nodeId of op.payload.nodeIds) {
+      nodeIds.add(nodeId as string);
+    }
+  }
+  return nodeIds;
+}
+
+export function getPendingNodeSizePinsFromLocalOps(
+  canvasId: string,
+): Map<string, { width: number; height: number }> {
+  const pins = new Map<string, { width: number; height: number }>();
+  const removedNodeIds = getPendingRemovedNodeIdsFromLocalOps(canvasId);
+
+  for (const op of readCanvasOps(canvasId)) {
+    if (op.type !== "resizeNode" || !isResizeNodeOpPayload(op.payload)) {
+      continue;
+    }
+    const nodeId = op.payload.nodeId as string;
+    if (removedNodeIds.has(nodeId)) {
+      continue;
+    }
+    pins.set(nodeId, {
+      width: op.payload.width,
+      height: op.payload.height,
+    });
+  }
+
+  return pins;
 }
 
 export function mergeNodesPreservingLocalState(

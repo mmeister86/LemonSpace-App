@@ -16,6 +16,11 @@ export function readNodeFavorite(data: unknown): boolean {
   return source.isFavorite === true;
 }
 
+export function readNodeBypassed(data: unknown): boolean {
+  const source = toRecord(data);
+  return source.isBypassed === true;
+}
+
 export function setNodeFavorite(
   nextValue: boolean,
   currentData: unknown,
@@ -29,13 +34,42 @@ export function setNodeFavorite(
     };
   }
 
-  const { isFavorite: _isFavorite, ...rest } = source;
-  return rest;
+  const next = { ...source };
+  delete next.isFavorite;
+  return next;
+}
+
+export function setNodeBypassed(
+  nextValue: boolean,
+  currentData: unknown,
+): Record<string, unknown> {
+  const source = toRecord(currentData);
+
+  if (nextValue) {
+    return {
+      ...source,
+      isBypassed: true,
+    };
+  }
+
+  const next = { ...source };
+  delete next.isBypassed;
+  return next;
+}
+
+export function preserveNodeMetadata(
+  nextData: unknown,
+  previousData: unknown,
+): Record<string, unknown> {
+  return setNodeBypassed(
+    readNodeBypassed(previousData),
+    setNodeFavorite(readNodeFavorite(previousData), nextData),
+  );
 }
 
 export function preserveNodeFavorite(
   nextData: unknown,
   previousData: unknown,
 ): Record<string, unknown> {
-  return setNodeFavorite(readNodeFavorite(previousData), nextData);
+  return preserveNodeMetadata(nextData, previousData);
 }

@@ -64,6 +64,8 @@ import {
   getSingleCharacterHotkey,
   getMiniMapNodeColor,
   getMiniMapNodeStrokeColor,
+  getPendingNodeSizePinsFromLocalOps,
+  getPendingRemovedNodeIdsFromLocalOps,
   getPendingRemovedEdgeIdsFromLocalOps,
   getPendingMovePinsFromLocalOps,
   deselectCanvasEdges,
@@ -348,11 +350,29 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     [canvasId, convexEdges, edgeSyncNonce],
   );
 
+  const pendingRemovedNodeIds = useMemo(
+    () => {
+      void convexNodes;
+      void edgeSyncNonce;
+      return getPendingRemovedNodeIdsFromLocalOps(canvasId as string);
+    },
+    [canvasId, convexNodes, edgeSyncNonce],
+  );
+
   const pendingMovePins = useMemo(
     () => {
       void convexNodes;
       void edgeSyncNonce;
       return getPendingMovePinsFromLocalOps(canvasId as string);
+    },
+    [canvasId, convexNodes, edgeSyncNonce],
+  );
+
+  const pendingNodeSizePins = useMemo(
+    () => {
+      void convexNodes;
+      void edgeSyncNonce;
+      return getPendingNodeSizePinsFromLocalOps(canvasId as string);
     },
     [canvasId, convexNodes, edgeSyncNonce],
   );
@@ -606,7 +626,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     storageUrlsById,
     themeMode: resolvedTheme === "dark" ? "dark" : "light",
     pendingRemovedEdgeIds,
+    pendingRemovedNodeIds,
     pendingMovePins,
+    pendingNodeSizePins,
     setNodes,
     setEdges,
     refs: {

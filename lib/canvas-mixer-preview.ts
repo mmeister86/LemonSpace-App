@@ -18,6 +18,7 @@ import {
   normalizeMixerCompositionData,
   type MixerBlendMode,
 } from "@/lib/canvas-mixer-normalization";
+import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
 export type MixerPreviewStatus = "empty" | "partial" | "ready" | "error";
 
@@ -81,6 +82,10 @@ function resolveLayerSourceFromNode(args: {
   sourceNode: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
 }): MixerLayerSource | undefined {
+  if (readNodeBypassed(args.sourceNode.data)) {
+    return undefined;
+  }
+
   if (!MIXER_SOURCE_NODE_TYPES.has(args.sourceNode.type)) {
     return undefined;
   }
@@ -144,6 +149,13 @@ export function resolveMixerPreviewFromGraph(args: {
 }): MixerPreviewState {
   const node = args.graph.nodesById.get(args.nodeId);
   const normalized = normalizeMixerPreviewData(node?.data);
+  if (!node || readNodeBypassed(node.data)) {
+    return {
+      status: "empty",
+      ...normalized,
+    };
+  }
+
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.nodeId) ?? [];
   const base = resolveHandleEdge({ incomingEdges, handle: "base" });
   const overlay = resolveHandleEdge({ incomingEdges, handle: "overlay" });

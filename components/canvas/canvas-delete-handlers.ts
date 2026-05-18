@@ -18,6 +18,7 @@ import { computeBridgeCreatesForDeletedNodes } from "@/lib/canvas-utils";
 import { toast } from "@/lib/toast";
 import { type CanvasNodeDeleteBlockReason } from "@/lib/toast";
 
+import { logCanvasDebug } from "./canvas-debug";
 import { getNodeDeleteBlockReason } from "./canvas-helpers";
 import { validateCanvasConnection } from "./canvas-connection-validation";
 
@@ -171,6 +172,16 @@ export function useCanvasDeleteHandlers({
       if (count === 0) return;
 
       const idsToDelete = deletedNodes.map((node) => node.id);
+      logCanvasDebug("delete-nodes-start", {
+        canvasId,
+        nodeIds: idsToDelete,
+        nodes: deletedNodes.map((node) => ({
+          id: node.id,
+          type: node.type ?? null,
+          style: node.style ?? null,
+          measured: node.measured ?? null,
+        })),
+      });
       for (const id of idsToDelete) {
         deletingNodeIds.current.add(id);
       }
@@ -235,6 +246,10 @@ export function useCanvasDeleteHandlers({
       void (async () => {
         await runBatchRemoveNodesMutation({
           nodeIds: idsToDelete as Id<"nodes">[],
+        });
+        logCanvasDebug("delete-nodes-batch-remove-accepted", {
+          canvasId,
+          nodeIds: idsToDelete,
         });
 
         for (const bridgeCreate of bridgeCreates) {
@@ -360,6 +375,11 @@ export function useCanvasDeleteHandlers({
           console.error("[Canvas] batch remove failed", {
             canvasId,
             deletedNodeIds: idsToDelete,
+            error: getErrorMessage(error),
+          });
+          logCanvasDebug("delete-nodes-batch-remove-failed", {
+            canvasId,
+            nodeIds: idsToDelete,
             error: getErrorMessage(error),
           });
           for (const id of idsToDelete) {
