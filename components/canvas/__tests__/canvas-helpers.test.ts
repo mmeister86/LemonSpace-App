@@ -7,16 +7,20 @@ import {
   computeEdgeInsertLayout,
   computeEdgeInsertReflowPlan,
   deselectCanvasEdges,
+  getPendingNodeSizePinsFromLocalOps,
+  getPendingRemovedNodeIdsFromLocalOps,
   isCanvasSelectAllHotkey,
   getSingleCharacterHotkey,
   selectAllCanvasNodes,
   withResolvedCompareData,
 } from "../canvas-helpers";
+import { enqueueCanvasOp } from "@/lib/canvas-local-persistence";
 import {
   buildGraphSnapshot,
   pruneCanvasGraphNodeDataOverrides,
   resolveRenderPreviewInputFromGraph,
 } from "@/lib/canvas-render-preview";
+import { resolveMixerPreviewFromGraph } from "@/lib/canvas-mixer-preview";
 
 function createNode(overrides: Partial<RFNode> & Pick<RFNode, "id">): RFNode {
   return {
@@ -107,6 +111,38 @@ describe("withResolvedCompareData", () => {
     expect((nextCompare?.data as { leftUrl?: string }).leftUrl).toBe(
       "https://cdn.example.com/render-output.png",
     );
+  });
+
+  it("treats bypassed render sources as absent compare inputs", () => {
+    const renderNode = createNode({
+      id: "render-1",
+      type: "render",
+      data: {
+        isBypassed: true,
+        lastUploadUrl: "https://cdn.example.com/render-output.png",
+      },
+    });
+    const compareNode = createNode({
+      id: "compare-1",
+      type: "compare",
+      data: {},
+    });
+
+    const nextNodes = withResolvedCompareData(
+      [renderNode, compareNode],
+      [
+        createEdge({
+          id: "edge-render-compare",
+          source: "render-1",
+          target: "compare-1",
+          targetHandle: "left",
+        }),
+      ],
+    );
+
+    const nextCompare = nextNodes.find((node) => node.id === "compare-1");
+    expect((nextCompare?.data as { leftUrl?: string }).leftUrl).toBeUndefined();
+    expect((nextCompare?.data as { leftLabel?: string }).leftLabel).toBeUndefined();
   });
 });
 
@@ -413,6 +449,189 @@ describe("canvas preview graph helpers", () => {
         params: localCrop,
       },
     ]);
+  });
+
+  it("skips bypassed adjustment nodes when resolving downstream render preview steps", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "curves-1",
+          type: "curves",
+          data: { isBypassed: true, exposure: 0.2 },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-1", target: "curves-1" },
+        { source: "curves-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/source.png");
+    expect(preview.steps).toEqual([]);
+  });
+
+  it("treats bypassed source nodes as absent render inputs", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { isBypassed: true, url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [{ source: "image-1", target: "render-1" }],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBeNull();
+    expect(preview.steps).toEqual([]);
+  });
+
+  it("treats bypassed mixer nodes as absent render inputs", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "image-overlay",
+          type: "image",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: { isBypassed: true },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "image-overlay", target: "mixer-1", targetHandle: "overlay" },
+        { source: "mixer-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBeNull();
+    expect(preview.sourceComposition).toBeUndefined();
+    expect(preview.steps).toEqual([]);
+  });
+
+  it("treats bypassed mixer layer sources as absent in mixer previews", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: { isBypassed: true, url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "image-overlay",
+          type: "image",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "image-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    const preview = resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph });
+
+    expect(preview.status).toBe("partial");
+    expect(preview.baseUrl).toBeUndefined();
+    expect(preview.overlayUrl).toBe("https://cdn.example.com/overlay.png");
+  });
+});
+
+describe("canvas local pending op helpers", () => {
+  it("restores pending delete and resize guards from the local op mirror", () => {
+    const canvasId = "canvas-pending-ops";
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+        clear: () => storage.clear(),
+      },
+    });
+    window.localStorage.clear();
+
+    enqueueCanvasOp(canvasId, {
+      id: "resize-1",
+      type: "resizeNode",
+      payload: {
+        nodeId: "node-resize",
+        width: 480,
+        height: 320,
+      },
+    });
+    enqueueCanvasOp(canvasId, {
+      id: "delete-1",
+      type: "batchRemoveNodes",
+      payload: {
+        nodeIds: ["node-delete", "node-resize-delete"],
+      },
+    });
+    enqueueCanvasOp(canvasId, {
+      id: "resize-deleted",
+      type: "resizeNode",
+      payload: {
+        nodeId: "node-resize-delete",
+        width: 900,
+        height: 900,
+      },
+    });
+
+    expect(getPendingRemovedNodeIdsFromLocalOps(canvasId)).toEqual(
+      new Set(["node-delete", "node-resize-delete"]),
+    );
+    expect(getPendingNodeSizePinsFromLocalOps(canvasId)).toEqual(
+      new Map([["node-resize", { width: 480, height: 320 }]]),
+    );
   });
 });
 

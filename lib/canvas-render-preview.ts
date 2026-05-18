@@ -18,6 +18,7 @@ import {
   normalizeMixerCompositionData,
   type MixerBlendMode,
 } from "@/lib/canvas-mixer-normalization";
+import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
 export type RenderPreviewGraphNode = {
   id: string;
@@ -309,6 +310,10 @@ export function resolveNodeImageUrl(data: unknown): string | null {
 }
 
 function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
+  if (readNodeBypassed(node.data)) {
+    return null;
+  }
+
   const data = (node.data ?? {}) as Record<string, unknown>;
 
   if (node.type === "asset-video") {
@@ -329,6 +334,10 @@ function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
 }
 
 function resolveRenderOutputUrl(node: CanvasGraphNodeLike): string | null {
+  if (readNodeBypassed(node.data)) {
+    return null;
+  }
+
   const data = (node.data ?? {}) as Record<string, unknown>;
 
   const lastUploadUrl =
@@ -365,6 +374,10 @@ function resolveMixerLayerSourceFromNode(args: {
   node: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
 }): MixerLayerSource | null {
+  if (readNodeBypassed(args.node.data)) {
+    return null;
+  }
+
   if (!MIXER_SOURCE_NODE_TYPES.has(args.node.type)) {
     return null;
   }
@@ -420,6 +433,10 @@ function resolveRenderMixerCompositionFromGraph(args: {
   node: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
 }): RenderPreviewSourceComposition | null {
+  if (readNodeBypassed(args.node.data)) {
+    return null;
+  }
+
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.node.id) ?? [];
   const baseEdge = resolveMixerHandleEdge({ incomingEdges, handle: "base" });
   const overlayEdge = resolveMixerHandleEdge({ incomingEdges, handle: "overlay" });
@@ -548,6 +565,10 @@ export function collectPipelineFromGraph(
 
   const steps: PipelineStep[] = [];
   for (const node of traversal.path) {
+    if (readNodeBypassed(node.data)) {
+      continue;
+    }
+
     if (!options.isPipelineNode(node)) {
       continue;
     }
@@ -574,6 +595,10 @@ export function getSourceImageFromGraph<TSourceImage>(
 
   for (let index = traversal.path.length - 1; index >= 0; index -= 1) {
     const node = traversal.path[index];
+    if (readNodeBypassed(node.data)) {
+      continue;
+    }
+
     if (!options.isSourceNode(node)) {
       continue;
     }
@@ -599,6 +624,10 @@ export function findSourceNodeFromGraph(
 
   for (let index = traversal.path.length - 1; index >= 0; index -= 1) {
     const node = traversal.path[index];
+    if (readNodeBypassed(node.data)) {
+      continue;
+    }
+
     if (!options.isSourceNode(node)) {
       continue;
     }
@@ -615,6 +644,14 @@ export function resolveRenderPreviewInputFromGraph(args: {
   nodeId: string;
   graph: CanvasGraphSnapshot;
 }): RenderPreviewResolvedInput {
+  const targetNode = args.graph.nodesById.get(args.nodeId);
+  if (targetNode && readNodeBypassed(targetNode.data)) {
+    return {
+      sourceUrl: null,
+      steps: [],
+    };
+  }
+
   const renderIncoming = getSortedIncomingEdge(
     args.graph.incomingEdgesByTarget.get(args.nodeId),
   );

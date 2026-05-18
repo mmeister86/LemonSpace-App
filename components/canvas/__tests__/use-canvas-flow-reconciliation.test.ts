@@ -31,7 +31,9 @@ type HarnessProps = {
   storageUrlsById?: Record<string, string | undefined>;
   themeMode: "light" | "dark";
   pendingRemovedEdgeIds?: Set<string>;
+  pendingRemovedNodeIds?: Set<string>;
   pendingMovePins?: Map<string, { x: number; y: number }>;
+  pendingNodeSizePins?: Map<string, { width: number; height: number }>;
   isDragging: boolean;
   isResizing: boolean;
   resolvedRealIdByClientRequest: Map<string, Id<"nodes">>;
@@ -74,9 +76,17 @@ function HookHarness(props: HarnessProps) {
     () => props.pendingRemovedEdgeIds ?? new Set<string>(),
     [props.pendingRemovedEdgeIds],
   );
+  const pendingRemovedNodeIds = useMemo(
+    () => props.pendingRemovedNodeIds ?? new Set<string>(),
+    [props.pendingRemovedNodeIds],
+  );
   const pendingMovePins = useMemo(
     () => props.pendingMovePins ?? new Map<string, { x: number; y: number }>(),
     [props.pendingMovePins],
+  );
+  const pendingNodeSizePins = useMemo(
+    () => props.pendingNodeSizePins ?? new Map<string, { width: number; height: number }>(),
+    [props.pendingNodeSizePins],
   );
   const pendingLocalPositionUntilConvexMatchesRef = useRef(
     props.pendingLocalPositionPins ?? new Map<string, { x: number; y: number }>(),
@@ -117,7 +127,9 @@ function HookHarness(props: HarnessProps) {
     storageUrlsById: props.storageUrlsById,
     themeMode: props.themeMode,
     pendingRemovedEdgeIds,
+    pendingRemovedNodeIds,
     pendingMovePins,
+    pendingNodeSizePins,
     setNodes,
     setEdges,
     refs: {
@@ -164,6 +176,89 @@ describe("useCanvasFlowReconciliation", () => {
     container?.remove();
     root = null;
     container = null;
+  });
+
+  it("keeps pending locally deleted nodes hidden across a reload reconciliation", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-delete"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "image",
+              positionX: 20,
+              positionY: 40,
+              width: 280,
+              height: 200,
+              data: {},
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          pendingRemovedNodeIds: new Set(["node-delete"]),
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-delete"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes).toEqual([]);
+  });
+
+  it("applies pending local resize pins from the op mirror before convex catches up", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-resize"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "prompt",
+              positionX: 20,
+              positionY: 40,
+              width: 288,
+              height: 220,
+              data: {},
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          pendingNodeSizePins: new Map([
+            ["node-resize", { width: 288, height: 260 }],
+          ]),
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-resize"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes[0]?.style).toMatchObject({
+      width: 288,
+      height: 260,
+    });
   });
 
   it("carries an optimistic connection edge until convex publishes the real edge", async () => {

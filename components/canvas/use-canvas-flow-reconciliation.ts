@@ -7,6 +7,7 @@ import { useLayoutEffect, type Dispatch, type MutableRefObject, type SetStateAct
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { logCanvasDebug, shouldLogCanvasNodeDebug } from "./canvas-debug";
 import {
   buildIncomingCanvasFlowNodes,
   reconcileCanvasFlowEdges,
@@ -43,7 +44,9 @@ export function useCanvasFlowReconciliation(args: {
   storageUrlsById: Record<string, string | undefined> | undefined;
   themeMode: "light" | "dark";
   pendingRemovedEdgeIds: ReadonlySet<string>;
+  pendingRemovedNodeIds: ReadonlySet<string>;
   pendingMovePins: ReadonlyMap<string, PositionPin>;
+  pendingNodeSizePins: ReadonlyMap<string, { width: number; height: number }>;
   setNodes: Dispatch<SetStateAction<RFNode[]>>;
   setEdges: Dispatch<SetStateAction<RFEdge[]>>;
   refs: CanvasFlowReconciliationRefs;
@@ -54,7 +57,9 @@ export function useCanvasFlowReconciliation(args: {
     storageUrlsById,
     themeMode,
     pendingRemovedEdgeIds,
+    pendingRemovedNodeIds,
     pendingMovePins,
+    pendingNodeSizePins,
     setNodes,
     setEdges,
   } = args;
@@ -136,24 +141,72 @@ export function useCanvasFlowReconciliation(args: {
         previousNodes,
         edges: edgesRef.current,
       });
+      const pendingDeleteIds = new Set([
+        ...deletingNodeIds.current,
+        ...pendingRemovedNodeIds,
+      ]);
+      const mergedSizePins = new Map([
+        ...pendingNodeSizePins,
+        ...pendingLocalNodeSizeUntilConvexMatchesRef.current,
+      ]);
 
       const reconciliation = reconcileCanvasFlowNodes({
         previousNodes,
         incomingNodes,
         convexNodes,
-        deletingNodeIds: deletingNodeIds.current,
+        deletingNodeIds: pendingDeleteIds,
         resolvedRealIdByClientRequest: resolvedRealIdByClientRequestRef.current,
         pendingConnectionCreateIds: pendingConnectionCreatesRef.current,
         preferLocalPositionNodeIds: preferLocalPositionNodeIdsRef.current,
         pendingLocalPositionPins: pendingLocalPositionUntilConvexMatchesRef.current,
         pendingLocalNodeDataPins:
           pendingLocalNodeDataUntilConvexMatchesRef.current,
-        pendingLocalNodeSizePins:
-          pendingLocalNodeSizeUntilConvexMatchesRef.current,
+        pendingLocalNodeSizePins: mergedSizePins,
         pendingLocalNodeParentPins:
           pendingLocalNodeParentUntilConvexMatchesRef.current,
         pendingMovePins,
       });
+
+      const previousById = new Map(previousNodes.map((node) => [node.id, node]));
+      const incomingById = new Map(incomingNodes.map((node) => [node.id, node]));
+      for (const node of reconciliation.nodes) {
+        const nodeType = node.type ?? null;
+        if (!shouldLogCanvasNodeDebug(nodeType)) continue;
+
+        const previous = previousById.get(node.id);
+        const incoming = incomingById.get(node.id);
+        const pin = mergedSizePins.get(node.id);
+        const sizeChanged =
+          previous?.style?.width !== node.style?.width ||
+          previous?.style?.height !== node.style?.height;
+        const convexDiffers =
+          incoming?.style?.width !== node.style?.width ||
+          incoming?.style?.height !== node.style?.height;
+
+        if (!pin && !sizeChanged && !convexDiffers) continue;
+
+        logCanvasDebug(
+          "reconcile-node-size",
+          {
+            nodeId: node.id,
+            nodeType,
+            previousStyle: previous?.style ?? null,
+            incomingStyle: incoming?.style ?? null,
+            outputStyle: node.style ?? null,
+            pendingSizePin: pin ?? null,
+            pendingDelete: pendingDeleteIds.has(node.id),
+          },
+          { nodeType },
+        );
+      }
+
+      if (pendingDeleteIds.size > 0) {
+        logCanvasDebug("reconcile-pending-deletes", {
+          nodeIds: Array.from(pendingDeleteIds),
+          incomingNodeIds: incomingNodes.map((node) => node.id),
+          outputNodeIds: reconciliation.nodes.map((node) => node.id),
+        });
+      }
 
       resolvedRealIdByClientRequestRef.current =
         reconciliation.inferredRealIdByClientRequest;
@@ -175,6 +228,8 @@ export function useCanvasFlowReconciliation(args: {
     convexNodes,
     edgesRef,
     pendingMovePins,
+    pendingNodeSizePins,
+    pendingRemovedNodeIds,
     setNodes,
     storageUrlsById,
     deletingNodeIds,

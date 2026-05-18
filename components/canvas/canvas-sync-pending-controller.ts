@@ -10,6 +10,7 @@ import type {
 } from "react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 
+import { logCanvasDebug } from "@/components/canvas/canvas-debug";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasSyncOpPayloadByType } from "@/lib/canvas-op-queue";
 import {
@@ -223,6 +224,17 @@ export function createCanvasSyncPendingController({
     height: number;
   }): Promise<void> => {
     const rawNodeId = args.nodeId as string;
+    logCanvasDebug(
+      "queue-node-resize",
+      {
+        nodeId: rawNodeId,
+        width: args.width,
+        height: args.height,
+        isOptimistic: isOptimisticNodeId(rawNodeId),
+        isSyncOnline: getIsSyncOnline(),
+      },
+      { trace: true },
+    );
     pinNodeSizeLocally(rawNodeId, {
       width: args.width,
       height: args.height,

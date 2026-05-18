@@ -58,6 +58,11 @@ vi.mock("@/components/canvas/canvas-placement-context", () => ({
 }));
 
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
+import {
+  preserveNodeMetadata,
+  readNodeBypassed,
+  setNodeBypassed,
+} from "@/lib/canvas-node-favorite";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -117,9 +122,69 @@ describe("BaseNodeWrapper", () => {
   it("shows favorite toggle with duplicate and delete controls for selected nodes", async () => {
     await renderWrapper({ label: "Frame" }, true);
 
+    expect(container?.querySelector('button[title="Ausblenden"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Favorite"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Duplicate"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Delete"]')).toBeTruthy();
+  });
+
+  it("toggles bypass and queues merged node data update", async () => {
+    await renderWrapper({ label: "Frame", isFavorite: true }, true);
+
+    const bypassButton = container?.querySelector('button[title="Ausblenden"]');
+    if (!(bypassButton instanceof HTMLButtonElement)) {
+      throw new Error("Bypass button not found");
+    }
+
+    expect(bypassButton.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => {
+      bypassButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: {
+        label: "Frame",
+        isFavorite: true,
+        isBypassed: true,
+      },
+    });
+  });
+
+  it("renders bypassed nodes dimmed while toolbar remains full strength", async () => {
+    await renderWrapper({ label: "Frame", isBypassed: true }, true);
+
+    const nodeBody = container?.querySelector('[data-testid="canvas-node-body"]');
+    const toolbar = container?.querySelector('[data-testid="node-toolbar"]');
+    const bypassButton = container?.querySelector('button[title="Einblenden"]');
+
+    expect(nodeBody?.className).toContain("opacity-45");
+    expect(nodeBody?.className).toContain("saturate-50");
+    expect(toolbar?.className).not.toContain("opacity-45");
+    expect(toolbar?.className).not.toContain("saturate-50");
+    expect(bypassButton?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("unsets bypass without removing other metadata", async () => {
+    await renderWrapper({ label: "Frame", isFavorite: true, isBypassed: true }, true);
+
+    const bypassButton = container?.querySelector('button[title="Einblenden"]');
+    if (!(bypassButton instanceof HTMLButtonElement)) {
+      throw new Error("Bypass button not found");
+    }
+
+    await act(async () => {
+      bypassButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: {
+        label: "Frame",
+        isFavorite: true,
+      },
+    });
   });
 
   it("toggles favorite and queues merged node data update", async () => {
@@ -253,7 +318,7 @@ describe("BaseNodeWrapper", () => {
     expect(container?.querySelector('[data-testid="stable-preview-canvas"]')).toBe(initialCanvas);
   });
 
-  it("grows undersized nodes to the measured content minimum", async () => {
+  it("grows undersized nodes vertically to the measured content minimum", async () => {
     const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
       ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
       ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
@@ -284,13 +349,13 @@ describe("BaseNodeWrapper", () => {
 
       expect(mocks.queueNodeResize).toHaveBeenCalledWith({
         nodeId: "node-1",
-        width: 348,
+        width: 300,
         height: 812,
         skipHistory: true,
       });
       expect(
         mocks.nodeResizeControlProps.some(
-          (props) => props.minWidth === 348 && props.minHeight === 812,
+          (props) => props.minWidth === 300 && props.minHeight === 812,
         ),
       ).toBe(true);
     } finally {
@@ -298,7 +363,50 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
+        }
+      }
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("does not auto-resize asset videos from self-scaling media overflow", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 320 },
+      clientHeight: { configurable: true, get: () => 180 },
+      scrollWidth: { configurable: true, get: () => 1888 },
+      scrollHeight: { configurable: true, get: () => 180 },
+    });
+
+    try {
+      await renderWrapper({}, true, "asset-video");
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).not.toHaveBeenCalled();
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
       requestAnimationFrameSpy.mockRestore();
@@ -341,7 +449,60 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
+        }
+      }
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("ignores selected toolbar overflow when deciding content autosize", async () => {
+    const descriptors: Array<[keyof HTMLElement, PropertyDescriptor | undefined]> = [
+      ["clientWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")],
+      ["clientHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")],
+      ["scrollWidth", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")],
+      ["scrollHeight", Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight")],
+    ];
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) =>
+        window.setTimeout(() => callback(performance.now()), 0),
+      );
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((handle) => window.clearTimeout(handle));
+
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 300 },
+      clientHeight: { configurable: true, get: () => 200 },
+      scrollWidth: {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.getAttribute("data-testid") === "canvas-node-chrome" ? 420 : 300;
+        },
+      },
+      scrollHeight: {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.getAttribute("data-testid") === "canvas-node-chrome" ? 260 : 200;
+        },
+      },
+    });
+
+    try {
+      await renderWrapper({}, true, "frame");
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(mocks.queueNodeResize).not.toHaveBeenCalled();
+    } finally {
+      for (const [property, descriptor] of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(HTMLElement.prototype, property, descriptor);
+        } else {
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
       requestAnimationFrameSpy.mockRestore();
@@ -407,7 +568,7 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
       requestAnimationFrameSpy.mockRestore();
@@ -425,7 +586,7 @@ describe("BaseNodeWrapper", () => {
     ];
     const getBoundingClientRectSpy = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function getBoundingClientRectMock() {
+      .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
         const element = this as HTMLElement;
         const isProbe = element.hasAttribute("data-canvas-node-autosize-content");
         const height = isProbe ? 610 : 520;
@@ -488,7 +649,7 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
       getBoundingClientRectSpy.mockRestore();
@@ -585,7 +746,7 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
       getBoundingClientRectSpy.mockRestore();
@@ -640,9 +801,36 @@ describe("BaseNodeWrapper", () => {
         if (descriptor) {
           Object.defineProperty(HTMLElement.prototype, property, descriptor);
         } else {
-          delete (HTMLElement.prototype as Record<string, unknown>)[property];
+          delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
         }
       }
     }
+  });
+});
+
+describe("canvas node metadata helpers", () => {
+  it("reads and toggles bypass metadata without writing false values", () => {
+    expect(readNodeBypassed({ isBypassed: true })).toBe(true);
+    expect(readNodeBypassed({ isBypassed: false })).toBe(false);
+    expect(setNodeBypassed(true, { label: "Curves" })).toEqual({
+      label: "Curves",
+      isBypassed: true,
+    });
+    expect(setNodeBypassed(false, { label: "Curves", isBypassed: true })).toEqual({
+      label: "Curves",
+    });
+  });
+
+  it("preserves favorite and bypass metadata across normalized data writes", () => {
+    expect(
+      preserveNodeMetadata(
+        { exposure: 0.4 },
+        { isFavorite: true, isBypassed: true, exposure: 0.1 },
+      ),
+    ).toEqual({
+      exposure: 0.4,
+      isFavorite: true,
+      isBypassed: true,
+    });
   });
 });

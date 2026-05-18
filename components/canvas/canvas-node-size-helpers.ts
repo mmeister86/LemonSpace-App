@@ -94,9 +94,9 @@ export function computeContentAwareNodeMinimumSize(args: {
 }): NodeMinimumSize {
   const config = getCanvasNodeResizeConfig(args.nodeType);
   const contentWidth =
-    config.autoGrowWidth === false
-      ? null
-      : overflowSize(args.scrollWidth, args.clientWidth);
+    config.autoGrowWidth === true
+      ? overflowSize(args.scrollWidth, args.clientWidth)
+      : null;
   const contentBoundsHeight = ceilPositiveFinite(args.contentBoundsHeight);
   const contentHeight =
     config.autoGrowHeight === false

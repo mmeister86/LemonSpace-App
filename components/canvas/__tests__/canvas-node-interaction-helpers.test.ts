@@ -10,6 +10,7 @@ import {
 import { adjustNodeDimensionChanges } from "@/components/canvas/canvas-node-change-helpers";
 import {
   computeContentAwareNodeMinimumSize,
+  getCanvasNodeStaticMinimumSize,
   resolveNextContentMinimumSize,
   type NodeMinimumSize,
 } from "@/components/canvas/canvas-node-size-helpers";
@@ -80,6 +81,7 @@ describe("canvas node interaction helpers", () => {
   });
 
   it("clamps generic node dimension changes to the configured node minimum", () => {
+    const promptMinimum = getCanvasNodeStaticMinimumSize("prompt");
     const promptNode: RFNode = {
       id: "prompt-1",
       type: "prompt",
@@ -105,7 +107,10 @@ describe("canvas node interaction helpers", () => {
         type: "dimensions",
         id: "prompt-1",
         resizing: false,
-        dimensions: { width: 260, height: 220 },
+        dimensions: {
+          width: promptMinimum.minWidth,
+          height: promptMinimum.minHeight,
+        },
       },
     ]);
   });
@@ -141,6 +146,30 @@ describe("canvas node interaction helpers", () => {
         scrollHeight: 180,
       }),
     ).toEqual({ minWidth: 220, minHeight: 180 });
+  });
+
+  it("does not grow media nodes horizontally from self-scaling content", () => {
+    expect(
+      computeContentAwareNodeMinimumSize({
+        nodeType: "asset-video",
+        clientWidth: 320,
+        scrollWidth: 1888,
+        clientHeight: 180,
+        scrollHeight: 180,
+      }),
+    ).toEqual({ minWidth: 200, minHeight: 120 });
+  });
+
+  it("keeps prompt widths stable while allowing vertical content growth", () => {
+    expect(
+      computeContentAwareNodeMinimumSize({
+        nodeType: "video-prompt",
+        clientWidth: 260,
+        scrollWidth: 640,
+        clientHeight: 260,
+        scrollHeight: 318,
+      }),
+    ).toEqual({ minWidth: 260, minHeight: 318 });
   });
 
   it("keeps dynamic text-heavy node widths stable while allowing vertical growth", () => {
