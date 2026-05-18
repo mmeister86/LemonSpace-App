@@ -21,6 +21,11 @@ export function readNodeBypassed(data: unknown): boolean {
   return source.isBypassed === true;
 }
 
+export function readNodeCollapsed(data: unknown): boolean {
+  const source = toRecord(data);
+  return source.isCollapsed === true;
+}
+
 export function setNodeFavorite(
   nextValue: boolean,
   currentData: unknown,
@@ -57,13 +62,62 @@ export function setNodeBypassed(
   return next;
 }
 
+function normalizeExpandedSize(
+  value: unknown,
+): { width: number; height: number } | undefined {
+  if (!isRecord(value)) return undefined;
+  const { width, height } = value;
+  return typeof width === "number" &&
+    Number.isFinite(width) &&
+    width > 0 &&
+    typeof height === "number" &&
+    Number.isFinite(height) &&
+    height > 0
+    ? { width, height }
+    : undefined;
+}
+
+export function readNodeExpandedSize(
+  data: unknown,
+): { width: number; height: number } | undefined {
+  return normalizeExpandedSize(toRecord(data).expandedSize);
+}
+
+export function setNodeCollapsed(
+  nextValue: boolean,
+  currentData: unknown,
+  expandedSize?: { width: number; height: number },
+): Record<string, unknown> {
+  const source = toRecord(currentData);
+
+  if (nextValue) {
+    const normalizedExpandedSize =
+      normalizeExpandedSize(expandedSize) ??
+      normalizeExpandedSize(source.expandedSize);
+    return {
+      ...source,
+      isCollapsed: true,
+      ...(normalizedExpandedSize ? { expandedSize: normalizedExpandedSize } : {}),
+    };
+  }
+
+  const next = { ...source };
+  delete next.isCollapsed;
+  delete next.expandedSize;
+  return next;
+}
+
 export function preserveNodeMetadata(
   nextData: unknown,
   previousData: unknown,
 ): Record<string, unknown> {
-  return setNodeBypassed(
-    readNodeBypassed(previousData),
-    setNodeFavorite(readNodeFavorite(previousData), nextData),
+  return setNodeCollapsed(
+    readNodeCollapsed(previousData),
+    setNodeBypassed(
+      readNodeBypassed(previousData),
+      setNodeFavorite(readNodeFavorite(previousData), nextData),
+    ),
+    readNodeExpandedSize(previousData),
   );
 }
 

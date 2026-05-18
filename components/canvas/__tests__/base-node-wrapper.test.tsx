@@ -10,9 +10,16 @@ const mocks = vi.hoisted(() => ({
   createNodeWithIntersection: vi.fn(async () => undefined),
   getNode: vi.fn(),
   getNodes: vi.fn(() => []),
-  getEdges: vi.fn(() => []),
+  getEdges: vi.fn(() => [] as Array<{
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }>),
   setNodes: vi.fn(),
   deleteElements: vi.fn(async () => undefined),
+  updateNodeInternals: vi.fn(),
   nodeResizeControlProps: [] as Array<{
     minWidth?: number;
     minHeight?: number;
@@ -24,6 +31,14 @@ vi.mock("@xyflow/react", () => ({
   NodeToolbar: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="node-toolbar">{children}</div>
   ),
+  Handle: ({
+    className,
+    style,
+    ...props
+  }: React.HTMLAttributes<HTMLDivElement> & {
+    className?: string;
+    style?: React.CSSProperties;
+  }) => <div className={className} style={style} {...props} />,
   NodeResizeControl: (props: {
     minWidth?: number;
     minHeight?: number;
@@ -32,8 +47,12 @@ vi.mock("@xyflow/react", () => ({
     mocks.nodeResizeControlProps.push(props);
     return <div data-testid="node-resize-control" />;
   },
-  Position: { Top: "top" },
+  Position: { Top: "top", Left: "left", Right: "right" },
+  useConnection: () => ({ inProgress: false }),
   useNodeId: () => "node-1",
+  useStore: (selector: (store: { edges: ReturnType<typeof mocks.getEdges> }) => unknown) =>
+    selector({ edges: mocks.getEdges() }),
+  useUpdateNodeInternals: () => mocks.updateNodeInternals,
   useReactFlow: () => ({
     getNode: mocks.getNode,
     getNodes: mocks.getNodes,
@@ -61,7 +80,9 @@ import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import {
   preserveNodeMetadata,
   readNodeBypassed,
+  readNodeCollapsed,
   setNodeBypassed,
+  setNodeCollapsed,
 } from "@/lib/canvas-node-favorite";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -79,6 +100,7 @@ describe("BaseNodeWrapper", () => {
     mocks.getEdges.mockClear();
     mocks.setNodes.mockClear();
     mocks.deleteElements.mockClear();
+    mocks.updateNodeInternals.mockClear();
     mocks.nodeResizeControlProps.length = 0;
 
     container = document.createElement("div");
@@ -123,9 +145,134 @@ describe("BaseNodeWrapper", () => {
     await renderWrapper({ label: "Frame" }, true);
 
     expect(container?.querySelector('button[title="Ausblenden"]')).toBeTruthy();
+    expect(container?.querySelector('button[title="Collapse"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Favorite"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Duplicate"]')).toBeTruthy();
     expect(container?.querySelector('button[title="Delete"]')).toBeTruthy();
+  });
+
+  it("collapses a normal node from the toolbar and stores its expanded size", async () => {
+    await renderWrapper({ label: "Prompt" }, true, "prompt");
+
+    const collapseButton = container?.querySelector('button[title="Collapse"]');
+    if (!(collapseButton instanceof HTMLButtonElement)) {
+      throw new Error("Collapse button not found");
+    }
+
+    await act(async () => {
+      collapseButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: {
+        label: "Prompt",
+        isCollapsed: true,
+        expandedSize: { width: 300, height: 200 },
+      },
+    });
+    expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      width: 300,
+      height: 36,
+    });
+  });
+
+  it("expands a collapsed node and restores its saved expanded size", async () => {
+    await renderWrapper(
+      {
+        label: "Prompt",
+        isCollapsed: true,
+        expandedSize: { width: 320, height: 260 },
+      },
+      true,
+      "prompt",
+    );
+
+    const expandButton = container?.querySelector('button[title="Expand"]');
+    if (!(expandButton instanceof HTMLButtonElement)) {
+      throw new Error("Expand button not found");
+    }
+
+    await act(async () => {
+      expandButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: {
+        label: "Prompt",
+      },
+    });
+    expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      width: 320,
+      height: 260,
+    });
+  });
+
+  it("renders collapsed nodes as a thin label bar without mounting child content", async () => {
+    await renderWrapper(
+      {
+        filename: "hero-image.png",
+        isCollapsed: true,
+        expandedSize: { width: 300, height: 200 },
+      },
+      true,
+      "image",
+    );
+
+    expect(container?.querySelector('[data-testid="canvas-node-collapsed-bar"]')).toBeTruthy();
+    expect(container?.textContent).toContain("hero-image.png");
+    expect(container?.textContent).not.toContain("Inner node content");
+    expect(container?.querySelector('[data-testid="node-toolbar"]')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="node-resize-control"]')).toBeNull();
+  });
+
+  it("does not expose collapse controls for group and frame nodes", async () => {
+    await renderWrapper({ label: "Gruppe" }, true, "group");
+    expect(container?.querySelector('button[title="Collapse"]')).toBeNull();
+
+    await renderWrapper({ label: "Frame" }, true, "frame");
+    expect(container?.querySelector('button[title="Collapse"]')).toBeNull();
+  });
+
+  it("renders connected collapsed handles with their original ids", async () => {
+    mocks.getEdges.mockReturnValue([
+      {
+        id: "edge-in",
+        source: "image-source",
+        target: "node-1",
+        targetHandle: "image-in-2",
+      },
+      {
+        id: "edge-out",
+        source: "node-1",
+        target: "image-output",
+        sourceHandle: "prompt-out",
+      },
+    ]);
+
+    await renderWrapper(
+      {
+        label: "Prompt",
+        isCollapsed: true,
+        expandedSize: { width: 300, height: 200 },
+      },
+      true,
+      "prompt",
+    );
+
+    expect(
+      container?.querySelector(
+        '[data-node-id="node-1"][data-handle-type="target"][data-handle-id="image-in-2"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      container?.querySelector(
+        '[data-node-id="node-1"][data-handle-type="source"][data-handle-id="prompt-out"]',
+      ),
+    ).toBeTruthy();
   });
 
   it("toggles bypass and queues merged node data update", async () => {
@@ -831,6 +978,45 @@ describe("canvas node metadata helpers", () => {
       exposure: 0.4,
       isFavorite: true,
       isBypassed: true,
+    });
+  });
+
+  it("reads, toggles, and preserves collapsed metadata with expanded size", () => {
+    expect(readNodeCollapsed({ isCollapsed: true })).toBe(true);
+    expect(readNodeCollapsed({ isCollapsed: false })).toBe(false);
+    expect(
+      setNodeCollapsed(true, { label: "Curves" }, { width: 320, height: 660 }),
+    ).toEqual({
+      label: "Curves",
+      isCollapsed: true,
+      expandedSize: { width: 320, height: 660 },
+    });
+    expect(
+      setNodeCollapsed(false, {
+        label: "Curves",
+        isCollapsed: true,
+        expandedSize: { width: 320, height: 660 },
+      }),
+    ).toEqual({
+      label: "Curves",
+    });
+    expect(
+      preserveNodeMetadata(
+        { exposure: 0.4 },
+        {
+          isFavorite: true,
+          isBypassed: true,
+          isCollapsed: true,
+          expandedSize: { width: 320, height: 660 },
+          exposure: 0.1,
+        },
+      ),
+    ).toEqual({
+      exposure: 0.4,
+      isFavorite: true,
+      isBypassed: true,
+      isCollapsed: true,
+      expandedSize: { width: 320, height: 660 },
     });
   });
 });
