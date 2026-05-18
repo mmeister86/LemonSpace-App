@@ -299,6 +299,54 @@ describe("BaseNodeWrapper", () => {
     });
   });
 
+  it("applies bypass locally before the sync queue resolves", async () => {
+    mocks.queueNodeDataUpdate.mockReturnValueOnce(
+      new Promise<void>(() => undefined),
+    );
+    await renderWrapper({ label: "Frame", isFavorite: true }, true);
+
+    const bypassButton = container?.querySelector('button[title="Ausblenden"]');
+    if (!(bypassButton instanceof HTMLButtonElement)) {
+      throw new Error("Bypass button not found");
+    }
+
+    await act(async () => {
+      bypassButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(mocks.setNodes).toHaveBeenCalledWith(expect.any(Function));
+    const updateLocalNodes = mocks.setNodes.mock.calls.at(-1)?.[0];
+    if (typeof updateLocalNodes !== "function") {
+      throw new Error("Local node updater not queued");
+    }
+
+    expect(
+      updateLocalNodes([
+        {
+          id: "node-1",
+          type: "text",
+          data: { label: "Frame", isFavorite: true },
+          position: { x: 0, y: 0 },
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "node-1",
+        type: "text",
+        data: { label: "Frame", isFavorite: true, isBypassed: true },
+        position: { x: 0, y: 0 },
+      },
+    ]);
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: {
+        label: "Frame",
+        isFavorite: true,
+        isBypassed: true,
+      },
+    });
+  });
+
   it("renders bypassed nodes dimmed while toolbar remains full strength", async () => {
     await renderWrapper({ label: "Frame", isBypassed: true }, true);
 

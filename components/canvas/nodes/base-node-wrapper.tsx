@@ -279,6 +279,16 @@ function NodeToolbarActions({
     if (!nodeId) return;
     const currentNodeData = getNode(nodeId)?.data;
     const nextData = setNodeBypassed(!readNodeBypassed(currentNodeData), currentNodeData);
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: nextData,
+            }
+          : node,
+      ),
+    );
     void queueNodeDataUpdate({
       nodeId: nodeId as Id<"nodes">,
       data: nextData,
