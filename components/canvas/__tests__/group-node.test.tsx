@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   ungroupNodes: vi.fn(async () => undefined),
   notifyOfflineUnsupported: vi.fn(),
   getNodes: vi.fn(() => [] as RFNode[]),
+  getEdges: vi.fn(() => []),
   setNodes: vi.fn(),
+  updateNodeInternals: vi.fn(),
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -20,10 +22,13 @@ vi.mock("@xyflow/react", () => ({
   NodeResizeControl: () => null,
   Position: { Left: "left", Right: "right", Top: "top" },
   useNodeId: () => "group-1",
+  useStore: (selector: (store: { edges: ReturnType<typeof mocks.getEdges> }) => unknown) =>
+    selector({ edges: mocks.getEdges() }),
+  useUpdateNodeInternals: () => mocks.updateNodeInternals,
   useReactFlow: () => ({
     getNode: vi.fn(() => ({ id: "group-1", data: {} })),
     getNodes: mocks.getNodes,
-    getEdges: vi.fn(() => []),
+    getEdges: mocks.getEdges,
     setNodes: mocks.setNodes,
     deleteElements: vi.fn(async () => undefined),
   }),
@@ -66,7 +71,9 @@ describe("GroupNode", () => {
     mocks.ungroupNodes.mockClear();
     mocks.notifyOfflineUnsupported.mockClear();
     mocks.getNodes.mockReset();
+    mocks.getEdges.mockClear();
     mocks.setNodes.mockClear();
+    mocks.updateNodeInternals.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);

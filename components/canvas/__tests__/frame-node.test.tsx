@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getEdges: vi.fn(() => []),
   setNodes: vi.fn(),
   deleteElements: vi.fn(async () => undefined),
+  updateNodeInternals: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -24,6 +25,9 @@ vi.mock("@xyflow/react", () => ({
   NodeToolbar: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   NodeResizeControl: () => null,
   useNodeId: () => "frame-1",
+  useStore: (selector: (store: { edges: ReturnType<typeof mocks.getEdges> }) => unknown) =>
+    selector({ edges: mocks.getEdges() }),
+  useUpdateNodeInternals: () => mocks.updateNodeInternals,
   useReactFlow: () => ({
     fitBounds: mocks.fitBounds,
     getViewport: mocks.getViewport,
