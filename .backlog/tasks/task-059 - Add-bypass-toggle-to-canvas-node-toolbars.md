@@ -1,11 +1,11 @@
 ---
 id: TASK-059
 title: Add bypass toggle to canvas node toolbars
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-05-18 19:28'
-updated_date: '2026-05-18 19:38'
+updated_date: '2026-05-18 20:29'
 labels: []
 dependencies: []
 modified_files:
@@ -67,3 +67,9 @@ Final verification after the last accessibility tweak:
 - npm test passed: 147 files, 875 tests.
 - npm run lint exited 0 with the same three pre-existing warnings in unrelated files.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added the canvas node bypass toolbar toggle, persisted reversible data.isBypassed metadata, kept bypassed nodes visually dimmed while controls stay usable, preserved favorite/bypass metadata through node data writes, and updated render/compare/mixer preview resolution to honor bypassed nodes. Changes were committed, merged into master, and pushed as 7e934c6.
+<!-- SECTION:FINAL_SUMMARY:END -->

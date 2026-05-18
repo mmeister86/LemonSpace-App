@@ -1,10 +1,10 @@
 ---
 id: TASK-058
 title: Fix clipped AI image and video prompt nodes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-15 06:52'
-updated_date: '2026-05-18 20:08'
+updated_date: '2026-05-18 20:28'
 labels: []
 dependencies: []
 priority: high
@@ -49,3 +49,9 @@ Added development diagnostics for the persistent resize/delete issue. Logs are e
 
 Investigated user console logs: repeated autosize for asset-video showed width growing 1888 -> 2340 -> 2644 while height stayed 180. Root cause was horizontal content autosize reading self-scaling media scrollWidth and persisting it back as node width. Changed content-aware autosize so width only grows when explicitly opted in; vertical autosize remains. Added regression coverage for asset-video self-scaling media overflow and prompt vertical growth. Verification: focused Canvas/node tests pass (99 tests). TypeScript check still fails on existing unrelated test typing errors in comment-node, rate-limit, and prompt-node tests.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed the clipped KI-Bild/KI-Video prompt nodes, reduced their settled height to 260px after visual review, stabilized canvas autosize so selected chrome and self-scaling media no longer trigger horizontal resize loops, restored pending resize/delete state from the local op mirror during reconciliation, and added focused regression coverage. Changes were committed, merged into master, and pushed as 7e934c6.
+<!-- SECTION:FINAL_SUMMARY:END -->
