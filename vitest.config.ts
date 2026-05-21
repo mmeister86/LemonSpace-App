@@ -15,6 +15,7 @@ export default defineConfig({
       "components/canvas/__tests__/canvas-grouping-helpers.test.ts",
       "components/canvas/__tests__/default-edge.test.tsx",
       "components/canvas/__tests__/canvas-selection-toolbar.test.tsx",
+      "components/canvas/__tests__/collapsed-node-edit-drawer.test.tsx",
       "components/canvas/__tests__/canvas-connection-drop-menu.test.tsx",
       "components/canvas/__tests__/canvas-connection-drop-menu-actions.test.ts",
       "components/canvas/__tests__/canvas-node-template-picker.test.tsx",

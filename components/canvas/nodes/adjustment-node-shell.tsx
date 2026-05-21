@@ -427,13 +427,15 @@ export const ADJUSTMENT_NODE_CONFIGS = {
   } satisfies AdjustmentNodeShellConfig<DetailAdjustData>,
 } as const;
 
-export function AdjustmentNodeShell<TData extends AdjustmentData>({
+export function AdjustmentNodeBody<TData extends AdjustmentData>({
   id,
   data,
-  selected,
   width,
   config,
-}: NodeProps<Node<AdjustmentNodeData<TData>, AdjustmentNodeKind>> & {
+}: {
+  id: string;
+  data: AdjustmentNodeData<TData>;
+  width?: number | null;
   config: AdjustmentNodeShellConfig<TData>;
 }) {
   const tCommon = useTranslations("common");
@@ -514,6 +516,76 @@ export function AdjustmentNodeShell<TData extends AdjustmentData>({
   };
 
   return (
+    <div className="space-y-3 p-3">
+      <div className={`flex items-center gap-1.5 text-xs font-medium ${config.titleClassName}`}>
+        <Icon className="h-3.5 w-3.5" />
+        {tNodes(config.titleKey)}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select
+          value={presetSelection}
+          aria-label={tNodes("adjustments.common.presetPlaceholder")}
+          className="nodrag h-8 w-full rounded-lg border border-input bg-transparent px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          onChange={(event) => applyPresetValue(event.target.value)}
+        >
+          <option value="custom">{tNodes("custom")}</option>
+          {builtinOptions.map((name) => (
+            <option key={name} value={`builtin:${name}`}>
+              {tNodes("adjustments.common.builtinPresetLabel", { name })}
+            </option>
+          ))}
+          {userPresets.map((preset) => (
+            <option key={preset._id} value={`user:${preset._id}`}>
+              {tNodes("adjustments.common.userPresetLabel", { name: preset.name })}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="nodrag rounded-md border px-2 py-1 text-[11px]"
+          onClick={() => {
+            void handleSavePreset();
+          }}
+        >
+          {tCommon("save")}
+        </button>
+      </div>
+
+      <AdjustmentPreview
+        nodeId={id}
+        nodeWidth={width ?? 360}
+        currentType={config.nodeType}
+        currentParams={localData}
+      />
+
+      <ParameterSlider
+        id={`${id}-${config.nodeType}-params`}
+        className="min-w-0 max-w-none"
+        sliders={sliderConfigs}
+        values={sliderValues}
+        fillClassName={config.fillClassName}
+        handleClassName={config.sliderHandleClassName}
+        trackClassName={config.trackClassName}
+        actions={[{ id: "reset", label: tCommon("reset") }]}
+        onChange={(values) => {
+          updateData((current) => config.applySliderValues(current, values));
+        }}
+      />
+    </div>
+  );
+}
+
+export function AdjustmentNodeShell<TData extends AdjustmentData>({
+  id,
+  data,
+  selected,
+  width,
+  config,
+}: NodeProps<Node<AdjustmentNodeData<TData>, AdjustmentNodeKind>> & {
+  config: AdjustmentNodeShellConfig<TData>;
+}) {
+  return (
     <BaseNodeWrapper
       nodeType={config.nodeType}
       selected={selected}
@@ -529,63 +601,7 @@ export function AdjustmentNodeShell<TData extends AdjustmentData>({
         className={config.handleClassName}
       />
 
-      <div className="space-y-3 p-3">
-        <div className={`flex items-center gap-1.5 text-xs font-medium ${config.titleClassName}`}>
-          <Icon className="h-3.5 w-3.5" />
-          {tNodes(config.titleKey)}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <select
-            value={presetSelection}
-            aria-label={tNodes("adjustments.common.presetPlaceholder")}
-            className="nodrag h-8 w-full rounded-lg border border-input bg-transparent px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-            onChange={(event) => applyPresetValue(event.target.value)}
-          >
-            <option value="custom">{tNodes("custom")}</option>
-            {builtinOptions.map((name) => (
-              <option key={name} value={`builtin:${name}`}>
-                {tNodes("adjustments.common.builtinPresetLabel", { name })}
-              </option>
-            ))}
-            {userPresets.map((preset) => (
-              <option key={preset._id} value={`user:${preset._id}`}>
-                {tNodes("adjustments.common.userPresetLabel", { name: preset.name })}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="nodrag rounded-md border px-2 py-1 text-[11px]"
-            onClick={() => {
-              void handleSavePreset();
-            }}
-          >
-            {tCommon("save")}
-          </button>
-        </div>
-
-        <AdjustmentPreview
-          nodeId={id}
-          nodeWidth={width ?? 240}
-          currentType={config.nodeType}
-          currentParams={localData}
-        />
-
-        <ParameterSlider
-          id={`${id}-${config.nodeType}-params`}
-          className="min-w-0 max-w-none"
-          sliders={sliderConfigs}
-          values={sliderValues}
-          fillClassName={config.fillClassName}
-          handleClassName={config.sliderHandleClassName}
-          trackClassName={config.trackClassName}
-          actions={[{ id: "reset", label: tCommon("reset") }]}
-          onChange={(values) => {
-            updateData((current) => config.applySliderValues(current, values));
-          }}
-        />
-      </div>
+      <AdjustmentNodeBody id={id} data={data} width={width} config={config} />
 
       <CanvasHandle
         nodeId={id}

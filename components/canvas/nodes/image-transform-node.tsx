@@ -40,12 +40,15 @@ function renderIcon(type: ImageTransformType) {
   return <Wand2 className={className} />;
 }
 
-export default function ImageTransformNode({
+export function ImageTransformNodeBody({
   id,
   data,
-  selected,
   operationType,
-}: ImageTransformNodeProps) {
+}: {
+  id: string;
+  data: TransformNodeData;
+  operationType: ImageTransformType;
+}) {
   const t = useTranslations("imageTransformNode");
   const { queueNodeDataUpdate, status } = useCanvasSync();
   const { createNodeConnectedFromSource } = useCanvasPlacement();
@@ -123,45 +126,7 @@ export default function ImageTransformNode({
   );
 
   return (
-    <BaseNodeWrapper
-      nodeType={operationType}
-      selected={selected}
-      status={nodeData._status}
-      statusMessage={nodeData._statusMessage}
-      className="min-w-[280px] border-teal-500/30"
-    >
-      {operationType === "style-transfer" ? (
-        <>
-          <CanvasHandle
-            nodeId={id}
-            nodeType={operationType}
-            type="target"
-            position={Position.Left}
-            id="image"
-            style={{ top: "34%" }}
-            className="!h-3 !w-3 !border-2 !border-background"
-          />
-          <CanvasHandle
-            nodeId={id}
-            nodeType={operationType}
-            type="target"
-            position={Position.Left}
-            id="reference"
-            style={{ top: "56%" }}
-            className="!h-3 !w-3 !border-2 !border-background"
-          />
-        </>
-      ) : (
-        <CanvasHandle
-          nodeId={id}
-          nodeType={operationType}
-          type="target"
-          position={Position.Left}
-          className="!h-3 !w-3 !border-2 !border-background !bg-teal-500"
-        />
-      )}
-
-      <div className="flex h-full flex-col gap-2 p-3">
+      <div className="flex h-full min-h-[320px] flex-col gap-2 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-300">
             {renderIcon(operationType)}
@@ -254,6 +219,57 @@ export default function ImageTransformNode({
           {nodeData._status === "error" ? t("retryButton") : t("runButton")}
         </button>
       </div>
+  );
+}
+
+export default function ImageTransformNode({
+  id,
+  data,
+  selected,
+  operationType,
+}: ImageTransformNodeProps) {
+  const nodeData = data as TransformNodeData;
+
+  return (
+    <BaseNodeWrapper
+      nodeType={operationType}
+      selected={selected}
+      status={nodeData._status}
+      statusMessage={nodeData._statusMessage}
+      className="min-w-[280px] border-teal-500/30"
+    >
+      {operationType === "style-transfer" ? (
+        <>
+          <CanvasHandle
+            nodeId={id}
+            nodeType={operationType}
+            type="target"
+            position={Position.Left}
+            id="image"
+            style={{ top: "34%" }}
+            className="!h-3 !w-3 !border-2 !border-background"
+          />
+          <CanvasHandle
+            nodeId={id}
+            nodeType={operationType}
+            type="target"
+            position={Position.Left}
+            id="reference"
+            style={{ top: "56%" }}
+            className="!h-3 !w-3 !border-2 !border-background"
+          />
+        </>
+      ) : (
+        <CanvasHandle
+          nodeId={id}
+          nodeType={operationType}
+          type="target"
+          position={Position.Left}
+          className="!h-3 !w-3 !border-2 !border-background !bg-teal-500"
+        />
+      )}
+
+      <ImageTransformNodeBody id={id} data={nodeData} operationType={operationType} />
 
       <CanvasHandle
         nodeId={id}

@@ -1,10 +1,5 @@
 "use client"
 
-/**
- * Onboarding note:
- * Design-system primitive for drawer. Keep styling token-based and compatible with ShadCN copy-paste ownership conventions.
- */
-
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
@@ -50,14 +45,21 @@ function DrawerOverlay({
   )
 }
 
+type DrawerContentProps = React.ComponentProps<typeof DrawerPrimitive.Content> & {
+  overlayClassName?: string
+  showOverlay?: boolean
+}
+
 function DrawerContent({
   className,
   children,
+  overlayClassName,
+  showOverlay = true,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+}: DrawerContentProps) {
   return (
     <DrawerPortal data-slot="drawer-portal">
-      <DrawerOverlay />
+      {showOverlay ? <DrawerOverlay className={overlayClassName} /> : null}
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
