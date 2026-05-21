@@ -11,6 +11,7 @@ import {
   getPendingRemovedNodeIdsFromLocalOps,
   isCanvasSelectAllHotkey,
   getSingleCharacterHotkey,
+  mergeNodesPreservingLocalState,
   selectAllCanvasNodes,
   withResolvedCompareData,
 } from "../canvas-helpers";
@@ -766,6 +767,45 @@ describe("selectAllCanvasNodes", () => {
     expect(result[0]).toBe(alreadySelected);
     expect(result[1]).not.toBe(unselected);
     expect(result.map((node) => node.selected)).toEqual([true, true]);
+  });
+});
+
+describe("mergeNodesPreservingLocalState", () => {
+  it("keeps incoming relative positions when selected media nodes are grouped", () => {
+    const previousImage = createNode({
+      id: "image-1",
+      type: "image",
+      position: { x: 420, y: 160 },
+      selected: true,
+      style: { width: 300, height: 220 },
+      data: {},
+    });
+    const incomingGroup = createNode({
+      id: "group-1",
+      type: "group",
+      position: { x: 396, y: 116 },
+      style: { width: 348, height: 288 },
+      data: { label: "Gruppe" },
+    });
+    const incomingImage = createNode({
+      id: "image-1",
+      type: "image",
+      parentId: "group-1",
+      position: { x: 24, y: 44 },
+      style: { width: 300, height: 220 },
+      data: {},
+    });
+
+    const result = mergeNodesPreservingLocalState(
+      [previousImage],
+      [incomingGroup, incomingImage],
+    );
+
+    expect(result.find((node) => node.id === "image-1")).toMatchObject({
+      parentId: "group-1",
+      position: { x: 24, y: 44 },
+      selected: true,
+    });
   });
 });
 

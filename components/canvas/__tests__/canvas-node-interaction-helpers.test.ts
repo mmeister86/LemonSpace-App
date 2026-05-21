@@ -115,6 +115,64 @@ describe("canvas node interaction helpers", () => {
     ]);
   });
 
+  it("does not clamp collapsed node dimension changes to expanded minimums", () => {
+    const collapsedColorAdjustNode: RFNode = {
+      id: "color-adjust-1",
+      type: "color-adjust",
+      position: { x: 0, y: 0 },
+      width: 300,
+      height: 36,
+      measured: { width: 300, height: 36 },
+      style: { width: 300, height: 36 },
+      data: {
+        isCollapsed: true,
+        expandedSize: { width: 300, height: 760 },
+      },
+    };
+    const collapsedPromptNode: RFNode = {
+      id: "prompt-1",
+      type: "prompt",
+      position: { x: 0, y: 60 },
+      width: 288,
+      height: 36,
+      measured: { width: 288, height: 36 },
+      style: { width: 288, height: 36 },
+      data: {
+        isCollapsed: true,
+        expandedSize: { width: 288, height: 260 },
+      },
+    };
+
+    expect(
+      adjustNodeDimensionChanges(
+        [
+          {
+            type: "dimensions",
+            id: "color-adjust-1",
+            dimensions: { width: 300, height: 36 },
+          },
+          {
+            type: "dimensions",
+            id: "prompt-1",
+            dimensions: { width: 288, height: 36 },
+          },
+        ],
+        [collapsedColorAdjustNode, collapsedPromptNode],
+      ),
+    ).toEqual([
+      {
+        type: "dimensions",
+        id: "color-adjust-1",
+        dimensions: { width: 300, height: 36 },
+      },
+      {
+        type: "dimensions",
+        id: "prompt-1",
+        dimensions: { width: 288, height: 36 },
+      },
+    ]);
+  });
+
   it("does not request a content minimum state update when measured size is unchanged", () => {
     const current: NodeMinimumSize = { minWidth: 320, minHeight: 240 };
 

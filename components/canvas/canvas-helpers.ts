@@ -12,7 +12,11 @@ import {
   buildGraphSnapshot,
   getSourceImageFromGraph,
 } from "@/lib/canvas-render-preview";
-import { readNodeBypassed, readNodeCollapsed } from "@/lib/canvas-node-favorite";
+import {
+  COLLAPSED_NODE_HEIGHT,
+  readNodeBypassed,
+  readNodeCollapsed,
+} from "@/lib/canvas-node-favorite";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import { resolveCanvasMagnetTarget } from "@/components/canvas/canvas-connection-magnetism";
 
@@ -60,6 +64,37 @@ function readNodeDimension(node: RFNode, key: "width" | "height"): number | null
   }
 
   return null;
+}
+
+function readPositiveFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function projectCollapsedNodeDimensions(node: RFNode): RFNode {
+  const width =
+    readPositiveFiniteNumber(node.style?.width) ??
+    readPositiveFiniteNumber((node as { width?: unknown }).width) ??
+    readPositiveFiniteNumber(
+      (node as { measured?: Partial<Record<"width", unknown>> }).measured?.width,
+    ) ??
+    0;
+
+  return {
+    ...node,
+    width,
+    height: COLLAPSED_NODE_HEIGHT,
+    measured: {
+      width,
+      height: COLLAPSED_NODE_HEIGHT,
+    },
+    style: {
+      ...(node.style ?? {}),
+      width,
+      height: COLLAPSED_NODE_HEIGHT,
+    },
+  };
 }
 
 function readNodeBox(node: RFNode): {
@@ -1199,18 +1234,14 @@ export function mergeNodesPreservingLocalState(
   return incomingNodes.map((incomingNode) => {
     const incomingData = incomingNode.data as Record<string, unknown>;
     const incomingIsCollapsed = readNodeCollapsed(incomingData);
-    const stripStaleDirectDimensions = (node: RFNode): RFNode => {
+    const projectIncomingCollapsedDimensions = (node: RFNode): RFNode => {
       if (!incomingIsCollapsed) return node;
-      const next = { ...node };
-      delete (next as { width?: unknown }).width;
-      delete (next as { height?: unknown }).height;
-      delete (next as { measured?: unknown }).measured;
-      return next;
+      return projectCollapsedNodeDimensions(node);
     };
 
     const handoffPrev = optimisticPredecessorByRealId.get(incomingNode.id);
     if (handoffPrev) {
-      return stripStaleDirectDimensions({
+      return projectIncomingCollapsedDimensions({
         ...incomingNode,
         position: handoffPrev.position,
         selected: handoffPrev.selected,
@@ -1220,7 +1251,7 @@ export function mergeNodesPreservingLocalState(
 
     const previousNode = previousById.get(incomingNode.id);
     if (!previousNode) {
-      return stripStaleDirectDimensions(incomingNode);
+      return projectIncomingCollapsedDimensions(incomingNode);
     }
 
     const previousData = previousNode.data as Record<string, unknown>;
@@ -1240,7 +1271,7 @@ export function mergeNodesPreservingLocalState(
       shallowEqualRecord(previousData, incomingData);
 
     if (isStructurallyEqual) {
-      return stripStaleDirectDimensions({
+      return projectIncomingCollapsedDimensions({
         ...previousNode,
         style: incomingNode.style,
       });
@@ -1272,8 +1303,10 @@ export function mergeNodesPreservingLocalState(
       incomingNode.type === "asset" ||
       incomingNode.type === "image" ||
       incomingNode.type === "ai-image";
+    const parentChanged = previousNode.parentId !== incomingNode.parentId;
     const shouldPreserveInteractivePosition =
       !incomingIsCollapsed &&
+      !parentChanged &&
       isMediaNode &&
       (Boolean(previousNode.selected) ||
         Boolean(previousNode.dragging) ||
@@ -1310,7 +1343,7 @@ export function mergeNodesPreservingLocalState(
         shouldPreserveInteractiveSize || !canApplySeedSizeCorrection
           ? previousNode.style
           : incomingNode.style;
-      return stripStaleDirectDimensions({
+      return projectIncomingCollapsedDimensions({
         ...previousNode,
         ...incomingNode,
         position: previousNode.position,
@@ -1320,7 +1353,7 @@ export function mergeNodesPreservingLocalState(
       });
     }
 
-    return stripStaleDirectDimensions({
+    return projectIncomingCollapsedDimensions({
       ...previousNode,
       ...incomingNode,
       position: preferLocalPosition ? previousNode.position : incomingNode.position,

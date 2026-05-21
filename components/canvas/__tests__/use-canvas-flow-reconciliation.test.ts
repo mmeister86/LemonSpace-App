@@ -363,9 +363,11 @@ describe("useCanvasFlowReconciliation", () => {
       width: 300,
       height: 36,
     });
-    expect(node).not.toHaveProperty("width");
-    expect(node).not.toHaveProperty("height");
-    expect(node).not.toHaveProperty("measured");
+    expect(node).toMatchObject({
+      width: 300,
+      height: 36,
+      measured: { width: 300, height: 36 },
+    });
   });
 
   it("keeps locally expanded node data while stale convex data is still collapsed", async () => {

@@ -223,12 +223,12 @@ describe("BaseNodeWrapper", () => {
           isCollapsed: true,
           expandedSize: { width: 300, height: 200 },
         },
+        width: 300,
+        height: 36,
+        measured: { width: 300, height: 36 },
         style: { width: 300, height: 36 },
       }),
     );
-    expect(updatedNode).not.toHaveProperty("width");
-    expect(updatedNode).not.toHaveProperty("height");
-    expect(updatedNode).not.toHaveProperty("measured");
   });
 
   it("expands a collapsed node and restores its saved expanded size", async () => {

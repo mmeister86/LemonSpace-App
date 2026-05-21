@@ -11,6 +11,7 @@ import {
   DEFAULT_ASPECT_RATIO,
   parseAspectRatioString,
 } from "@/lib/image-formats";
+import { readNodeCollapsed } from "@/lib/canvas-node-favorite";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { clampNodeDimensionsToMinimum } from "./canvas-node-size-helpers";
 
@@ -241,6 +242,10 @@ export function adjustNodeDimensionChanges(
 
       const node = nodes.find((candidate) => candidate.id === change.id);
       if (!node) {
+        return change;
+      }
+
+      if (readNodeCollapsed(node.data)) {
         return change;
       }
 

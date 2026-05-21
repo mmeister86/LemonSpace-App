@@ -75,15 +75,18 @@ function withLocalNodeVisualSize<
 >(node: T, width: number, height: number): T {
   const next = {
     ...node,
+    width,
+    height,
+    measured: {
+      width,
+      height,
+    },
     style: {
       ...(node.style ?? {}),
       width,
       height,
     },
   };
-  delete (next as { width?: unknown }).width;
-  delete (next as { height?: unknown }).height;
-  delete (next as { measured?: unknown }).measured;
   return next;
 }
 

@@ -103,6 +103,12 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
     },
     parentId: node.parentId ?? undefined,
     zIndex: node.zIndex,
+    width: node.width,
+    height: renderedHeight,
+    measured: {
+      width: node.width,
+      height: renderedHeight,
+    },
     style: {
       width: node.width,
       height: renderedHeight,
