@@ -10,6 +10,7 @@ import {
   sourceGlowFilterForNodeType,
   type EdgeGlowColorMode,
 } from "@/lib/canvas-handle-style";
+import { COLLAPSED_NODE_HEIGHT, readNodeCollapsed } from "@/lib/canvas-node-favorite";
 
 /**
  * Reichert Node-Dokumente mit `data.url` an (aus gebündelter Storage-URL-Map).
@@ -83,12 +84,17 @@ export function convexNodeDocWithMergedStorageUrl(
  * React Flow erwartet position: { x, y }.
  */
 export function convexNodeToRF(node: Doc<"nodes">): RFNode {
+  const nodeData = node.data as Record<string, unknown>;
+  const renderedHeight = readNodeCollapsed(nodeData)
+    ? COLLAPSED_NODE_HEIGHT
+    : node.height;
+
   return {
     id: node._id,
     type: node.type,
     position: { x: node.positionX, y: node.positionY },
     data: {
-      ...(node.data as Record<string, unknown>),
+      ...nodeData,
       canvasId: node.canvasId,
       // Status direkt in data durchreichen, damit Node-Komponenten darauf zugreifen können
       _status: node.status,
@@ -99,7 +105,7 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
     zIndex: node.zIndex,
     style: {
       width: node.width,
-      height: node.height,
+      height: renderedHeight,
     },
   };
 }

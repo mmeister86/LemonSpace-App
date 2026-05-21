@@ -11,6 +11,8 @@ function toRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
 }
 
+export const COLLAPSED_NODE_HEIGHT = 36;
+
 export function readNodeFavorite(data: unknown): boolean {
   const source = toRecord(data);
   return source.isFavorite === true;

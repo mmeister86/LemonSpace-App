@@ -261,6 +261,113 @@ describe("useCanvasFlowReconciliation", () => {
     });
   });
 
+  it("projects collapsed convex nodes to the collapsed visual height even when persisted height is stale", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-collapsed"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "color-adjust",
+              positionX: 20,
+              positionY: 40,
+              width: 300,
+              height: 760,
+              data: {
+                isCollapsed: true,
+                expandedSize: { width: 300, height: 760 },
+              },
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-collapsed"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes[0]?.style).toMatchObject({
+      width: 300,
+      height: 36,
+    });
+  });
+
+  it("drops stale direct dimensions when reconciling collapsed nodes", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [
+            {
+              id: "node-collapsed",
+              type: "color-adjust",
+              position: { x: 20, y: 40 },
+              data: {
+                isCollapsed: true,
+                expandedSize: { width: 300, height: 760 },
+              },
+              width: 300,
+              height: 760,
+              measured: { width: 300, height: 760 },
+              style: { width: 300, height: 760 },
+              selected: true,
+            },
+          ],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-collapsed"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "color-adjust",
+              positionX: 20,
+              positionY: 40,
+              width: 300,
+              height: 760,
+              data: {
+                isCollapsed: true,
+                expandedSize: { width: 300, height: 760 },
+              },
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-collapsed"]),
+        }),
+      );
+    });
+
+    const node = latestStateRef.current?.nodes[0];
+    expect(node?.style).toMatchObject({
+      width: 300,
+      height: 36,
+    });
+    expect(node).not.toHaveProperty("width");
+    expect(node).not.toHaveProperty("height");
+    expect(node).not.toHaveProperty("measured");
+  });
+
   it("keeps locally expanded node data while stale convex data is still collapsed", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);

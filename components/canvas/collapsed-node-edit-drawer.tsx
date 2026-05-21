@@ -16,10 +16,12 @@ import {
 import { X } from "lucide-react";
 
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useCollapsedNodeDrawerToolbar } from "@/components/canvas/collapsed-node-drawer-toolbar-context";
 import {
   ADJUSTMENT_NODE_CONFIGS,
   AdjustmentNodeBody,
 } from "@/components/canvas/nodes/adjustment-node-shell";
+import { NodeActionRow } from "@/components/canvas/nodes/node-action-row";
 import { CropNodeBody } from "@/components/canvas/nodes/crop-node";
 import { ImageTransformNodeBody } from "@/components/canvas/nodes/image-transform-node";
 import { MixerNodeBody } from "@/components/canvas/nodes/mixer-node";
@@ -56,6 +58,7 @@ const EDITABLE_COLLAPSED_NODE_TYPES = new Set([
   "render",
   "mixer",
 ]);
+const DRAWER_REOPEN_DRAG_THRESHOLD_PX = 6;
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   prompt: "KI-Bild",
@@ -371,9 +374,16 @@ function isPointerInsideCanvasNode(target: Element, nodeId: string): boolean {
 export function CollapsedNodeEditDrawer() {
   const allNodes = useStore((store) => store.nodes);
   const allEdges = useStore((store) => store.edges);
+  const { setActiveToolbarNodeId } = useCollapsedNodeDrawerToolbar();
   const [selectedNodes, setSelectedNodes] = useState<RFNode[]>([]);
   const [manualClosedSelectionId, setManualClosedSelectionId] = useState<string | null>(null);
   const drawerContentRef = useRef<HTMLDivElement | null>(null);
+  const pendingReopenPointerRef = useRef<{
+    nodeId: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
 
   const handleSelectionChange = useCallback(({ nodes }: { nodes: RFNode[] }) => {
     setSelectedNodes(nodes);
@@ -407,15 +417,31 @@ export function CollapsedNodeEditDrawer() {
   };
 
   useEffect(() => {
+    setActiveToolbarNodeId(isOpen && activeNode ? activeNode.id : null);
+    return () => setActiveToolbarNodeId(null);
+  }, [activeNode, isOpen, setActiveToolbarNodeId]);
+
+  useEffect(() => {
     if (!activeNode) return;
 
     const handleDocumentPointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (isPointerInsideCanvasNode(target, activeNode.id)) {
-        setManualClosedSelectionId(null);
+        if (isOpen) {
+          setManualClosedSelectionId(null);
+          pendingReopenPointerRef.current = null;
+          return;
+        }
+        pendingReopenPointerRef.current = {
+          nodeId: activeNode.id,
+          startX: event.clientX,
+          startY: event.clientY,
+          moved: false,
+        };
         return;
       }
+      pendingReopenPointerRef.current = null;
       if (!isOpen) return;
       if (drawerContentRef.current?.contains(target)) return;
       if (isDrawerOutsideInteractionExempt(target)) return;
@@ -423,9 +449,34 @@ export function CollapsedNodeEditDrawer() {
       setManualClosedSelectionId(activeNode.id);
     };
 
+    const handleDocumentPointerMove = (event: PointerEvent) => {
+      const pendingReopenPointer = pendingReopenPointerRef.current;
+      if (!pendingReopenPointer || pendingReopenPointer.nodeId !== activeNode.id) return;
+      const deltaX = event.clientX - pendingReopenPointer.startX;
+      const deltaY = event.clientY - pendingReopenPointer.startY;
+      if (Math.hypot(deltaX, deltaY) >= DRAWER_REOPEN_DRAG_THRESHOLD_PX) {
+        pendingReopenPointerRef.current = {
+          ...pendingReopenPointer,
+          moved: true,
+        };
+      }
+    };
+
+    const handleDocumentPointerUp = () => {
+      const pendingReopenPointer = pendingReopenPointerRef.current;
+      pendingReopenPointerRef.current = null;
+      if (!pendingReopenPointer || pendingReopenPointer.nodeId !== activeNode.id) return;
+      if (pendingReopenPointer.moved) return;
+      setManualClosedSelectionId(null);
+    };
+
     document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+    document.addEventListener("pointermove", handleDocumentPointerMove, true);
+    document.addEventListener("pointerup", handleDocumentPointerUp, true);
     return () => {
       document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+      document.removeEventListener("pointermove", handleDocumentPointerMove, true);
+      document.removeEventListener("pointerup", handleDocumentPointerUp, true);
     };
   }, [activeNode, isOpen]);
 
@@ -438,7 +489,7 @@ export function CollapsedNodeEditDrawer() {
       modal={false}
       shouldScaleBackground={false}
     >
-      {activeNode ? (
+      {activeNode && isOpen ? (
         <DrawerContent
           ref={drawerContentRef}
           showOverlay={false}
@@ -458,6 +509,16 @@ export function CollapsedNodeEditDrawer() {
               <X className="h-4 w-4" />
             </button>
           </DrawerHeader>
+          <div className="border-b border-border bg-muted/10 px-3 py-2">
+            <NodeActionRow
+              nodeId={activeNode.id}
+              nodeType={activeNode.type ?? ""}
+              includeCustomActions={false}
+              variant="drawer"
+              testId="collapsed-node-drawer-toolbar"
+              className="nodrag nopan nowheel"
+            />
+          </div>
           {activeSurface ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
               {activeSurface.render({ node: activeNode })}

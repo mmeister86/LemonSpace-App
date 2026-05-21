@@ -12,7 +12,7 @@ import {
   buildGraphSnapshot,
   getSourceImageFromGraph,
 } from "@/lib/canvas-render-preview";
-import { readNodeBypassed } from "@/lib/canvas-node-favorite";
+import { readNodeBypassed, readNodeCollapsed } from "@/lib/canvas-node-favorite";
 import { NODE_HANDLE_MAP } from "@/lib/canvas-utils";
 import { resolveCanvasMagnetTarget } from "@/components/canvas/canvas-connection-magnetism";
 
@@ -1197,23 +1197,33 @@ export function mergeNodesPreservingLocalState(
   }
 
   return incomingNodes.map((incomingNode) => {
+    const incomingData = incomingNode.data as Record<string, unknown>;
+    const incomingIsCollapsed = readNodeCollapsed(incomingData);
+    const stripStaleDirectDimensions = (node: RFNode): RFNode => {
+      if (!incomingIsCollapsed) return node;
+      const next = { ...node };
+      delete (next as { width?: unknown }).width;
+      delete (next as { height?: unknown }).height;
+      delete (next as { measured?: unknown }).measured;
+      return next;
+    };
+
     const handoffPrev = optimisticPredecessorByRealId.get(incomingNode.id);
     if (handoffPrev) {
-      return {
+      return stripStaleDirectDimensions({
         ...incomingNode,
         position: handoffPrev.position,
         selected: handoffPrev.selected,
         dragging: handoffPrev.dragging,
-      };
+      });
     }
 
     const previousNode = previousById.get(incomingNode.id);
     if (!previousNode) {
-      return incomingNode;
+      return stripStaleDirectDimensions(incomingNode);
     }
 
     const previousData = previousNode.data as Record<string, unknown>;
-    const incomingData = incomingNode.data as Record<string, unknown>;
     const previousWidth = previousNode.style?.width;
     const previousHeight = previousNode.style?.height;
     const incomingWidth = incomingNode.style?.width;
@@ -1230,7 +1240,10 @@ export function mergeNodesPreservingLocalState(
       shallowEqualRecord(previousData, incomingData);
 
     if (isStructurallyEqual) {
-      return previousNode;
+      return stripStaleDirectDimensions({
+        ...previousNode,
+        style: incomingNode.style,
+      });
     }
 
     if (incomingNode.type === "prompt") {
@@ -1260,12 +1273,15 @@ export function mergeNodesPreservingLocalState(
       incomingNode.type === "image" ||
       incomingNode.type === "ai-image";
     const shouldPreserveInteractivePosition =
+      !incomingIsCollapsed &&
       isMediaNode &&
       (Boolean(previousNode.selected) ||
         Boolean(previousNode.dragging) ||
         previousResizing);
     const shouldPreserveInteractiveSize =
-      isMediaNode && (Boolean(previousNode.dragging) || previousResizing);
+      !incomingIsCollapsed &&
+      isMediaNode &&
+      (Boolean(previousNode.dragging) || previousResizing);
 
     const previousStyleWidth =
       typeof previousNode.style?.width === "number" ? previousNode.style.width : null;
@@ -1294,22 +1310,22 @@ export function mergeNodesPreservingLocalState(
         shouldPreserveInteractiveSize || !canApplySeedSizeCorrection
           ? previousNode.style
           : incomingNode.style;
-      return {
+      return stripStaleDirectDimensions({
         ...previousNode,
         ...incomingNode,
         position: previousNode.position,
         style: nextStyle,
         selected: previousNode.selected,
         dragging: previousNode.dragging,
-      };
+      });
     }
 
-    return {
+    return stripStaleDirectDimensions({
       ...previousNode,
       ...incomingNode,
       position: preferLocalPosition ? previousNode.position : incomingNode.position,
       selected: previousNode.selected,
       dragging: previousNode.dragging,
-    };
+    });
   });
 }

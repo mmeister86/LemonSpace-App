@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   allNodes: [] as RFNode[],
   edges: [] as RFEdge[],
   queueNodeDataUpdate: vi.fn(async () => undefined),
+  queueNodeResize: vi.fn(async () => undefined),
+  createNodeWithIntersection: vi.fn(async () => undefined),
+  setNodes: vi.fn(),
+  deleteElements: vi.fn(async () => undefined),
   selectionRevision: 0,
 }));
 
@@ -27,9 +31,14 @@ vi.mock("@xyflow/react", () => ({
   },
   useReactFlow: () => ({
     getNodes: () => mocks.allNodes,
+    getNode: (nodeId: string) => mocks.allNodes.find((node) => node.id === nodeId),
+    getEdges: () => mocks.edges,
+    setNodes: mocks.setNodes,
+    deleteElements: mocks.deleteElements,
   }),
   useStore: (selector: (store: { nodes: RFNode[]; edges: RFEdge[] }) => unknown) =>
     selector({ nodes: mocks.allNodes, edges: mocks.edges }),
+  getConnectedEdges: () => [],
 }));
 
 vi.mock("next-intl", () => ({
@@ -131,6 +140,12 @@ vi.mock("@/components/ui/drawer", () => ({
   DrawerDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
 }));
 
+vi.mock("@/components/canvas/canvas-placement-context", () => ({
+  useCanvasPlacement: () => ({
+    createNodeWithIntersection: mocks.createNodeWithIntersection,
+  }),
+}));
+
 import { CollapsedNodeEditDrawer } from "@/components/canvas/collapsed-node-edit-drawer";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -157,7 +172,7 @@ function TestApp() {
       <CanvasSyncProvider
         value={{
           queueNodeDataUpdate: mocks.queueNodeDataUpdate,
-          queueNodeResize: vi.fn(async () => undefined),
+          queueNodeResize: mocks.queueNodeResize,
           status: { pendingCount: 0, isSyncing: false, isOffline: false },
         }}
       >
@@ -176,6 +191,10 @@ describe("CollapsedNodeEditDrawer", () => {
     mocks.allNodes = [];
     mocks.edges = [];
     mocks.queueNodeDataUpdate.mockClear();
+    mocks.queueNodeResize.mockClear();
+    mocks.createNodeWithIntersection.mockClear();
+    mocks.setNodes.mockClear();
+    mocks.deleteElements.mockClear();
     mocks.selectionRevision = 0;
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -215,6 +234,22 @@ describe("CollapsedNodeEditDrawer", () => {
     expect(container?.querySelector('[data-testid="drawer-content"]')?.getAttribute("data-show-overlay")).toBe("false");
     expect(container?.textContent).toContain("KI-Bild");
     expect(container?.querySelector("textarea")).toBeInstanceOf(HTMLTextAreaElement);
+  });
+
+  it("renders the generic collapsed node toolbar as a drawer navbar", async () => {
+    await renderDrawer([buildPromptNode()]);
+
+    const toolbar = container?.querySelector('[data-testid="collapsed-node-drawer-toolbar"]');
+    expect(toolbar).toBeTruthy();
+    expect(toolbar?.className).toContain("rounded-none");
+    expect(toolbar?.className).toContain("grid-cols-5");
+    expect(toolbar?.className).not.toContain("overflow-x-auto");
+    expect(toolbar?.textContent).toContain("Aufklappen");
+    expect(toolbar?.querySelector('button[title="Expand"]')).toBeTruthy();
+    expect(toolbar?.querySelector('button[title="Ausblenden"]')).toBeTruthy();
+    expect(toolbar?.querySelector('button[title="Favorite"]')).toBeTruthy();
+    expect(toolbar?.querySelector('button[title="Duplicate"]')).toBeTruthy();
+    expect(toolbar?.querySelector('button[title="Delete"]')).toBeTruthy();
   });
 
   it("closes for multi-selection and non-collapsed selection", async () => {
@@ -293,11 +328,79 @@ describe("CollapsedNodeEditDrawer", () => {
         new MouseEvent("pointerdown", {
           bubbles: true,
           cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+      document.dispatchEvent(
+        new MouseEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
         }),
       );
     });
 
     expect(container?.querySelector('[data-testid="drawer-root"]')).toBeTruthy();
+
+    outsideTarget.remove();
+    collapsedNode.remove();
+  });
+
+  it("does not reopen when the already selected collapsed node is dragged after focus loss", async () => {
+    await renderDrawer([buildPromptNode()]);
+    expect(container?.querySelector('[data-testid="drawer-root"]')).toBeTruthy();
+
+    const outsideTarget = document.createElement("button");
+    document.body.appendChild(outsideTarget);
+
+    await act(async () => {
+      outsideTarget.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(container?.querySelector('[data-testid="drawer-root"]')).toBeNull();
+
+    const collapsedNode = document.createElement("div");
+    collapsedNode.className = "react-flow__node";
+    collapsedNode.dataset.id = "prompt-1";
+    const collapsedNodeBody = document.createElement("button");
+    collapsedNode.appendChild(collapsedNodeBody);
+    document.body.appendChild(collapsedNode);
+
+    await act(async () => {
+      collapsedNodeBody.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+      document.dispatchEvent(
+        new MouseEvent("pointermove", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 34,
+          clientY: 10,
+        }),
+      );
+      document.dispatchEvent(
+        new MouseEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 34,
+          clientY: 10,
+        }),
+      );
+    });
+
+    expect(container?.querySelector('[data-testid="drawer-root"]')).toBeNull();
 
     outsideTarget.remove();
     collapsedNode.remove();

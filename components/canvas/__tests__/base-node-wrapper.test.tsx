@@ -77,6 +77,7 @@ vi.mock("@/components/canvas/canvas-placement-context", () => ({
 }));
 
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
+import { CollapsedNodeDrawerToolbarProvider } from "@/components/canvas/collapsed-node-drawer-toolbar-context";
 import {
   preserveNodeMetadata,
   readNodeBypassed,
@@ -123,6 +124,7 @@ describe("BaseNodeWrapper", () => {
     nodeData: Record<string, unknown>,
     selected = true,
     nodeType = "text",
+    activeDrawerToolbarNodeId: string | null = null,
   ) {
     mocks.getNode.mockReturnValue({
       id: "node-1",
@@ -134,9 +136,13 @@ describe("BaseNodeWrapper", () => {
 
     await act(async () => {
       root?.render(
-        <BaseNodeWrapper nodeType={nodeType} selected={selected}>
-          <div>Inner node content</div>
-        </BaseNodeWrapper>,
+        <CollapsedNodeDrawerToolbarProvider
+          initialActiveToolbarNodeId={activeDrawerToolbarNodeId}
+        >
+          <BaseNodeWrapper nodeType={nodeType} selected={selected}>
+            <div>Inner node content</div>
+          </BaseNodeWrapper>
+        </CollapsedNodeDrawerToolbarProvider>,
       );
     });
   }
@@ -176,6 +182,53 @@ describe("BaseNodeWrapper", () => {
       width: 300,
       height: 36,
     });
+  });
+
+  it("optimistically shrinks the local node bounds when collapsing", async () => {
+    await renderWrapper({ label: "Prompt" }, true, "prompt");
+
+    const collapseButton = container?.querySelector('button[title="Collapse"]');
+    if (!(collapseButton instanceof HTMLButtonElement)) {
+      throw new Error("Collapse button not found");
+    }
+
+    await act(async () => {
+      collapseButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const setNodesUpdater = mocks.setNodes.mock.calls.find(
+      ([updater]) => typeof updater === "function",
+    )?.[0];
+    if (typeof setNodesUpdater !== "function") {
+      throw new Error("Expected collapse to update local node state");
+    }
+
+    const [updatedNode] = setNodesUpdater([
+      {
+        id: "node-1",
+        type: "prompt",
+        data: { label: "Prompt" },
+        position: { x: 0, y: 0 },
+        width: 300,
+        height: 200,
+        measured: { width: 300, height: 200 },
+        style: { width: 300, height: 200 },
+      },
+    ]);
+
+    expect(updatedNode).toEqual(
+      expect.objectContaining({
+        data: {
+          label: "Prompt",
+          isCollapsed: true,
+          expandedSize: { width: 300, height: 200 },
+        },
+        style: { width: 300, height: 36 },
+      }),
+    );
+    expect(updatedNode).not.toHaveProperty("width");
+    expect(updatedNode).not.toHaveProperty("height");
+    expect(updatedNode).not.toHaveProperty("measured");
   });
 
   it("expands a collapsed node and restores its saved expanded size", async () => {
@@ -223,10 +276,28 @@ describe("BaseNodeWrapper", () => {
     );
 
     expect(container?.querySelector('[data-testid="canvas-node-collapsed-bar"]')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="canvas-node-content"]')?.className).toContain("h-9");
+    expect(container?.querySelector('[data-testid="canvas-node-content"]')?.className).not.toContain("h-full");
     expect(container?.textContent).toContain("hero-image.png");
     expect(container?.textContent).not.toContain("Inner node content");
     expect(container?.querySelector('[data-testid="node-toolbar"]')).toBeTruthy();
     expect(container?.querySelector('[data-testid="node-resize-control"]')).toBeNull();
+  });
+
+  it("hides the floating toolbar for the active collapsed drawer node", async () => {
+    await renderWrapper(
+      {
+        filename: "hero-image.png",
+        isCollapsed: true,
+        expandedSize: { width: 300, height: 200 },
+      },
+      true,
+      "image",
+      "node-1",
+    );
+
+    expect(container?.querySelector('[data-testid="canvas-node-collapsed-bar"]')).toBeTruthy();
+    expect(container?.querySelector('[data-testid="node-toolbar"]')).toBeNull();
   });
 
   it("does not expose collapse controls for group and frame nodes", async () => {
