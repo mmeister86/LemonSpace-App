@@ -112,7 +112,17 @@ function resolveLayerSize(args: {
   return args.fallbackImageSize;
 }
 
-export default function MixerNode({ id, data, selected, width, height }: NodeProps) {
+export function MixerNodeBody({
+  id,
+  data,
+  width,
+  height,
+}: {
+  id: string;
+  data: unknown;
+  width?: number | null;
+  height?: number | null;
+}) {
   const graph = useCanvasGraph();
   const { queueNodeDataUpdate } = useCanvasSync();
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -317,35 +327,7 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
     };
 
   return (
-    <BaseNodeWrapper nodeType="mixer" selected={selected} className="p-0">
-      <CanvasHandle
-        nodeId={id}
-        nodeType="mixer"
-        type="target"
-        position={Position.Left}
-        id="base"
-        style={{ top: "35%" }}
-        className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
-      />
-      <CanvasHandle
-        nodeId={id}
-        nodeType="mixer"
-        type="target"
-        position={Position.Left}
-        id="overlay"
-        style={{ top: "58%" }}
-        className="!h-3 !w-3 !border-2 !border-background !bg-pink-500"
-      />
-      <CanvasHandle
-        nodeId={id}
-        nodeType="mixer"
-        type="source"
-        position={Position.Right}
-        id="mixer-out"
-        className="!h-3 !w-3 !border-2 !border-background !bg-muted-foreground"
-      />
-
-      <div className="grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="grid h-full min-h-[360px] w-full grid-rows-[auto_minmax(0,1fr)_auto]">
         <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
           Mixer
         </div>
@@ -384,6 +366,40 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
           onKeepAspectRatioChange={setKeepAspectRatio}
         />
       </div>
+  );
+}
+
+export default function MixerNode({ id, data, selected, width, height }: NodeProps) {
+  return (
+    <BaseNodeWrapper nodeType="mixer" selected={selected} className="p-0">
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
+        type="target"
+        position={Position.Left}
+        id="base"
+        style={{ top: "35%" }}
+        className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
+      />
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
+        type="target"
+        position={Position.Left}
+        id="overlay"
+        style={{ top: "58%" }}
+        className="!h-3 !w-3 !border-2 !border-background !bg-pink-500"
+      />
+      <CanvasHandle
+        nodeId={id}
+        nodeType="mixer"
+        type="source"
+        position={Position.Right}
+        id="mixer-out"
+        className="!h-3 !w-3 !border-2 !border-background !bg-muted-foreground"
+      />
+
+      <MixerNodeBody id={id} data={data} width={width} height={height} />
     </BaseNodeWrapper>
   );
 }

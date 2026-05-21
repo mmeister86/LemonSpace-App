@@ -347,45 +347,102 @@ function isNodeDataRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function nodeDataIncludesPin(incoming: unknown, pin: unknown): boolean {
-  if (Array.isArray(pin)) {
-    return (
-      Array.isArray(incoming) &&
-      incoming.length === pin.length &&
-      pin.every((pinEntry, index) => nodeDataIncludesPin(incoming[index], pinEntry))
-    );
-  }
+const CLIENT_RUNTIME_NODE_DATA_KEYS = new Set([
+  "canvasId",
+  "_status",
+  "_statusMessage",
+  "_groupDropTarget",
+  "_uploadState",
+  "_executionStepIndex",
+  "_executionStepTotal",
+  "retryCount",
+]);
 
-  if (isNodeDataRecord(pin)) {
-    if (!isNodeDataRecord(incoming)) {
-      return false;
+function clonePinnedPersistentNodeData(pin: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(pin)) {
+    if (!CLIENT_RUNTIME_NODE_DATA_KEYS.has(key)) {
+      next[key] = value;
     }
-
-    return Object.keys(pin).every((key) =>
-      nodeDataIncludesPin(incoming[key], pin[key]),
-    );
   }
-
-  return Object.is(incoming, pin);
+  return next;
 }
 
-function mergeNodeDataWithPin(incoming: unknown, pin: unknown): unknown {
-  if (Array.isArray(pin)) {
+function preserveIncomingRuntimeNodeData(
+  incoming: Record<string, unknown>,
+  next: Record<string, unknown>,
+): void {
+  for (const key of CLIENT_RUNTIME_NODE_DATA_KEYS) {
+    if (next[key] === undefined && incoming[key] !== undefined) {
+      next[key] = incoming[key];
+    }
+  }
+
+  if (
+    next.url === undefined &&
+    typeof incoming.url === "string" &&
+    typeof incoming.storageId === "string" &&
+    next.storageId === incoming.storageId
+  ) {
+    next.url = incoming.url;
+  }
+
+  if (
+    next.lastUploadUrl === undefined &&
+    typeof incoming.lastUploadUrl === "string" &&
+    typeof incoming.lastUploadStorageId === "string" &&
+    next.lastUploadStorageId === incoming.lastUploadStorageId
+  ) {
+    next.lastUploadUrl = incoming.lastUploadUrl;
+  }
+}
+
+function replaceNodeDataWithPin(incoming: unknown, pin: unknown): unknown {
+  if (!isNodeDataRecord(pin)) {
     return pin;
   }
 
-  if (isNodeDataRecord(pin)) {
-    const base = isNodeDataRecord(incoming) ? incoming : {};
-    const next: Record<string, unknown> = { ...base };
+  const incomingRecord = isNodeDataRecord(incoming) ? incoming : {};
+  const next = clonePinnedPersistentNodeData(pin);
+  preserveIncomingRuntimeNodeData(incomingRecord, next);
+  return next;
+}
 
-    for (const [key, value] of Object.entries(pin)) {
-      next[key] = mergeNodeDataWithPin(base[key], value);
+function nodeDataEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) {
+      return false;
     }
 
-    return next;
+    return (
+      left.length === right.length &&
+      left.every((entry, index) => nodeDataEqual(entry, right[index]))
+    );
   }
 
-  return pin;
+  if (isNodeDataRecord(left) || isNodeDataRecord(right)) {
+    if (!isNodeDataRecord(left) || !isNodeDataRecord(right)) {
+      return false;
+    }
+
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+
+    return leftKeys.every(
+      (key) => Object.hasOwn(right, key) && nodeDataEqual(left[key], right[key]),
+    );
+  }
+
+  return false;
+}
+
+function nodeDataMatchesPin(incoming: unknown, pin: unknown): boolean {
+  return nodeDataEqual(incoming, replaceNodeDataWithPin(incoming, pin));
 }
 
 function applyLocalNodeDataPins(args: {
@@ -403,14 +460,14 @@ function applyLocalNodeDataPins(args: {
     const pin = nextPendingLocalNodeDataPins.get(node.id);
     if (pin === undefined) return node;
 
-    if (nodeDataIncludesPin(node.data, pin)) {
+    if (nodeDataMatchesPin(node.data, pin)) {
       nextPendingLocalNodeDataPins.delete(node.id);
       return node;
     }
 
     return {
       ...node,
-      data: mergeNodeDataWithPin(node.data, pin) as Record<string, unknown>,
+      data: replaceNodeDataWithPin(node.data, pin) as Record<string, unknown>,
     };
   });
 

@@ -21,7 +21,13 @@ type NoteNodeData = {
 
 export type NoteNode = Node<NoteNodeData, "note">;
 
-export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
+export function NoteNodeBody({
+  id,
+  data,
+}: {
+  id: string;
+  data: NoteNodeData;
+}) {
   const { queueNodeDataUpdate } = useCanvasSync();
   const [content, setContent] = useState(data.content ?? "");
   const [isEditing, setIsEditing] = useState(false);
@@ -58,15 +64,7 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
   );
 
   return (
-    <BaseNodeWrapper nodeType="note" selected={selected} className="p-3">
-      <CanvasHandle
-        nodeId={id}
-        nodeType="note"
-        type="target"
-        position={Position.Left}
-        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
-      />
-
+    <>
       <div className="text-xs font-medium text-muted-foreground mb-1">
         📌 Notiz
       </div>
@@ -92,6 +90,22 @@ export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
           )}
         </div>
       )}
+    </>
+  );
+}
+
+export default function NoteNode({ id, data, selected }: NodeProps<NoteNode>) {
+  return (
+    <BaseNodeWrapper nodeType="note" selected={selected} className="p-3">
+      <CanvasHandle
+        nodeId={id}
+        nodeType="note"
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !bg-primary !border-2 !border-background"
+      />
+
+      <NoteNodeBody id={id} data={data} />
 
       <CanvasHandle
         nodeId={id}

@@ -261,6 +261,75 @@ describe("useCanvasFlowReconciliation", () => {
     });
   });
 
+  it("keeps locally expanded node data while stale convex data is still collapsed", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [
+            {
+              id: "node-toggle",
+              type: "prompt",
+              position: { x: 20, y: 40 },
+              data: { label: "Prompt" },
+              selected: true,
+              style: { width: 320, height: 260 },
+            },
+          ],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("node-toggle"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "prompt",
+              positionX: 20,
+              positionY: 40,
+              width: 320,
+              height: 36,
+              data: {
+                label: "Prompt",
+                isCollapsed: true,
+                expandedSize: { width: 320, height: 260 },
+              },
+              status: "idle",
+              retryCount: 0,
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {},
+          themeMode: "light",
+          pendingLocalNodeDataPins: new Map<string, unknown>([
+            ["node-toggle", { label: "Prompt" }],
+          ]),
+          pendingLocalNodeSizePins: new Map<string, { width: number; height: number }>([
+            ["node-toggle", { width: 320, height: 260 }],
+          ]),
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["node-toggle"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes[0]?.data).toEqual(
+      expect.objectContaining({
+        label: "Prompt",
+        canvasId: "canvas-1",
+        _status: "idle",
+        retryCount: 0,
+      }),
+    );
+    expect(latestStateRef.current?.nodes[0]?.data).not.toHaveProperty("isCollapsed");
+    expect(latestStateRef.current?.nodes[0]?.data).not.toHaveProperty("expandedSize");
+    expect(latestStateRef.current?.nodes[0]?.style).toEqual({ width: 320, height: 260 });
+  });
+
   it("carries an optimistic connection edge until convex publishes the real edge", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);

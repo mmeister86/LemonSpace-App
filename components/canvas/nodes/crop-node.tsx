@@ -190,7 +190,15 @@ function resizeCropRect(
   return clampCropRect({ x, y, width, height });
 }
 
-export default function CropNode({ id, data, selected, width }: NodeProps<CropNodeType>) {
+export function CropNodeBody({
+  id,
+  data,
+  width,
+}: {
+  id: string;
+  data: CropNodeViewData;
+  width?: number | null;
+}) {
   const tNodes = useTranslations("nodes");
   const { queueNodeDataUpdate } = useCanvasSync();
   const graph = useCanvasGraph();
@@ -399,21 +407,6 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
   }, []);
 
   return (
-    <BaseNodeWrapper
-      nodeType="crop"
-      selected={selected}
-      status={data._status}
-      statusMessage={data._statusMessage}
-      className="min-w-[320px] border-violet-500/30"
-    >
-      <CanvasHandle
-        nodeId={id}
-        nodeType="crop"
-        type="target"
-        position={Position.Left}
-        className="!h-3 !w-3 !border-2 !border-background !bg-violet-500"
-      />
-
       <div className="space-y-3 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-violet-700 dark:text-violet-400">
           <Crop className="h-3.5 w-3.5" />
@@ -742,6 +735,27 @@ export default function CropNode({ id, data, selected, width }: NodeProps<CropNo
 
         {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
       </div>
+  );
+}
+
+export default function CropNode({ id, data, selected, width }: NodeProps<CropNodeType>) {
+  return (
+    <BaseNodeWrapper
+      nodeType="crop"
+      selected={selected}
+      status={data._status}
+      statusMessage={data._statusMessage}
+      className="min-w-[320px] border-violet-500/30"
+    >
+      <CanvasHandle
+        nodeId={id}
+        nodeType="crop"
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !border-2 !border-background !bg-violet-500"
+      />
+
+      <CropNodeBody id={id} data={data} width={width} />
 
       <CanvasHandle
         nodeId={id}

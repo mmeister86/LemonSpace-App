@@ -97,6 +97,7 @@ import { useCanvasGroupingMutations } from "./use-canvas-grouping-mutations";
 import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
 import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
 import { projectCanvasFavoritesVisibility } from "./canvas-favorites-visibility";
+import { CollapsedNodeEditDrawer } from "./collapsed-node-edit-drawer";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -918,6 +919,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                   ungroupNodes={runUngroupNodesWithHistory}
                   notifyOfflineUnsupported={notifyOfflineUnsupported}
                 />
+                <CollapsedNodeEditDrawer />
               </ReactFlow>
             </CanvasGraphProvider>
           </CanvasEdgeTypesProvider>
