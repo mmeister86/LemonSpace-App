@@ -534,6 +534,14 @@ describe("preview histogram call sites", () => {
         },
       ],
       getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      getSourceImageFromGraphWithContext: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
+      resolvePreviewSourceImageFromGraph: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
       shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
         steps.some((step) => overrides.has(step.nodeId)),
     }));
@@ -589,6 +597,14 @@ describe("preview histogram call sites", () => {
         },
       ],
       getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      getSourceImageFromGraphWithContext: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
+      resolvePreviewSourceImageFromGraph: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
       shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
         steps.some((step) => overrides.has(step.nodeId)),
     }));
@@ -649,6 +665,14 @@ describe("preview histogram call sites", () => {
         },
       ],
       getSourceImageFromGraph: () => "https://cdn.example.com/source.png",
+      getSourceImageFromGraphWithContext: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
+      resolvePreviewSourceImageFromGraph: () => ({
+        url: "https://cdn.example.com/source.png",
+        isAlphaBearing: false,
+      }),
       shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
         steps.some((step) => overrides.has(step.nodeId)),
     }));

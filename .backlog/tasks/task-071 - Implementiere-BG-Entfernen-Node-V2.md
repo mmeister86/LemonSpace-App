@@ -4,7 +4,7 @@ title: Implementiere BG Entfernen Node V2
 status: In Progress
 assignee: []
 created_date: '2026-05-28 10:00'
-updated_date: '2026-05-28 10:51'
+updated_date: '2026-05-28 12:07'
 labels: []
 dependencies: []
 priority: high
@@ -44,4 +44,8 @@ Verification complete: npm test passed (153 files, 928 tests), npm run lint pass
 Deploy blocker follow-up: production contains a persisted mask node from codex-mask-node-v1. Added mask to the shared node union/Convex validator path, React Flow nodeTypes, catalog/templates/defaults/handles, adjustment mask handle, and connection policy so the existing document validates and renders instead of falling back. Verified focused tests, lint, and build.
 
 UI follow-up: fixed bg-remove input preview stretching by object-containing the rendered canvas in a flexible preview area, raised bg-remove initial/default/min height to avoid controls overflowing before auto-grow, and added fullscreen toolbar/dialog support to bg-remove-output. Verified targeted tests, lint, build, and diff check.
+
+Alpha follow-up gestartet: BG-Ausgabe soll ihren transparenten Alphakanal durch nachfolgende Adjustment- und Render-Previews tragen. Fokus: Graph-Metadaten, Preview-Checkerboard und Pipeline-Alpha-Regressionsschutz.
+
+Alpha follow-up umgesetzt: bg-remove-output wird in der Preview-Auflösung als alpha-bearing markiert; Adjustment- und Render-Previews nutzen eine gemeinsame Checkerboard-Fläche; lokale Adjustment-Pipeline-Tests sichern unveränderte Alpha-Werte. Verifikation: npm test grün (156 Dateien, 944 Tests); gezielter ESLint für geänderte Dateien grün; npm run build grün nach Turbopack-Sandbox-Rerun außerhalb der Sandbox. Global npm run lint bleibt durch bestehenden Fehler in components/node-search.tsx blockiert.
 <!-- SECTION:NOTES:END -->

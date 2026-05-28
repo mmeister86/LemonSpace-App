@@ -13,6 +13,52 @@ import {
 } from "@/lib/mixer-crop-layout";
 
 describe("resolveRenderPreviewInputFromGraph", () => {
+  it("marks bg-remove-output adjustment chains as alpha-bearing", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "bg-output-1",
+          type: "bg-remove-output",
+          data: { url: "https://cdn.example.com/cutout.png" },
+        },
+        {
+          id: "curves-1",
+          type: "curves",
+          data: { levels: { blackPoint: 24, whitePoint: 240, gamma: 0.9 } },
+        },
+        {
+          id: "color-1",
+          type: "color-adjust",
+          data: { hsl: { hue: 14, saturation: 8, luminance: -2 } },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "bg-output-1", target: "curves-1" },
+        { source: "curves-1", target: "color-1" },
+        { source: "color-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview).toMatchObject({
+      sourceUrl: "https://cdn.example.com/cutout.png",
+      isAlphaBearing: true,
+      steps: [
+        { nodeId: "curves-1", type: "curves" },
+        { nodeId: "color-1", type: "color-adjust" },
+      ],
+    });
+  });
+
   it("resolves mixer input as renderable mixer composition", () => {
     const graph = buildGraphSnapshot(
       [

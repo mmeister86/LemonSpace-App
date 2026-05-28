@@ -11,11 +11,14 @@ import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
   collectPipelineFromGraph,
-  getSourceImageFromGraph,
+  getSourceImageFromGraphWithContext,
+  resolvePreviewSourceImageFromGraph,
   shouldFastPathPreviewPipeline,
+  type ResolvedPreviewSourceImage,
 } from "@/lib/canvas-render-preview";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import { buildHistogramPlot } from "@/lib/image-pipeline/histogram-plot";
+import { TRANSPARENCY_CHECKERBOARD_STYLE } from "./transparency-background";
 
 const PREVIEW_PIPELINE_TYPES = new Set(["crop", "curves", "color-adjust", "light-adjust", "detail-adjust"]);
 
@@ -32,25 +35,21 @@ export default function AdjustmentPreview({
 }) {
   const graph = useCanvasGraph();
 
-  const sourceUrl = useMemo(
+  const sourceImage = useMemo<ResolvedPreviewSourceImage | null>(
     () =>
-      getSourceImageFromGraph(graph, {
+      getSourceImageFromGraphWithContext(graph, {
         nodeId,
         isSourceNode: (node) =>
-          node.type === "image" || node.type === "ai-image" || node.type === "asset",
-        getSourceImageFromNode: (node) => {
-          const sourceData = (node.data ?? {}) as Record<string, unknown>;
-          const directUrl = typeof sourceData.url === "string" ? sourceData.url : null;
-          if (directUrl && directUrl.length > 0) {
-            return directUrl;
-          }
-          const previewUrl =
-            typeof sourceData.previewUrl === "string" ? sourceData.previewUrl : null;
-          return previewUrl && previewUrl.length > 0 ? previewUrl : null;
-        },
+          node.type === "image" ||
+          node.type === "ai-image" ||
+          node.type === "asset" ||
+          node.type === "bg-remove-output",
+        getSourceImageFromNode: (node, graph) => resolvePreviewSourceImageFromGraph(node, graph),
       }),
     [graph, nodeId],
   );
+  const sourceUrl = sourceImage?.url ?? null;
+  const isAlphaBearing = sourceImage?.isAlphaBearing ?? false;
 
   const steps = useMemo(() => {
     const collected = collectPipelineFromGraph(graph, {
@@ -103,7 +102,11 @@ export default function AdjustmentPreview({
     <div className="space-y-2">
       <div
         className="relative overflow-hidden rounded-md border border-border bg-muted/30"
-        style={{ aspectRatio: `${Math.max(0.25, previewAspectRatio)}` }}
+        data-alpha-source={isAlphaBearing ? "true" : undefined}
+        style={{
+          aspectRatio: `${Math.max(0.25, previewAspectRatio)}`,
+          ...(isAlphaBearing ? TRANSPARENCY_CHECKERBOARD_STYLE : null),
+        }}
       >
         {!hasSource ? (
           <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
@@ -113,7 +116,7 @@ export default function AdjustmentPreview({
         {hasSource ? (
           <canvas
             ref={canvasRef}
-            className="h-full w-full"
+            className="h-full w-full object-contain"
           />
         ) : null}
         {isRendering ? (

@@ -184,7 +184,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         </div>
 
         <div className="relative min-h-[300px] flex-1 overflow-hidden bg-muted/40">
-          <RenderNodePreviewSurface hasSource={hasSource} canvasRef={previewState.preview.canvasRef} />
+          <RenderNodePreviewSurface
+            hasSource={hasSource}
+            canvasRef={previewState.preview.canvasRef}
+            isAlphaBearing={previewState.isAlphaBearing}
+          />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/70 via-transparent to-background/80" />
           <RenderNodeStatusOverlay
             renderState={renderState}
@@ -236,6 +240,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
         canvasRef={previewState.fullscreenPreview.canvasRef}
         isRendering={previewState.fullscreenPreview.isRendering}
         error={previewState.fullscreenPreview.error}
+        isAlphaBearing={previewState.isAlphaBearing}
       />
     </>
   );

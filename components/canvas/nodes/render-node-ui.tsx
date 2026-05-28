@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PersistedRenderData, RenderFormatOption, RenderResolutionOption, RenderState } from "./render-node-state";
 import { MAX_CUSTOM_DIMENSION, MIN_CUSTOM_DIMENSION, formatBytes, sanitizeDimension } from "./render-node-state";
+import { TRANSPARENCY_CHECKERBOARD_STYLE } from "./transparency-background";
 
 type RenderNodeMenuProps = {
   localData: PersistedRenderData;
@@ -193,12 +194,23 @@ export function RenderNodeMenu({
 export function RenderNodePreviewSurface({
   hasSource,
   canvasRef,
+  isAlphaBearing = false,
 }: {
   hasSource: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
+  isAlphaBearing?: boolean;
 }) {
   return hasSource ? (
-    <canvas ref={canvasRef} className="h-full w-full object-cover" />
+    <div
+      className="absolute inset-0"
+      data-alpha-source={isAlphaBearing ? "true" : undefined}
+      style={isAlphaBearing ? TRANSPARENCY_CHECKERBOARD_STYLE : undefined}
+    >
+      <canvas
+        ref={canvasRef}
+        className={`h-full w-full ${isAlphaBearing ? "object-contain" : "object-cover"}`}
+      />
+    </div>
   ) : (
     <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-muted-foreground">
       Verbinde eine Bild-, Asset- oder KI-Bild-Node als Quelle.
@@ -330,6 +342,7 @@ export function RenderNodeFullscreenDialog({
   canvasRef,
   isRendering,
   error,
+  isAlphaBearing = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -338,6 +351,7 @@ export function RenderNodeFullscreenDialog({
   canvasRef: RefObject<HTMLCanvasElement | null>;
   isRendering: boolean;
   error: string | null | undefined;
+  isAlphaBearing?: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -349,7 +363,12 @@ export function RenderNodeFullscreenDialog({
         <div className="flex h-full w-full items-center justify-center">
           {hasSource ? (
             <div className="relative flex h-full w-full items-center justify-center">
-              <canvas ref={canvasRef} className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl" />
+              <canvas
+                ref={canvasRef}
+                className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
+                data-alpha-source={isAlphaBearing ? "true" : undefined}
+                style={isAlphaBearing ? TRANSPARENCY_CHECKERBOARD_STYLE : undefined}
+              />
               {isRendering ? <div className="pointer-events-none absolute bottom-6 rounded-md border border-border/80 bg-background/85 px-3 py-1 text-xs text-muted-foreground backdrop-blur-sm">Rendering preview...</div> : null}
               {error ? <div className="pointer-events-none absolute bottom-6 rounded-md border border-red-500/40 bg-background/90 px-3 py-1 text-xs text-red-600 backdrop-blur-sm">Preview: {error}</div> : null}
             </div>

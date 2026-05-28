@@ -29,10 +29,16 @@ describe("RenderNodePreviewSurface", () => {
     root = null;
   });
 
-  async function renderSurface(hasSource: boolean) {
+  async function renderSurface(hasSource: boolean, isAlphaBearing = false) {
     const canvasRef = createRef<HTMLCanvasElement>();
     await act(async () => {
-      root?.render(<RenderNodePreviewSurface hasSource={hasSource} canvasRef={canvasRef} />);
+      root?.render(
+        <RenderNodePreviewSurface
+          hasSource={hasSource}
+          canvasRef={canvasRef}
+          isAlphaBearing={isAlphaBearing}
+        />,
+      );
     });
   }
 
@@ -41,6 +47,19 @@ describe("RenderNodePreviewSurface", () => {
 
     expect(container?.querySelector('[data-testid="canvas-media-backlight"]')).toBeNull();
     expect(container?.querySelector("canvas")).toBeTruthy();
+  });
+
+  it("renders alpha-bearing previews over a transparency surface", async () => {
+    await renderSurface(true, true);
+
+    expect(container?.querySelector('[data-alpha-source="true"]')).toBeTruthy();
+    expect(container?.querySelector("canvas")?.className).toContain("object-contain");
+  });
+
+  it("does not mark opaque previews as alpha-bearing", async () => {
+    await renderSurface(true);
+
+    expect(container?.querySelector('[data-alpha-source="true"]')).toBeNull();
   });
 
   it("keeps the empty render placeholder outside media backlight", async () => {

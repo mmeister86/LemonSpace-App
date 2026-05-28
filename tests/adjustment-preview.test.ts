@@ -140,4 +140,42 @@ describe("AdjustmentPreview", () => {
       ],
     });
   });
+
+  it("uses bg-remove-output as an alpha-bearing preview source", async () => {
+    currentGraph = {
+      ...buildGraphSnapshot(
+        [
+          {
+            id: "bg-output-1",
+            type: "bg-remove-output",
+            data: { url: "https://cdn.example.com/cutout.png" },
+          },
+          {
+            id: "curves-1",
+            type: "curves",
+            data: DEFAULT_CURVES_DATA,
+          },
+        ],
+        [{ source: "bg-output-1", target: "curves-1" }],
+      ),
+      previewNodeDataOverrides: new Map(),
+    };
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AdjustmentPreview, {
+          nodeId: "curves-1",
+          nodeWidth: 320,
+          currentType: "curves",
+          currentParams: DEFAULT_CURVES_DATA,
+        }),
+      );
+    });
+
+    expect(pipelinePreviewMock).toHaveBeenCalledTimes(1);
+    expect(pipelinePreviewMock.mock.calls[0]?.[0]).toMatchObject({
+      sourceUrl: "https://cdn.example.com/cutout.png",
+    });
+    expect(container?.querySelector('[data-alpha-source="true"]')).toBeTruthy();
+  });
 });

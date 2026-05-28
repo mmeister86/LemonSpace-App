@@ -34,7 +34,13 @@ export type RenderPreviewGraphEdge = {
 export type RenderPreviewInput = {
   sourceUrl: string | null;
   sourceComposition?: RenderPreviewSourceComposition;
+  isAlphaBearing?: boolean;
   steps: PipelineStep[];
+};
+
+export type ResolvedPreviewSourceImage = {
+  url: string;
+  isAlphaBearing: boolean;
 };
 
 export type MixerImageLayerSource = {
@@ -346,6 +352,27 @@ function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
   return resolveNodeImageUrl(node.data);
 }
 
+function isAlphaBearingSourceNode(node: CanvasGraphNodeLike): boolean {
+  if (node.type === "bg-remove-output") {
+    return true;
+  }
+
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  if (data.source === "freepik-bg-remove") {
+    return true;
+  }
+
+  const transform = data.transform;
+  if (transform && typeof transform === "object") {
+    const operation = (transform as Record<string, unknown>).operation;
+    if (operation === "bg-remove") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function resolveBgRemoveOutputTransformNode(args: {
   node: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
@@ -374,6 +401,21 @@ function resolveSourceNodeUrlFromGraph(
   }
 
   return resolveSourceNodeUrl(node);
+}
+
+export function resolvePreviewSourceImageFromGraph(
+  node: CanvasGraphNodeLike,
+  graph: CanvasGraphSnapshot,
+): ResolvedPreviewSourceImage | null {
+  const url = resolveSourceNodeUrlFromGraph(node, graph);
+  if (!url) {
+    return null;
+  }
+
+  return {
+    url,
+    isAlphaBearing: isAlphaBearingSourceNode(node),
+  };
 }
 
 function resolveRenderOutputUrl(node: CanvasGraphNodeLike): string | null {
@@ -752,10 +794,10 @@ export function resolveRenderPreviewInputFromGraph(args: {
     };
   }
 
-  const sourceUrl = getSourceImageFromGraphWithContext(args.graph, {
+  const sourceImage = getSourceImageFromGraphWithContext(args.graph, {
     nodeId: args.nodeId,
     isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
-    getSourceImageFromNode: (node, graph) => resolveSourceNodeUrlFromGraph(node, graph),
+    getSourceImageFromNode: (node, graph) => resolvePreviewSourceImageFromGraph(node, graph),
   });
 
   const steps = collectPipelineFromGraph(args.graph, {
@@ -764,7 +806,8 @@ export function resolveRenderPreviewInputFromGraph(args: {
   });
 
   return {
-    sourceUrl,
+    sourceUrl: sourceImage?.url ?? null,
+    isAlphaBearing: sourceImage?.isAlphaBearing ?? false,
     steps,
   };
 }
@@ -773,10 +816,10 @@ export function resolveImageTransformPreviewInputFromGraph(args: {
   nodeId: string;
   graph: CanvasGraphSnapshot;
 }): RenderPreviewResolvedInput {
-  const sourceUrl = getSourceImageFromGraphWithContext(args.graph, {
+  const sourceImage = getSourceImageFromGraphWithContext(args.graph, {
     nodeId: args.nodeId,
     isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
-    getSourceImageFromNode: (node, graph) => resolveSourceNodeUrlFromGraph(node, graph),
+    getSourceImageFromNode: (node, graph) => resolvePreviewSourceImageFromGraph(node, graph),
   });
 
   const steps = collectPipelineFromGraph(args.graph, {
@@ -785,7 +828,8 @@ export function resolveImageTransformPreviewInputFromGraph(args: {
   });
 
   return {
-    sourceUrl,
+    sourceUrl: sourceImage?.url ?? null,
+    isAlphaBearing: sourceImage?.isAlphaBearing ?? false,
     steps,
   };
 }

@@ -89,7 +89,7 @@ export function useRenderNodePreview(args: {
     () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph }),
     [graph, id],
   );
-  const { sourceUrl, sourceComposition, steps } = renderPreviewInput;
+  const { sourceUrl, sourceComposition, steps, isAlphaBearing = false } = renderPreviewInput;
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
     () =>
       findSourceNodeFromGraph(graph, {
@@ -247,6 +247,7 @@ export function useRenderNodePreview(args: {
     steps,
     currentPipelineHash,
     hasSource,
+    isAlphaBearing,
     preview,
     fullscreenPreview,
     histogramPlot,
