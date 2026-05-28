@@ -33,6 +33,7 @@ import "@xyflow/react/dist/style.css";
 import {
   type CanvasConnectionValidationReason,
 } from "@/lib/canvas-connection-policy";
+import { toast } from "@/lib/toast";
 import { showCanvasConnectionRejectedToast } from "@/lib/toast-messages";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -100,6 +101,10 @@ import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism
 import { projectCanvasFavoritesVisibility } from "./canvas-favorites-visibility";
 import { CollapsedNodeEditDrawer } from "./collapsed-node-edit-drawer";
 import { useOnboardingActions } from "@/components/onboarding/onboarding-provider";
+import {
+  computeCanvasDagreLayout,
+  type CanvasDagreLayoutDirection,
+} from "./canvas-dagre-layout";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -117,7 +122,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
     },
     [t],
   );
-  const { screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const [isCanvasDeletePending, setIsCanvasDeletePending] = useState(false);
   const { canvas, convexEdges, convexNodes, storageUrlsById } = useCanvasData({
@@ -277,6 +282,74 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       return await runResizeNodeMutation(mutationArgs);
     },
     [canvasHistory, runResizeNodeMutation],
+  );
+
+  const handleAutoLayout = useCallback(
+    async (direction: CanvasDagreLayoutDirection) => {
+      const result = computeCanvasDagreLayout({
+        direction,
+        nodes,
+        edges,
+      });
+
+      if (result.status === "noop") {
+        if (result.reason === "optimistic-nodes") {
+          toast.warning(
+            "Canvas synchronisiert noch",
+            "Warte kurz, bis neue Knoten gespeichert sind, bevor du das Auto-Layout nutzt.",
+          );
+          return;
+        }
+        if (result.reason === "mixed-parent-context") {
+          toast.warning(
+            "Auswahl nicht layoutbar",
+            "Wähle nur Knoten aus derselben Gruppe oder nur Knoten auf der freien Fläche aus.",
+          );
+          return;
+        }
+        toast.info("Keine Knoten zum Layouten gefunden");
+        return;
+      }
+
+      if (result.moves.length === 0) {
+        toast.info("Layout ist bereits aktuell");
+        return;
+      }
+
+      canvasHistory.capture();
+
+      for (const move of result.moves) {
+        const position = { x: move.positionX, y: move.positionY };
+        pendingLocalPositionUntilConvexMatchesRef.current.set(move.nodeId, position);
+        preferLocalPositionNodeIdsRef.current.add(move.nodeId);
+      }
+
+      setNodes(result.nodes);
+
+      await runBatchMoveNodesMutation({
+        moves: result.moves.map((move) => ({
+          nodeId: move.nodeId as Id<"nodes">,
+          positionX: move.positionX,
+          positionY: move.positionY,
+        })),
+      });
+
+      void fitView({
+        nodes: result.laidOutNodeIds.map((id) => ({ id })),
+        duration: 300,
+        padding: 0.2,
+      });
+    },
+    [
+      canvasHistory,
+      edges,
+      fitView,
+      nodes,
+      pendingLocalPositionUntilConvexMatchesRef,
+      preferLocalPositionNodeIdsRef,
+      runBatchMoveNodesMutation,
+      setNodes,
+    ],
   );
 
   const hasPresetAwareNodes = useMemo(
@@ -811,6 +884,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
           canRedo={canvasHistory.canRedo}
           onUndo={() => void canvasHistory.undo()}
           onRedo={() => void canvasHistory.redo()}
+          onAutoLayout={(direction) => void handleAutoLayout(direction)}
         />
         <CanvasAppMenu
           canvasId={canvasId}

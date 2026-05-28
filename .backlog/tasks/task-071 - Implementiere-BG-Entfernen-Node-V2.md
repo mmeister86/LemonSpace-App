@@ -1,10 +1,10 @@
 ---
 id: TASK-071
 title: Implementiere BG Entfernen Node V2
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-28 10:00'
-updated_date: '2026-05-28 12:07'
+updated_date: '2026-05-28 12:46'
 labels: []
 dependencies: []
 priority: high
@@ -49,3 +49,9 @@ Alpha follow-up gestartet: BG-Ausgabe soll ihren transparenten Alphakanal durch 
 
 Alpha follow-up umgesetzt: bg-remove-output wird in der Preview-Auflösung als alpha-bearing markiert; Adjustment- und Render-Previews nutzen eine gemeinsame Checkerboard-Fläche; lokale Adjustment-Pipeline-Tests sichern unveränderte Alpha-Werte. Verifikation: npm test grün (156 Dateien, 944 Tests); gezielter ESLint für geänderte Dateien grün; npm run build grün nach Turbopack-Sandbox-Rerun außerhalb der Sandbox. Global npm run lint bleibt durch bestehenden Fehler in components/node-search.tsx blockiert.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+BG Entfernen Node V2 ist abgeschlossen: dedizierte bg-remove-output Node, pipelinefähige Input-Preview, Bypass-/Masken-Semantik, Adjustment-/Render-/Transform-Ketten, Mask-Kompatibilität, UI-Follow-ups und Alpha-Erhalt wurden umgesetzt und laut Task-Notizen verifiziert. User hat Abschluss bestätigt.
+<!-- SECTION:FINAL_SUMMARY:END -->

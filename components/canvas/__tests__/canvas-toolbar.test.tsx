@@ -36,7 +36,17 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+  }) => (
+    <button type="button" onClick={onSelect}>
+      {children}
+    </button>
+  ),
   DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
 }));
@@ -463,6 +473,40 @@ describe("CanvasToolbar", () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
     expect(onRedo).toHaveBeenCalledTimes(1);
     expect(container?.textContent).not.toContain("folgt");
+  });
+
+  it("calls auto-layout actions from the toolbar menu", async () => {
+    const onAutoLayout = vi.fn();
+
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          activeTool="select"
+          onToolChange={vi.fn()}
+          onAutoLayout={onAutoLayout}
+        />,
+      );
+    });
+
+    const layoutRight = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Layout nach rechts",
+    );
+    const layoutDown = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Layout nach unten",
+    );
+    if (!(layoutRight instanceof HTMLButtonElement) || !(layoutDown instanceof HTMLButtonElement)) {
+      throw new Error("Auto-layout menu actions not found");
+    }
+
+    await act(async () => {
+      layoutRight.click();
+      layoutDown.click();
+    });
+
+    expect(onAutoLayout).toHaveBeenCalledTimes(2);
+    expect(onAutoLayout).toHaveBeenNthCalledWith(1, "LR");
+    expect(onAutoLayout).toHaveBeenNthCalledWith(2, "TB");
   });
 });
 

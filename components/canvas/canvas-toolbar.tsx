@@ -11,6 +11,9 @@ import {
 import { useMutation } from "convex/react";
 import { motion } from "framer-motion";
 import {
+  ArrowDown,
+  ArrowRight,
+  GitBranch,
   GripVertical,
   Hand,
   MessageSquare,
@@ -51,6 +54,7 @@ import {
 } from "@/lib/canvas-node-catalog";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import { cn } from "@/lib/utils";
+import type { CanvasDagreLayoutDirection } from "./canvas-dagre-layout";
 
 export { resolveToolbarSnapSide };
 
@@ -68,6 +72,7 @@ interface CanvasToolbarProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  onAutoLayout?: (direction: CanvasDagreLayoutDirection) => void;
 }
 
 function CanvasToolbarNodeMenu({ onAddNode }: { onAddNode: (template: CanvasNodeTemplate) => void }) {
@@ -152,6 +157,46 @@ function ToolbarToolButton({
   );
 }
 
+function CanvasToolbarAutoLayoutMenu({
+  onAutoLayout,
+}: {
+  onAutoLayout?: (direction: CanvasDagreLayoutDirection) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-9 shrink-0"
+          disabled={!onAutoLayout}
+          aria-label="Auto-Layout"
+          title="Auto-Layout"
+        >
+          <GitBranch className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem
+          disabled={!onAutoLayout}
+          onSelect={() => onAutoLayout?.("LR")}
+        >
+          <ArrowRight className="mr-2 size-4" />
+          Layout nach rechts
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!onAutoLayout}
+          onSelect={() => onAutoLayout?.("TB")}
+        >
+          <ArrowDown className="mr-2 size-4" />
+          Layout nach unten
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function CanvasToolbarToolButtons({
   activeTool,
   canRedo,
@@ -160,6 +205,7 @@ function CanvasToolbarToolButtons({
   favoriteFilterActive,
   onFavoriteFilterChange,
   onAddComment,
+  onAutoLayout,
   onRedo,
   onToolChange,
   onUndo,
@@ -176,6 +222,7 @@ function CanvasToolbarToolButtons({
   | "onUndo"
 > & {
   onAddComment: () => void;
+  onAutoLayout?: (direction: CanvasDagreLayoutDirection) => void;
 }) {
   const favoritesLabel =
     typeof favoriteCount === "number"
@@ -202,6 +249,8 @@ function CanvasToolbarToolButtons({
         label="Schere (K) — Verbindungen kappen"
         onClick={() => onToolChange("scissor")}
       />
+
+      <CanvasToolbarAutoLayoutMenu onAutoLayout={onAutoLayout} />
 
       {onFavoriteFilterChange ? (
         <Button
@@ -349,6 +398,7 @@ export default function CanvasToolbar({
   canRedo = false,
   onUndo,
   onRedo,
+  onAutoLayout,
 }: CanvasToolbarProps) {
   const { createNodeWithIntersection } = useCanvasPlacement();
   const getCenteredPosition = useCenteredFlowNodePosition();
@@ -484,6 +534,7 @@ export default function CanvasToolbar({
         favoriteCount={favoriteCount}
         favoriteFilterActive={favoriteFilterActive}
         onAddComment={handleAddComment}
+        onAutoLayout={onAutoLayout}
         onFavoriteFilterChange={onFavoriteFilterChange}
         onRedo={onRedo}
         onToolChange={onToolChange}

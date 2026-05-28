@@ -13,6 +13,7 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "components/canvas/__tests__/canvas-helpers.test.ts",
       "components/canvas/__tests__/canvas-grouping-helpers.test.ts",
+      "components/canvas/__tests__/canvas-dagre-layout.test.ts",
       "components/canvas/__tests__/default-edge.test.tsx",
       "components/canvas/__tests__/canvas-selection-toolbar.test.tsx",
       "components/canvas/__tests__/collapsed-node-edit-drawer.test.tsx",
