@@ -36,6 +36,7 @@ export const CANVAS_NODE_RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   "light-adjust": { minWidth: 300, minHeight: 860 },
   "detail-adjust": { minWidth: 300, minHeight: 820 },
   crop: { minWidth: 320, minHeight: 520 },
+  "bg-remove": { minWidth: 300, minHeight: 340 },
   render: { minWidth: 260, minHeight: 300, keepAspectRatio: true },
   agent: { minWidth: 300, minHeight: 280, autoGrowWidth: false },
   text: { minWidth: 220, minHeight: 90, autoGrowWidth: false },

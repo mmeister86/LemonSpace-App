@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Node } from "@xyflow/react";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
 
 import type { Id } from "@/convex/_generated/dataModel";
@@ -16,11 +16,20 @@ import type {
   ImageTransformOperation,
   ImageTransformType,
 } from "@/lib/image-transform-models";
+import type { CanvasNodeType } from "@/lib/canvas-node-types";
+import type { CanvasGraphSnapshot } from "@/lib/canvas-render-preview";
 
 import { hasStyleTransferReferenceInput } from "./image-transform-preview-utils";
+import { materializeImageTransformInput } from "./image-transform-input-materialization";
 import type { SourcePreviewMeta, TransformNodeData } from "./image-transform-node-types";
 
 type Translate = (key: string) => string;
+
+export function getImageTransformOutputNodeType(
+  operationType: ImageTransformType,
+): Extract<CanvasNodeType, "image" | "bg-remove-output"> {
+  return operationType === "bg-remove" ? "bg-remove-output" : "image";
+}
 
 export function useImageTransformRunner({
   id,
@@ -28,6 +37,7 @@ export function useImageTransformRunner({
   operation,
   operationType,
   sourcePreview,
+  graph,
   edges,
   getNode,
   createNodeConnectedFromSource,
@@ -39,10 +49,11 @@ export function useImageTransformRunner({
   operation: ImageTransformOperation;
   operationType: ImageTransformType;
   sourcePreview: SourcePreviewMeta | null;
+  graph: CanvasGraphSnapshot;
   edges: Array<{ target: string; targetHandle?: string | null } & Record<string, unknown>>;
   getNode: (id: string) => Node | undefined;
   createNodeConnectedFromSource: (args: {
-    type: "image";
+    type: Extract<CanvasNodeType, "image" | "bg-remove-output">;
     position: { x: number; y: number };
     data: Record<string, unknown>;
     width?: number;
@@ -64,12 +75,20 @@ export function useImageTransformRunner({
             transformNodeId: Id<"nodes">;
             outputNodeId: Id<"nodes">;
             operation: ImageTransformOperation;
+            materializedInput?: {
+              storageId: Id<"_storage">;
+              width?: number;
+              height?: number;
+              mimeType?: string;
+              pipelineHash?: string;
+            };
           },
           { queued: true; outputNodeId: Id<"nodes"> }
         >;
       };
     }).image_transforms.generateTransform,
   );
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const [isRunning, setIsRunning] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const isExecuting = isRunning || nodeData._status === "executing";
@@ -81,8 +100,9 @@ export function useImageTransformRunner({
   }, [nodeData._status]);
 
   const ensureOutputNode = useCallback(async () => {
+    const outputNodeType = getImageTransformOutputNodeType(operationType);
     const existingOutputId = nodeData.outputNodeId;
-    if (existingOutputId && getNode(existingOutputId)) {
+    if (existingOutputId && getNode(existingOutputId)?.type === outputNodeType) {
       return existingOutputId as Id<"nodes">;
     }
 
@@ -102,13 +122,16 @@ export function useImageTransformRunner({
           })
         : undefined;
     const outputNodeId = await createNodeConnectedFromSource({
-      type: "image",
+      type: outputNodeType,
       position: {
         x: (currentNode?.position?.x ?? 0) + offsetX,
         y: currentNode?.position?.y ?? 0,
       },
       data: {
-        source: "freepik-transform",
+        source:
+          operationType === "bg-remove"
+            ? "freepik-bg-remove"
+            : "freepik-transform",
         transform: {
           operation: operationType,
           transformNodeId: id,
@@ -152,12 +175,18 @@ export function useImageTransformRunner({
     setLocalError(null);
     try {
       const outputNodeId = await ensureOutputNode();
+      const materializedInput = await materializeImageTransformInput({
+        nodeId: id,
+        graph,
+        generateUploadUrl,
+      });
       await toast.promise(
         generateTransform({
           canvasId: nodeData.canvasId as Id<"canvases">,
           transformNodeId: id as Id<"nodes">,
           outputNodeId,
           operation,
+          ...(materializedInput ? { materializedInput } : {}),
         }),
         {
           loading: t("toasts.loading"),
@@ -174,6 +203,8 @@ export function useImageTransformRunner({
     edges,
     ensureOutputNode,
     generateTransform,
+    generateUploadUrl,
+    graph,
     id,
     isExecuting,
     isOffline,

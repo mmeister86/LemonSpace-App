@@ -5,6 +5,7 @@
 
 import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
+import { DEFAULT_MASK_NODE_DATA } from "@/lib/image-pipeline/mask-node-data";
 import {
   DEFAULT_COLOR_ADJUST_DATA,
   DEFAULT_CURVES_DATA,
@@ -58,6 +59,11 @@ export const NODE_DEFAULTS: Record<
     },
   },
   "ai-video": { width: 360, height: 280, data: {} },
+  "bg-remove-output": {
+    width: 280,
+    height: 200,
+    data: { source: "freepik-bg-remove" },
+  },
   group: { width: 400, height: 300, data: { label: "Gruppe" } },
   frame: {
     width: 400,
@@ -85,10 +91,11 @@ export const NODE_DEFAULTS: Record<
   "color-adjust": { width: 320, height: 800, data: DEFAULT_COLOR_ADJUST_DATA },
   "light-adjust": { width: 320, height: 920, data: DEFAULT_LIGHT_ADJUST_DATA },
   "detail-adjust": { width: 320, height: 880, data: DEFAULT_DETAIL_ADJUST_DATA },
+  mask: { width: 340, height: 360, data: DEFAULT_MASK_NODE_DATA },
   crop: { width: 340, height: 620, data: DEFAULT_CROP_NODE_DATA },
   "bg-remove": {
     width: 300,
-    height: 260,
+    height: 340,
     data: { operation: "bg-remove", parameters: { type: "bg-remove" } },
   },
   upscale: {

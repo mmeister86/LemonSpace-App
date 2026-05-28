@@ -186,6 +186,7 @@ const SOURCE_NODE_TYPES = new Set([
   "image",
   "ai-image",
   "asset",
+  "bg-remove-output",
   "change-camera",
   "video",
   "asset-video",
@@ -316,6 +317,18 @@ function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
 
   const data = (node.data ?? {}) as Record<string, unknown>;
 
+  if (node.type === "bg-remove-output") {
+    const transform = data.transform;
+    const transformNodeId =
+      transform && typeof transform === "object"
+        ? (transform as Record<string, unknown>).transformNodeId
+        : undefined;
+    if (typeof transformNodeId === "string" && transformNodeId.length > 0) {
+      return resolveNodeImageUrl(node.data);
+    }
+    return resolveNodeImageUrl(node.data);
+  }
+
   if (node.type === "asset-video") {
     const mp4Url = typeof data.mp4Url === "string" ? data.mp4Url : null;
     if (mp4Url && mp4Url.length > 0) {
@@ -331,6 +344,36 @@ function resolveSourceNodeUrl(node: CanvasGraphNodeLike): string | null {
   }
 
   return resolveNodeImageUrl(node.data);
+}
+
+function resolveBgRemoveOutputTransformNode(args: {
+  node: CanvasGraphNodeLike;
+  graph: CanvasGraphSnapshot;
+}): CanvasGraphNodeLike | null {
+  const data = (args.node.data ?? {}) as Record<string, unknown>;
+  const transform = data.transform;
+  const transformNodeId =
+    transform && typeof transform === "object"
+      ? (transform as Record<string, unknown>).transformNodeId
+      : undefined;
+  if (typeof transformNodeId !== "string" || transformNodeId.length === 0) {
+    return null;
+  }
+  return args.graph.nodesById.get(transformNodeId) ?? null;
+}
+
+function resolveSourceNodeUrlFromGraph(
+  node: CanvasGraphNodeLike,
+  graph: CanvasGraphSnapshot,
+): string | null {
+  if (node.type === "bg-remove-output") {
+    const transformNode = resolveBgRemoveOutputTransformNode({ node, graph });
+    if (transformNode && readNodeBypassed(transformNode.data)) {
+      return null;
+    }
+  }
+
+  return resolveSourceNodeUrl(node);
 }
 
 function resolveRenderOutputUrl(node: CanvasGraphNodeLike): string | null {
@@ -612,6 +655,38 @@ export function getSourceImageFromGraph<TSourceImage>(
   return null;
 }
 
+export function getSourceImageFromGraphWithContext<TSourceImage>(
+  graph: CanvasGraphSnapshot,
+  options: {
+    nodeId: string;
+    isSourceNode: (node: CanvasGraphNodeLike) => boolean;
+    getSourceImageFromNode: (
+      node: CanvasGraphNodeLike,
+      graph: CanvasGraphSnapshot,
+    ) => TSourceImage | null | undefined;
+  },
+): TSourceImage | null {
+  const traversal = walkUpstreamFromGraph(graph, options.nodeId);
+
+  for (let index = traversal.path.length - 1; index >= 0; index -= 1) {
+    const node = traversal.path[index];
+    if (readNodeBypassed(node.data)) {
+      continue;
+    }
+
+    if (!options.isSourceNode(node)) {
+      continue;
+    }
+
+    const sourceImage = options.getSourceImageFromNode(node, graph);
+    if (sourceImage != null) {
+      return sourceImage;
+    }
+  }
+
+  return null;
+}
+
 export function findSourceNodeFromGraph(
   graph: CanvasGraphSnapshot,
   options: {
@@ -677,10 +752,31 @@ export function resolveRenderPreviewInputFromGraph(args: {
     };
   }
 
-  const sourceUrl = getSourceImageFromGraph(args.graph, {
+  const sourceUrl = getSourceImageFromGraphWithContext(args.graph, {
     nodeId: args.nodeId,
     isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
-    getSourceImageFromNode: (node) => resolveSourceNodeUrl(node),
+    getSourceImageFromNode: (node, graph) => resolveSourceNodeUrlFromGraph(node, graph),
+  });
+
+  const steps = collectPipelineFromGraph(args.graph, {
+    nodeId: args.nodeId,
+    isPipelineNode: (node) => RENDER_PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
+  });
+
+  return {
+    sourceUrl,
+    steps,
+  };
+}
+
+export function resolveImageTransformPreviewInputFromGraph(args: {
+  nodeId: string;
+  graph: CanvasGraphSnapshot;
+}): RenderPreviewResolvedInput {
+  const sourceUrl = getSourceImageFromGraphWithContext(args.graph, {
+    nodeId: args.nodeId,
+    isSourceNode: (node) => SOURCE_NODE_TYPES.has(node.type ?? ""),
+    getSourceImageFromNode: (node, graph) => resolveSourceNodeUrlFromGraph(node, graph),
   });
 
   const steps = collectPipelineFromGraph(args.graph, {

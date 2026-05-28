@@ -600,6 +600,15 @@ export function AdjustmentNodeShell<TData extends AdjustmentData>({
         position={Position.Left}
         className={config.handleClassName}
       />
+      <CanvasHandle
+        nodeId={id}
+        nodeType={config.nodeType}
+        type="target"
+        position={Position.Left}
+        id="mask"
+        style={{ top: "72%" }}
+        className="!h-3 !w-3 !border-2 !border-background !bg-slate-400"
+      />
 
       <AdjustmentNodeBody id={id} data={data} width={width} config={config} />
 

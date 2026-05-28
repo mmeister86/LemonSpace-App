@@ -16,6 +16,14 @@ export type TransformNodeData = {
   outputNodeId?: string;
   taskId?: string;
   lastError?: string;
+  materializedInput?: {
+    storageId?: string;
+    url?: string;
+    width?: number;
+    height?: number;
+    mimeType?: string;
+    pipelineHash?: string;
+  };
   parameters?: Partial<ImageTransformOperation> & Record<string, unknown>;
   _status?: string;
   _statusMessage?: string;

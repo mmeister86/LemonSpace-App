@@ -11,6 +11,7 @@ import AiImageNode from "./nodes/ai-image-node";
 import AiTextNode from "./nodes/ai-text-node";
 import AiTextOutputNode from "./nodes/ai-text-output-node";
 import AiVideoNode from "./nodes/ai-video-node";
+import BgRemoveOutputNode from "./nodes/bg-remove-output-node";
 import GroupNode from "./nodes/group-node";
 import FrameNode from "./nodes/frame-node";
 import NoteNode from "./nodes/note-node";
@@ -22,6 +23,7 @@ import CurvesNode from "./nodes/curves-node";
 import ColorAdjustNode from "./nodes/color-adjust-node";
 import LightAdjustNode from "./nodes/light-adjust-node";
 import DetailAdjustNode from "./nodes/detail-adjust-node";
+import MaskNode from "./nodes/mask-node";
 import RenderNode from "./nodes/render-node";
 import CropNode from "./nodes/crop-node";
 import BgRemoveNode from "./nodes/bg-remove-node";
@@ -50,6 +52,7 @@ export const nodeTypes = {
   "ai-text": AiTextNode,
   "ai-text-output": AiTextOutputNode,
   "ai-video": AiVideoNode,
+  "bg-remove-output": BgRemoveOutputNode,
   group: GroupNode,
   frame: FrameNode,
   note: NoteNode,
@@ -61,6 +64,7 @@ export const nodeTypes = {
   "color-adjust": ColorAdjustNode,
   "light-adjust": LightAdjustNode,
   "detail-adjust": DetailAdjustNode,
+  mask: MaskNode,
   crop: CropNode,
   "bg-remove": BgRemoveNode,
   upscale: UpscaleNode,

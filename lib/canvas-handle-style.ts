@@ -16,6 +16,7 @@ export const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   "ai-text": [139, 92, 246],
   "ai-text-output": [139, 92, 246],
   "ai-video": [124, 58, 237],
+  "bg-remove-output": [13, 148, 136],
   image: [13, 148, 136],
   text: [13, 148, 136],
   note: [13, 148, 136],
@@ -30,6 +31,7 @@ export const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   "color-adjust": [6, 182, 212],
   "light-adjust": [245, 158, 11],
   "detail-adjust": [99, 102, 241],
+  mask: [148, 163, 184],
   crop: [139, 92, 246],
   "change-camera": [14, 165, 233],
   render: [14, 165, 233],
@@ -108,6 +110,16 @@ export function canvasHandleAccentRgb(args: {
     if (byHandle) {
       return byHandle;
     }
+  }
+
+  if (
+    (nodeType === "curves" ||
+      nodeType === "color-adjust" ||
+      nodeType === "light-adjust" ||
+      nodeType === "detail-adjust") &&
+    handleId === "mask"
+  ) {
+    return SOURCE_NODE_GLOW_RGB.mask;
   }
 
   if (!nodeType) {
@@ -257,6 +269,7 @@ export const NODE_HANDLE_MAP: Record<
   "ai-text": { source: "ai-text-out", target: "ai-text-in" },
   "ai-text-output": { source: "ai-text-output-out", target: "ai-text-output-in" },
   "ai-video": { source: "video-out", target: "video-in" },
+  "bg-remove-output": { source: undefined, target: undefined },
   group: { source: undefined, target: undefined },
   frame: { source: "frame-out", target: "frame-in" },
   note: { source: undefined, target: undefined },
@@ -269,6 +282,7 @@ export const NODE_HANDLE_MAP: Record<
   "color-adjust": { source: undefined, target: undefined },
   "light-adjust": { source: undefined, target: undefined },
   "detail-adjust": { source: undefined, target: undefined },
+  mask: { source: "mask-out", target: "image-in" },
   crop: { source: undefined, target: undefined },
   "bg-remove": { source: undefined, target: undefined },
   upscale: { source: undefined, target: undefined },

@@ -19,6 +19,7 @@ import { enqueueCanvasOp } from "@/lib/canvas-local-persistence";
 import {
   buildGraphSnapshot,
   pruneCanvasGraphNodeDataOverrides,
+  resolveImageTransformPreviewInputFromGraph,
   resolveRenderPreviewInputFromGraph,
 } from "@/lib/canvas-render-preview";
 import { resolveMixerPreviewFromGraph } from "@/lib/canvas-mixer-preview";
@@ -484,6 +485,156 @@ describe("canvas preview graph helpers", () => {
 
     expect(preview.sourceUrl).toBe("https://cdn.example.com/source.png");
     expect(preview.steps).toEqual([]);
+  });
+
+  it("uses bg-remove output as the downstream render source when the transform is enabled", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "bg-remove-1",
+          type: "bg-remove",
+          data: {},
+        },
+        {
+          id: "bg-output-1",
+          type: "bg-remove-output",
+          data: {
+            url: "https://cdn.example.com/cutout.png",
+            transform: { transformNodeId: "bg-remove-1" },
+          },
+        },
+        {
+          id: "curves-1",
+          type: "curves",
+          data: { levels: { blackPoint: 0, whitePoint: 255, gamma: 1 } },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-1", target: "bg-remove-1" },
+        { source: "bg-remove-1", target: "bg-output-1" },
+        { source: "bg-output-1", target: "curves-1" },
+        { source: "curves-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/cutout.png");
+    expect(preview.steps).toEqual([
+      {
+        nodeId: "curves-1",
+        type: "curves",
+        params: { levels: { blackPoint: 0, whitePoint: 255, gamma: 1 } },
+      },
+    ]);
+  });
+
+  it("bypasses bg-remove output back to the original upstream image for downstream render previews", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "bg-remove-1",
+          type: "bg-remove",
+          data: { isBypassed: true },
+        },
+        {
+          id: "bg-output-1",
+          type: "bg-remove-output",
+          data: {
+            url: "https://cdn.example.com/cutout.png",
+            transform: { transformNodeId: "bg-remove-1" },
+          },
+        },
+        {
+          id: "curves-1",
+          type: "curves",
+          data: { levels: { blackPoint: 8, whitePoint: 240, gamma: 1.1 } },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-1", target: "bg-remove-1" },
+        { source: "bg-remove-1", target: "bg-output-1" },
+        { source: "bg-output-1", target: "curves-1" },
+        { source: "curves-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/source.png");
+    expect(preview.steps).toEqual([
+      {
+        nodeId: "curves-1",
+        type: "curves",
+        params: { levels: { blackPoint: 8, whitePoint: 240, gamma: 1.1 } },
+      },
+    ]);
+  });
+
+  it("resolves bg-remove input previews through upstream local pipeline steps", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "curves-1",
+          type: "curves",
+          data: { levels: { blackPoint: 4, whitePoint: 245, gamma: 0.95 } },
+        },
+        {
+          id: "bg-remove-1",
+          type: "bg-remove",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-1", target: "curves-1" },
+        { source: "curves-1", target: "bg-remove-1" },
+      ],
+    );
+
+    const preview = resolveImageTransformPreviewInputFromGraph({
+      nodeId: "bg-remove-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/source.png");
+    expect(preview.steps).toEqual([
+      {
+        nodeId: "curves-1",
+        type: "curves",
+        params: { levels: { blackPoint: 4, whitePoint: 245, gamma: 0.95 } },
+      },
+    ]);
   });
 
   it("treats bypassed source nodes as absent render inputs", () => {

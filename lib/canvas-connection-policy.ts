@@ -15,6 +15,20 @@ const ADJUSTMENT_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "bg-remove-output",
+  "crop",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
+
+const MASK_ALLOWED_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "ai-image",
+  "bg-remove-output",
+  "render",
   "crop",
   "curves",
   "color-adjust",
@@ -26,6 +40,7 @@ const CROP_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "bg-remove-output",
   "video",
   "asset-video",
   "ai-video",
@@ -40,6 +55,7 @@ const RENDER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "bg-remove-output",
   "mixer",
   "crop",
   "curves",
@@ -61,6 +77,7 @@ const TRANSFORM_ALLOWED_SOURCE_TYPES = new Set<string>([
   "image",
   "asset",
   "ai-image",
+  "bg-remove-output",
   "render",
   "crop",
   "bg-remove",
@@ -203,6 +220,10 @@ export type CanvasConnectionValidationReason =
   | "ai-text-output-source-invalid"
   | "ai-text-output-incoming-limit"
   | "agent-output-source-invalid"
+  | "mask-source-invalid"
+  | "mask-incoming-limit"
+  | "mask-target-handle-required"
+  | "mask-handle-incoming-limit"
   | "mixer-source-invalid"
   | "mixer-target-handle-invalid"
   | "mixer-handle-incoming-limit"
@@ -283,6 +304,16 @@ export function validateCanvasConnectionPolicy(args: {
     if (incomingOnHandle >= 1) {
       return "mixer-handle-incoming-limit";
     }
+  }
+
+  if (targetType === "mask") {
+    if (!MASK_ALLOWED_SOURCE_TYPES.has(sourceType)) {
+      return "mask-source-invalid";
+    }
+    if (targetIncomingCount >= 1) {
+      return "mask-incoming-limit";
+    }
+    return null;
   }
 
   if (targetType === "style-transfer") {
@@ -392,10 +423,34 @@ export function validateCanvasConnectionPolicy(args: {
   }
 
   if (isAdjustmentNodeType(targetType) && targetType !== "render") {
+    if (targetHandle === "mask") {
+      if (sourceType !== "mask") {
+        return "mask-source-invalid";
+      }
+
+      const incomingMaskCount = (targetIncomingHandles ?? []).filter(
+        (handle) => handle === "mask",
+      ).length;
+      if (incomingMaskCount >= 1) {
+        return "mask-handle-incoming-limit";
+      }
+
+      return null;
+    }
+
+    if (sourceType === "mask") {
+      return "mask-target-handle-required";
+    }
+
     if (!ADJUSTMENT_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       return "adjustment-source-invalid";
     }
-    if (targetIncomingCount >= 1) {
+    const regularIncomingCount =
+      targetIncomingHandles && targetIncomingHandles.length > 0
+        ? targetIncomingHandles.filter((handle) => handle !== "mask").length
+        : targetIncomingCount;
+
+    if (regularIncomingCount >= 1) {
       return "adjustment-incoming-limit";
     }
   }
@@ -478,6 +533,14 @@ export function getCanvasConnectionValidationMessage(
       return "KI-Text-Ausgabe-Nodes erlauben genau eine eingehende Verbindung.";
     case "agent-output-source-invalid":
       return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
+    case "mask-source-invalid":
+      return "Masken akzeptieren nur Bild-Inputs; Adjustment-Masken-Handles akzeptieren nur Mask-Nodes.";
+    case "mask-incoming-limit":
+      return "Mask-Nodes erlauben genau eine eingehende Bildverbindung.";
+    case "mask-target-handle-required":
+      return "Mask-Nodes koennen nur an den Masken-Handle eines Adjustment-Nodes angeschlossen werden.";
+    case "mask-handle-incoming-limit":
+      return "Jeder Adjustment-Masken-Handle akzeptiert nur eine Maske.";
     case "mixer-source-invalid":
       return "Mixer akzeptiert nur Text-, Bild-, Asset-, KI-Bild- oder Render-Input.";
     case "mixer-target-handle-invalid":

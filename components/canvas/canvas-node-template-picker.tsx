@@ -21,6 +21,7 @@ import {
   Package,
   Palette,
   Layers,
+  Scan,
   Sparkles,
   StickyNote,
   Sun,
@@ -61,6 +62,7 @@ const NODE_ICONS: Record<CanvasNodeTemplate["type"], LucideIcon> = {
   "color-adjust": Palette,
   "light-adjust": Sun,
   "detail-adjust": Focus,
+  mask: Scan,
   render: ImageDown,
   mixer: Layers,
 };
@@ -92,6 +94,7 @@ const NODE_SEARCH_KEYWORDS: Partial<
   "color-adjust": ["color", "hue", "saturation"],
   "light-adjust": ["light", "exposure", "brightness"],
   "detail-adjust": ["detail", "sharp", "grain"],
+  mask: ["mask", "maske", "brush", "gradient", "selection"],
   render: ["render", "export", "download"],
 };
 

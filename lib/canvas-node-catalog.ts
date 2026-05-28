@@ -107,6 +107,14 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     disabledHint: "Wird von der KI erzeugt",
   }),
   entry({
+    type: "bg-remove-output",
+    label: "BG-Ausgabe",
+    category: "source",
+    phase: 2,
+    systemOutput: true,
+    disabledHint: "Wird von BG entfernen erzeugt",
+  }),
+  entry({
     type: "asset",
     label: "Asset (Stock)",
     category: "source",
@@ -214,6 +222,12 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
   entry({
     type: "detail-adjust",
     label: "Detail",
+    category: "image-edit",
+    phase: 2,
+  }),
+  entry({
+    type: "mask",
+    label: "Maske",
     category: "image-edit",
     phase: 2,
   }),

@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_CROP_NODE_DATA } from "@/lib/image-pipeline/crop-node-data";
+import { DEFAULT_MASK_NODE_DATA } from "@/lib/image-pipeline/mask-node-data";
 
 export const CANVAS_NODE_TEMPLATES = [
   {
@@ -151,7 +152,7 @@ export const CANVAS_NODE_TEMPLATES = [
     type: "bg-remove",
     label: "BG entfernen",
     width: 300,
-    height: 260,
+    height: 340,
     defaultData: {
       operation: "bg-remove",
       parameters: { type: "bg-remove" },
@@ -259,6 +260,13 @@ export const CANVAS_NODE_TEMPLATES = [
       format: "png",
       jpegQuality: 90,
     },
+  },
+  {
+    type: "mask",
+    label: "Maske",
+    width: 340,
+    height: 360,
+    defaultData: DEFAULT_MASK_NODE_DATA,
   },
 ] as const;
 

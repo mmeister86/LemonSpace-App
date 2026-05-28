@@ -160,4 +160,87 @@ describe("image transform orchestration", () => {
       }),
     ).resolves.toBe(nodes[0]);
   });
+
+  it("resolves enabled bg-remove outputs as image transform sources", async () => {
+    const nodes = [
+      { _id: "source-node", type: "image", data: {}, canvasId: "canvas-1" },
+      { _id: "bg-remove-node", type: "bg-remove", data: {}, canvasId: "canvas-1" },
+      {
+        _id: "bg-output-node",
+        type: "bg-remove-output",
+        data: { transform: { transformNodeId: "bg-remove-node" } },
+        canvasId: "canvas-1",
+      },
+      { _id: "upscale-node", type: "upscale", data: {}, canvasId: "canvas-1" },
+    ] as never;
+    const edges = [
+      {
+        _id: "edge-source-bg",
+        sourceNodeId: "source-node",
+        targetNodeId: "bg-remove-node",
+      },
+      {
+        _id: "edge-bg-output",
+        sourceNodeId: "bg-remove-node",
+        targetNodeId: "bg-output-node",
+      },
+      {
+        _id: "edge-output-upscale",
+        sourceNodeId: "bg-output-node",
+        targetNodeId: "upscale-node",
+      },
+    ] as never;
+
+    await expect(
+      resolveImageSourceNode({
+        nodes,
+        edges,
+        transformNodeId: "upscale-node" as never,
+      }),
+    ).resolves.toBe(nodes[2]);
+  });
+
+  it("bypasses bg-remove outputs back to the original source when the transform node is disabled", async () => {
+    const nodes = [
+      { _id: "source-node", type: "image", data: {}, canvasId: "canvas-1" },
+      {
+        _id: "bg-remove-node",
+        type: "bg-remove",
+        data: { isBypassed: true },
+        canvasId: "canvas-1",
+      },
+      {
+        _id: "bg-output-node",
+        type: "bg-remove-output",
+        data: { transform: { transformNodeId: "bg-remove-node" } },
+        canvasId: "canvas-1",
+      },
+      { _id: "upscale-node", type: "upscale", data: {}, canvasId: "canvas-1" },
+    ] as never;
+    const edges = [
+      {
+        _id: "edge-source-bg",
+        sourceNodeId: "source-node",
+        targetNodeId: "bg-remove-node",
+      },
+      {
+        _id: "edge-bg-output",
+        sourceNodeId: "bg-remove-node",
+        targetNodeId: "bg-output-node",
+      },
+      {
+        _id: "edge-output-upscale",
+        sourceNodeId: "bg-output-node",
+        targetNodeId: "upscale-node",
+      },
+    ] as never;
+
+    await expect(
+      resolveImageSourceNode({
+        nodes,
+        edges,
+        transformNodeId: "upscale-node" as never,
+      }),
+    ).resolves.toBe(nodes[0]);
+  });
 });

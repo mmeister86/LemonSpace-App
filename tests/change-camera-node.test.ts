@@ -28,6 +28,7 @@ vi.mock("@xyflow/react", () => ({
 
 vi.mock("convex/react", () => ({
   useAction: () => vi.fn(async () => ({ queued: true })),
+  useMutation: () => vi.fn(async () => "https://upload.test"),
 }));
 
 vi.mock("next-intl", () => ({

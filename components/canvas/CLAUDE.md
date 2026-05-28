@@ -91,13 +91,14 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `asset` | 2 | ✅ | source | source (default), target (default) |
 | `color` | 2 | 🔲 | source | 🔲 |
 | `ai-video` | 2 | ✅ (systemOutput) | source | source: `video-out`, target: `video-in` |
+| `bg-remove-output` | 2 | ✅ (systemOutput) | source | source/target (default) |
 | `prompt` | 1 | ✅ | ai-output | source: `prompt-out`, target: `image-in` |
 | `video-prompt` | 1 | ✅ | ai-output | source: `video-prompt-out`, target: `video-prompt-in` |
 | `ai-text` | 2 | 🔲 (systemOutput) | ai-output | source: `text-out`, target: `text-in` |
 | `agent` | 2 | ✅ | agents | progressive targets: `agent-in`…`agent-in-8`, source (default) |
 | `agent-output` | 2 | ✅ (systemOutput) | agents | target: `agent-output-in` |
 | `crop` | 2 | ✅ | transform | 🔲 |
-| `bg-remove` | 2 | ✅ | transform | source/target (default) |
+| `bg-remove` | 2 | ✅ | transform | source/target (default); erzeugt `bg-remove-output` |
 | `upscale` | 2 | ✅ | transform | source/target (default) |
 | `style-transfer` | 2 | ✅ | transform | source (default), targets: `image`, `reference` |
 | `face-restore` | 2 | ✅ | transform | source/target (default) |
@@ -121,7 +122,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 
 > `implemented: false` (🔲) bedeutet Phase-2/3 Node, der noch nicht implementiert ist. **Hinweis:** Phase-2/3 Nodes müssen im Schema (`convex/node_type_validator.ts`) vordeklariert werden, damit das System nicht bei jeder Phasenübergang neu migriert werden muss. Die UI filtert Nodes nach Phase.
 
-**SystemOutput Nodes** (`ai-video`, `ai-text`, `agent-output`): Wird typischerweise vom KI-System erzeugt — nicht aus Palette/DnD anlegbar. `ai-video` wird automatisch durch `createNodeConnectedFromSource` beim Klick auf "Video generieren" erzeugt.
+**SystemOutput Nodes** (`ai-video`, `ai-text`, `agent-output`, `bg-remove-output`): Wird typischerweise vom KI-/Transform-System erzeugt — nicht aus Palette/DnD anlegbar. `ai-video` wird automatisch durch `createNodeConnectedFromSource` beim Klick auf "Video generieren" erzeugt; `bg-remove-output` analog beim Ausfuehren von `bg-remove`.
 
 ---
 

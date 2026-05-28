@@ -137,7 +137,10 @@ export const markTransformExecuting = internalMutation({
     await ctx.db.patch(args.outputNodeId, {
       ...buildNodeExecutingPatch(),
       data: mergeNodeData(getNodeDataRecord(outputNode.data), {
-        source: "freepik-transform",
+        source:
+          args.operation.type === "bg-remove"
+            ? "freepik-bg-remove"
+            : "freepik-transform",
         transform: {
           operation: args.operation.type,
           transformNodeId: args.transformNodeId,
@@ -234,7 +237,10 @@ export const finalizeTransformSuccess = internalMutation({
         originalFilename: args.filename,
         ...(args.width !== undefined ? { width: args.width } : {}),
         ...(args.height !== undefined ? { height: args.height } : {}),
-        source: "freepik-transform",
+        source:
+          args.operation.type === "bg-remove"
+            ? "freepik-bg-remove"
+            : "freepik-transform",
         transform: {
           operation: args.operation.type,
           sourceNodeId: args.sourceNodeId,

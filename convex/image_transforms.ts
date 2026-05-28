@@ -46,6 +46,7 @@ import {
   type FaceRestoreMode,
   type ImageTransformOperation,
 } from "../lib/image-transform-models";
+import { readNodeBypassed } from "../lib/canvas-node-favorite";
 import { assertNodeBelongsToCanvasOrThrow } from "./authz_helpers";
 import {
   commitInternalReservationIfNeeded,
@@ -61,6 +62,7 @@ const TRANSFORM_SOURCE_TYPES = new Set([
   "image",
   "asset",
   "ai-image",
+  "bg-remove-output",
   "render",
   "crop",
   "curves",
@@ -165,6 +167,14 @@ const operationValidator = v.union(
   }),
 );
 
+const materializedInputValidator = v.object({
+  storageId: v.id("_storage"),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+  mimeType: v.optional(v.string()),
+  pipelineHash: v.optional(v.string()),
+});
+
 type GraphNode = Doc<"nodes"> & { data: unknown };
 type GraphEdge = Doc<"edges">;
 
@@ -172,6 +182,15 @@ function getNodeDataUrl(node: GraphNode): string | null {
   const data = getNodeDataRecord(node.data);
   return typeof data.url === "string" && data.url.trim().length > 0
     ? data.url
+    : null;
+}
+
+function getTransformNodeIdFromOutput(node: GraphNode): Id<"nodes"> | null {
+  const data = getNodeDataRecord(node.data);
+  const transform = getNodeDataRecord(data.transform);
+  const transformNodeId = transform.transformNodeId;
+  return typeof transformNodeId === "string"
+    ? (transformNodeId as Id<"nodes">)
     : null;
 }
 
@@ -275,6 +294,29 @@ export async function resolveImageSourceNode(args: {
 
   if (!TRANSFORM_SOURCE_TYPES.has(directSource.type)) {
     throw new Error("Input: Unsupported source node type");
+  }
+
+  if (directSource.type === "bg-remove-output") {
+    const transformNodeId = getTransformNodeIdFromOutput(directSource);
+    const transformNode = transformNodeId
+      ? args.nodes.find((node) => node._id === transformNodeId)
+      : undefined;
+
+    if (transformNode && readNodeBypassed(transformNode.data)) {
+      const visitedNodeIds = args.visitedNodeIds ?? new Set<Id<"nodes">>();
+      if (visitedNodeIds.has(transformNode._id)) {
+        throw new Error("Input: Source pipeline contains a cycle");
+      }
+      visitedNodeIds.add(transformNode._id);
+      return await resolveImageSourceNode({
+        nodes: args.nodes,
+        edges: args.edges,
+        transformNodeId: transformNode._id,
+        visitedNodeIds,
+      });
+    }
+
+    return directSource;
   }
 
   if (LOCAL_PIPELINE_SOURCE_TYPES.has(directSource.type)) {
@@ -775,6 +817,7 @@ export const generateTransform = action({
     transformNodeId: v.id("nodes"),
     outputNodeId: v.id("nodes"),
     operation: operationValidator,
+    materializedInput: v.optional(materializedInputValidator),
   },
   handler: async (ctx, args): Promise<{ queued: true; outputNodeId: Id<"nodes"> }> => {
     const operation = sanitizeOperation(args.operation as ImageTransformOperation);
@@ -803,8 +846,15 @@ export const generateTransform = action({
       throw new Error("Output node not found");
     }
     assertNodeBelongsToCanvasOrThrow(outputNode, args.canvasId);
-    if (outputNode.type !== "image") {
-      throw new Error("Output node must be image");
+    if (
+      (operation.type === "bg-remove" && outputNode.type !== "bg-remove-output") ||
+      (operation.type !== "bg-remove" && outputNode.type !== "image")
+    ) {
+      throw new Error(
+        operation.type === "bg-remove"
+          ? "Output node must be bg-remove-output"
+          : "Output node must be image",
+      );
     }
 
     const graph = await ctx.runQuery(api.canvasGraph.get, {
@@ -826,15 +876,26 @@ export const generateTransform = action({
           transformNodeId: args.transformNodeId,
         }));
     const sourceNode = await getNodeWithStorageUrl(ctx, sourceNodeRef._id);
-    const sourceImageUrl = getNodeDataUrl(sourceNode);
+    const materializedInputUrl = args.materializedInput
+      ? await ctx.storage.getUrl(args.materializedInput.storageId)
+      : null;
+    const sourceImageUrl = materializedInputUrl ?? getNodeDataUrl(sourceNode);
     if (!sourceImageUrl) {
       throw new Error("Input: Source image URL is unavailable");
     }
     const sourceData = getNodeDataRecord(sourceNode.data);
     const sourceWidth =
-      typeof sourceData.width === "number" ? sourceData.width : undefined;
+      typeof args.materializedInput?.width === "number"
+        ? args.materializedInput.width
+        : typeof sourceData.width === "number"
+          ? sourceData.width
+          : undefined;
     const sourceHeight =
-      typeof sourceData.height === "number" ? sourceData.height : undefined;
+      typeof args.materializedInput?.height === "number"
+        ? args.materializedInput.height
+        : typeof sourceData.height === "number"
+          ? sourceData.height
+          : undefined;
 
     let styleReferenceImageUrl: string | undefined;
     if (operation.type === "style-transfer") {

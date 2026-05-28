@@ -14,6 +14,13 @@ import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
+import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
+import {
+  buildGraphSnapshot,
+  resolveImageTransformPreviewInputFromGraph,
+  type CanvasGraphEdgeLike,
+  type CanvasGraphNodeLike,
+} from "@/lib/canvas-render-preview";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getImageTransformCreditCost, type ImageTransformOperation, type ImageTransformType } from "@/lib/image-transform-models";
 
@@ -44,10 +51,12 @@ export function ImageTransformNodeBody({
   id,
   data,
   operationType,
+  width = 300,
 }: {
   id: string;
   data: TransformNodeData;
   operationType: ImageTransformType;
+  width?: number;
 }) {
   const t = useTranslations("imageTransformNode");
   const { queueNodeDataUpdate, status } = useCanvasSync();
@@ -55,6 +64,27 @@ export function ImageTransformNodeBody({
   const { getNode } = useReactFlow();
   const edges = useStore((store) => store.edges);
   const nodes = useStore((store) => store.nodes);
+  const graph = useMemo(() => {
+    const graphNodes: CanvasGraphNodeLike[] = nodes
+      .filter((node) => typeof node.type === "string")
+      .map((node) => ({
+        id: node.id,
+        type: node.type ?? "",
+        data: node.data,
+        width: node.width,
+        height: node.height,
+        measured: node.measured,
+        style: node.style,
+      }));
+    const graphEdges: CanvasGraphEdgeLike[] = edges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? undefined,
+      targetHandle: edge.targetHandle ?? undefined,
+      className: edge.className,
+    }));
+    return buildGraphSnapshot(graphNodes, graphEdges);
+  }, [edges, nodes]);
 
   const nodeData = data as TransformNodeData;
   const [operation, setOperation] = useState<ImageTransformOperation>(() =>
@@ -87,6 +117,29 @@ export function ImageTransformNodeBody({
     sourcePreview?.width && sourcePreview.height
       ? `${sourcePreview.width} / ${sourcePreview.height}`
       : undefined;
+  const transformPreviewInput = useMemo(
+    () =>
+      resolveImageTransformPreviewInputFromGraph({
+        nodeId: id,
+        graph,
+      }),
+    [graph, id],
+  );
+  const {
+    canvasRef: bgRemovePreviewCanvasRef,
+    isRendering: isBgRemovePreviewRendering,
+    hasSource: hasBgRemovePreviewSource,
+    previewAspectRatio: bgRemovePreviewAspectRatio,
+    error: bgRemovePreviewError,
+  } = usePipelinePreview({
+    sourceUrl: operationType === "bg-remove" ? transformPreviewInput.sourceUrl : null,
+    steps: operationType === "bg-remove" ? transformPreviewInput.steps : [],
+    nodeWidth: width,
+    includeHistogram: false,
+    previewScale: 0.5,
+    maxPreviewWidth: 720,
+    maxDevicePixelRatio: 1.25,
+  });
   const creditCost = getImageTransformCreditCost(operation);
   const { isExecuting, localError, runTransform } = useImageTransformRunner({
     id,
@@ -94,6 +147,7 @@ export function ImageTransformNodeBody({
     operation,
     operationType,
     sourcePreview,
+    graph,
     edges,
     getNode,
     createNodeConnectedFromSource,
@@ -169,6 +223,32 @@ export function ImageTransformNodeBody({
             sourcePreview={sourcePreview}
             emptyLabel={t("emptyInputs.image")}
           />
+        ) : operation.type === "bg-remove" ? (
+          <div
+            className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40"
+          >
+            {!hasBgRemovePreviewSource ? (
+              <div className="absolute inset-0 flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                {t("emptyInputs.image")}
+              </div>
+            ) : (
+              <canvas
+                ref={bgRemovePreviewCanvasRef}
+                className="h-full w-full object-contain"
+                style={{ aspectRatio: `${Math.max(0.25, bgRemovePreviewAspectRatio)}` }}
+              />
+            )}
+            {isBgRemovePreviewRendering ? (
+              <div className="absolute right-1 top-1 rounded bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                Rendering...
+              </div>
+            ) : null}
+            {bgRemovePreviewError ? (
+              <div className="absolute inset-x-2 bottom-2 rounded-md border border-red-500/40 bg-background/90 px-2 py-1 text-[11px] text-red-600">
+                Preview: {bgRemovePreviewError}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div
             className={`relative w-full overflow-hidden rounded-md border border-border bg-muted/40 ${
@@ -226,6 +306,7 @@ export default function ImageTransformNode({
   id,
   data,
   selected,
+  width,
   operationType,
 }: ImageTransformNodeProps) {
   const nodeData = data as TransformNodeData;
@@ -269,7 +350,12 @@ export default function ImageTransformNode({
         />
       )}
 
-      <ImageTransformNodeBody id={id} data={nodeData} operationType={operationType} />
+      <ImageTransformNodeBody
+        id={id}
+        data={nodeData}
+        operationType={operationType}
+        width={typeof width === "number" ? width : undefined}
+      />
 
       <CanvasHandle
         nodeId={id}
