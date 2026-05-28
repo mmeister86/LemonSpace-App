@@ -1,6 +1,6 @@
 # 🍋 LemonSpace — Produkt-Manifest
 
-**v2.3 — Mai 2026**
+**v2.4 — Mai 2026**
 
 *Self-Hosted, Source-Available Creative Workspace*
 
@@ -8,9 +8,11 @@
 
 ## 1. Vision
 
-LemonSpace ist eine self-hosted, source-available Alternative zu Freepik Spaces. Eine visuelle Arbeitsfläche, auf der kreative Teams aus wenigen Input-Assets schnell kampagnenfähige Bildvarianten erzeugen — mit KI-gestützter Generierung, non-destruktiver Bildbearbeitung, durchdachter Latenz-UX und voller Kontrolle über ihre Daten.
+LemonSpace ist eine self-hosted, source-available Alternative zu Freepik Spaces. Eine visuelle Arbeitsfläche, auf der kreative Teams aus wenigen Input-Assets schnell kampagnenfähige Bildvarianten erzeugen — mit non-destruktiver Bildbearbeitungspipeline, KI-gestützter Generierung, durchdachter Latenz-UX und voller Kontrolle über ihre Daten.
 
 Das Produkt positioniert sich nicht als generisches „AI Creative Workspace", sondern löst ein spezifisches Problem: **Vom Rohbild zur fertigen Kampagnenvariante in Minuten statt Stunden** — auf eigener Infrastruktur oder als gehosteter Service.
+
+> **Strategische Erkenntnis (Kundenfeedback, Mai 2026):** Die non-destruktive Bildbearbeitungspipeline differenziert LemonSpace stärker als die KI-Integration. KI ist commodity — der Adjustment-Stack als Workspace ist es nicht. Die Roadmap priorisiert deshalb den Ausbau der Pipeline in drei Tracks: Profi-Retouching, Kampagnen-Pipeline und Procedural.
 
 ---
 
@@ -65,12 +67,12 @@ Der aktuelle MVP löst genau einen End-to-End-Job so gut, dass Nutzer wiederkomm
 
 ## 5. Node-System — aktueller Stand
 
-30 von 36 technischen Node-Typen sind implementiert. Die vollständige Node-Taxonomie (7 Kategorien, 36 Node-Typen) wird im PRD dokumentiert.
+30 von 51 technischen Node-Typen sind implementiert. Die vollständige Node-Taxonomie (7 Kategorien, 51 Node-Typen) wird im PRD dokumentiert.
 
 | Node | Kategorie | Implementiert | Rolle im MVP-Job |
 |------|-----------|---------------|------------------|
 | Bild | Quelle | ✅ | Upload eigener Bilder (PNG, JPG, WebP) oder Einbindung per URL |
-| Text | Quelle | ✅ | Freitextfeld für Copy, Brief, Beschreibungen |
+| Text | Quelle | ✅ | Freitextfeld mit Rich-Text-Editor für Copy, Brief, Beschreibungen |
 | Video | Quelle | ✅ | Video-Upload und Playback |
 | Asset | Quelle | ✅ | Stock-Assets aus Asset Browser |
 | Asset-Video | Quelle | ✅ | Pexels-/Stock-Video als Canvas-Quelle |
@@ -91,18 +93,29 @@ Der aktuelle MVP löst genau einen End-to-End-Job so gut, dass Nutzer wiederkomm
 | Licht | Bildbearbeitung | ✅ | Brightness, Contrast, Exposure, HDR, Vignette |
 | Detail | Bildbearbeitung | ✅ | Sharpen, Clarity, Denoise, Grain |
 | Render | Bildbearbeitung | ✅ | Materialisiert den Adjustment-Stack als neues Bild |
-| Mixer / Merge | Steuerung | ✅ | 2-Layer-Komposition mit Blend Mode und Opacity |
+| Mixer / Merge | Steuerung | ✅ | 2-Layer-Komposition mit Blend Mode und Opacity (deckt auch Text-Overlay ab) |
 | Gruppe | Layout | ✅ | Container für Nodes, Collapse/Expand |
 | Frame | Layout | ✅ | Artboard mit definierter Auflösung |
 | Notiz | Layout | ✅ | Annotation auf dem Canvas |
 | Compare | Layout | ✅ | Zwei Bilder nebeneinander mit Slider |
 | Kommentar | Layout | ✅ | Review-Kommentar mit Replies und Resolve-Status |
 
-### Noch offene Node-Lücken
+### Pipeline-Ausbau: Drei Tracks
 
-**Phase 2:** Farbe/Palette (Quelle), Splitter, Loop, Text-Overlay.
+Basierend auf Kundenfeedback wird die non-destruktive Pipeline in drei Tracks ausgebaut. Alle neuen Nodes sind credit-frei (client-seitig via WebGL).
 
-**Phase 3:** Weiche, Präsentation, tiefere Kollaborations- und Export-Flows.
+**Track A — Profi-Retouching:** Maske, Selection, Channel-Splitter, Channel-Mixer, Frequency Separation, Convolution. Überzeugt erfahrene Designer und differenziert klar von reinen AI-Tools. Masken sind höchste Priorität — sie werten alle bestehenden Adjustments nachträglich auf.
+
+**Track B — Kampagnen-Pipeline:** Multi-Aspect-Crop, Color-Palette-Extractor, Histogram-Match, Look-Bundle, Variant-Sweep, Annotation-Layer. Trifft direkt den ICP (kleine Marketing-Teams). Multi-Aspect-Crop und Palette-Extractor sind die Quick Wins.
+
+**Track C — Procedural & Parametric:** Gradient Map, Pattern-Generator, Symmetry/Kaleidoscope, Edge-Detect/Stylize, Math/Expression-Node. Zementiert die "Workspace"-Botschaft, längerer Zeithorizont.
+
+### Entfernte Nodes
+
+| Node | Begründung |
+|------|------------|
+| Splitter | Edge-Branching (mehrere ausgehende Edges pro Node) deckt den Use Case nativ. Ein dedizierter Node wäre redundant. |
+| Text-Overlay | Der Mixer-Node kombiniert beliebige Inputs — inklusive Text-Nodes mit eingebautem Rich-Text-Editor — als Overlay. |
 
 ---
 
@@ -154,7 +167,9 @@ Kompakt statt erschöpfend. Details wandern in eigene Architecture Decision Reco
 | Repo-Strategie | Zwei unabhängige Repos (lemonspace-web + lemonspace-landing). Auth-Cookie-Sharing via `.lemonspace.io`. | ✅ |
 | Frontend | Next.js 16 + Tailwind v4 + ShadCN | ✅ |
 | Canvas | @xyflow/react + dnd-kit | ✅ |
-| Bildbearbeitung | WebGL + GLSL Shader als primäre Engine. WASM-Backend vorbereitet. Client-seitig, credit-frei. | ✅ |
+| Bildbearbeitung | WebGL + GLSL Shader als primäre Engine. WASM-Backend vorbereitet. Client-seitig, credit-frei. Drei Ausbau-Tracks: Profi-Retouching, Kampagnen-Pipeline, Procedural. | ✅ |
+| Splitter-Node | Entfernt — Edge-Branching (mehrere ausgehende Edges pro Node) reicht. | ✅ |
+| Text-Overlay-Node | Entfernt — Mixer + Text-Node mit Rich-Text-Editor deckt den Use Case. | ✅ |
 | Preset-Persistierung | User-Presets in Convex (`adjustmentPresets`-Tabelle) | ✅ |
 | Offline Sync | IndexedDB Queue + localStorage Cache + Optimistic Updates | ✅ |
 | Sidebar | Resizable via react-resizable-panels, Rail-Mode (collapsible) | ✅ |
@@ -177,6 +192,8 @@ Fokus heißt Nein sagen. Diese Features sind bewusst ausgeklammert, nicht verges
 | Team-Features | Workspaces, Rollen, Rechte, Seat-Management — erst wenn Business-Tier validiert. |
 | docker-compose.yml | Self-Hosting dokumentieren, aber nicht den Hosted-MVP verzögern. |
 | E2E-Testing | Neubewertung bei Skalierung. |
+| Procedural-Nodes (Pattern, Symmetry, Stylize) | Phase 3 — zementiert die Workspace-Botschaft, aber niedrigere Dringlichkeit als Masken und Kampagnen-Pipeline. |
+| AI-gestützte Masken (SAM/Segment Anything) | Bewusst nicht in die Pipeline integriert — verstärkt die KI-Commodity-Wahrnehmung statt der Workspace-Differenzierung. Falls überhaupt: als optionaler Auto-Mask-Button im Mask-Node. |
 
 
 ---
@@ -257,7 +274,13 @@ Priorisiert nach Abhängigkeiten. Jeder Schritt hat ein klares Artefakt.
 | 11 | KI-Video + Transform-Pipeline | Freepik Tasks, Polling, Credits | ✅ |
 | 12 | Dashboard Snapshot + Analytics | Gebündelte Query, localStorage-Cache, Credits-Activity-Chart | ✅ |
 | 13 | docker-compose.yml + Setup-README | Self-Hosting-Anleitung | ☐ |
-| 14 | Verbleibende Node-Lücken | Farbe/Palette, Splitter, Loop, Text-Overlay, Weiche, Präsentation | ☐ |
+| 14 | **Track A: Mask-Node** | Brush + Gradient + Range-Masken, optionaler `mask`-Input an Adjustment-Nodes | ☐ |
+| 15 | **Track B: Multi-Aspect-Crop** | Focal-Point-basierter Crop für N Aspect-Ratios | ☐ |
+| 16 | **Track B: Color-Palette-Extractor** | Dominante Farben aus Bild extrahieren | ☐ |
+| 17 | **Track A: Selection + Channel-Splitter/Mixer** | Algorithmische Masken, Kanal-basierte Workflows | ☐ |
+| 18 | **Track A: Gradient Map** | Luminanz → Farbgradient-Mapping | ☐ |
+| 19 | **Track B: Histogram-Match** | Batch-Angleichung über Kampagnen-Sets | ☐ |
+| 20 | Verbleibende Lücken | Farbe/Palette, Loop, Weiche, Präsentation | ☐ |
 
 ---
 
@@ -276,4 +299,4 @@ Folgende Themen werden in eigenen Dokumenten vertieft. Das Manifest bleibt schla
 
 ---
 
-*LemonSpace Manifest v2.3 — Mai 2026*
+*LemonSpace Manifest v2.4 — Mai 2026*

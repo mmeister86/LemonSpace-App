@@ -4,7 +4,7 @@
 
 | Version | Status | Datum | Projekt |
 |---------|--------|-------|---------|
-| v2.3 | Draft | Mai 2026 | lemonspace.app |
+| v2.4 | Draft | Mai 2026 | lemonspace.app |
 
 ---
 
@@ -30,6 +30,7 @@
 | v2.1 | **Alle 9 Image-Modelle aktiviert (Phase 2→1):** Vollständige OpenRouter Image Gen Integration mit serverseitigem Tier-Enforcement und modellspezifischen Request-Modalities. Tier-aware Model Selector im Prompt-Node. AI-Modularisierung: `ai_errors.ts`, `ai_node_data.ts`, `ai_retry.ts` aus `ai.ts` extrahiert. Dashboard Snapshot Cache (`convex/dashboard.ts`): Gebündelte Query mit localStorage-Cache (`lib/dashboard-snapshot-cache.ts`). Credits Activity Analytics: `lib/credits-activity.ts` + `CreditsActivityChart` (Recharts). Canvas Graph Query Cache (`convex/canvasGraph.ts` + `canvas-graph-query-cache.ts`): Performance-Optimierung durch separaten Graph-Endpunkt mit Optimistic Store. Neuer Hook `use-dashboard-snapshot.ts`. ShadCN Chart-Komponente (`components/ui/chart.tsx`) + Recharts 3.8. |
 | v2.2 | **Codebase-Aktualisierung:** Crop-Node implementiert (Phase 2). Agent-Modelle: GPT-5.4 Nano/Mini/Pro (statt Claude 3.5 Sonnet). Schema: `mediaItems`-, `webhookIdempotencyEvents`-, `userSettings`-Tabellen. Image Pipeline: `crop-node-data.ts`, `geometry-transform.ts`. Neue Lib-Dateien: `agent-models.ts`, `canvas-render-preview.ts`, `canvas-node-favorite.ts`, `media-archive.ts`, `mixer-crop-layout.ts`. Canvas Modularisierung: 13 neue Hooks/Contexts für Flow-Reconciliation, Sync-Engine, Drop, Edge-Insertions. Convex: `media.ts`, `migrations.ts`, `polar_utils.ts`, `presets.ts`, `users.ts`. |
 | v2.3 | **Node- und Pipeline-Abgleich mit Codebase:** Taxonomie auf 7 Kategorien und 36 technische Node-Typen aktualisiert. KI-Video (`video-prompt` + `ai-video`) und KI-Text (`ai-text` + `ai-text-output`) dokumentiert. Agent Nodes sind implementiert: Analyze/Clarification/Execution, Skeleton-Outputs, Streaming-Route und Instagram Tool-Harness. Freepik-Transform-Pipeline für BG entfernen, Upscale, Style Transfer, Gesicht und Kamera ändern ergänzt. Mixer, Kommentar-Node, Media Library, Pexels Video Browser, Provider-Polling und Image-Transform-Credits synchronisiert. |
+| v2.4 | **Non-destruktive Bildbearbeitung als strategische Differenzierung.** Splitter-Node entfernt (Edge-Branching reicht). Text-Overlay-Node entfernt (Mixer + Rich-Text-Node deckt den Use Case). Drei neue Roadmap-Tracks: **Profi-Retouching** (Mask, Selection, Channel-Splitter, Channel-Mixer, Frequency Separation, Convolution), **Kampagnen-Pipeline** (Multi-Aspect-Crop, Color-Palette-Extractor, Histogram-Match, Look-Bundle, Variant-Sweep, Annotation-Layer), **Procedural** (Gradient Map, Pattern-Generator, Symmetry/Kaleidoscope, Math/Expression-Node). Taxonomie auf 7 Kategorien und 51 technische Node-Typen aktualisiert. |
 
 ---
 
@@ -75,7 +76,7 @@ Freepik Spaces ist ein leiststarkes Tool für KI-gestützte kreative Workflows, 
 
 ### 4.2 Node-System
 
-Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt **sieben Kategorien** mit insgesamt **36 technischen Node-Typen**.
+Das Canvas-System basiert auf einem erweiterbaren Node-Modell. Nodes sind typisierte Bausteine, die untereinander verbunden werden und Daten weitergeben. Es gibt **sieben Kategorien** mit insgesamt **51 technischen Node-Typen**.
 
 > **Single Source of Truth:** Die Node-Taxonomie wird zentral in `lib/canvas-node-types.ts` (Typen), `lib/canvas-node-catalog.ts` (Katalog) und `components/canvas/node-types.ts` (React-Flow-Registrierung) verwaltet. Der Katalog bestimmt automatisch den `implemented`-Status basierend auf vorhandenen React-Flow-Komponenten.
 
@@ -129,6 +130,8 @@ Agent Nodes orchestrieren Multi-Step-Workflows über ein Text/Reasoning-Modell u
 
 Bildbearbeitungs-Nodes arbeiten **non-destruktiv**. Sie verändern das Originalbild nicht, sondern definieren Adjustments, die als Stack auf das Eingangsbild angewendet werden. Erst der Render-Node materialisiert das Ergebnis als neues Bild.
 
+> **Strategische Differenzierung:** Erstes Kundenfeedback bestätigt, dass die non-destruktive Bildbearbeitungspipeline LemonSpace stärker differenziert als die KI-Integration. KI ist commodity — der Adjustment-Stack als Workspace ist es nicht. Die Roadmap priorisiert deshalb drei Ausbau-Tracks: Profi-Retouching, Kampagnen-Pipeline und Procedural/Parametric.
+
 **Architektur: WebGL-basierte Image-Pipeline (`lib/image-pipeline/`)**
 
 Die Bildbearbeitung nutzt eine vollständige WebGL-Pipeline für hardwarebeschleunigte Bildverarbeitung direkt im Browser:
@@ -177,28 +180,71 @@ Bild-Node (Original)
         → Render-Node → Neues Bild (materialisiert)
 ```
 
+##### Basis-Adjustments (implementiert)
+
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
-| Kurven | Tonwert-Kurven (RGB + Einzelkanäle). Kontrollpunkte per Drag auf der Kurve. Presets: Kontrast, Aufhellen, Abdunkeln, Film-Look, Cross-Process. | 2 | ✅ |
-| Farbe | HSL-Regler (Hue, Saturation, Luminance — global + pro Farbbereich). Color Balance. Temperature/Tint. Presets. | 2 | ✅ |
-| Licht | Brightness, Contrast, Exposure, Highlights, Shadows, Whites, Blacks. HDR-Tone-Mapping. Vignette. Presets. | 2 | ✅ |
-| Detail | Unscharf maskieren (Amount, Radius, Threshold). Clarity / Structure. Denoise. Grain. Presets. | 2 | ✅ |
-| Render | Materialisierer: Wendet den gesamten Adjustment-Stack an und erzeugt ein neues Bild (in Convex Storage). Unterstützt Ausgabe-Auflösung und Format. | 2 | ✅ |
+| Kurven | Tonwert-Kurven (RGB + Einzelkanäle). Kontrollpunkte per Drag auf der Kurve. Presets: Kontrast, Aufhellen, Abdunkeln, Film-Look, Cross-Process. | 1 | ✅ |
+| Farbe | HSL-Regler (Hue, Saturation, Luminance — global + pro Farbbereich). Color Balance. Temperature/Tint. Presets. | 1 | ✅ |
+| Licht | Brightness, Contrast, Exposure, Highlights, Shadows, Whites, Blacks. HDR-Tone-Mapping. Vignette. Presets. | 1 | ✅ |
+| Detail | Unscharf maskieren (Amount, Radius, Threshold). Clarity / Structure. Denoise. Grain. Presets. | 1 | ✅ |
+| Render | Materialisierer: Wendet den gesamten Adjustment-Stack an und erzeugt ein neues Bild (in Convex Storage). Unterstützt Ausgabe-Auflösung und Format. | 1 | ✅ |
 
-> **Credits:** Alle Adjustment-Nodes sind **credit-frei** — die Verarbeitung läuft vollständig im Browser (WebGL). Nur der Render-Node erzeugt serverseitig ein finales Bild (ebenfalls credit-frei).
+##### Profi-Retouching (Track A)
 
-> **Technische Umsetzung:** Die Entscheidung für WebGL als primäre Rendering-Engine ist getroffen. GLSL-Shader für alle vier Adjustment-Typen sind implementiert. Ein WASM-Backend ist als Alternative vorbereitet (`wasm-backend.ts`), aber noch nicht aktiv.
+Lokale Adjustments, Kanal-basierte Workflows und Pixel-Level-Kontrolle. Überzeugt erfahrene Designer und differenziert klar von reinen AI-Tools.
+
+| Node | Beschreibung | Phase | Implementiert |
+|------|--------------|-------|---------------|
+| Maske (`mask`) | Definiert *wo* nachfolgende Adjustments wirken. Drei Modi: Brush-Mask (manuell), Linear/Radial Gradient, Luminosity/Color-Range. Output als Graustufen-Bild an den optionalen `mask`-Input eines Adjustment-Nodes. | 2 | ☐ |
+| Selection (`selection`) | Algorithmische Maske: Color Range, Luminosity Range, Focus Range (basiert auf Schärfe). Output ist eine Maske. Nachgeschaltete Mask-Operationen (Invert, Feather, Expand, Intersect) sind generische Modifikatoren. | 2 | ☐ |
+| Channel-Splitter (`channel-split`) | Zerlegt ein Bild in separate Kanäle (R/G/B oder L/a/b oder H/S/L). Drei Graustufen-Outputs. Basis für B/W-Conversions und Channel-basierte Color-Grades. | 2 | ☐ |
+| Channel-Mixer (`channel-mix`) | Setzt getrennte Kanäle wieder zusammen, optional mit Cross-Channel-Mapping ("Rot = 0.7×R + 0.3×G"). Komplementär zum Splitter. | 2 | ☐ |
+| Frequency Separation (`freq-sep`) | Trennt Bild in Low Frequency (Farbe/Tonwerte) und High Frequency (Details/Textur). Zwei Outputs. Standard für Beauty-Retouching. | 3 | ☐ |
+| Convolution (`convolution`) | Frei definierbare 3×3 oder 5×5 Kernel-Matrix. Presets: Sobel, Laplacian, Gaussian, Emboss, Custom Sharpen. Power-User-Territorium. | 3 | ☐ |
+
+##### Procedural & Parametric (Track C)
+
+Deterministische, KI-freie Bildgeneratoren und parametrische Steuerung. Zementiert die "Workspace"-Botschaft.
+
+| Node | Beschreibung | Phase | Implementiert |
+|------|--------------|-------|---------------|
+| Gradient Map (`gradient-map`) | Mappt Luminanz auf einen Farbgradienten (2+ Farben). Duotones, Tritones, Monochrome-mit-Akzent. Anschlussfähig an Color-Palette-Extractor. | 2 | ☐ |
+| Pattern-Generator (`pattern-gen`) | Prozedurale Quell-Nodes ohne KI: Noise (Perlin, Simplex, Worley), Gradients, Voronoi, Stripes, Dot Patterns, Halftone. Output als Bild für Blend/Mask-Workflows. | 3 | ☐ |
+| Symmetry / Kaleidoscope (`symmetry`) | Spiegelt Bildausschnitt mehrfach (2-/4-/6-fach radial). Für Logo-Exploration, Pattern-Generierung, Mandala-Backgrounds. Kombinierbar mit Pattern/Tile-Nodes. | 3 | ☐ |
+| Edge-Detect / Stylize (`stylize`) | Sobel, Canny, DoG, Posterize, Threshold, Solarize, Mosaic. Deterministische Stilisierung (Comic, Plakat, Skizze) — KI-frei, sofort, reproduzierbar. | 3 | ☐ |
+
+> **Credits:** Alle Bildbearbeitungs-Nodes sind **credit-frei** — die Verarbeitung läuft vollständig im Browser (WebGL). Nur der Render-Node erzeugt serverseitig ein finales Bild (ebenfalls credit-frei).
+
+> **Technische Umsetzung:** Die Entscheidung für WebGL als primäre Rendering-Engine ist getroffen. GLSL-Shader für alle vier Basis-Adjustment-Typen sind implementiert. Ein WASM-Backend ist als Alternative vorbereitet (`wasm-backend.ts`), aber noch nicht aktiv. Neue Nodes (Mask, Selection, Channel-Splitter, Frequency Separation, etc.) erfordern zusätzliche GLSL-Shader und Multi-Pass-Rendering.
 
 #### Kategorie 6: Steuerung & Flow
 
+> **Splitter entfernt:** Ein dedizierter Splitter-Node ist überflüssig — jeder Node kann mehrere ausgehende Edges haben, was natürliches Branching über das Edge-Modell ermöglicht. Separate Workflows basierend auf derselben Quell-Node entstehen einfach durch mehrere Verbindungen.
+
 | Node | Semantik | Beschreibung | Phase | Implementiert |
 |------|----------|--------------|-------|---------------|
-| Splitter | 1 → N | Verteilt 1 Input auf N identische oder abgeleitete Outputs. | 2 | ☐ |
 | Loop | Liste → N | Iteriert über eine Liste von Inputs und führt dieselbe verknüpfte Operation für jeden Eintrag aus. | 2 | ☐ |
-| Mixer / Merge | 2 → 1 | Kombiniert Base- und Overlay-Input zu einer clientseitigen Pseudo-Image-Komposition mit Blend Mode, Opacity und Crop/Frame-Kontrollen. | 1 | ✅ |
+| Mixer / Merge | 2 → 1 | Kombiniert Base- und Overlay-Input zu einer clientseitigen Pseudo-Image-Komposition mit Blend Mode, Opacity und Crop/Frame-Kontrollen. Deckt auch Text-Overlay ab (Text-Node mit Rich-Text-Editor als Overlay-Input). | 1 | ✅ |
 | Weiche | 1 → Pfad A/B/... | Bedingter Router. Leitet den Input anhand einer definierbaren Bedingung auf einen von mehreren Ausgangspfaden. | 3 | ☐ |
+| Math/Expression (`math-expr`) | Werte → Werte | Node ohne Bild-Input. Slider eines Adjustment-Nodes lässt sich an Output-Variablen binden ("Saturation = Brightness × 0.5 + 20"). Ermöglicht parametrische Looks mit Master-Slider. | 3 | ☐ |
+
+##### Kampagnen-Pipeline (Track B)
+
+Nodes, die direkt den ICP-Job "vom Rohbild zur fertigen Kampagne" beschleunigen. Trifft kleine Marketing-Teams am stärksten.
+
+| Node | Semantik | Beschreibung | Phase | Implementiert |
+|------|----------|--------------|-------|---------------|
+| Multi-Aspect-Crop (`multi-crop`) | 1 → N | Nimmt ein Bild + N Aspect-Ratios (1:1, 4:5, 9:16, 16:9, 3:2) und erzeugt automatisch passende Crops mit konfigurierbarem Focal Point. Ein Asset, alle Plattformen. | 2 | ☐ |
+| Color-Palette-Extractor (`palette-extract`) | 1 → Palette | Extrahiert 5–10 dominante Farben aus einem Bild als Hex-Palette. Output an Farbe/Palette-Node oder Match-Color weitergebbar. Brand-Konsistenz ohne Manual Picking. | 2 | ☐ |
+| Histogram-Match (`hist-match`) | N + Ref → N | Nimmt N Bilder und gleicht ihre Tonwert-/Farbverteilung an ein Referenzbild oder einen berechneten Mittelwert an. Für Kampagnen-Sets mit inkonsistenten Shots. | 2 | ☐ |
+| Look-Bundle (`look`) | Pipeline → 1 | Kapselt eine ganze Adjustment-Kette (Kurven + Farbe + Licht + Korn) als ein Atom. Teilbar, wiederverwendbar, potenziell als Marketplace-Item. | 3 | ☐ |
+| Variant-Sweep (`variant-sweep`) | 1 + Range → N | Rendert mehrere parallele Adjustment-Pipelines aus einem Source mit parametrischen Sweeps ("Sättigung von -50 bis +50 in 5 Schritten"). Für schnelle Kampagnen-Iteration. | 3 | ☐ |
+| Annotation-Layer (`annotation`) | Overlay | Pfeile, Kreise, Highlight-Boxen direkt auf Bildern, non-destruktiv als eigener Layer. Toggle für sichtbar/unsichtbar im Export. Für Design-Reviews im Team. | 3 | ☐ |
 
 #### Kategorie 7: Canvas & Layout
+
+> **Text-Overlay entfernt:** Der Mixer-Node kombiniert beliebige Inputs — inklusive Text-Nodes mit eingebautem Rich-Text-Editor — als Overlay. Ein dedizierter Text-Overlay-Node wäre redundant.
 
 | Node | Beschreibung | Phase | Implementiert |
 |------|--------------|-------|---------------|
@@ -206,7 +252,6 @@ Bild-Node (Original)
 | Frame | Artboard mit definierter Auflösung. Dient als Export-Boundary. | 1 | ✅ |
 | Notiz | Annotation auf dem Canvas. Markdown-Support, kein Datenanschluss. | 1 | ✅ |
 | Compare | Stellt zwei Bilder nebeneinander mit interaktivem Slider dar. | 1 | ✅ |
-| Text-Overlay | Editierbarer Text-Layer über Bild- oder Video-Nodes innerhalb eines Frames. | 2 | ☐ |
 | Kommentar | Kollaborations-Node für Reviews. Unterstützt Rich-Text-Inhalt, Replies und Resolve-Status. | 3 | ✅ |
 | Präsentation | Definiert Canvas-Bereiche als geordnete Slideshow. Export als PDF möglich. | 3 | ☐ |
 
@@ -405,8 +450,11 @@ Node (Basis)
 │        ai-video | agent | agent-output |
 │        crop | bg-remove | upscale | style-transfer | face-restore | change-camera |
 │        curves | color-adjust | light-adjust | detail-adjust | render |
-│        splitter | loop | mixer | switch |
-│        group | frame | note | compare | text-overlay | comment | presentation)
+│        mask | selection | channel-split | channel-mix | freq-sep | convolution |
+│        gradient-map | pattern-gen | symmetry | stylize |
+│        loop | mixer | switch | math-expr |
+│        multi-crop | palette-extract | hist-match | look | variant-sweep | annotation |
+│        group | frame | note | compare | comment | presentation)
 ├── position { x, y }
 ├── size { width, height }
 ├── data (je nach Typ)
@@ -569,6 +617,9 @@ Credits = ROUND(API-Kosten × Markup ÷ Kurs). Agent-Calls haben höheren Markup
 | Kamera ändern | Freepik Transform | Providerkosten | fix | 10 Cr | Alle Tiers |
 | Canvas-Operationen | — | €0 | — | 0 Cr | Alle Tiers |
 | Bildbearbeitung (Kurven, Farbe, Licht, Detail) | WebGL (client-seitig) | €0 | — | 0 Cr | Alle Tiers |
+| Profi-Retouching (Mask, Selection, Channel-Split, Freq Sep) | WebGL (client-seitig) | €0 | — | 0 Cr | Alle Tiers |
+| Procedural (Gradient Map, Pattern-Gen, Stylize, Symmetry) | WebGL (client-seitig) | €0 | — | 0 Cr | Alle Tiers |
+| Kampagnen-Pipeline (Multi-Crop, Palette-Extract, Hist-Match) | Client-seitig | €0 | — | 0 Cr | Alle Tiers |
 | Render (Adjustment-Stack materialisieren) | Server-seitig (Canvas API) | €0 | — | 0 Cr | Alle Tiers |
 | Export (PNG/ZIP) | — | €0 | — | 0 Cr | Alle Tiers |
 
@@ -620,7 +671,7 @@ Sobald der Agent seinen Execution-Plan (JSON) erstellt hat, kennt das System Anz
 
 ```
 Agent Status: analyzing
-→ Plan fertig: 3x KI-Bild, 2x KI-Text, 1x Text-Overlay
+→ Plan fertig: 3x KI-Bild, 2x KI-Text, 1x Mixer
 → 6 Skeleton-Nodes erscheinen auf dem Canvas, korrekt positioniert
 → Agent Status: executing (1/6)
 → Skeletons füllen sich der Reihe nach mit echten Outputs
@@ -648,14 +699,17 @@ Agent Status: analyzing
 
 ### Phase 1 — Foundation (MVP)
 
-**Nodes (30 implementiert, 6 offen):**
+**Nodes (30 implementiert, 21 offen):**
 - Quelle: Bild ✅, Text ✅, Video ✅, Asset ✅, Asset-Video ✅, Farbe/Palette ☐
 - KI-Ausgabe: Prompt ✅, KI-Bild ✅, Video-Prompt ✅, KI-Video ✅, KI-Text ✅, KI-Text-Ausgabe ✅
 - Agents: Agent ✅, Agent-Ausgabe ✅
 - Transformation: Crop ✅, BG entfernen ✅, Upscale ✅, Style Transfer ✅, Gesicht ✅, Kamera ändern ✅
-- Bildbearbeitung: Kurven ✅, Farbe ✅, Licht ✅, Detail ✅, Render ✅
-- Steuerung & Flow: Mixer ✅, Splitter ☐, Loop ☐, Weiche ☐
-- Canvas & Layout: Gruppe ✅, Frame ✅, Notiz ✅, Compare ✅, Kommentar ✅, Text-Overlay ☐, Präsentation ☐
+- Bildbearbeitung (Basis): Kurven ✅, Farbe ✅, Licht ✅, Detail ✅, Render ✅
+- Bildbearbeitung (Profi): Maske ☐, Selection ☐, Channel-Splitter ☐, Channel-Mixer ☐, Frequency Separation ☐, Convolution ☐
+- Bildbearbeitung (Procedural): Gradient Map ☐, Pattern-Generator ☐, Symmetry ☐, Stylize ☐
+- Steuerung & Flow: Mixer ✅, Loop ☐, Weiche ☐, Math/Expression ☐
+- Kampagnen-Pipeline: Multi-Aspect-Crop ☐, Palette-Extractor ☐, Histogram-Match ☐, Look-Bundle ☐, Variant-Sweep ☐, Annotation-Layer ☐
+- Canvas & Layout: Gruppe ✅, Frame ✅, Notiz ✅, Compare ✅, Kommentar ✅, Präsentation ☐
 
 **Infrastruktur & Features:**
 
@@ -698,31 +752,50 @@ Agent Status: analyzing
 | Kommentar-Node V1 | ✅ Erledigt |
 | docker-compose.yml + .env.example + Setup-README | ☐ Offen |
 
-### Phase 2 — Fokus-Lücken
+### Phase 2 — Non-destruktive Pipeline & Kampagnen-Ausbau
 
-**Nodes:**
-- Quelle: Farbe / Palette
-- Steuerung: Splitter, Loop
-- Canvas & Layout: Text-Overlay
-- Agent-Ausbau: weitere Templates, bessere Clarification UX, Browser Notifications
+Die drei Tracks können parallel bearbeitet werden. Reihenfolge innerhalb jedes Tracks ist priorisiert.
+
+**Track A — Profi-Retouching:**
+- Maske (Brush, Gradient, Luminosity/Color-Range) — wertet alle bestehenden Adjustments nachträglich auf
+- Selection (Color Range, Luminosity Range, Focus Range)
+- Channel-Splitter + Channel-Mixer
+- Gradient Map
+
+**Track B — Kampagnen-Pipeline:**
+- Multi-Aspect-Crop (1:1, 4:5, 9:16, 16:9, 3:2 mit Focal Point)
+- Color-Palette-Extractor
+- Histogram-Match (Batch-Angleichung über Kampagnen-Sets)
+
+**Track C — Procedural & Steuerung:**
+- Loop-Node
+- Farbe/Palette-Node (Quelle)
 
 **Infrastruktur & Features:**
 
 | Task | Status |
 |------|--------|
-| OpenRouter Text/Reasoning Integration (GPT-5.4 Nano/Mini/Pro) | ✅ Erledigt |
-| Agent Node: Analyse, Clarification, Execution, Output | ✅ Erledigt |
-| Skeleton-Nodes: Platzierung nach Plan-Erstellung | ✅ Erledigt |
+| Mask-Node: Brush + Gradient + Range-Masken | ☐ Offen |
+| Selection-Node: algorithmische Masken | ☐ Offen |
+| Channel-Splitter + Channel-Mixer GLSL-Shader | ☐ Offen |
+| Gradient Map GLSL-Shader | ☐ Offen |
+| Multi-Aspect-Crop mit Focal Point | ☐ Offen |
+| Color-Palette-Extractor | ☐ Offen |
+| Histogram-Match (N Bilder → Referenz) | ☐ Offen |
+| Loop-Node | ☐ Offen |
+| Farbe/Palette-Node | ☐ Offen |
 | Browser Notifications API (opt-in, Tab-Wechsel) | ☐ Offen |
-| Erster Agent Template: Instagram Curator | ✅ Erledigt |
+| Weitere Agent Templates | ☐ Offen |
 | Self-hosted KI-Services (rembg, Real-ESRGAN) | ☐ Offen |
 | Prompt-History und Re-Generation | ☐ Offen |
-| Text-Overlay Node | ☐ Offen |
 
-### Phase 3 — Kollaboration & Polish
+### Phase 3 — Advanced Pipeline, Kollaboration & Polish
 
 **Nodes:**
-- Steuerung: Weiche
+- Profi-Retouching: Frequency Separation, Convolution
+- Kampagnen-Pipeline: Look-Bundle, Variant-Sweep, Annotation-Layer
+- Procedural: Pattern-Generator, Symmetry/Kaleidoscope, Edge-Detect/Stylize
+- Steuerung: Weiche, Math/Expression-Node
 - Canvas & Layout: Präsentation
 - Kollaboration: Echtzeit-Reviews, Versionen, Team-Flows
 
@@ -766,7 +839,11 @@ Agent Status: analyzing
 | Kollaborationstiefe | ⏳ Cursor-Sync, gleichzeitige Edits, Kommentare |
 | Agent Clarification UX | ✅ Inline am Agent Node mit Resume-Flow; weitere UX-Politur offen |
 | Agent Template Format | ✅ Strukturierte Definitionen in `lib/agent-definitions.ts` + Markdown-Quellen für Agent-Spezifikationen |
-| Weiche: Bedingungslogik | ⏳ Visueller Rule-Builder vs. Ausdruckssprache |
+| Weiche: Bedingungslogik | ⏳ Visueller Rule-Builder vs. Ausdruckssprache (Phase 3) |
+| Non-destruktive Pipeline als Differenzierung | ✅ Drei Tracks: Profi-Retouching, Kampagnen-Pipeline, Procedural. Alle credit-frei, client-seitig. |
+| Splitter-Node | ✅ Entfernt — Edge-Branching (mehrere ausgehende Edges pro Node) deckt den Use Case |
+| Text-Overlay-Node | ✅ Entfernt — Mixer + Text-Node mit Rich-Text-Editor deckt den Use Case |
+| Mask-Node: Input-Architektur | ⏳ Optionaler zweiter Handle (`mask`) an Adjustment-Nodes vs. eigenständiger Mask-Compositor |
 | Mixer: Blend Modes | ✅ Normal, Multiply, Screen, Overlay in Mixer V1 |
 | OpenRouter Text/Reasoning | ✅ GPT-5.4 Nano/Mini/Pro als Agent-Modelle (via `agent-models.ts`) |
 | Canvas-Export | ✅ PNG/Frame-Export; ZIP/PDF bleiben spätere Export-Ausbaustufen |
@@ -792,11 +869,14 @@ Agent Status: analyzing
 ## 14. Nächste Schritte
 
 1. docker-compose.yml + .env.example + Setup-README ausarbeiten
-2. Farbe/Palette, Splitter, Loop und Text-Overlay als verbleibende Phase-2-Nodes umsetzen
-3. Browser Notifications API für lange KI-/Agent-Jobs ergänzen
-4. Agent Clarification UX und weitere Agent Templates ausbauen
-5. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN) als optionale Provider-Alternative evaluieren
-6. Echtzeit-Kollaboration, Versions-History und Präsentations-Export ausarbeiten
+2. **Track A (Profi-Retouching):** Mask-Node als höchste Priorität — wertet alle bestehenden Adjustments auf
+3. **Track B (Kampagnen-Pipeline):** Multi-Aspect-Crop und Color-Palette-Extractor als Quick Wins
+4. **Track C (Procedural):** Gradient Map als erste Ergänzung, Loop-Node für Batch-Workflows
+5. Farbe/Palette-Node als verbleibende Quelle-Lücke
+6. Browser Notifications API für lange KI-/Agent-Jobs ergänzen
+7. Agent Clarification UX und weitere Agent Templates ausbauen
+8. Self-hosted KI-Services (rembg, Real-ESRGAN, GFPGAN) als optionale Provider-Alternative evaluieren
+9. Echtzeit-Kollaboration, Versions-History und Präsentations-Export ausarbeiten
 
 ---
 
@@ -825,4 +905,4 @@ Die Software wird unter der Business Source License 1.1 (BSL 1.1) veröffentlich
 
 ---
 
-*LemonSpace PRD v2.3 — Mai 2026*
+*LemonSpace PRD v2.4 — Mai 2026*
