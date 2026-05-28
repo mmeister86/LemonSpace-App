@@ -537,6 +537,33 @@ describe("BaseNodeWrapper", () => {
     expect(contentLayer?.className).toContain("z-10");
   });
 
+  it("applies content layout classes to the measured content layer", async () => {
+    mocks.getNode.mockReturnValue({
+      id: "node-1",
+      type: "ai-image",
+      data: {},
+      position: { x: 0, y: 0 },
+      style: {},
+    });
+
+    await act(async () => {
+      root?.render(
+        <BaseNodeWrapper
+          nodeType="ai-image"
+          selected={false}
+          contentClassName="flex min-h-0 flex-col"
+        >
+          <div>Preview content</div>
+        </BaseNodeWrapper>,
+      );
+    });
+
+    const measureLayer = container?.querySelector('[data-testid="canvas-node-measure"]');
+    expect(measureLayer?.className).toContain("flex");
+    expect(measureLayer?.className).toContain("min-h-0");
+    expect(measureLayer?.className).toContain("flex-col");
+  });
+
   it("does not render a backlight for non-favorite non-media nodes", async () => {
     await renderWrapper({ label: "Frame" }, true);
 

@@ -254,6 +254,7 @@ interface BaseNodeWrapperProps {
   toolbarActions?: NodeToolbarAction[];
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   backlight?: ReactNode;
   dataOnboarding?: string;
 }
@@ -266,6 +267,7 @@ export default function BaseNodeWrapper({
   toolbarActions,
   children,
   className = "",
+  contentClassName = "",
   backlight,
   dataOnboarding,
 }: BaseNodeWrapperProps) {
@@ -596,7 +598,7 @@ export default function BaseNodeWrapper({
       <div
         ref={nodeMeasureRef}
         data-testid="canvas-node-measure"
-        className="relative h-full w-full"
+        className={`relative h-full w-full ${contentClassName}`}
       >
         <NodeErrorBoundary nodeType={nodeType}>{children}</NodeErrorBoundary>
         {status === "error" && statusMessage && (

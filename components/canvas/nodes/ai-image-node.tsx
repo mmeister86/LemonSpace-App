@@ -460,7 +460,8 @@ export default function AiImageNode({
           disabled: !previewUrl,
         },
       ]}
-      className="flex h-full w-full min-h-0 min-w-0 flex-col"
+      className="h-full w-full min-h-0 min-w-0"
+      contentClassName="flex h-full w-full min-h-0 min-w-0 flex-col"
       status={nodeData._status}
       statusMessage={nodeData._statusMessage}
       backlight={mediaBacklight}
