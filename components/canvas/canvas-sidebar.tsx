@@ -109,6 +109,7 @@ function SidebarRow({
       draggable={enabled}
       onDragStart={onDragStart}
       title={enabled ? `${entry.label} — auf den Canvas ziehen` : hint}
+      data-onboarding={entry.type === "prompt" ? "canvas-prompt-node-option" : undefined}
       className={cn(
         "rounded-lg border transition-colors",
         compact
@@ -146,7 +147,10 @@ export default function CanvasSidebar({
   );
 
   return (
-    <aside className="flex h-full w-full min-w-0 overflow-hidden flex-col border-r border-border/80 bg-background">
+    <aside
+      className="flex h-full w-full min-w-0 overflow-hidden flex-col border-r border-border/80 bg-background"
+      data-onboarding="canvas-sidebar"
+    >
       {railMode ? (
         <div className="border-b border-border/80 px-2 py-3">
           <div className="flex items-center justify-center">

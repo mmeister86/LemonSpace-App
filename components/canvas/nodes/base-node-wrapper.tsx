@@ -255,6 +255,7 @@ interface BaseNodeWrapperProps {
   children: ReactNode;
   className?: string;
   backlight?: ReactNode;
+  dataOnboarding?: string;
 }
 
 export default function BaseNodeWrapper({
@@ -266,6 +267,7 @@ export default function BaseNodeWrapper({
   children,
   className = "",
   backlight,
+  dataOnboarding,
 }: BaseNodeWrapperProps) {
   const config = getCanvasNodeResizeConfig(nodeType);
   const [contentMinimumSize, setContentMinimumSize] = useState<NodeMinimumSize>({
@@ -493,6 +495,7 @@ export default function BaseNodeWrapper({
     <div
       ref={nodeChromeRef}
       data-testid="canvas-node-chrome"
+      data-onboarding={dataOnboarding}
       className={`
         relative h-full w-full rounded-lg border bg-card shadow-lg shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}
@@ -526,6 +529,7 @@ export default function BaseNodeWrapper({
     <div
       ref={nodeChromeRef}
       data-testid="canvas-node-chrome"
+      data-onboarding={dataOnboarding}
       className={`
         relative h-full w-full rounded-xl border bg-card shadow-xl shadow-foreground/05 transition-shadow
         ${selected ? "ring-2 ring-primary shadow-md" : ""}

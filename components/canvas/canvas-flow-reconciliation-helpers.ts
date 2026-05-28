@@ -378,6 +378,31 @@ function preserveIncomingRuntimeNodeData(
     }
   }
 
+  const incomingLooksLikeGeneratedOutput =
+    incoming._status === "done" ||
+    typeof incoming.generatedAt === "number" ||
+    typeof incoming.storageId === "string";
+  if (incomingLooksLikeGeneratedOutput) {
+    for (const key of [
+      "storageId",
+      "previewUrl",
+      "lastUploadStorageId",
+      "lastUploadUrl",
+      "imageUrl",
+      "generatedAt",
+      "creditCost",
+      "modelLabel",
+      "modelTier",
+      "outputWidth",
+      "outputHeight",
+      "referenceImages",
+    ]) {
+      if (next[key] === undefined && incoming[key] !== undefined) {
+        next[key] = incoming[key];
+      }
+    }
+  }
+
   if (
     next.url === undefined &&
     typeof incoming.url === "string" &&

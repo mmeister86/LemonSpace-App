@@ -47,6 +47,7 @@ import type * as nodes_grouping from "../nodes/grouping.js";
 import type * as nodes_idempotency from "../nodes/idempotency.js";
 import type * as nodes_validation from "../nodes/validation.js";
 import type * as nodes_write_helpers from "../nodes/write_helpers.js";
+import type * as onboarding from "../onboarding.js";
 import type * as openrouter from "../openrouter.js";
 import type * as pexels from "../pexels.js";
 import type * as polar from "../polar.js";
@@ -102,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "nodes/idempotency": typeof nodes_idempotency;
   "nodes/validation": typeof nodes_validation;
   "nodes/write_helpers": typeof nodes_write_helpers;
+  onboarding: typeof onboarding;
   openrouter: typeof openrouter;
   pexels: typeof pexels;
   polar: typeof polar;

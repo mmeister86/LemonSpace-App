@@ -590,6 +590,7 @@ export default function PromptNode({
             value={prompt}
             onChange={handlePromptChange}
             placeholder="Beschreibe, was du generieren willst…"
+            data-onboarding="canvas-prompt-input"
             className="nodrag nowheel min-h-[72px] w-full flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
           />
         )}
@@ -671,6 +672,7 @@ export default function PromptNode({
           <button
             type="button"
             onClick={() => void handleGenerate()}
+            data-onboarding="canvas-generate-button"
             disabled={
               !effectivePrompt.trim() || isGenerating || balance === undefined
             }

@@ -51,6 +51,18 @@ const mediaItemSource = v.union(
   v.literal("pexels-video")
 );
 
+const onboardingTourState = v.object({
+  status: v.union(
+    v.literal("started"),
+    v.literal("completed"),
+    v.literal("skipped")
+  ),
+  lastStep: v.optional(v.number()),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  skippedAt: v.optional(v.number()),
+});
+
 // ============================================================================
 // Node Data — typ-spezifische Payloads
 // ============================================================================
@@ -347,6 +359,12 @@ export default defineSchema({
   userSettings: defineTable({
     userId: v.string(),                            // Better Auth User ID
     locale: v.optional(v.union(v.literal('de'), v.literal('en'))),
+    onboarding: v.optional(v.object({
+      dashboardTour: v.optional(onboardingTourState),
+      canvasTour: v.optional(onboardingTourState),
+      firstWorkspaceCreatedAt: v.optional(v.number()),
+      firstOutputCreatedAt: v.optional(v.number()),
+    })),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

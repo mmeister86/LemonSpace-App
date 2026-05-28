@@ -168,6 +168,13 @@
 }
 
 @layer components {
+  /* NextStep wraps the app; keep Canvas/ReactFlow children on a full-height chain. */
+  [data-name="nextstep-wrapper"],
+  [data-name="nextstep-site"] {
+    min-height: 100vh;
+    height: 100%;
+  }
+
   /* Kanten: doppelte Standard-Dicke, feste Kontrastfarben je Light/Dark (gleiches Schema wie colorMode) */
   .react-flow {
     --xy-edge-stroke: rgba(44, 62, 80, 1);

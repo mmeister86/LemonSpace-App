@@ -83,6 +83,7 @@ function CanvasToolbarNodeMenu({ onAddNode }: { onAddNode: (template: CanvasNode
           className="size-9 shrink-0"
           aria-label="Knoten hinzufügen"
           title="Knoten hinzufügen"
+          data-onboarding="canvas-add-node"
         >
           <Plus className="size-4" />
         </Button>
@@ -445,6 +446,7 @@ export default function CanvasToolbar({
         ref={toolbarRef}
         layout
         data-testid="canvas-toolbar"
+        data-onboarding="canvas-toolbar"
         data-side={position.side}
         data-orientation={orientation}
         style={toolbarStyle}

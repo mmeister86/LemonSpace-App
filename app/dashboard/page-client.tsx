@@ -22,6 +22,8 @@ import { MediaLibraryDialog } from "@/components/media/media-library-dialog";
 import { useDashboardMediaPreviewUrls } from "@/hooks/use-dashboard-media-preview-urls";
 import { useDashboardSnapshot } from "@/hooks/use-dashboard-snapshot";
 import { toast } from "@/lib/toast";
+import { useOnboardingActions } from "@/components/onboarding/onboarding-provider";
+import { writePendingCanvasTour } from "@/lib/onboarding/storage";
 
 function getInitials(nameOrEmail: string) {
   const normalized = nameOrEmail.trim();
@@ -45,6 +47,7 @@ export function DashboardPageClient() {
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const { snapshot: dashboardSnapshot } = useDashboardSnapshot(session?.user?.id);
   const createCanvas = useMutation(api.canvases.create);
+  const { markMilestone, markTourProgress } = useOnboardingActions();
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [isMediaLibraryDialogOpen, setIsMediaLibraryDialogOpen] = useState(false);
   const [hasClientMounted, setHasClientMounted] = useState(false);
@@ -88,6 +91,9 @@ export function DashboardPageClient() {
         name: "Neuer Workspace",
         description: "",
       });
+      markMilestone("firstWorkspace");
+      markTourProgress("dashboardTour", "completed", 2);
+      writePendingCanvasTour({ canvasId, createdAt: Date.now() });
       router.push(`/canvas/${canvasId}`);
     } finally {
       setIsCreatingWorkspace(false);

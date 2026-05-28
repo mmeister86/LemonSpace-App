@@ -143,6 +143,8 @@ describe("CanvasToolbar", () => {
     const favoriteButton = container?.querySelector('button[title="Favoriten hervorheben"]');
     expect(favoriteButton).not.toBeNull();
     expect(container?.querySelector('[data-testid="credit-display"]')).not.toBeNull();
+    expect(container?.querySelector('[data-onboarding="canvas-toolbar"]')).not.toBeNull();
+    expect(container?.querySelector('[data-onboarding="canvas-add-node"]')).not.toBeNull();
     expect(container?.textContent).not.toContain("Export ZIP");
   });
 

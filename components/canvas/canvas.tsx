@@ -99,6 +99,7 @@ import { HANDLE_GLOW_RADIUS_PX } from "./canvas-connection-magnetism";
 import { CanvasConnectionMagnetismProvider } from "./canvas-connection-magnetism-context";
 import { projectCanvasFavoritesVisibility } from "./canvas-favorites-visibility";
 import { CollapsedNodeEditDrawer } from "./collapsed-node-edit-drawer";
+import { useOnboardingActions } from "@/components/onboarding/onboarding-provider";
 
 interface CanvasInnerProps {
   canvasId: Id<"canvases">;
@@ -108,6 +109,8 @@ const EDGE_INSERT_REFLOW_SETTLE_MS = 997;
 
 function CanvasInner({ canvasId }: CanvasInnerProps) {
   const t = useTranslations('toasts');
+  const { markMilestone } = useOnboardingActions();
+  const firstOutputMarkedRef = useRef(false);
   const showConnectionRejectedToast = useCallback(
     (reason: CanvasConnectionValidationReason) => {
       showCanvasConnectionRejectedToast(t, reason);
@@ -332,6 +335,25 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
       })),
     [edges],
   );
+
+  useEffect(() => {
+    if (firstOutputMarkedRef.current) return;
+    const hasCompletedOutput = canvasGraphNodes.some((node) => {
+      const data = node.data as Record<string, unknown> | undefined;
+      const status = data?._status;
+      const hasVisibleResult = Boolean(data?.url || data?.storageId || data?.body);
+      return (
+        (node.type === "ai-image" ||
+          node.type === "ai-video" ||
+          node.type === "agent-output") &&
+        status === "done" &&
+        hasVisibleResult
+      );
+    });
+    if (!hasCompletedOutput) return;
+    firstOutputMarkedRef.current = true;
+    markMilestone("firstOutput");
+  }, [canvasGraphNodes, markMilestone]);
 
   const favoriteProjection = useMemo(
     () =>
@@ -847,6 +869,7 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         ) : null}
         <div
           className="relative h-full min-h-0 w-full"
+          data-onboarding="canvas-surface"
           onPointerDownCapture={
             scissorsMode ? onScissorsFlowPointerDownCapture : undefined
           }

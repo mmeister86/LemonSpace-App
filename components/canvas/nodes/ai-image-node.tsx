@@ -5,7 +5,7 @@
  * Renders and manages the Canvas ai image node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
@@ -46,6 +46,10 @@ import {
 type AiImageNodeData = {
   storageId?: string;
   url?: string;
+  previewUrl?: string;
+  imageUrl?: string;
+  lastUploadStorageId?: string;
+  lastUploadUrl?: string;
   prompt?: string;
   model?: string;
   modelLabel?: string;
@@ -220,6 +224,37 @@ function buildLegacyReferenceImage(data: AiImageNodeData): AiImageReferenceInput
   return [];
 }
 
+function resolveStoragePreviewUrl(storageId: string | undefined): string | undefined {
+  if (!storageId) return undefined;
+
+  const convexBaseUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!convexBaseUrl) return undefined;
+
+  try {
+    return new URL(`/api/storage/${storageId}`, convexBaseUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function readPreviewString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function buildPreviewUrlCandidates(data: AiImageNodeData): string[] {
+  const candidates = [
+    readPreviewString(data.url),
+    readPreviewString(data.previewUrl),
+    readPreviewString(data.lastUploadUrl),
+    readPreviewString(data.imageUrl),
+    resolveStoragePreviewUrl(data.storageId ?? data.lastUploadStorageId),
+  ].filter((candidate): candidate is string => candidate !== undefined);
+
+  return [...new Set(candidates)];
+}
+
 export default function AiImageNode({
   id,
   data,
@@ -234,6 +269,9 @@ export default function AiImageNode({
   const [isGenerating, setIsGenerating] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isOutputFullscreenOpen, setIsOutputFullscreenOpen] = useState(false);
+  const [failedPreviewUrls, setFailedPreviewUrls] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const generateImage = useAction(api.ai.generateImage);
 
@@ -251,6 +289,52 @@ export default function AiImageNode({
     status === "analyzing" ||
     status === "clarifying" ||
     isGenerating;
+  const previewUrlCandidates = useMemo(
+    () =>
+      buildPreviewUrlCandidates({
+        imageUrl: nodeData.imageUrl,
+        lastUploadStorageId: nodeData.lastUploadStorageId,
+        lastUploadUrl: nodeData.lastUploadUrl,
+        previewUrl: nodeData.previewUrl,
+        storageId: nodeData.storageId,
+        url: nodeData.url,
+      }),
+    [
+      nodeData.imageUrl,
+      nodeData.lastUploadStorageId,
+      nodeData.lastUploadUrl,
+      nodeData.previewUrl,
+      nodeData.storageId,
+      nodeData.url,
+    ],
+  );
+  const previewUrlCandidateKey = previewUrlCandidates.join("\n");
+  useEffect(() => {
+    setFailedPreviewUrls((current) => {
+      if (current.size === 0) return current;
+      const currentCandidates = new Set(previewUrlCandidates);
+      const next = new Set(
+        [...current].filter((url) => currentCandidates.has(url)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [previewUrlCandidateKey, previewUrlCandidates]);
+  const previewUrl =
+    previewUrlCandidates.find((candidate) => !failedPreviewUrls.has(candidate)) ??
+    undefined;
+  const hasResolvableStoragePreview = Boolean(
+    nodeData.storageId ?? nodeData.lastUploadStorageId,
+  );
+  const isResolvingGeneratedImage =
+    status === "done" && hasResolvableStoragePreview && !previewUrl;
+  const markPreviewUrlFailed = useCallback((url: string) => {
+    setFailedPreviewUrls((current) => {
+      if (current.has(url)) return current;
+      const next = new Set(current);
+      next.add(url);
+      return next;
+    });
+  }, []);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -349,15 +433,16 @@ export default function AiImageNode({
     }
   };
   const mediaBacklight =
-    nodeData.url && !isLoading ? (
+    previewUrl && !isLoading ? (
       <MediaBacklight>
         {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the generated image preview */}
         <img
-          src={nodeData.url}
+          src={previewUrl}
           alt=""
           aria-hidden="true"
           className="h-full w-full object-contain"
           draggable={false}
+          onError={() => markPreviewUrlFailed(previewUrl)}
         />
       </MediaBacklight>
     ) : undefined;
@@ -372,11 +457,14 @@ export default function AiImageNode({
           label: "Fullscreen",
           icon: <Maximize2 size={14} />,
           onClick: () => setIsOutputFullscreenOpen(true),
-          disabled: !nodeData.url,
+          disabled: !previewUrl,
         },
       ]}
       className="flex h-full w-full min-h-0 min-w-0 flex-col"
+      status={nodeData._status}
+      statusMessage={nodeData._statusMessage}
       backlight={mediaBacklight}
+      dataOnboarding="canvas-output-node"
     >
       <CanvasHandle
         nodeId={id}
@@ -395,7 +483,7 @@ export default function AiImageNode({
       </div>
 
       <div className="group relative min-h-0 flex-1 overflow-hidden bg-muted">
-        {status === "idle" && !nodeData.url && (
+        {status === "idle" && !previewUrl && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
             <p className="px-6 text-center text-xs opacity-60">
@@ -422,6 +510,21 @@ export default function AiImageNode({
                   Retry attempt {executingRetryCount}
                 </p>
               )}
+            <p className="relative z-10 text-[10px] text-muted-foreground/60">
+              {modelName}
+            </p>
+          </div>
+        )}
+
+        {isResolvingGeneratedImage && !isLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted">
+            <div className="absolute inset-0 overflow-hidden">
+              <div className="animate-shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+            </div>
+            <Loader2 className="relative z-10 h-8 w-8 animate-spin text-violet-500" />
+            <p className="relative z-10 px-4 text-center text-xs text-muted-foreground">
+              Bildvorschau wird geladen…
+            </p>
             <p className="relative z-10 text-[10px] text-muted-foreground/60">
               {modelName}
             </p>
@@ -464,19 +567,20 @@ export default function AiImageNode({
           </div>
         )}
 
-        {nodeData.url && !isLoading && (
+        {previewUrl && !isLoading && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={nodeData.url}
+              src={previewUrl}
               alt={nodeData.prompt ?? "AI generated image"}
               className="absolute inset-0 h-full w-full object-contain"
               draggable={false}
+              onError={() => markPreviewUrlFailed(previewUrl)}
             />
           </>
         )}
 
-        {status === "done" && nodeData.url && !isLoading && (
+        {status === "done" && previewUrl && !isLoading && (
           <div
             className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100"
           >
@@ -546,13 +650,14 @@ export default function AiImageNode({
             <X className="h-5 w-5" />
           </button>
           <div className="flex h-full w-full items-center justify-center">
-            {nodeData.url ? (
+            {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={nodeData.url}
+                src={previewUrl}
                 alt={nodeData.prompt ?? "AI generated image"}
                 className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
                 draggable={false}
+                onError={() => markPreviewUrlFailed(previewUrl)}
               />
             ) : (
               <div className="rounded-lg bg-popover/95 px-4 py-3 text-sm text-muted-foreground shadow-lg">

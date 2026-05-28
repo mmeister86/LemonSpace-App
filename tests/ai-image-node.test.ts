@@ -64,7 +64,24 @@ vi.mock("@/lib/ai-errors", () => ({
 }));
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
-  default: ({ children }: { children: React.ReactNode }) => React.createElement("div", null, children),
+  default: ({
+    children,
+    status,
+    statusMessage,
+  }: {
+    children: React.ReactNode;
+    status?: string;
+    statusMessage?: string;
+  }) =>
+    React.createElement(
+      "div",
+      {
+        "data-testid": "base-node-wrapper",
+        "data-status": status ?? "",
+        "data-status-message": statusMessage ?? "",
+      },
+      children,
+    ),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -116,6 +133,164 @@ describe("AiImageNode", () => {
     container?.remove();
     container = null;
     root = null;
+    vi.unstubAllEnvs();
+  });
+
+  async function renderAiImageNode(data: Record<string, unknown>) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(AiImageNode, {
+          id: "ai-image-1",
+          selected: false,
+          dragging: false,
+          draggable: true,
+          selectable: true,
+          deletable: true,
+          zIndex: 1,
+          isConnectable: true,
+          type: "ai-image",
+          data,
+          positionAbsoluteX: 0,
+          positionAbsoluteY: 0,
+        }),
+      );
+    });
+  }
+
+  it("shows the generating overlay and forwards executing status to the wrapper", async () => {
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "ein leuchtender zitronenhain",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      _status: "executing",
+      _statusMessage: "Generating image",
+    });
+
+    expect(container?.textContent).toContain("Generating…");
+    const wrapper = container?.querySelector('[data-testid="base-node-wrapper"]');
+    expect(wrapper?.getAttribute("data-status")).toBe("executing");
+    expect(wrapper?.getAttribute("data-status-message")).toBe("Generating image");
+  });
+
+  it("renders the generated image preview when a resolved URL is present", async () => {
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "fertiges bild",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      url: "https://generated.test/image.png",
+      _status: "done",
+    });
+
+    const images = Array.from(container?.querySelectorAll("img") ?? []);
+    expect(
+      images.some(
+        (image) => image.getAttribute("src") === "https://generated.test/image.png",
+      ),
+    ).toBe(true);
+    expect(container?.textContent).not.toContain("Bildvorschau wird geladen");
+  });
+
+  it("renders the generated image preview when only a preview URL is present", async () => {
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "fertiges preview-bild",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      previewUrl: "https://generated.test/preview.png",
+      _status: "done",
+    });
+
+    const images = Array.from(container?.querySelectorAll("img") ?? []);
+    expect(
+      images.some(
+        (image) =>
+          image.getAttribute("src") === "https://generated.test/preview.png",
+      ),
+    ).toBe(true);
+    expect(container?.textContent).not.toContain("Bildvorschau wird geladen");
+  });
+
+  it("renders a generated image preview from storage while URL enrichment catches up", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://example.convex.cloud");
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "bild im storage",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      storageId: "storage-generated-1",
+      _status: "done",
+    });
+
+    const images = Array.from(container?.querySelectorAll("img") ?? []);
+    expect(
+      images.some(
+        (image) =>
+          image.getAttribute("src") ===
+          "https://example.convex.cloud/api/storage/storage-generated-1",
+      ),
+    ).toBe(true);
+    expect(container?.textContent).not.toContain("Bildvorschau wird geladen");
+  });
+
+  it("falls back to the storage preview when the resolved image URL fails to load", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://example.convex.cloud");
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "bild mit abgelaufener url",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      url: "https://generated.test/expired.png",
+      storageId: "storage-generated-1",
+      _status: "done",
+    });
+
+    const primaryPreview = Array.from(container?.querySelectorAll("img") ?? []).find(
+      (image) =>
+        image.getAttribute("aria-hidden") !== "true" &&
+        image.getAttribute("src") === "https://generated.test/expired.png",
+    );
+    if (!(primaryPreview instanceof HTMLImageElement)) {
+      throw new Error("Primary preview image not found");
+    }
+
+    await act(async () => {
+      primaryPreview.dispatchEvent(new Event("error"));
+    });
+
+    const images = Array.from(container?.querySelectorAll("img") ?? []);
+    expect(
+      images.some(
+        (image) =>
+          image.getAttribute("src") ===
+          "https://example.convex.cloud/api/storage/storage-generated-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("shows a resolving preview placeholder when storage cannot be resolved yet", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "");
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "bild im storage",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      storageId: "storage-generated-1",
+      _status: "done",
+    });
+
+    expect(container?.textContent).toContain("Bildvorschau wird geladen…");
+    expect(container?.textContent).not.toContain(
+      "Verbinde einen Prompt-Knoten und starte die Generierung dort.",
+    );
   });
 
   it("reuses prompt node visual references when regenerating", async () => {

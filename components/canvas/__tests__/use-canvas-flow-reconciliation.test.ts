@@ -439,6 +439,83 @@ describe("useCanvasFlowReconciliation", () => {
     expect(latestStateRef.current?.nodes[0]?.style).toEqual({ width: 320, height: 260 });
   });
 
+  it("keeps generated storage preview data when a local data pin is still settling", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(HookHarness, {
+          initialNodes: [
+            {
+              id: "ai-output",
+              type: "ai-image",
+              position: { x: 20, y: 40 },
+              data: {
+                prompt: "business portrait",
+                model: "google/gemini-3.1-flash-image-preview",
+              },
+              style: { width: 240, height: 408 },
+            },
+          ],
+          initialEdges: [],
+          convexNodes: [
+            {
+              _id: asNodeId("ai-output"),
+              _creationTime: 1,
+              canvasId: asCanvasId("canvas-1"),
+              type: "ai-image",
+              positionX: 20,
+              positionY: 40,
+              width: 240,
+              height: 408,
+              data: {
+                prompt: "business portrait",
+                model: "google/gemini-3.1-flash-image-preview",
+                storageId: "storage-generated-1",
+                generatedAt: 123,
+                creditCost: 6,
+              },
+              status: "done",
+              retryCount: 0,
+            } as Doc<"nodes">,
+          ],
+          convexEdges: [] as Doc<"edges">[],
+          storageUrlsById: {
+            "storage-generated-1": "https://generated.test/image.png",
+          },
+          themeMode: "light",
+          pendingLocalNodeDataPins: new Map<string, unknown>([
+            [
+              "ai-output",
+              {
+                prompt: "business portrait",
+                model: "google/gemini-3.1-flash-image-preview",
+              },
+            ],
+          ]),
+          isDragging: false,
+          isResizing: false,
+          resolvedRealIdByClientRequest: new Map<string, Id<"nodes">>(),
+          pendingConnectionCreateIds: new Set<string>(),
+          previousConvexNodeIdsSnapshot: new Set(["ai-output"]),
+        }),
+      );
+    });
+
+    expect(latestStateRef.current?.nodes[0]?.data).toEqual(
+      expect.objectContaining({
+        prompt: "business portrait",
+        storageId: "storage-generated-1",
+        url: "https://generated.test/image.png",
+        generatedAt: 123,
+        creditCost: 6,
+        _status: "done",
+      }),
+    );
+  });
+
   it("carries an optimistic connection edge until convex publishes the real edge", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);

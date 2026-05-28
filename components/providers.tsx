@@ -19,6 +19,7 @@ import { GooeyToaster } from "goey-toast";
 import "goey-toast/styles.css";
 
 import { authClient } from "@/lib/auth-client";
+import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -95,14 +96,16 @@ export function AppProviders({ children, initialToken }: AppProvidersProps) {
     >
       <SentryAuthUserSync />
       <AuthUiShell>
-        {children}
-        <GooeyToaster
-          position="bottom-right"
-          theme="dark"
-          visibleToasts={4}
-          maxQueue={8}
-          queueOverflow="drop-oldest"
-        />
+        <OnboardingProvider>
+          {children}
+          <GooeyToaster
+            position="bottom-right"
+            theme="dark"
+            visibleToasts={4}
+            maxQueue={8}
+            queueOverflow="drop-oldest"
+          />
+        </OnboardingProvider>
       </AuthUiShell>
     </ConvexBetterAuthProvider>
   );

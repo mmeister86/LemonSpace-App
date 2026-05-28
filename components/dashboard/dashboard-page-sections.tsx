@@ -57,7 +57,10 @@ export function DashboardHeader({ displayName, initials, onSignOut }: DashboardH
   const { theme = "system", setTheme } = useTheme();
 
   return (
-    <header className="sticky top-0 z-10 border-b bg-background/90 backdrop-blur-sm">
+    <header
+      className="sticky top-0 z-10 border-b bg-background/90 backdrop-blur-sm"
+      data-onboarding="dashboard-header"
+    >
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-6">
         <div className="flex items-center gap-2.5 text-base font-semibold tracking-tight">
           <Image
@@ -132,7 +135,7 @@ type DashboardCreditsSectionProps = {
 
 export function DashboardCreditsSection({ snapshot }: DashboardCreditsSectionProps) {
   return (
-    <section className="mb-12">
+    <section className="mb-12" data-onboarding="dashboard-credits">
       <div className="mb-4 flex items-center gap-2 text-sm font-medium">
         <Coins className="size-3.5 text-muted-foreground" />
         Credit-Übersicht
@@ -164,7 +167,7 @@ export function DashboardWorkspaceSection({
   onNavigateCanvas,
 }: DashboardWorkspaceSectionProps) {
   return (
-    <section className="mb-12">
+    <section className="mb-12" data-onboarding="dashboard-workspaces">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <LayoutTemplate className="size-3.5 text-muted-foreground" />
@@ -177,6 +180,7 @@ export function DashboardWorkspaceSection({
           type="button"
           onClick={onCreateWorkspace}
           disabled={isCreateDisabled}
+          data-onboarding="dashboard-create-workspace"
         >
           {isCreatingWorkspace ? "Erstelle..." : "Neuen Arbeitsbereich"}
         </Button>
@@ -247,7 +251,7 @@ export function DashboardMediaPreviewSection({
   const mediaPreview = snapshot?.mediaPreview;
 
   return (
-    <section className="mb-12">
+    <section className="mb-12" data-onboarding="dashboard-media">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ImageIcon className="size-3.5 text-muted-foreground" />
