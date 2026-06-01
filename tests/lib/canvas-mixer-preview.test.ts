@@ -105,6 +105,111 @@ describe("resolveMixerPreviewFromGraph", () => {
     });
   });
 
+  it("derives the v2 mixer stage from the layer-in source when no stage is persisted", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-bg",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/bg.png",
+            intrinsicWidth: 2048,
+            intrinsicHeight: 1536,
+          },
+        },
+        {
+          id: "asset-logo",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/logo.png",
+            intrinsicWidth: 500,
+            intrinsicHeight: 200,
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [
+              {
+                id: "background",
+                handleId: "layer-in",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              },
+              {
+                id: "logo",
+                handleId: "layer-in-2",
+                x: 0.1,
+                y: 0.1,
+                width: 0.3,
+                height: 0.2,
+              },
+            ],
+          },
+        },
+      ],
+      [
+        { source: "image-bg", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "asset-logo", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      status: "ready",
+      stage: { width: 2048, height: 1536 },
+      layers: [
+        { id: "background", handleId: "layer-in" },
+        { id: "logo", handleId: "layer-in-2" },
+      ],
+    });
+  });
+
+  it("does not derive a v2 mixer stage from overlay-only inputs", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "asset-logo",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/logo.png",
+            intrinsicWidth: 500,
+            intrinsicHeight: 200,
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [
+              {
+                id: "logo",
+                handleId: "layer-in-2",
+                x: 0.1,
+                y: 0.1,
+                width: 0.3,
+                height: 0.2,
+              },
+            ],
+          },
+        },
+      ],
+      [{ source: "asset-logo", target: "mixer-1", targetHandle: "layer-in-2" }],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      status: "ready",
+      stage: null,
+      layers: [{ id: "logo", handleId: "layer-in-2" }],
+    });
+  });
+
   it("resolves base and overlay URLs by target handle while keeping frame and crop trims independent", () => {
     const graph = buildGraphSnapshot(
       [

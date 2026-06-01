@@ -10,6 +10,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
+import { normalizeMixerLayerHandle } from "@/lib/canvas-mixer-normalization";
 
 import {
   getConnectEndClientPoint,
@@ -208,18 +209,8 @@ export function useCanvasConnections({
         return null;
       }
 
-      const normalizeMixerHandle = (handle: string | null | undefined): "base" | "overlay" | null => {
-        if (handle == null || handle === "" || handle === "null") {
-          return "base";
-        }
-        if (handle === "base" || handle === "overlay") {
-          return handle;
-        }
-        return null;
-      };
-
-      const oldHandle = normalizeMixerHandle(oldEdge.targetHandle);
-      const requestedHandle = normalizeMixerHandle(newConnection.targetHandle);
+      const oldHandle = normalizeMixerLayerHandle(oldEdge.targetHandle);
+      const requestedHandle = normalizeMixerLayerHandle(newConnection.targetHandle);
       if (!oldHandle || !requestedHandle || oldHandle === requestedHandle) {
         return null;
       }
@@ -231,19 +222,12 @@ export function useCanvasConnections({
           edge.target === newConnection.target,
       );
 
-      if (mixerIncomingEdges.length !== 2) {
-        return null;
-      }
-
       const otherEdge = mixerIncomingEdges.find(
-        (candidate) => candidate.id !== oldEdge.id,
+        (candidate) =>
+          candidate.id !== oldEdge.id &&
+          normalizeMixerLayerHandle(candidate.targetHandle) === requestedHandle,
       );
       if (!otherEdge) {
-        return null;
-      }
-
-      const otherHandle = normalizeMixerHandle(otherEdge.targetHandle);
-      if (!otherHandle || otherHandle !== requestedHandle) {
         return null;
       }
 

@@ -62,7 +62,7 @@ Alle Node-Typen werden über Validators definiert: `phase1NodeTypeValidator`, `n
 | `video-prompt` | `content`, `modelId`, `durationSeconds` | KI-Video-Steuer-Node (Eingabe) |
 | `ai-video` | `storageId`, `prompt`, `model`, `modelLabel`, `durationSeconds`, `creditCost`, `generatedAt`, `taskId` (transient) | Generiertes KI-Video (System-Output) |
 | `compare` | `leftNodeId`, `rightNodeId`, `sliderPosition` | Vergleichs-Node |
-| `mixer` | `blendMode`, `opacity`, `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` | V1 Merge-Control-Node mit pseudo-image Output (kein Storage-Write) |
+| `mixer` | `mixerVersion`, `stage`, `layers` (`blendMode`/`opacity`/`overlay*` legacy) | V2 Merge-Control-Node mit pseudo-image Output (kein Storage-Write) |
 | `frame` | `label`, `exportWidth`, `exportHeight`, `backgroundColor` | Artboard |
 | `group` | `label`, `collapsed` | Container-Node |
 | `note` | `content`, `color` | Anmerkung |
@@ -341,15 +341,16 @@ Wirft bei unauthentifiziertem Zugriff. Wird von allen Queries und Mutations genu
 - `video-prompt` → `ai-video` ✅ (einzige gültige Kombination für Video-Flow)
 - `ai-video` als Source für andere Nodes → ❌ (nur Compare)
 - `mixer` akzeptiert nur `image|asset|ai-image|render|text` als Source-Typ
-- `mixer` akzeptiert nur Target-Handles `base` und `overlay`
-- `mixer` erlaubt max. eine eingehende Kante pro Handle und max. zwei insgesamt
+- `mixer` akzeptiert Target-Handles `layer-in`...`layer-in-8`; legacy `base` und `overlay` werden als `layer-in` und `layer-in-2` normalisiert
+- `mixer` erlaubt max. eine eingehende Kante pro normalisiertem Handle und max. acht insgesamt
 - Curves- und Adjustment-Node-Presets: Nur Presets nutzen, keine direkten Edges
 
-### Mixer V1: Backend-Scope
+### Mixer V2: Backend-Scope
 
 - `mixer` ist ein Control-Node mit pseudo-image Semantik, nicht mit persistiertem Medien-Output.
 - Keine zusaetzlichen Convex-Tabellen oder Storage-Flows fuer Mixer-Vorschauen.
 - Validierung laeuft client- und serverseitig ueber dieselbe Policy (`validateCanvasConnectionPolicy`); `edges.ts` delegiert darauf fuer Paritaet.
+- `layer-in` ist der Base-Slot: wenn dort eine image/text-kompatible Quelle mit Dimensionen verbunden ist, wird daraus die Mixer-Stage abgeleitet. Spaetere Layer duerfen ohne Base verbunden sein, setzen aber keine Stage.
 - Offizieller Bake-Pfad fuer Mixer ist `mixer -> render` (Render verarbeitet die Mixer-Komposition in Preview/Render-Pipeline).
 - `mixer -> adjustments -> render` ist derzeit bewusst deferred und nicht Teil des offiziell supporteten Flows.
 

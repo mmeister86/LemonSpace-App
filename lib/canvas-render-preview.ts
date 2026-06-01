@@ -22,6 +22,7 @@ import {
   type MixerBlendMode,
   type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
+import { resolveMixerBaseStageFromGraph } from "@/lib/canvas-mixer-stage";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 import type { CanvasPreviewSourceQuality } from "@/lib/canvas-preview-quality";
 
@@ -638,7 +639,12 @@ function resolveRenderMixerLayerSourcesFromGraph(args: {
 
   return {
     kind: "mixer",
-    stage: normalized.stage,
+    stage:
+      normalized.stage ??
+      resolveMixerBaseStageFromGraph({
+        incomingEdges,
+        graph: args.graph,
+      }),
     layers,
     blendMode: "normal",
     opacity: 100,

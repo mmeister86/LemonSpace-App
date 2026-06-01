@@ -9,12 +9,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 
 import type { MixerPreviewLayer } from "@/lib/canvas-mixer-preview";
+import { MIXER_STAGE_FALLBACK_SIZE } from "@/lib/canvas-mixer-stage";
 
 type FabricObjectWithLayer = FabricObject & {
   data?: {
     layerId?: string;
   };
 };
+
+type MixerFabricLayerPlacement = Pick<
+  MixerPreviewLayer,
+  "id" | "x" | "y" | "width" | "height" | "rotation" | "opacity" | "locked"
+>;
 
 function readLayerText(layer: MixerPreviewLayer): string {
   if (layer.source.kind === "text") {
@@ -25,8 +31,8 @@ function readLayerText(layer: MixerPreviewLayer): string {
 }
 
 function stageDimensions(stage: { width: number; height: number } | null | undefined) {
-  const width = stage?.width && stage.width > 0 ? stage.width : 1024;
-  const height = stage?.height && stage.height > 0 ? stage.height : 768;
+  const width = stage?.width && stage.width > 0 ? stage.width : MIXER_STAGE_FALLBACK_SIZE.width;
+  const height = stage?.height && stage.height > 0 ? stage.height : MIXER_STAGE_FALLBACK_SIZE.height;
   return { width, height };
 }
 
@@ -38,7 +44,7 @@ export function fitMixerFabricEditorDimensions(args: {
 }) {
   const aspectRatio = args.stageWidth / args.stageHeight || 4 / 3;
   const maxWidth = Math.max(1, args.containerWidth);
-  const maxHeight = Math.max(1, Math.min(args.containerHeight, 260));
+  const maxHeight = Math.max(1, args.containerHeight);
   let width = maxWidth;
   let height = width / aspectRatio;
 
@@ -50,6 +56,33 @@ export function fitMixerFabricEditorDimensions(args: {
   return {
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height)),
+  };
+}
+
+export function buildMixerFabricLayerObjectOptions(args: {
+  layer: MixerFabricLayerPlacement;
+  editorSize: { width: number; height: number };
+}) {
+  const frameWidth = args.layer.width * args.editorSize.width;
+  const frameHeight = args.layer.height * args.editorSize.height;
+  const left = args.layer.x * args.editorSize.width;
+  const top = args.layer.y * args.editorSize.height;
+
+  return {
+    frameWidth,
+    frameHeight,
+    shared: {
+      left,
+      top,
+      originX: "left" as const,
+      originY: "top" as const,
+      angle: args.layer.rotation,
+      opacity: args.layer.opacity / 100,
+      selectable: !args.layer.locked,
+      evented: !args.layer.locked,
+      lockScalingFlip: true,
+      data: { layerId: args.layer.id },
+    },
   };
 }
 
@@ -153,20 +186,10 @@ export function MixerFabricEditor({
 
       const objects = await Promise.all(
         layers.map(async (layer) => {
-          const frameWidth = layer.width * editorSize.width;
-          const frameHeight = layer.height * editorSize.height;
-          const left = layer.x * editorSize.width;
-          const top = layer.y * editorSize.height;
-          const shared = {
-            left,
-            top,
-            angle: layer.rotation,
-            opacity: layer.opacity / 100,
-            selectable: !layer.locked,
-            evented: !layer.locked,
-            lockScalingFlip: true,
-            data: { layerId: layer.id },
-          };
+          const { frameWidth, frameHeight, shared } = buildMixerFabricLayerObjectOptions({
+            layer,
+            editorSize,
+          });
 
           if (layer.source.kind === "image") {
             const image = await fabric.FabricImage.fromURL(

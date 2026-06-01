@@ -67,14 +67,19 @@ describe("connection drop-menu node actions", () => {
         mutationArgs: expect.objectContaining({
           canvasId: "canvas-1",
           type: "mixer",
-          positionX: 300,
-          positionY: 140,
-          sourceNodeId: "node-source",
-          targetHandle: "base",
-          data: expect.objectContaining({ canvasId: "canvas-1", opacity: 100 }),
-        }),
-      }),
-    );
+              positionX: 300,
+              positionY: 140,
+              sourceNodeId: "node-source",
+              targetHandle: "layer-in",
+              data: expect.objectContaining({
+                canvasId: "canvas-1",
+                mixerVersion: 2,
+                stage: null,
+                layers: [],
+              }),
+            }),
+          }),
+        );
   });
 
   it("returns a validation error instead of mutation args for invalid menu-created edges", () => {

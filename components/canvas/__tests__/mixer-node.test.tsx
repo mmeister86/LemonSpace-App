@@ -17,6 +17,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
+  queueNodeResize: vi.fn(async () => undefined),
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -55,13 +56,29 @@ vi.mock("@/components/canvas/canvas-handle", () => ({
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
   useCanvasSync: () => ({
     queueNodeDataUpdate: mocks.queueNodeDataUpdate,
-    queueNodeResize: vi.fn(async () => undefined),
+    queueNodeResize: mocks.queueNodeResize,
     status: { pendingCount: 0, isSyncing: false, isOffline: false },
   }),
 }));
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("@/components/canvas/nodes/mixer-fabric-editor", () => ({
+  MixerFabricEditor: ({
+    stage,
+    layers,
+  }: {
+    stage: { width: number; height: number } | null | undefined;
+    layers: unknown[];
+  }) => (
+    <div
+      data-testid="mixer-fabric-editor"
+      data-stage={stage ? `${stage.width}x${stage.height}` : ""}
+      data-layer-count={layers.length}
+    />
+  ),
 }));
 
 import MixerNode from "@/components/canvas/nodes/mixer-node";
@@ -154,6 +171,7 @@ describe("MixerNode", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.queueNodeDataUpdate.mockClear();
+    mocks.queueNodeResize.mockClear();
     resizeObserverCallback = null;
     globalThis.ResizeObserver = class ResizeObserver {
       constructor(
@@ -640,7 +658,12 @@ describe("MixerNode", () => {
 
     expect(
       container?.querySelector(
-        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="layer-in"][data-handle-type="target"][data-top="50%"]',
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="layer-in"][data-handle-type="target"][data-top="40%"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      container?.querySelector(
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="layer-in-2"][data-handle-type="target"][data-top="60%"]',
       ),
     ).toBeTruthy();
     expect(
@@ -653,6 +676,100 @@ describe("MixerNode", () => {
         '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="mixer-out"][data-handle-type="source"]',
       ),
     ).toBeTruthy();
+  });
+
+  it("persists layer-in stage and queues a proportional mixer node resize", async () => {
+    const mixerData = {
+      mixerVersion: 2,
+      stage: null,
+      layers: [],
+    };
+
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base.png",
+            intrinsicWidth: 1600,
+            intrinsicHeight: 800,
+          },
+        },
+        {
+          id: "image-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay.png",
+            intrinsicWidth: 300,
+            intrinsicHeight: 300,
+          },
+        },
+        { id: "mixer-1", type: "mixer", data: mixerData },
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+        { id: "edge-overlay", source: "image-overlay", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+      props: { data: mixerData },
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        mixerVersion: 2,
+        stage: { width: 1600, height: 800 },
+        layers: [
+          expect.objectContaining({ handleId: "layer-in" }),
+          expect.objectContaining({ handleId: "layer-in-2" }),
+        ],
+      }),
+    });
+    expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "mixer-1",
+      width: 520,
+      height: 460,
+      skipHistory: true,
+    });
+    expect(
+      container?.querySelector('[data-testid="mixer-fabric-editor"]')?.getAttribute("data-stage"),
+    ).toBe("1600x800");
+  });
+
+  it("does not requeue derived stage data while the same optimistic stage update is pending", async () => {
+    const mixerData = {
+      mixerVersion: 2,
+      stage: null,
+      layers: [],
+    };
+    const buildNodes = () => [
+      {
+        id: "image-base",
+        type: "image",
+        data: {
+          url: "https://cdn.example.com/base.png",
+          intrinsicWidth: 1600,
+          intrinsicHeight: 800,
+        },
+      },
+      { id: "mixer-1", type: "mixer", data: mixerData },
+    ];
+    const buildEdges = () => [
+      { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+    ];
+
+    await renderNode({
+      nodes: buildNodes(),
+      edges: buildEdges(),
+      props: { data: mixerData },
+    });
+    await renderNode({
+      nodes: buildNodes(),
+      edges: buildEdges(),
+      props: { data: mixerData },
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("diffs persisted mixer fields for interaction diagnostics", () => {

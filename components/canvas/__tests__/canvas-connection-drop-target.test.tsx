@@ -728,13 +728,13 @@ describe("resolveDroppedConnectionTarget", () => {
     makeHandleElement({
       nodeId: "node-mixer",
       handleType: "target",
-      handleId: "base",
+      handleId: "layer-in",
       rect: { left: 358, top: 252, width: 12, height: 12, right: 370, bottom: 264 },
     });
     makeHandleElement({
       nodeId: "node-mixer",
       handleType: "target",
-      handleId: "overlay",
+      handleId: "layer-in-2",
       rect: { left: 386, top: 278, width: 12, height: 12, right: 398, bottom: 290 },
     });
 
@@ -748,7 +748,7 @@ describe("resolveDroppedConnectionTarget", () => {
           id: "edge-base-taken",
           source: "node-source",
           target: "node-mixer",
-          targetHandle: "base",
+          targetHandle: "layer-in",
         }),
       ],
     });
@@ -757,7 +757,7 @@ describe("resolveDroppedConnectionTarget", () => {
       sourceNodeId: "node-source",
       targetNodeId: "node-mixer",
       sourceHandle: undefined,
-      targetHandle: "overlay",
+      targetHandle: "layer-in-2",
     });
   });
 
@@ -797,13 +797,13 @@ describe("resolveDroppedConnectionTarget", () => {
     makeHandleElement({
       nodeId: "node-mixer",
       handleType: "target",
-      handleId: "base",
+      handleId: "layer-in",
       rect: { left: 678, top: 252, width: 12, height: 12, right: 690, bottom: 264 },
     });
     makeHandleElement({
       nodeId: "node-mixer",
       handleType: "target",
-      handleId: "overlay",
+      handleId: "layer-in-2",
       rect: { left: 678, top: 292, width: 12, height: 12, right: 690, bottom: 304 },
     });
 
@@ -824,7 +824,7 @@ describe("resolveDroppedConnectionTarget", () => {
     });
 
     expect(compareResult?.targetHandle).toBe("left");
-    expect(mixerResult?.targetHandle).toBe("overlay");
+    expect(mixerResult?.targetHandle).toBe("layer-in-2");
   });
 
   it("reverses the connection when the drag starts from a target handle", () => {

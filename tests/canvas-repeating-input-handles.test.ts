@@ -602,7 +602,7 @@ describe("canvas repeating input handles", () => {
     ).toBeNull();
   });
 
-  it("starts mixer nodes with a single free centered layer handle", () => {
+  it("starts mixer nodes with two free layer handles", () => {
     expect(
       resolveVisibleRepeatingInputHandles({
         nodeType: "mixer",
@@ -614,7 +614,35 @@ describe("canvas repeating input handles", () => {
       {
         handleId: "layer-in",
         isOccupied: false,
-        topPercent: 50,
+        topPercent: 40,
+      },
+      {
+        handleId: "layer-in-2",
+        isOccupied: false,
+        topPercent: 60,
+      },
+    ]);
+  });
+
+  it("keeps only the second free mixer handle until both initial layer slots are occupied", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "mixer",
+      nodeId: "mixer-1",
+      edges: [{ id: "edge-1", source: "image-1", target: "mixer-1", targetHandle: "layer-in" }],
+      nodeTypeById,
+    });
+
+    expect(handles).toEqual([
+      {
+        edgeId: "edge-1",
+        handleId: "layer-in",
+        isOccupied: true,
+        topPercent: 40,
+      },
+      {
+        handleId: "layer-in-2",
+        isOccupied: false,
+        topPercent: 60,
       },
     ]);
   });
@@ -697,6 +725,32 @@ describe("canvas repeating input handles", () => {
         targetType: "mixer",
         targetNodeId: "mixer-1",
         edges: [],
+        nodeTypeById,
+      }),
+    ).toBeNull();
+  });
+
+  it("honors an explicit free mixer layer handle for direct drops", () => {
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetNodeId: "mixer-1",
+        targetHandle: "layer-in-2",
+        edges: [],
+        nodeTypeById,
+      }),
+    ).toBe("layer-in-2");
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetNodeId: "mixer-1",
+        targetHandle: "layer-in-2",
+        edges: [
+          { id: "edge-1", source: "image-1", target: "mixer-1", targetHandle: "layer-in-2" },
+        ],
         nodeTypeById,
       }),
     ).toBeNull();

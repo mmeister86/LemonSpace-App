@@ -23,6 +23,7 @@ import {
   MAX_MIXER_LAYERS,
   MIXER_LAYER_HANDLE_BASE_ID,
   MIXER_SOURCE_NODE_TYPES,
+  normalizeMixerLayerHandle,
 } from "@/lib/canvas-mixer-normalization";
 
 export type RepeatingInputEdgeLike = {
@@ -53,6 +54,7 @@ type RepeatingInputConfig = {
   nodeType: string;
   baseHandleId: string;
   maxSlots: number;
+  minVisibleSlots?: number;
   topRange?: readonly [number, number];
   defaultForBodyDrop?: boolean;
 };
@@ -88,6 +90,7 @@ const MIXER_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
   nodeType: "mixer",
   baseHandleId: MIXER_REPEATING_INPUT_BASE_HANDLE_ID,
   maxSlots: MAX_MIXER_LAYERS,
+  minVisibleSlots: 2,
 };
 
 function getRepeatingInputConfigs(nodeType: string | undefined): RepeatingInputConfig[] {
@@ -360,7 +363,7 @@ export function resolveVisibleRepeatingInputHandles(args: {
           });
     const visibleCount = Math.min(
       config.maxSlots,
-      occupiedEdges.length + (includeFreeHandle ? 1 : 0),
+      Math.max(config.minVisibleSlots ?? 0, occupiedEdges.length + (includeFreeHandle ? 1 : 0)),
     );
 
     return Array.from({ length: visibleCount }, (_, index) => {
@@ -421,6 +424,17 @@ export function resolveNextRepeatingInputHandleId(args: {
 
   if (occupiedEdges.length >= config.maxSlots) {
     return null;
+  }
+
+  if (args.targetType === "mixer" && args.targetHandle !== undefined) {
+    const requestedHandle = normalizeMixerLayerHandle(args.targetHandle);
+    if (!requestedHandle) {
+      return null;
+    }
+    const requestedHandleOccupied = occupiedEdges.some(
+      (edge) => normalizeMixerLayerHandle(edge.targetHandle) === requestedHandle,
+    );
+    return requestedHandleOccupied ? null : requestedHandle;
   }
 
   return buildRepeatingInputHandleId(config.baseHandleId, occupiedEdges.length);

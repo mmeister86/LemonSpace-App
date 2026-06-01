@@ -1222,8 +1222,8 @@ describe("useCanvasConnections", () => {
     const swappedEdges = applyEdges(initialEdges);
     const baseEdge = swappedEdges.find((edge) => edge.id === "edge-base");
     const overlayEdge = swappedEdges.find((edge) => edge.id === "edge-overlay");
-    expect(baseEdge?.targetHandle).toBe("overlay");
-    expect(overlayEdge?.targetHandle).toBe("base");
+    expect(baseEdge?.targetHandle).toBe("layer-in-2");
+    expect(overlayEdge?.targetHandle).toBe("layer-in");
   });
 
   it("swaps mixer inputs on reconnect when dropping onto occupied opposite handle (overlay->base)", async () => {

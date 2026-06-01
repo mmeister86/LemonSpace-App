@@ -33,6 +33,11 @@ import {
   type NormalizedMixerLayerCompositionData,
   type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
+import {
+  computeMixerNodeSizeFromStage,
+  mixerStageSizesEqual,
+  resolveMixerBaseStageFromGraph,
+} from "@/lib/canvas-mixer-stage";
 import type { MixerLayerSource } from "@/lib/canvas-render-preview";
 import { resolveVisibleRepeatingInputHandles } from "@/lib/canvas-repeating-input-handles";
 import {
@@ -149,11 +154,13 @@ export function MixerNodeBody({
   height?: number | null;
 }) {
   const graph = useCanvasGraph();
-  const { queueNodeDataUpdate } = useCanvasSync();
+  const { queueNodeDataUpdate, queueNodeResize } = useCanvasSync();
   const previewRef = useRef<HTMLDivElement | null>(null);
   const overlayImageRef = useRef<HTMLImageElement | null>(null);
   const latestNodeDataRef = useRef((data ?? {}) as Record<string, unknown>);
   const interactionKindRef = useRef<string | null>(null);
+  const lastQueuedStageDataRef = useRef<string | null>(null);
+  const lastQueuedStageResizeRef = useRef<string | null>(null);
   const [hasImageLoadError, setHasImageLoadError] = useState(false);
   const [keepAspectRatio, setKeepAspectRatio] = useState(true);
   const [baseImageSize, setBaseImageSize] = useState<LoadedImageSize>({ url: null, width: 0, height: 0 });
@@ -199,9 +206,23 @@ export function MixerNodeBody({
     () => resolveMixerPreviewFromGraph({ nodeId: id, graph, sourceQuality }),
     [graph, id, sourceQuality],
   );
+  const incomingEdges = useMemo(
+    () => graph.incomingEdgesByTarget.get(id) ?? [],
+    [graph.incomingEdgesByTarget, id],
+  );
   const isLayerMode =
     isLayerMixerData(data) ||
-    (graph.incomingEdgesByTarget.get(id) ?? []).some((edge) => isRawLayerHandle(edge.targetHandle));
+    incomingEdges.some((edge) => isRawLayerHandle(edge.targetHandle));
+  const derivedStage = useMemo(
+    () =>
+      isLayerMode
+        ? resolveMixerBaseStageFromGraph({
+            incomingEdges,
+            graph,
+          })
+        : null,
+    [graph, incomingEdges, isLayerMode],
+  );
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const previewLayers = useMemo(() => previewState.layers ?? [], [previewState.layers]);
   const selectedLayerId =
@@ -311,6 +332,62 @@ export function MixerNodeBody({
     },
     [updateLayerById],
   );
+
+  useEffect(() => {
+    if (!isLayerMode || !derivedStage) {
+      lastQueuedStageDataRef.current = null;
+      lastQueuedStageResizeRef.current = null;
+      return;
+    }
+
+    const stageKey = `${derivedStage.width}x${derivedStage.height}`;
+    const baseLayers =
+      layerData.layers.length > 0
+        ? layerData.layers
+        : previewLayers.map((layer) => stripLayerSource(layer));
+    const stageDataKey = JSON.stringify({
+      stage: derivedStage,
+      layers: baseLayers,
+    });
+
+    if (!mixerStageSizesEqual(layerData.stage, derivedStage)) {
+      if (lastQueuedStageDataRef.current !== stageDataKey) {
+        lastQueuedStageDataRef.current = stageDataKey;
+        void queueNodeDataUpdate({
+          nodeId: id as Id<"nodes">,
+          data: {
+            ...latestNodeDataRef.current,
+            mixerVersion: 2,
+            stage: derivedStage,
+            layers: baseLayers,
+          },
+        });
+      }
+    } else {
+      lastQueuedStageDataRef.current = null;
+    }
+
+    if (lastQueuedStageResizeRef.current === stageKey) {
+      return;
+    }
+    lastQueuedStageResizeRef.current = stageKey;
+
+    void queueNodeResize({
+      nodeId: id as Id<"nodes">,
+      ...computeMixerNodeSizeFromStage(derivedStage),
+      skipHistory: true,
+    });
+  }, [
+    derivedStage,
+    id,
+    isLayerMode,
+    layerData.layers,
+    layerData.stage,
+    previewLayers,
+    queueNodeDataUpdate,
+    queueNodeResize,
+  ]);
+
   const baseSourceNode = useMemo(() => {
     const incomingEdges = graph.incomingEdgesByTarget.get(id) ?? [];
     const baseEdge = incomingEdges.find(

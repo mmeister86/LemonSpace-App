@@ -24,6 +24,7 @@ import {
   type MixerBlendMode,
   type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
+import { resolveMixerBaseStageFromGraph } from "@/lib/canvas-mixer-stage";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
 export type MixerPreviewStatus = "empty" | "partial" | "ready" | "error";
@@ -258,11 +259,17 @@ export function resolveMixerPreviewFromGraph(args: {
       layers,
       sourceQuality: args.sourceQuality,
     });
+    const stage =
+      v2.stage ??
+      resolveMixerBaseStageFromGraph({
+        incomingEdges,
+        graph: args.graph,
+      });
 
     if (resolved.duplicate) {
       return {
         status: "error",
-        stage: v2.stage,
+        stage,
         layers: [],
         ...normalized,
         error: "duplicate-handle-edge",
@@ -272,7 +279,7 @@ export function resolveMixerPreviewFromGraph(args: {
     if (resolved.layers.length > 0) {
       return {
         status: resolved.layers.length === resolved.expectedVisibleCount ? "ready" : "partial",
-        stage: v2.stage,
+        stage,
         layers: resolved.layers,
         ...normalized,
       };
@@ -280,7 +287,7 @@ export function resolveMixerPreviewFromGraph(args: {
 
     return {
       status: layers.length > 0 ? "partial" : "empty",
-      stage: v2.stage,
+      stage,
       layers: [],
       ...normalized,
     };

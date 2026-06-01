@@ -110,7 +110,7 @@ Alle verfügbaren Node-Typen sind in `lib/canvas-node-catalog.ts` definiert:
 | `render` | 2 | ✅ | image-edit | 🔲 |
 | `splitter` | 2 | 🔲 | control | 🔲 |
 | `loop` | 2 | 🔲 | control | 🔲 |
-| `mixer` | 1 | ✅ | control | source: `mixer-out`, targets: `base`, `overlay` |
+| `mixer` | 2 | ✅ | control | source: `mixer-out`, targets: `layer-in`...`layer-in-8` (`base`/`overlay` legacy) |
 | `switch` | 3 | 🔲 | control | 🔲 |
 | `group` | 1 | ✅ | layout | source (default), target (default) |
 | `frame` | 1 | ✅ | layout | source: `frame-out`, target: `frame-in` |
@@ -157,30 +157,30 @@ video-prompt: 288 × 260   ai-video:     360 × 280
 agent:       360 × 320
 group:       400 × 300    frame:        400 × 300
 note:        208 × 100    compare:      500 × 380
-render:      300 × 420    mixer:        360 × 320
+render:      300 × 420    mixer:        360 × 460
 ```
 
 ---
 
-## Mixer V1 (Merge Node)
+## Mixer V2 (Merge Node)
 
-`mixer` ist in V1 ein bewusst enger 2-Layer-Blend-Node.
+`mixer` ist ein FabricJS-gestuetzter Layer-Node mit bis zu acht image/text-kompatiblen Inputs.
 
-- **Handles:** genau zwei Inputs links (`base`, `overlay`) und ein Output rechts (`mixer-out`).
+- **Handles:** Initial sichtbar sind `layer-in` und `layer-in-2`; sobald alle sichtbaren Layer-Inputs belegt sind, spawnt der naechste freie Input bis `layer-in-8`. Legacy-Handles `base` und `overlay` werden beim Lesen auf `layer-in` und `layer-in-2` normalisiert.
 - **Erlaubte Inputs:** `image`, `asset`, `ai-image`, `render`, `text` (Rich-Text-Karte als gerasterter Layer).
-- **Connection-Limits:** maximal 2 eingehende Kanten insgesamt, davon pro Handle genau 1.
-- **Node-Data (V1):** `blendMode` (`normal|multiply|screen|overlay`), `opacity` (0..100), `overlayX`, `overlayY`, `overlayWidth`, `overlayHeight` (Frame-Rect, normiert 0..1) plus `contentX`, `contentY`, `contentWidth`, `contentHeight` (Content-Framing innerhalb des Overlay-Frames, ebenfalls normiert 0..1).
+- **Connection-Limits:** maximal 8 eingehende Kanten insgesamt, davon pro normalisiertem Handle genau 1.
+- **Stage/Sizing:** `layer-in` ist der Base-Slot und bestimmt die persistierte `stage` sowie die proportionale Node-Groesse. Wenn nur `layer-in-2` oder spaetere Inputs verbunden sind, darf der Mixer Layer anzeigen, setzt aber noch keine Stage.
+- **Node-Data (V2):** `mixerVersion: 2`, `stage: { width, height } | null`, `layers[]` mit `handleId`, normalisiertem Frame (`x/y/width/height`), `rotation`, `crop`, `opacity`, `blendMode`, `visible`, `locked`.
 - **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
-- **UI/Interaction:** Zwei Modi im Preview: `Frame resize` (Overlay-Frame verschieben + ueber Corner-Handles resizen) und `Content framing` (Overlay-Inhalt innerhalb des Frames verschieben). Numerische Inline-Controls bleiben als Feineinstellung erhalten.
-- **Sizing/Crop-Verhalten:** Der Overlay-Inhalt wird `object-cover`-aehnlich in den Content-Rect eingepasst; bei abweichenden Seitenverhaeltnissen wird zentriert gecroppt.
+- **UI/Interaction:** FabricJS rendert die Layer in Z-Order; Controls erlauben Reorder, Transform, Rotation, Crop, Opacity, Blend Mode, Visibility und Lock.
+- **Sizing/Crop-Verhalten:** Preview, Compare und Render verwenden dieselbe aus `layer-in` abgeleitete Stage. Wenn keine Stage persistiert ist, baken V2-Layer-Kompositionen auf die Bitmap-Groesse des ersten sichtbaren Layers.
 
-### Compare-Integration (V1)
+### Compare-Integration
 
 - `compare` versteht `mixer`-Outputs ueber `lib/canvas-mixer-preview.ts`.
-- Die Vorschau wird als DOM/CSS-Layering im Client gerendert (inkl. Blend/Opacity/Overlay-Rect).
-- Scope bleibt eng: keine pauschale pseudo-image-Unterstuetzung fuer alle Consumer in V1.
+- Die Vorschau wird fuer V2 als Layer-Komposition aufgeloest (inkl. Stage, Z-Order, Crop, Blend, Opacity und Text-Layern).
 
-### Render-Bake-Pfad (V1)
+### Render-Bake-Pfad
 
 - Offizieller Bake-Flow: `mixer -> render`.
 - `render` konsumiert die Mixer-Komposition (`sourceComposition.kind = "mixer"`) und nutzt sie fuer Preview + finalen Render/Upload.
@@ -371,8 +371,8 @@ useCanvasData (use-canvas-data.ts)
 - **Optimistic IDs:** Temporäre Nodes/Edges erhalten IDs mit `optimistic_` / `optimistic_edge_`-Prefix, werden durch echte Convex-IDs ersetzt, sobald die Mutation abgeschlossen ist.
 - **Node-Taxonomie:** Alle Node-Typen sind in `lib/canvas-node-catalog.ts` definiert. Phase-2/3 Nodes haben `implemented: false` und `disabledHint`.
 - **Video-Connection-Policy:** `video-prompt` darf **nur** mit `ai-video` verbunden werden (und umgekehrt). `text → video-prompt` ist erlaubt (Prompt-Quelle). `ai-video → compare` ist erlaubt.
-- **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render|text`; Ziel-Handles sind nur `base` und `overlay`, pro Handle maximal eine eingehende Kante, insgesamt maximal zwei.
-- **Mixer-Pseudo-Output:** `mixer` liefert in V1 kein persistiertes Bild. Offizielle Consumer sind `compare` und der direkte Bake-Pfad `mixer -> render`; `mixer -> adjustments -> render` bleibt vorerst deferred.
+- **Mixer-Connection-Policy:** `mixer` akzeptiert nur `image|asset|ai-image|render|text`; Ziel-Handles sind `layer-in`...`layer-in-8` sowie legacy `base`/`overlay`, pro normalisiertem Handle maximal eine eingehende Kante, insgesamt maximal acht.
+- **Mixer-Pseudo-Output:** `mixer` liefert kein persistiertes Bild. Offizielle Consumer sind `compare` und der direkte Bake-Pfad `mixer -> render`; `mixer -> adjustments -> render` bleibt vorerst deferred.
 - **Mixer Legacy-Daten:** Alte `offsetX`/`offsetY`-Mixer-Daten werden beim Lesen auf den Full-Frame-Fallback (`overlay* = 0/0/1/1`) normalisiert; Content-Framing defaults auf `content* = 0/0/1/1`.
 - **Agent-Flow:** `agent` akzeptiert nur Content-/Kontext-Quellen (z. B. `render`, `compare`, `text`, `image`) als Input; ausgehende Kanten sind fuer `agent -> agent-output` vorgesehen.
 - **Convex Generated Types:** `api.ai.generateVideo` wird u. U. nicht in `convex/_generated/api.d.ts` exportiert. Der Code verwendet `api as unknown as {...}` als Workaround. Ein `npx convex dev`-Zyklus würde die Typen korrekt generieren.

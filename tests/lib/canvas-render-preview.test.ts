@@ -345,6 +345,81 @@ describe("resolveRenderPreviewInputFromGraph", () => {
     });
   });
 
+  it("derives v2 mixer render stage from layer-in when no stage is persisted", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-image",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base.png",
+            intrinsicWidth: 2048,
+            intrinsicHeight: 1536,
+          },
+        },
+        {
+          id: "overlay-image",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay.png",
+            intrinsicWidth: 500,
+            intrinsicHeight: 200,
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [
+              {
+                id: "base",
+                handleId: "layer-in",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              },
+              {
+                id: "overlay",
+                handleId: "layer-in-2",
+                x: 0.18,
+                y: 0.2,
+                width: 0.5,
+                height: 0.4,
+              },
+            ],
+          },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "base-image", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "overlay-image", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "mixer-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceComposition).toMatchObject({
+      kind: "mixer",
+      stage: { width: 2048, height: 1536 },
+      layers: [
+        { id: "base", handleId: "layer-in" },
+        { id: "overlay", handleId: "layer-in-2" },
+      ],
+    });
+  });
+
   it("resolves text mixer layers for renderable mixer compositions", () => {
     const richText = {
       format: "editorjs",

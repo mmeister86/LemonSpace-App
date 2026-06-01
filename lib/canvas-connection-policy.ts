@@ -543,11 +543,11 @@ export function getCanvasConnectionValidationMessage(
     case "mixer-source-invalid":
       return "Mixer akzeptiert nur Text-, Bild-, Asset-, KI-Bild- oder Render-Input.";
     case "mixer-target-handle-invalid":
-      return "Mixer akzeptiert nur die Ziel-Handles 'base' und 'overlay'.";
+      return "Mixer akzeptiert nur die Ziel-Handles 'layer-in' bis 'layer-in-8'.";
     case "mixer-handle-incoming-limit":
       return "Jeder Mixer-Handle akzeptiert nur eine eingehende Verbindung.";
     case "mixer-incoming-limit":
-      return "Mixer-Nodes erlauben maximal zwei eingehende Verbindungen.";
+      return `Mixer-Nodes erlauben maximal ${MAX_MIXER_LAYERS} eingehende Verbindungen.`;
     default:
       return "Verbindung ist fuer diese Node-Typen nicht erlaubt.";
   }

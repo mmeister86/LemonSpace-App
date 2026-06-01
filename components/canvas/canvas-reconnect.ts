@@ -40,8 +40,8 @@ type UseCanvasReconnectHandlersParams = {
   ) => {
     edgeId: Id<"edges">;
     otherEdgeId: Id<"edges">;
-    nextEdgeHandle: "base" | "overlay";
-    nextOtherEdgeHandle: "base" | "overlay";
+    nextEdgeHandle: string;
+    nextOtherEdgeHandle: string;
   } | null;
   onInvalidConnection?: (message: string) => void;
   clearActiveMagnetTarget?: () => void;
