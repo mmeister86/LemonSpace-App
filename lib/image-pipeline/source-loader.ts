@@ -461,6 +461,10 @@ function normalizeRatio(value: number, fallback: number): number {
   return value;
 }
 
+function roundRenderNumber(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
 function normalizeMixerRect(source: RenderSourceComposition): {
   x: number;
   y: number;
@@ -564,10 +568,111 @@ async function loadMixerLayerBitmap(
   return await loadSourceBitmap(sourceUrl, { signal });
 }
 
+type LoadedMixerLayer = {
+  layer: NonNullable<RenderSourceComposition["layers"]>[number];
+  bitmap: ImageBitmap;
+};
+
+function normalizeLayerStageSize(
+  sourceComposition: RenderSourceComposition,
+  fallbackBitmap: ImageBitmap,
+): { width: number; height: number } {
+  const width =
+    sourceComposition.stage &&
+    Number.isFinite(sourceComposition.stage.width) &&
+    sourceComposition.stage.width > 0
+      ? Math.round(sourceComposition.stage.width)
+      : fallbackBitmap.width;
+  const height =
+    sourceComposition.stage &&
+    Number.isFinite(sourceComposition.stage.height) &&
+    sourceComposition.stage.height > 0
+      ? Math.round(sourceComposition.stage.height)
+      : fallbackBitmap.height;
+
+  return {
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+  };
+}
+
+async function loadMixerLayerCompositionBitmap(
+  sourceComposition: RenderSourceComposition,
+  signal?: AbortSignal,
+): Promise<ImageBitmap> {
+  const layerInputs = (sourceComposition.layers ?? []).filter((layer) => layer.visible);
+  if (layerInputs.length === 0) {
+    throw new Error("Mixer composition layer is required.");
+  }
+
+  const loadedLayers: LoadedMixerLayer[] = await Promise.all(
+    layerInputs.map(async (layer) => ({
+      layer,
+      bitmap: await loadMixerLayerBitmap(layer.source, undefined, signal),
+    })),
+  );
+
+  throwIfAborted(signal);
+
+  const firstBitmap = loadedLayers[0]!.bitmap;
+  const stage = normalizeLayerStageSize(sourceComposition, firstBitmap);
+  const canvas = createWorkingCanvas(stage.width, stage.height);
+  const context = getWorkingCanvasContext(canvas);
+
+  context.clearRect(0, 0, stage.width, stage.height);
+
+  for (const { layer, bitmap } of loadedLayers) {
+    const frameX = layer.x * stage.width;
+    const frameY = layer.y * stage.height;
+    const frameWidth = layer.width * stage.width;
+    const frameHeight = layer.height * stage.height;
+    const cropLeft = layer.crop.left;
+    const cropTop = layer.crop.top;
+    const cropRight = layer.crop.right;
+    const cropBottom = layer.crop.bottom;
+    const sourceX = roundRenderNumber(cropLeft * bitmap.width);
+    const sourceY = roundRenderNumber(cropTop * bitmap.height);
+    const sourceWidth = roundRenderNumber((1 - cropLeft - cropRight) * bitmap.width);
+    const sourceHeight = roundRenderNumber((1 - cropTop - cropBottom) * bitmap.height);
+    const centerX = frameX + frameWidth / 2;
+    const centerY = frameY + frameHeight / 2;
+
+    context.save();
+    context.globalCompositeOperation = mixerBlendModeToCompositeOperation(layer.blendMode);
+    context.globalAlpha = normalizeCompositionOpacity(layer.opacity);
+    context.translate(centerX, centerY);
+    context.rotate((layer.rotation * Math.PI) / 180);
+    context.beginPath();
+    context.rect(-frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
+    context.clip();
+    context.drawImage(
+      bitmap,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      -frameWidth / 2,
+      -frameHeight / 2,
+      frameWidth,
+      frameHeight,
+    );
+    context.restore();
+  }
+
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+
+  return await createImageBitmap(canvas);
+}
+
 async function loadMixerCompositionBitmap(
   sourceComposition: RenderSourceComposition,
   signal?: AbortSignal,
 ): Promise<ImageBitmap> {
+  if (sourceComposition.layers && sourceComposition.layers.length > 0) {
+    return await loadMixerLayerCompositionBitmap(sourceComposition, signal);
+  }
+
   const [baseBitmap, overlayBitmap] = await Promise.all([
     loadMixerLayerBitmap(sourceComposition.baseSource, sourceComposition.baseUrl, signal),
     loadMixerLayerBitmap(sourceComposition.overlaySource, sourceComposition.overlayUrl, signal),

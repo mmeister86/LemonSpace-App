@@ -43,6 +43,7 @@ import {
 } from "@/components/canvas/canvas-media-utils";
 import { preserveNodeFavorite } from "@/lib/canvas-node-favorite";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { useZoomAwarePreviewUrl } from "@/components/canvas/use-zoom-aware-preview-quality";
 import { MediaBacklight } from "./media-backlight";
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -157,6 +158,12 @@ export default function ImageNode({
     mediaLibraryPhase !== "idle" || isWaitingForMediaLibrarySync;
   const isNodeLoading = isUploading || isApplyingMediaLibrary || isDropUploadPending;
   const shouldPreserveImageAspect = data.source === "freepik-transform";
+  const { url: canvasImageUrl } = useZoomAwarePreviewUrl({
+    width,
+    height,
+    fullUrl: data.url,
+    previewUrl: data.previewUrl,
+  });
 
   useEffect(() => {
     if (!isPendingUploadSynced) {
@@ -513,11 +520,11 @@ export default function ImageNode({
         ? "Bild wird hochgeladen…"
         : "Bild wird geladen…";
   const mediaBacklight =
-    data.url && !isNodeLoading ? (
+    canvasImageUrl && !isNodeLoading ? (
       <MediaBacklight>
         {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the Canvas media preview */}
         <img
-          src={data.url}
+          src={canvasImageUrl}
           alt=""
           aria-hidden="true"
           className={`h-full w-full object-center ${
@@ -613,11 +620,11 @@ export default function ImageNode({
                 )}
               </div>
             </div>
-          ) : data.url ? (
+          ) : canvasImageUrl ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element -- Convex storage URL, volle Auflösung wie Asset-Node */}
               <img
-                src={data.url}
+                src={canvasImageUrl}
                 alt={data.filename ?? "Bild"}
                 className={`h-full w-full object-center ${
                   shouldPreserveImageAspect ? "object-contain" : "object-cover"

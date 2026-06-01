@@ -7,6 +7,7 @@
 
 import { useMemo } from "react";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
@@ -34,6 +35,10 @@ export default function AdjustmentPreview({
   currentParams: unknown;
 }) {
   const graph = useCanvasGraph();
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width: nodeWidth,
+    height: nodeWidth,
+  });
 
   const sourceImage = useMemo<ResolvedPreviewSourceImage | null>(
     () =>
@@ -44,9 +49,10 @@ export default function AdjustmentPreview({
           node.type === "ai-image" ||
           node.type === "asset" ||
           node.type === "bg-remove-output",
-        getSourceImageFromNode: (node, graph) => resolvePreviewSourceImageFromGraph(node, graph),
+        getSourceImageFromNode: (node, graph) =>
+          resolvePreviewSourceImageFromGraph(node, graph, { sourceQuality }),
       }),
-    [graph, nodeId],
+    [graph, nodeId, sourceQuality],
   );
   const sourceUrl = sourceImage?.url ?? null;
   const isAlphaBearing = sourceImage?.isAlphaBearing ?? false;
@@ -88,6 +94,7 @@ export default function AdjustmentPreview({
       previewScale: 0.5,
       maxPreviewWidth: 720,
       maxDevicePixelRatio: 1.25,
+      previewQuality,
     });
 
   const histogramPlot = useMemo(() => {

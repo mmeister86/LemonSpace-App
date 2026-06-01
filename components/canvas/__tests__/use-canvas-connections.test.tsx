@@ -260,28 +260,23 @@ describe("useCanvasConnections", () => {
       expect.objectContaining({
         type: "mixer",
         defaultData: expect.objectContaining({
-          blendMode: "normal",
-          opacity: 100,
-          overlayX: 0,
-          overlayY: 0,
-          overlayWidth: 1,
-          overlayHeight: 1,
+          mixerVersion: 2,
+          stage: null,
+          layers: [],
         }),
       }),
     );
     expect(NODE_HANDLE_MAP.mixer).toEqual({
       source: "mixer-out",
-      target: "base",
+      target: "layer-in",
     });
     expect(NODE_DEFAULTS.mixer).toEqual(
       expect.objectContaining({
+        height: 460,
         data: expect.objectContaining({
-          blendMode: "normal",
-          opacity: 100,
-          overlayX: 0,
-          overlayY: 0,
-          overlayWidth: 1,
-          overlayHeight: 1,
+          mixerVersion: 2,
+          stage: null,
+          layers: [],
         }),
       }),
     );
@@ -954,9 +949,15 @@ describe("useCanvasConnections", () => {
     expect(showConnectionRejectedToast).not.toHaveBeenCalled();
   });
 
-  it("rejects a third incoming edge to mixer", async () => {
+  it("rejects a ninth incoming edge to mixer", async () => {
     const runCreateEdgeMutation = vi.fn(async () => undefined);
     const showConnectionRejectedToast = vi.fn();
+    const existingLayerEdges = Array.from({ length: 8 }, (_, index) => ({
+      id: `edge-existing-${index + 1}`,
+      source: `node-existing-${index + 1}`,
+      target: "node-target",
+      targetHandle: index === 0 ? "layer-in" : `layer-in-${index + 1}`,
+    }));
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -974,23 +975,8 @@ describe("useCanvasConnections", () => {
           nodes={[
             { id: "node-source", type: "render", position: { x: 0, y: 0 }, data: {} },
             { id: "node-target", type: "mixer", position: { x: 300, y: 200 }, data: {} },
-            { id: "node-image", type: "image", position: { x: -200, y: 40 }, data: {} },
-            { id: "node-asset", type: "asset", position: { x: -180, y: 180 }, data: {} },
           ]}
-          edges={[
-            {
-              id: "edge-existing-base",
-              source: "node-image",
-              target: "node-target",
-              targetHandle: "base",
-            },
-            {
-              id: "edge-existing-overlay",
-              source: "node-asset",
-              target: "node-target",
-              targetHandle: "overlay",
-            },
-          ]}
+          edges={existingLayerEdges}
           runCreateEdgeMutation={runCreateEdgeMutation}
           showConnectionRejectedToast={showConnectionRejectedToast}
         />,
@@ -998,29 +984,12 @@ describe("useCanvasConnections", () => {
     });
 
     await act(async () => {
-      latestHandlersRef.current?.onConnectStart?.(
-        {} as MouseEvent,
-        {
-          nodeId: "node-source",
-          handleId: null,
-          handleType: "source",
-        } as never,
-      );
-      latestHandlersRef.current?.onConnectEnd(
-        { clientX: 400, clientY: 260 } as MouseEvent,
-        {
-          isValid: false,
-          from: { x: 0, y: 0 },
-          fromNode: { id: "node-source", type: "render" },
-          fromHandle: { id: null, type: "source" },
-          fromPosition: null,
-          to: { x: 400, y: 260 },
-          toHandle: null,
-          toNode: null,
-          toPosition: null,
-          pointer: null,
-        } as never,
-      );
+      latestHandlersRef.current?.onConnect({
+        source: "node-source",
+        target: "node-target",
+        sourceHandle: null,
+        targetHandle: "layer-in-9",
+      });
     });
 
     expect(runCreateEdgeMutation).not.toHaveBeenCalled();

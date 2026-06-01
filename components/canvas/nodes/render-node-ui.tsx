@@ -5,7 +5,7 @@
  * Renders and manages the Canvas render node ui node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { AlertCircle, ArrowDown, CheckCircle2, CloudUpload, Loader2, X } from "lucide-react";
 
 import { SliderRow } from "@/components/canvas/nodes/adjustment-controls";
@@ -195,21 +195,30 @@ export function RenderNodePreviewSurface({
   hasSource,
   canvasRef,
   isAlphaBearing = false,
+  displaySize = null,
 }: {
   hasSource: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   isAlphaBearing?: boolean;
+  displaySize?: { width: number; height: number } | null;
 }) {
+  const previewFrameStyle: CSSProperties = displaySize
+    ? { width: displaySize.width, height: displaySize.height }
+    : { width: "100%", height: "100%" };
+
   return hasSource ? (
-    <div
-      className="absolute inset-0"
-      data-alpha-source={isAlphaBearing ? "true" : undefined}
-      style={isAlphaBearing ? TRANSPARENCY_CHECKERBOARD_STYLE : undefined}
-    >
-      <canvas
-        ref={canvasRef}
-        className={`h-full w-full ${isAlphaBearing ? "object-contain" : "object-cover"}`}
-      />
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+      <div
+        className="relative max-h-full max-w-full overflow-hidden"
+        data-alpha-source={isAlphaBearing ? "true" : undefined}
+        data-testid="render-preview-frame"
+        style={{
+          ...previewFrameStyle,
+          ...(isAlphaBearing ? TRANSPARENCY_CHECKERBOARD_STYLE : null),
+        }}
+      >
+        <canvas ref={canvasRef} className="block h-full w-full" />
+      </div>
     </div>
   ) : (
     <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-muted-foreground">

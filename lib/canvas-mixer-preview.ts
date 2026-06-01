@@ -6,17 +6,23 @@
 import {
   buildGraphSnapshot,
   resolveNodeImageUrl,
+  resolveRenderOutputUrl,
   resolveRenderPreviewInputFromGraph,
   resolveTextLayerSource,
   type CanvasGraphEdgeLike,
   type CanvasGraphNodeLike,
   type CanvasGraphSnapshot,
   type MixerLayerSource,
+  type RenderPreviewSourceQuality,
 } from "@/lib/canvas-render-preview";
 import {
+  createDefaultMixerLayerData,
   MIXER_SOURCE_NODE_TYPES,
+  normalizeMixerLayerCompositionData,
+  normalizeMixerLayerHandle,
   normalizeMixerCompositionData,
   type MixerBlendMode,
+  type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
@@ -24,8 +30,14 @@ export type MixerPreviewStatus = "empty" | "partial" | "ready" | "error";
 
 export type MixerPreviewError = "duplicate-handle-edge";
 
+export type MixerPreviewLayer = NormalizedMixerLayerData & {
+  source: MixerLayerSource;
+};
+
 export type MixerPreviewState = {
   status: MixerPreviewStatus;
+  stage?: { width: number; height: number } | null;
+  layers?: MixerPreviewLayer[];
   baseUrl?: string;
   overlayUrl?: string;
   baseSource?: MixerLayerSource;
@@ -59,6 +71,36 @@ export function normalizeMixerPreviewData(data: unknown): Pick<
   return normalizeMixerCompositionData(data);
 }
 
+function isV2MixerData(data: unknown): boolean {
+  const record = (data ?? {}) as Record<string, unknown>;
+  return record.mixerVersion === 2 || Array.isArray(record.layers);
+}
+
+function isV2MixerHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && (handle === "layer-in" || handle.startsWith("layer-in-"));
+}
+
+function mergeLayersWithIncomingHandles(args: {
+  layers: readonly NormalizedMixerLayerData[];
+  incomingEdges: readonly CanvasGraphEdgeLike[];
+}): NormalizedMixerLayerData[] {
+  const layers = [...args.layers];
+  const seen = new Set(layers.map((layer) => layer.handleId));
+  const incomingHandles = args.incomingEdges
+    .map((edge) => normalizeMixerLayerHandle(edge.targetHandle))
+    .filter((handle): handle is string => Boolean(handle));
+
+  for (const handle of incomingHandles) {
+    if (seen.has(handle)) {
+      continue;
+    }
+    seen.add(handle);
+    layers.push(createDefaultMixerLayerData(handle, layers.length));
+  }
+
+  return layers;
+}
+
 function resolveHandleEdge(args: {
   incomingEdges: readonly CanvasGraphEdgeLike[];
   handle: "base" | "overlay";
@@ -81,6 +123,7 @@ function resolveHandleEdge(args: {
 function resolveLayerSourceFromNode(args: {
   sourceNode: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
+  sourceQuality?: RenderPreviewSourceQuality;
 }): MixerLayerSource | undefined {
   if (readNodeBypassed(args.sourceNode.data)) {
     return undefined;
@@ -98,6 +141,7 @@ function resolveLayerSourceFromNode(args: {
     const preview = resolveRenderPreviewInputFromGraph({
       nodeId: args.sourceNode.id,
       graph: args.graph,
+      sourceQuality: args.sourceQuality,
     });
     if (preview.sourceComposition) {
       return undefined;
@@ -106,30 +150,26 @@ function resolveLayerSourceFromNode(args: {
       return { kind: "image", url: preview.sourceUrl };
     }
 
-    const renderData = (args.sourceNode.data ?? {}) as Record<string, unknown>;
-    const renderOutputUrl =
-      typeof renderData.lastUploadUrl === "string" && renderData.lastUploadUrl.length > 0
-        ? renderData.lastUploadUrl
-        : undefined;
+    const renderOutputUrl = resolveRenderOutputUrl(args.sourceNode, {
+      sourceQuality: args.sourceQuality,
+    }) ?? undefined;
     if (renderOutputUrl) {
       return { kind: "image", url: renderOutputUrl };
-    }
-
-    const directRenderUrl = resolveNodeImageUrl(args.sourceNode.data);
-    if (directRenderUrl) {
-      return { kind: "image", url: directRenderUrl };
     }
 
     return undefined;
   }
 
-  const url = resolveNodeImageUrl(args.sourceNode.data);
+  const url = resolveNodeImageUrl(args.sourceNode.data, {
+    sourceQuality: args.sourceQuality,
+  });
   return url ? { kind: "image", url } : undefined;
 }
 
 function resolveLayerSourceFromEdge(args: {
   edge: CanvasGraphEdgeLike | null;
   graph: CanvasGraphSnapshot;
+  sourceQuality?: RenderPreviewSourceQuality;
 }): MixerLayerSource | undefined {
   if (!args.edge) {
     return undefined;
@@ -140,12 +180,61 @@ function resolveLayerSourceFromEdge(args: {
     return undefined;
   }
 
-  return resolveLayerSourceFromNode({ sourceNode, graph: args.graph });
+  return resolveLayerSourceFromNode({
+    sourceNode,
+    graph: args.graph,
+    sourceQuality: args.sourceQuality,
+  });
+}
+
+function resolveV2LayerSources(args: {
+  incomingEdges: readonly CanvasGraphEdgeLike[];
+  graph: CanvasGraphSnapshot;
+  layers: readonly NormalizedMixerLayerData[];
+  sourceQuality?: RenderPreviewSourceQuality;
+}): { layers: MixerPreviewLayer[]; duplicate: boolean; expectedVisibleCount: number } {
+  const edgeByHandle = new Map<string, CanvasGraphEdgeLike>();
+  let duplicate = false;
+
+  for (const edge of args.incomingEdges) {
+    const handle = normalizeMixerLayerHandle(edge.targetHandle);
+    if (!handle) {
+      continue;
+    }
+    if (edgeByHandle.has(handle)) {
+      duplicate = true;
+      continue;
+    }
+    edgeByHandle.set(handle, edge);
+  }
+
+  const layers: MixerPreviewLayer[] = [];
+  let expectedVisibleCount = 0;
+  for (const layer of args.layers) {
+    if (!layer.visible) {
+      continue;
+    }
+
+    expectedVisibleCount += 1;
+    const source = resolveLayerSourceFromEdge({
+      edge: edgeByHandle.get(layer.handleId) ?? null,
+      graph: args.graph,
+      sourceQuality: args.sourceQuality,
+    });
+    if (!source) {
+      continue;
+    }
+
+    layers.push({ ...layer, source });
+  }
+
+  return { layers, duplicate, expectedVisibleCount };
 }
 
 export function resolveMixerPreviewFromGraph(args: {
   nodeId: string;
   graph: CanvasGraphSnapshot;
+  sourceQuality?: RenderPreviewSourceQuality;
 }): MixerPreviewState {
   const node = args.graph.nodesById.get(args.nodeId);
   const normalized = normalizeMixerPreviewData(node?.data);
@@ -157,6 +246,46 @@ export function resolveMixerPreviewFromGraph(args: {
   }
 
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.nodeId) ?? [];
+  if (isV2MixerData(node.data) || incomingEdges.some((edge) => isV2MixerHandle(edge.targetHandle))) {
+    const v2 = normalizeMixerLayerCompositionData(node.data);
+    const layers = mergeLayersWithIncomingHandles({
+      layers: v2.layers,
+      incomingEdges,
+    });
+    const resolved = resolveV2LayerSources({
+      incomingEdges,
+      graph: args.graph,
+      layers,
+      sourceQuality: args.sourceQuality,
+    });
+
+    if (resolved.duplicate) {
+      return {
+        status: "error",
+        stage: v2.stage,
+        layers: [],
+        ...normalized,
+        error: "duplicate-handle-edge",
+      };
+    }
+
+    if (resolved.layers.length > 0) {
+      return {
+        status: resolved.layers.length === resolved.expectedVisibleCount ? "ready" : "partial",
+        stage: v2.stage,
+        layers: resolved.layers,
+        ...normalized,
+      };
+    }
+
+    return {
+      status: layers.length > 0 ? "partial" : "empty",
+      stage: v2.stage,
+      layers: [],
+      ...normalized,
+    };
+  }
+
   const base = resolveHandleEdge({ incomingEdges, handle: "base" });
   const overlay = resolveHandleEdge({ incomingEdges, handle: "overlay" });
 
@@ -170,8 +299,16 @@ export function resolveMixerPreviewFromGraph(args: {
     };
   }
 
-  const baseSource = resolveLayerSourceFromEdge({ edge: base.edge, graph: args.graph });
-  const overlaySource = resolveLayerSourceFromEdge({ edge: overlay.edge, graph: args.graph });
+  const baseSource = resolveLayerSourceFromEdge({
+    edge: base.edge,
+    graph: args.graph,
+    sourceQuality: args.sourceQuality,
+  });
+  const overlaySource = resolveLayerSourceFromEdge({
+    edge: overlay.edge,
+    graph: args.graph,
+    sourceQuality: args.sourceQuality,
+  });
   const baseUrl = baseSource?.kind === "image" ? baseSource.url : undefined;
   const overlayUrl = overlaySource?.kind === "image" ? overlaySource.url : undefined;
 
@@ -205,9 +342,11 @@ export function resolveMixerPreview(args: {
   nodeId: string;
   nodes: readonly CanvasGraphNodeLike[];
   edges: readonly CanvasGraphEdgeLike[];
+  sourceQuality?: RenderPreviewSourceQuality;
 }): MixerPreviewState {
   return resolveMixerPreviewFromGraph({
     nodeId: args.nodeId,
     graph: buildGraphSnapshot(args.nodes, args.edges),
+    sourceQuality: args.sourceQuality,
   });
 }

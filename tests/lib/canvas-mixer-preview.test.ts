@@ -4,6 +4,107 @@ import { buildGraphSnapshot } from "@/lib/canvas-render-preview";
 import { resolveMixerPreviewFromGraph } from "@/lib/canvas-mixer-preview";
 
 describe("resolveMixerPreviewFromGraph", () => {
+  it("resolves v2 mixer layers in persisted z-order", () => {
+    const richText = {
+      format: "editorjs",
+      version: 1,
+      time: 42,
+      blocks: [{ type: "paragraph", data: { text: "Caption" } }],
+    };
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-bg",
+          type: "image",
+          data: { url: "https://cdn.example.com/bg.png" },
+        },
+        {
+          id: "asset-logo",
+          type: "asset",
+          data: { url: "https://cdn.example.com/logo.png" },
+        },
+        {
+          id: "text-caption",
+          type: "text",
+          data: { content: "Caption", richText },
+          width: 320,
+          height: 120,
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: { width: 1024, height: 768 },
+            layers: [
+              {
+                id: "background",
+                handleId: "layer-in",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              },
+              {
+                id: "caption",
+                handleId: "layer-in-3",
+                x: 0.1,
+                y: 0.75,
+                width: 0.8,
+                height: 0.18,
+              },
+              {
+                id: "logo",
+                handleId: "layer-in-2",
+                x: 0.68,
+                y: 0.08,
+                width: 0.22,
+                height: 0.22,
+                rotation: 12,
+                opacity: 84,
+              },
+            ],
+          },
+        },
+      ],
+      [
+        { source: "image-bg", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "asset-logo", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "text-caption", target: "mixer-1", targetHandle: "layer-in-3" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      status: "ready",
+      stage: { width: 1024, height: 768 },
+      layers: [
+        {
+          id: "background",
+          handleId: "layer-in",
+          source: { kind: "image", url: "https://cdn.example.com/bg.png" },
+        },
+        {
+          id: "caption",
+          handleId: "layer-in-3",
+          source: {
+            kind: "text",
+            content: "Caption",
+            richText,
+            width: 320,
+            height: 120,
+          },
+        },
+        {
+          id: "logo",
+          handleId: "layer-in-2",
+          source: { kind: "image", url: "https://cdn.example.com/logo.png" },
+          rotation: 12,
+          opacity: 84,
+        },
+      ],
+    });
+  });
+
   it("resolves base and overlay URLs by target handle while keeping frame and crop trims independent", () => {
     const graph = buildGraphSnapshot(
       [
@@ -60,6 +161,53 @@ describe("resolveMixerPreviewFromGraph", () => {
       cropTop: 0.15,
       cropRight: 0.22,
       cropBottom: 0.1,
+    });
+  });
+
+  it("can resolve mixer preview display sources through preview-quality URLs", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base-full.png",
+            previewUrl: "https://cdn.example.com/base-preview.webp",
+          },
+        },
+        {
+          id: "asset-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay-full.png",
+            previewUrl: "https://cdn.example.com/overlay-preview.webp",
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "asset-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      baseUrl: "https://cdn.example.com/base-full.png",
+      overlayUrl: "https://cdn.example.com/overlay-full.png",
+    });
+    expect(
+      resolveMixerPreviewFromGraph({
+        nodeId: "mixer-1",
+        graph,
+        sourceQuality: "preview",
+      }),
+    ).toMatchObject({
+      baseUrl: "https://cdn.example.com/base-preview.webp",
+      overlayUrl: "https://cdn.example.com/overlay-preview.webp",
     });
   });
 

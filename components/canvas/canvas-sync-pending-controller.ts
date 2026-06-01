@@ -13,6 +13,7 @@ import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import { logCanvasDebug } from "@/components/canvas/canvas-debug";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasSyncOpPayloadByType } from "@/lib/canvas-op-queue";
+import { applyNodeSizeToReactFlowNode } from "./canvas-node-size-helpers";
 import {
   clientRequestIdFromOptimisticNodeId,
   isOptimisticNodeId,
@@ -149,16 +150,7 @@ export function createCanvasSyncPendingController({
     const setNodes = getSetNodes?.();
     setNodes?.((current) =>
       current.map((node) =>
-        node.id === nodeId
-          ? {
-              ...node,
-              style: {
-                ...(node.style ?? {}),
-                width: size.width,
-                height: size.height,
-              },
-            }
-          : node,
+        node.id === nodeId ? applyNodeSizeToReactFlowNode(node, size) : node,
       ),
     );
   };

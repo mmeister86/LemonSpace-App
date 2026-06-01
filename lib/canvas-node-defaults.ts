@@ -172,18 +172,11 @@ export const NODE_DEFAULTS: Record<
   },
   mixer: {
     width: 360,
-    height: 320,
+    height: 460,
     data: {
-      blendMode: "normal",
-      opacity: 100,
-      overlayX: 0,
-      overlayY: 0,
-      overlayWidth: 1,
-      overlayHeight: 1,
-      cropLeft: 0,
-      cropTop: 0,
-      cropRight: 0,
-      cropBottom: 0,
+      mixerVersion: 2,
+      stage: null,
+      layers: [],
     },
   },
   "agent-output": {

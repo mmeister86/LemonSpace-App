@@ -23,8 +23,13 @@ export function convexNodeDocWithMergedStorageUrl(
 ): Doc<"nodes"> {
   const data = node.data as Record<string, unknown> | undefined;
   const sid = data?.storageId;
+  const previewStorageId = data?.previewStorageId;
   const lastUploadStorageId = data?.lastUploadStorageId;
-  if (typeof sid !== "string" && typeof lastUploadStorageId !== "string") {
+  if (
+    typeof sid !== "string" &&
+    typeof previewStorageId !== "string" &&
+    typeof lastUploadStorageId !== "string"
+  ) {
     return node;
   }
 
@@ -34,6 +39,13 @@ export function convexNodeDocWithMergedStorageUrl(
       const fromBatch = urlByStorage[sid];
       if (fromBatch !== undefined) {
         nextData = { ...(nextData ?? data), url: fromBatch };
+      }
+    }
+
+    if (typeof previewStorageId === "string") {
+      const fromBatch = urlByStorage[previewStorageId];
+      if (fromBatch !== undefined) {
+        nextData = { ...(nextData ?? data), previewUrl: fromBatch };
       }
     }
 
@@ -57,6 +69,15 @@ export function convexNodeDocWithMergedStorageUrl(
     prev.storageId === sid
   ) {
     nextData = { ...(nextData ?? data), url: prev.url };
+  }
+
+  if (
+    typeof previewStorageId === "string" &&
+    prev?.previewUrl !== undefined &&
+    typeof prev.previewStorageId === "string" &&
+    prev.previewStorageId === previewStorageId
+  ) {
+    nextData = { ...(nextData ?? data), previewUrl: prev.previewUrl };
   }
 
   if (

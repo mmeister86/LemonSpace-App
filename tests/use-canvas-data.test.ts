@@ -155,4 +155,51 @@ describe("useCanvasData", () => {
       storageIds: ["storage_render_1"],
     });
   });
+
+  it("includes image preview storage ids in batched URL resolution", async () => {
+    const graph = {
+      nodes: [
+        {
+          _id: "image_1",
+          canvasId: "canvas_1",
+          data: {
+            storageId: "storage_full_1",
+            previewStorageId: "storage_preview_1",
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    useQueryMock.mockImplementation((query: string) => {
+      if (query === "canvasGraph.get") {
+        return graph;
+      }
+      if (query === "canvases.get") {
+        return { _id: "canvas_1" };
+      }
+      return undefined;
+    });
+    resolveStorageUrlsForCanvasMock.mockResolvedValue({
+      storage_full_1: "https://cdn.example.com/full.png",
+      storage_preview_1: "https://cdn.example.com/preview.webp",
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(React.createElement(HookHarness));
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(resolveStorageUrlsForCanvasMock).toHaveBeenCalledWith({
+      canvasId: "canvas_1",
+      storageIds: ["storage_full_1", "storage_preview_1"],
+    });
+  });
 });

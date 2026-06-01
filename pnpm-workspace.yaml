@@ -5,6 +5,7 @@ allowBuilds:
   '@parcel/watcher': true
   '@sentry/cli': true
   '@swc/core': true
+  canvas: false
   core-js: true
   esbuild: true
   msw: true

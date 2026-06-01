@@ -5,6 +5,7 @@
 
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
 import type { MixerLayerSource } from "@/lib/canvas-render-preview";
+import type { NormalizedMixerLayerData } from "@/lib/canvas-mixer-normalization";
 
 export const RENDER_FORMAT_TO_MIME = {
   png: "image/png",
@@ -32,6 +33,11 @@ export type RenderSizeLimits = {
 
 export type RenderSourceComposition = {
   kind: "mixer";
+  stage?: {
+    width: number;
+    height: number;
+  } | null;
+  layers?: Array<NormalizedMixerLayerData & { source: MixerLayerSource }>;
   baseUrl?: string;
   overlayUrl?: string;
   baseSource?: MixerLayerSource;

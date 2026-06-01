@@ -12,6 +12,7 @@ import { ImageOff, Loader2, Maximize2, X } from "lucide-react";
 
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
+import { useZoomAwarePreviewUrl } from "@/components/canvas/use-zoom-aware-preview-quality";
 import {
   Dialog,
   DialogContent,
@@ -45,9 +46,18 @@ export default function BgRemoveOutputNode({
   id,
   data,
   selected,
+  width,
+  height,
 }: NodeProps<BgRemoveOutputNodeType>) {
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
-  const imageUrl = data.url ?? data.previewUrl;
+  const fullImageUrl = data.url ?? data.previewUrl;
+  const { url: imageUrl } = useZoomAwarePreviewUrl({
+    width,
+    height,
+    fullUrl: fullImageUrl,
+    previewUrl: data.previewUrl,
+  });
+  const fullscreenImageUrl = data.url ?? imageUrl;
   const label = data.originalFilename ?? data.filename ?? "BG-Ausgabe";
   const isExecuting = data._status === "executing";
   const mediaBacklight =
@@ -78,7 +88,7 @@ export default function BgRemoveOutputNode({
             label: "Fullscreen",
             icon: <Maximize2 size={14} />,
             onClick: () => setIsFullscreenOpen(true),
-            disabled: !imageUrl,
+            disabled: !fullscreenImageUrl,
           },
         ]}
         className="min-w-[280px] border-teal-500/30"
@@ -151,10 +161,10 @@ export default function BgRemoveOutputNode({
             <X className="h-5 w-5" />
           </button>
           <div className="flex h-full w-full items-center justify-center">
-            {imageUrl ? (
+            {fullscreenImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- Convex storage URL for generated output
               <img
-                src={imageUrl}
+                src={fullscreenImageUrl}
                 alt={label}
                 className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
                 draggable={false}

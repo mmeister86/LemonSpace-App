@@ -24,6 +24,7 @@ vi.mock("@xyflow/react", () => ({
     <div data-testid={`handle-${id ?? "default"}`} data-handle-id={id} data-handle-type={type} />
   ),
   Position: { Left: "left", Right: "right" },
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
 }));
 
 vi.mock("@/components/canvas/canvas-handle", () => ({
@@ -639,14 +640,14 @@ describe("MixerNode", () => {
 
     expect(
       container?.querySelector(
-        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="base"][data-handle-type="target"][data-top="35%"]',
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="layer-in"][data-handle-type="target"][data-top="50%"]',
       ),
     ).toBeTruthy();
     expect(
       container?.querySelector(
-        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="overlay"][data-handle-type="target"][data-top="58%"]',
+        '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="base"][data-handle-type="target"]',
       ),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(
       container?.querySelector(
         '[data-canvas-handle="true"][data-node-id="mixer-1"][data-node-type="mixer"][data-handle-id="mixer-out"][data-handle-type="source"]',

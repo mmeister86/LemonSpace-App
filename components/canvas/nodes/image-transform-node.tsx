@@ -14,6 +14,7 @@ import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
   buildGraphSnapshot,
@@ -113,6 +114,10 @@ export function ImageTransformNodeBody({
         : null,
     [edges, id, nodes, operationType],
   );
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width,
+    height: width,
+  });
   const sourceAspectRatio =
     sourcePreview?.width && sourcePreview.height
       ? `${sourcePreview.width} / ${sourcePreview.height}`
@@ -122,8 +127,9 @@ export function ImageTransformNodeBody({
       resolveImageTransformPreviewInputFromGraph({
         nodeId: id,
         graph,
+        sourceQuality,
       }),
-    [graph, id],
+    [graph, id, sourceQuality],
   );
   const {
     canvasRef: bgRemovePreviewCanvasRef,
@@ -139,6 +145,7 @@ export function ImageTransformNodeBody({
     previewScale: 0.5,
     maxPreviewWidth: 720,
     maxDevicePixelRatio: 1.25,
+    previewQuality,
   });
   const creditCost = getImageTransformCreditCost(operation);
   const { isExecuting, localError, runTransform } = useImageTransformRunner({

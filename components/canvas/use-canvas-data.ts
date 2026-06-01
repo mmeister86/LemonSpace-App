@@ -81,6 +81,12 @@ export function useCanvasData({
             ids.push(data.storageId as Id<"_storage">);
           }
           if (
+            typeof data?.previewStorageId === "string" &&
+            data.previewStorageId.length > 0
+          ) {
+            ids.push(data.previewStorageId as Id<"_storage">);
+          }
+          if (
             typeof data?.lastUploadStorageId === "string" &&
             data.lastUploadStorageId.length > 0
           ) {

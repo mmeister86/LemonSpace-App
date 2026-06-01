@@ -16,6 +16,7 @@ import {
   ComparisonItem,
 } from "@/components/kibo-ui/comparison";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import {
   resolveRenderPipelineHash,
   resolveRenderPreviewInputFromGraph,
@@ -62,6 +63,20 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
     () => graph.incomingEdgesByTarget.get(id) ?? [],
     [graph, id],
   );
+  const fallbackSurfaceWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));
+  const fallbackSurfaceHeight = Math.max(180, Math.min(720, Math.round(height ?? 380)));
+  const previewNodeWidth = Math.max(
+    1,
+    Math.round(surfaceSize?.width ?? fallbackSurfaceWidth),
+  );
+  const previewNodeHeight = Math.max(
+    1,
+    Math.round(surfaceSize?.height ?? fallbackSurfaceHeight),
+  );
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width: previewNodeWidth,
+    height: previewNodeHeight,
+  });
 
   const resolvedSides = useMemo(() => {
     const resolveSide = (
@@ -85,21 +100,26 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
       let isStaleRenderOutput = false;
 
       if (sourceNode && sourceNode.type === "render") {
-        const preview = resolveRenderPreviewInputFromGraph({
+        const fullPreview = resolveRenderPreviewInputFromGraph({
           nodeId: sourceNode.id,
           graph,
         });
+        const displayPreview = resolveRenderPreviewInputFromGraph({
+          nodeId: sourceNode.id,
+          graph,
+          sourceQuality,
+        });
 
-        if (preview.sourceUrl || preview.sourceComposition) {
-          previewInput = preview.sourceComposition
+        if (displayPreview.sourceUrl || displayPreview.sourceComposition) {
+          previewInput = displayPreview.sourceComposition
             ? {
                 sourceUrl: null,
-                sourceComposition: preview.sourceComposition,
-                steps: preview.steps,
+                sourceComposition: displayPreview.sourceComposition,
+                steps: displayPreview.steps,
               }
             : {
-                sourceUrl: preview.sourceUrl,
-                steps: preview.steps,
+                sourceUrl: displayPreview.sourceUrl,
+                steps: displayPreview.steps,
               };
 
           const sourceLastUploadedHash =
@@ -113,9 +133,9 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
           const sourcePersistedOutputHash =
             sourceLastUploadedHash ?? sourceLastRenderedHash;
           const sourceCurrentHash = resolveRenderPipelineHash({
-            sourceUrl: preview.sourceUrl,
-            sourceComposition: preview.sourceComposition,
-            steps: preview.steps,
+            sourceUrl: fullPreview.sourceUrl,
+            sourceComposition: fullPreview.sourceComposition,
+            steps: fullPreview.steps,
             data: sourceData,
           });
 
@@ -131,6 +151,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
         const mixerPreview = resolveMixerPreviewFromGraph({
           nodeId: sourceNode.id,
           graph,
+          sourceQuality,
         });
 
         if (mixerPreview.status === "ready") {
@@ -170,6 +191,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
     nodeData.rightLabel,
     nodeData.rightUrl,
     graph,
+    sourceQuality,
   ]);
 
   const hasLeft = Boolean(
@@ -196,16 +218,6 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
     resolvedSides.right.isStaleRenderOutput;
   const effectiveDisplayMode =
     manualDisplayMode ?? (shouldDefaultToPreview ? "preview" : "render");
-  const fallbackSurfaceWidth = Math.max(240, Math.min(640, Math.round(width ?? 500)));
-  const fallbackSurfaceHeight = Math.max(180, Math.min(720, Math.round(height ?? 380)));
-  const previewNodeWidth = Math.max(
-    1,
-    Math.round(surfaceSize?.width ?? fallbackSurfaceWidth),
-  );
-  const previewNodeHeight = Math.max(
-    1,
-    Math.round(surfaceSize?.height ?? fallbackSurfaceHeight),
-  );
 
   useEffect(() => {
     const surfaceElement = containerRef.current;
@@ -344,6 +356,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
                   mixerPreviewState={resolvedSides.right.mixerPreviewState}
                   nodeWidth={previewNodeWidth}
                   nodeHeight={previewNodeHeight}
+                  previewQuality={previewQuality}
                   preferPreview={effectiveDisplayMode === "preview"}
                 />
               </ComparisonItem>
@@ -355,6 +368,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
                   mixerPreviewState={resolvedSides.left.mixerPreviewState}
                   nodeWidth={previewNodeWidth}
                   nodeHeight={previewNodeHeight}
+                  previewQuality={previewQuality}
                   preferPreview={effectiveDisplayMode === "preview"}
                 />
               </ComparisonItem>
@@ -375,6 +389,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
               mixerPreviewState={resolvedSides.right.mixerPreviewState}
               nodeWidth={previewNodeWidth}
               nodeHeight={previewNodeHeight}
+              previewQuality={previewQuality}
               preferPreview={effectiveDisplayMode === "preview"}
             />
           )}
@@ -387,6 +402,7 @@ export default function CompareNode({ id, data, selected, width, height }: NodeP
               mixerPreviewState={resolvedSides.left.mixerPreviewState}
               nodeWidth={previewNodeWidth}
               nodeHeight={previewNodeHeight}
+              previewQuality={previewQuality}
               preferPreview={effectiveDisplayMode === "preview"}
             />
           )}

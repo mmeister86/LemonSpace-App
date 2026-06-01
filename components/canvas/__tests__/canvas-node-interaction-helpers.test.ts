@@ -15,6 +15,10 @@ import {
   type NodeMinimumSize,
 } from "@/components/canvas/canvas-node-size-helpers";
 import {
+  resolveRenderPreviewDisplaySize,
+  toRenderNodeAspectSize,
+} from "@/components/canvas/nodes/render-node-state";
+import {
   findOverlappingGroupTarget,
   markGroupDropTarget,
 } from "@/components/canvas/canvas-node-group-drop-target";
@@ -173,6 +177,82 @@ describe("canvas node interaction helpers", () => {
     ]);
   });
 
+  it("locks render node resize changes to the connected image aspect ratio", () => {
+    const renderNode: RFNode = {
+      id: "render-1",
+      type: "render",
+      position: { x: 0, y: 0 },
+      style: { width: 300, height: 420 },
+      data: {},
+    };
+    const imageNode: RFNode = {
+      id: "image-1",
+      type: "image",
+      position: { x: -360, y: 0 },
+      data: {
+        width: 1200,
+        height: 900,
+      },
+    };
+    const edges: RFEdge[] = [
+      {
+        id: "edge-1",
+        source: "image-1",
+        target: "render-1",
+      },
+    ];
+
+    expect(
+      adjustNodeDimensionChanges(
+        [
+          {
+            type: "dimensions",
+            id: "render-1",
+            resizing: true,
+            dimensions: { width: 500, height: 500 },
+          },
+        ],
+        [renderNode, imageNode],
+        edges,
+      ),
+    ).toEqual([
+      {
+        type: "dimensions",
+        id: "render-1",
+        resizing: true,
+        dimensions: { width: 500, height: 408 },
+      },
+    ]);
+  });
+
+  it("normalizes oversized render nodes to the connected preview aspect ratio", () => {
+    expect(
+      toRenderNodeAspectSize({
+        currentWidth: 500,
+        currentHeight: 640,
+        aspectRatio: 4 / 3,
+      }),
+    ).toEqual({ width: 500, height: 408 });
+  });
+
+  it("fits the rendered preview canvas inside the available render node area", () => {
+    expect(
+      resolveRenderPreviewDisplaySize({
+        containerWidth: 500,
+        containerHeight: 607,
+        aspectRatio: 4 / 3,
+      }),
+    ).toEqual({ width: 500, height: 375 });
+
+    expect(
+      resolveRenderPreviewDisplaySize({
+        containerWidth: 300,
+        containerHeight: 300,
+        aspectRatio: 0.5,
+      }),
+    ).toEqual({ width: 150, height: 300 });
+  });
+
   it("does not request a content minimum state update when measured size is unchanged", () => {
     const current: NodeMinimumSize = { minWidth: 320, minHeight: 240 };
 
@@ -216,6 +296,18 @@ describe("canvas node interaction helpers", () => {
         scrollHeight: 180,
       }),
     ).toEqual({ minWidth: 200, minHeight: 120 });
+  });
+
+  it("does not auto-grow render nodes from preview overflow", () => {
+    expect(
+      computeContentAwareNodeMinimumSize({
+        nodeType: "render",
+        clientWidth: 260,
+        scrollWidth: 720,
+        clientHeight: 36,
+        scrollHeight: 840,
+      }),
+    ).toEqual({ minWidth: 260, minHeight: 300 });
   });
 
   it("keeps prompt widths stable while allowing vertical content growth", () => {

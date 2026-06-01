@@ -4,6 +4,8 @@
  * DOM measurement, and interaction persistence can use the same minimums.
  */
 
+import type { Node as RFNode } from "@xyflow/react";
+
 export interface ResizeConfig {
   minWidth: number;
   minHeight: number;
@@ -15,6 +17,11 @@ export interface ResizeConfig {
 export type NodeMinimumSize = {
   minWidth: number;
   minHeight: number;
+};
+
+export type CanvasNodeSize = {
+  width: number;
+  height: number;
 };
 
 export const CANVAS_NODE_RESIZE_CONFIGS: Record<string, ResizeConfig> = {
@@ -37,12 +44,12 @@ export const CANVAS_NODE_RESIZE_CONFIGS: Record<string, ResizeConfig> = {
   "detail-adjust": { minWidth: 300, minHeight: 820 },
   crop: { minWidth: 320, minHeight: 520 },
   "bg-remove": { minWidth: 300, minHeight: 340 },
-  render: { minWidth: 260, minHeight: 300, keepAspectRatio: true },
+  render: { minWidth: 260, minHeight: 300, keepAspectRatio: true, autoGrowWidth: false, autoGrowHeight: false },
   agent: { minWidth: 300, minHeight: 280, autoGrowWidth: false },
   text: { minWidth: 220, minHeight: 90, autoGrowWidth: false },
   note: { minWidth: 200, minHeight: 90 },
   comment: { minWidth: 260, minHeight: 180 },
-  mixer: { minWidth: 320, minHeight: 280 },
+  mixer: { minWidth: 360, minHeight: 460 },
   "agent-output": { minWidth: 320, minHeight: 220, autoGrowWidth: false },
 };
 
@@ -73,6 +80,27 @@ export function getCanvasNodeResizeConfig(nodeType: string | undefined): ResizeC
   return nodeType
     ? (CANVAS_NODE_RESIZE_CONFIGS[nodeType] ?? DEFAULT_NODE_RESIZE_CONFIG)
     : DEFAULT_NODE_RESIZE_CONFIG;
+}
+
+export function applyNodeSizeToReactFlowNode<TNode extends RFNode>(
+  node: TNode,
+  size: CanvasNodeSize,
+): TNode {
+  return {
+    ...node,
+    width: size.width,
+    height: size.height,
+    measured: {
+      ...(node.measured ?? {}),
+      width: size.width,
+      height: size.height,
+    },
+    style: {
+      ...(node.style ?? {}),
+      width: size.width,
+      height: size.height,
+    },
+  };
 }
 
 export function getCanvasNodeStaticMinimumSize(

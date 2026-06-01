@@ -5,6 +5,9 @@
 
 export type MixerBlendMode = "normal" | "multiply" | "screen" | "overlay";
 
+export const MAX_MIXER_LAYERS = 8;
+export const MIXER_LAYER_HANDLE_BASE_ID = "layer-in";
+
 export type NormalizedMixerCompositionData = {
   blendMode: MixerBlendMode;
   opacity: number;
@@ -16,6 +19,32 @@ export type NormalizedMixerCompositionData = {
   cropTop: number;
   cropRight: number;
   cropBottom: number;
+};
+
+export type NormalizedMixerLayerData = {
+  id: string;
+  handleId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  crop: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  };
+  opacity: number;
+  blendMode: MixerBlendMode;
+  visible: boolean;
+  locked: boolean;
+};
+
+export type NormalizedMixerLayerCompositionData = {
+  mixerVersion: 2;
+  stage: { width: number; height: number } | null;
+  layers: NormalizedMixerLayerData[];
 };
 
 export const MIXER_SOURCE_NODE_TYPES = new Set([
@@ -48,6 +77,7 @@ const MIN_OVERLAY_POSITION = 0;
 const MAX_OVERLAY_POSITION = 1;
 const MIN_OVERLAY_SIZE = 0.1;
 const MAX_OVERLAY_SIZE = 1;
+const DEFAULT_LAYER_ID_PREFIX = "layer";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -64,6 +94,10 @@ function parseNumeric(value: unknown): number | null {
   }
 
   return null;
+}
+
+function roundNormalized(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function normalizeOpacity(value: unknown): number {
@@ -109,6 +143,219 @@ function normalizeUnitRect(args: {
   );
 
   return { x, y, width, height };
+}
+
+export function buildMixerLayerHandleId(index: number): string {
+  if (index <= 0) {
+    return MIXER_LAYER_HANDLE_BASE_ID;
+  }
+
+  return `${MIXER_LAYER_HANDLE_BASE_ID}-${index + 1}`;
+}
+
+export function normalizeMixerLayerHandle(
+  handle: string | null | undefined,
+): string | null {
+  if (handle == null || handle === "" || handle === "null" || handle === "base") {
+    return buildMixerLayerHandleId(0);
+  }
+
+  if (handle === "overlay") {
+    return buildMixerLayerHandleId(1);
+  }
+
+  if (handle === MIXER_LAYER_HANDLE_BASE_ID) {
+    return handle;
+  }
+
+  const prefix = `${MIXER_LAYER_HANDLE_BASE_ID}-`;
+  if (!handle.startsWith(prefix)) {
+    return null;
+  }
+
+  const slot = Number.parseInt(handle.slice(prefix.length), 10);
+  if (!Number.isFinite(slot) || slot < 2 || slot > MAX_MIXER_LAYERS) {
+    return null;
+  }
+
+  return buildMixerLayerHandleId(slot - 1);
+}
+
+function normalizeRotation(value: unknown): number {
+  const parsed = parseNumeric(value);
+  if (parsed === null) {
+    return 0;
+  }
+
+  return ((parsed % 360) + 360) % 360;
+}
+
+function normalizeStage(data: unknown): { width: number; height: number } | null {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+
+  const record = data as Record<string, unknown>;
+  const width = parseNumeric(record.width);
+  const height = parseNumeric(record.height);
+  if (!width || !height || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+}
+
+function normalizeLayerCrop(data: unknown): NormalizedMixerLayerData["crop"] {
+  const record = (data ?? {}) as Record<string, unknown>;
+  const cropLeft = clamp(
+    normalizeOverlayNumber(record.left, DEFAULT_CROP_LEFT),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropTop = clamp(
+    normalizeOverlayNumber(record.top, DEFAULT_CROP_TOP),
+    0,
+    1 - MIN_OVERLAY_SIZE,
+  );
+  const cropRight = clamp(
+    normalizeOverlayNumber(record.right, DEFAULT_CROP_RIGHT),
+    0,
+    1 - cropLeft - MIN_OVERLAY_SIZE,
+  );
+  const cropBottom = clamp(
+    normalizeOverlayNumber(record.bottom, DEFAULT_CROP_BOTTOM),
+    0,
+    1 - cropTop - MIN_OVERLAY_SIZE,
+  );
+
+  return {
+    left: roundNormalized(cropLeft),
+    top: roundNormalized(cropTop),
+    right: roundNormalized(cropRight),
+    bottom: roundNormalized(cropBottom),
+  };
+}
+
+function normalizeMixerLayer(
+  layer: unknown,
+  fallbackIndex: number,
+): NormalizedMixerLayerData | null {
+  if (typeof layer !== "object" || layer === null) {
+    return null;
+  }
+
+  const record = layer as Record<string, unknown>;
+  const handleId = normalizeMixerLayerHandle(
+    typeof record.handleId === "string" ? record.handleId : undefined,
+  );
+  if (!handleId) {
+    return null;
+  }
+
+  const rect = normalizeUnitRect({
+    x: record.x,
+    y: record.y,
+    width: record.width,
+    height: record.height,
+    defaults: { x: 0, y: 0, width: 1, height: 1 },
+  });
+  const blendMode = MIXER_BLEND_MODES.has(record.blendMode as MixerBlendMode)
+    ? (record.blendMode as MixerBlendMode)
+    : DEFAULT_BLEND_MODE;
+  const id =
+    typeof record.id === "string" && record.id.trim().length > 0
+      ? record.id
+      : `${DEFAULT_LAYER_ID_PREFIX}-${fallbackIndex + 1}`;
+
+  return {
+    id,
+    handleId,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    rotation: normalizeRotation(record.rotation),
+    crop: normalizeLayerCrop(record.crop),
+    opacity: normalizeOpacity(record.opacity),
+    blendMode,
+    visible: record.visible === false ? false : true,
+    locked: record.locked === true,
+  };
+}
+
+function normalizeV2MixerLayerData(
+  record: Record<string, unknown>,
+): NormalizedMixerLayerCompositionData {
+  const rawLayers = Array.isArray(record.layers) ? record.layers : [];
+  const seenHandles = new Set<string>();
+  const layers: NormalizedMixerLayerData[] = [];
+
+  for (const [index, rawLayer] of rawLayers.entries()) {
+    if (layers.length >= MAX_MIXER_LAYERS) {
+      break;
+    }
+
+    const layer = normalizeMixerLayer(rawLayer, index);
+    if (!layer || seenHandles.has(layer.handleId)) {
+      continue;
+    }
+
+    seenHandles.add(layer.handleId);
+    layers.push(layer);
+  }
+
+  return {
+    mixerVersion: 2,
+    stage: normalizeStage(record.stage),
+    layers,
+  };
+}
+
+function legacyLayer(args: {
+  id: string;
+  handleId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  crop?: NormalizedMixerLayerData["crop"];
+  opacity: number;
+  blendMode: MixerBlendMode;
+}): NormalizedMixerLayerData {
+  return {
+    id: args.id,
+    handleId: args.handleId,
+    x: args.x,
+    y: args.y,
+    width: args.width,
+    height: args.height,
+    rotation: args.rotation ?? 0,
+    crop: args.crop ?? { left: 0, top: 0, right: 0, bottom: 0 },
+    opacity: args.opacity,
+    blendMode: args.blendMode,
+    visible: true,
+    locked: false,
+  };
+}
+
+export function createDefaultMixerLayerData(
+  handleId: string,
+  index: number,
+): NormalizedMixerLayerData {
+  return legacyLayer({
+    id: `layer-${index + 1}`,
+    handleId,
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    opacity: 100,
+    blendMode: "normal",
+  });
 }
 
 function normalizeOverlayRect(record: Record<string, unknown>) {
@@ -225,5 +472,49 @@ export function normalizeMixerCompositionData(
     opacity: normalizeOpacity(record.opacity),
     ...normalizeOverlayRect(record),
     ...normalizeCropEdges(record),
+  };
+}
+
+export function normalizeMixerLayerCompositionData(
+  data: unknown,
+): NormalizedMixerLayerCompositionData {
+  const record = (data ?? {}) as Record<string, unknown>;
+  if (record.mixerVersion === 2 || Array.isArray(record.layers)) {
+    return normalizeV2MixerLayerData(record);
+  }
+
+  const legacy = normalizeMixerCompositionData(record);
+
+  return {
+    mixerVersion: 2,
+    stage: null,
+    layers: [
+      legacyLayer({
+        id: "legacy-base",
+        handleId: buildMixerLayerHandleId(0),
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        opacity: 100,
+        blendMode: "normal",
+      }),
+      legacyLayer({
+        id: "legacy-overlay",
+        handleId: buildMixerLayerHandleId(1),
+        x: legacy.overlayX,
+        y: legacy.overlayY,
+        width: legacy.overlayWidth,
+        height: legacy.overlayHeight,
+        crop: {
+          left: legacy.cropLeft,
+          top: legacy.cropTop,
+          right: legacy.cropRight,
+          bottom: legacy.cropBottom,
+        },
+        opacity: legacy.opacity,
+        blendMode: legacy.blendMode,
+      }),
+    ],
   };
 }

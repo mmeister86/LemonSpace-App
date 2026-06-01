@@ -17,6 +17,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { MediaBacklight } from "./media-backlight";
 
@@ -156,20 +157,34 @@ export default function AssetVideoNode({
     d.mp4Url != null && d.mp4Url.length > 0
       ? `/api/pexels-video?u=${encodeURIComponent(d.mp4Url)}`
       : undefined;
+  const { sourceQuality } = useZoomAwarePreviewQuality({ width, height });
+  const videoPreload = sourceQuality === "full" ? "metadata" : "none";
+  const useThumbnailPreview = sourceQuality === "preview" && Boolean(d.thumbnailUrl);
   const mediaBacklight =
-    showPreview && playbackSrc ? (
+    showPreview && d.thumbnailUrl ? (
       <MediaBacklight>
-        <video
-          key={d.mp4Url}
-          src={playbackSrc}
-          poster={d.thumbnailUrl}
-          className="h-full w-full object-cover"
-          muted
-          playsInline
-          preload="metadata"
-          aria-hidden="true"
-          tabIndex={-1}
-        />
+        {useThumbnailPreview || !playbackSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Stock video thumbnail is used as a low-cost canvas preview
+          <img
+            src={d.thumbnailUrl}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <video
+            key={d.mp4Url}
+            src={playbackSrc}
+            poster={d.thumbnailUrl}
+            className="h-full w-full object-cover"
+            muted
+            playsInline
+            preload={videoPreload}
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+        )}
       </MediaBacklight>
     ) : undefined;
 
@@ -210,16 +225,26 @@ export default function AssetVideoNode({
         {showPreview ? (
           <>
             <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
-              <video
-                key={d.mp4Url}
-                src={playbackSrc}
-                poster={d.thumbnailUrl}
-                className="nodrag h-full w-full object-cover"
-                controls
-                playsInline
-                preload="metadata"
-                onError={handleVideoError}
-              />
+              {useThumbnailPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element -- Stock video thumbnail is used as a low-cost canvas preview
+                <img
+                  src={d.thumbnailUrl}
+                  alt="Video preview"
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <video
+                  key={d.mp4Url}
+                  src={playbackSrc}
+                  poster={d.thumbnailUrl}
+                  className="nodrag h-full w-full object-cover"
+                  controls
+                  playsInline
+                  preload={videoPreload}
+                  onError={handleVideoError}
+                />
+              )}
 
               {typeof d.duration === "number" && d.duration > 0 && (
                 <div className="pointer-events-none absolute top-1.5 right-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium text-white tabular-nums">

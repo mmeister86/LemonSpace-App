@@ -44,6 +44,10 @@ vi.mock("@/hooks/use-pipeline-preview", () => ({
   },
 }));
 
+vi.mock("@xyflow/react", () => ({
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+}));
+
 import AdjustmentPreview from "@/components/canvas/nodes/adjustment-preview";
 
 describe("AdjustmentPreview", () => {

@@ -13,6 +13,7 @@ import {
   shouldFastPathPreviewPipeline,
   type RenderPreviewInput,
 } from "@/lib/canvas-render-preview";
+import type { CanvasPreviewQuality } from "@/lib/canvas-preview-quality";
 import type { MixerPreviewState } from "@/lib/canvas-mixer-preview";
 import {
   computeMixerCompareOverlayImageStyle,
@@ -36,6 +37,7 @@ type CompareSurfaceProps = {
   mixerPreviewState?: MixerPreviewState;
   nodeWidth: number;
   nodeHeight: number;
+  previewQuality?: CanvasPreviewQuality;
   preferPreview?: boolean;
 };
 
@@ -46,6 +48,7 @@ export default function CompareSurface({
   mixerPreviewState,
   nodeWidth,
   nodeHeight,
+  previewQuality,
   preferPreview,
 }: CompareSurfaceProps) {
   const graph = useCanvasGraph();
@@ -81,6 +84,7 @@ export default function CompareSurface({
     previewScale: 0.5,
     maxPreviewWidth: 720,
     maxDevicePixelRatio: 1.25,
+    previewQuality,
   });
 
   const hasPreview = Boolean(usePreview && previewInput);
