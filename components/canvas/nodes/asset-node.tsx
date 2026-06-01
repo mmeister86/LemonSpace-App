@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useZoomAwarePreviewUrl } from "@/components/canvas/use-zoom-aware-preview-quality";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { MediaBacklight } from "./media-backlight";
 
@@ -91,7 +92,13 @@ export default function AssetNode({ id, data, selected, width, height }: NodePro
   }, [id, linkedSearchTerm, openForNode]);
 
   const hasAsset = typeof data.assetId === "number";
-  const previewUrl = data.url ?? data.previewUrl;
+  const fullPreviewUrl = data.url ?? data.previewUrl;
+  const { url: previewUrl } = useZoomAwarePreviewUrl({
+    width,
+    height,
+    fullUrl: fullPreviewUrl,
+    previewUrl: data.previewUrl,
+  });
   const isPreviewLoading = Boolean(
     previewUrl && previewUrl !== loadedPreviewUrl && previewUrl !== failedPreviewUrl,
   );

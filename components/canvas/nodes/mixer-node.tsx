@@ -20,6 +20,7 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Unlock } from "lucide-react";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   normalizeMixerPreviewData,
@@ -158,6 +159,10 @@ export function MixerNodeBody({
   const [baseImageSize, setBaseImageSize] = useState<LoadedImageSize>({ url: null, width: 0, height: 0 });
   const [overlayImageSize, setOverlayImageSize] = useState<LoadedImageSize>({ url: null, width: 0, height: 0 });
   const previewSurfaceSize = useMixerPreviewSize(previewRef);
+  const { sourceQuality } = useZoomAwarePreviewQuality({
+    width: previewSurfaceSize.width || width,
+    height: previewSurfaceSize.height || height,
+  });
 
   useEffect(() => {
     latestNodeDataRef.current = (data ?? {}) as Record<string, unknown>;
@@ -191,8 +196,8 @@ export function MixerNodeBody({
     });
 
   const previewState = useMemo(
-    () => resolveMixerPreviewFromGraph({ nodeId: id, graph }),
-    [graph, id],
+    () => resolveMixerPreviewFromGraph({ nodeId: id, graph, sourceQuality }),
+    [graph, id, sourceQuality],
   );
   const isLayerMode =
     isLayerMixerData(data) ||

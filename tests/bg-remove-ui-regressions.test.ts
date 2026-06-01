@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   getNode: vi.fn(),
   queueNodeDataUpdate: vi.fn(),
   runTransform: vi.fn(),
+  viewportZoom: 1,
 }));
 
 vi.mock("next-intl", () => ({
@@ -34,6 +35,7 @@ vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({ getNode: mocks.getNode }),
   useStore: <T,>(selector: (store: { edges: unknown[]; nodes: unknown[] }) => T) =>
     selector({ edges: [], nodes: [] }),
+  useViewport: () => ({ x: 0, y: 0, zoom: mocks.viewportZoom }),
 }));
 
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
@@ -55,14 +57,16 @@ vi.mock("@/components/canvas/canvas-handle", () => ({
 
 vi.mock("@/components/canvas/nodes/base-node-wrapper", () => ({
   default: ({
+    backlight,
     children,
     toolbarActions = [],
   }: {
+    backlight?: React.ReactNode;
     children: React.ReactNode;
     toolbarActions?: typeof mocks.capturedToolbarActions;
   }) => {
     mocks.capturedToolbarActions = toolbarActions;
-    return React.createElement("div", { "data-testid": "base-node-wrapper" }, children);
+    return React.createElement("div", { "data-testid": "base-node-wrapper" }, backlight, children);
   },
 }));
 
@@ -109,6 +113,7 @@ describe("bg remove UI regressions", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     mocks.capturedToolbarActions = [];
+    mocks.viewportZoom = 1;
   });
 
   afterEach(() => {
@@ -164,5 +169,33 @@ describe("bg remove UI regressions", () => {
         disabled: false,
       }),
     );
+  });
+
+  it("uses preview URL on canvas when zoomed out but keeps fullscreen on full URL", async () => {
+    mocks.viewportZoom = 0.5;
+
+    await act(async () => {
+      root?.render(
+        React.createElement(BgRemoveOutputNode, {
+          id: "bg-output-1",
+          selected: true,
+          width: 280,
+          height: 220,
+          data: {
+            url: "https://cdn.example.com/full-bg.png",
+            previewUrl: "https://cdn.example.com/preview-bg.png",
+            filename: "bg.png",
+          },
+          type: "bg-remove-output",
+        } as React.ComponentProps<typeof BgRemoveOutputNode>),
+      );
+    });
+
+    expect(
+      container?.querySelectorAll('img[src="https://cdn.example.com/preview-bg.png"]'),
+    ).toHaveLength(3);
+    expect(
+      container?.querySelectorAll('img[src="https://cdn.example.com/full-bg.png"]'),
+    ).toHaveLength(1);
   });
 });

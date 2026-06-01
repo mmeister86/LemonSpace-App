@@ -24,6 +24,7 @@ vi.mock("@xyflow/react", () => ({
     <div data-testid={`handle-${id ?? "default"}`} data-handle-id={id} data-handle-type={type} />
   ),
   Position: { Left: "left", Right: "right" },
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
 }));
 
 vi.mock("@/components/canvas/canvas-handle", () => ({

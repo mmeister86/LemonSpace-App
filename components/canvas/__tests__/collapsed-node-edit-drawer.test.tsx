@@ -38,6 +38,7 @@ vi.mock("@xyflow/react", () => ({
   }),
   useStore: (selector: (store: { nodes: RFNode[]; edges: RFEdge[] }) => unknown) =>
     selector({ nodes: mocks.allNodes, edges: mocks.edges }),
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
   getConnectedEdges: () => [],
 }));
 

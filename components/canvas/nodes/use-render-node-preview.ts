@@ -6,6 +6,7 @@
 import { useMemo } from "react";
 
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import {
   findSourceNodeFromGraph,
   resolveRenderPreviewInputFromGraph,
@@ -65,12 +66,27 @@ export function useRenderNodePreview(args: {
   height: number | undefined;
   isFullscreenOpen: boolean;
 }) {
-  const { id, localData, width, isFullscreenOpen } = args;
+  const { id, localData, width, height, isFullscreenOpen } = args;
   const graph = useCanvasGraph();
+  const previewNodeWidth = Math.max(260, Math.round(width ?? 320));
+  const previewNodeHeight = Math.max(220, Math.round(height ?? previewNodeWidth));
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width: previewNodeWidth,
+    height: previewNodeHeight,
+  });
 
   const renderPreviewInput = useMemo(
     () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph }),
     [graph, id],
+  );
+  const displayRenderPreviewInput = useMemo(
+    () =>
+      resolveRenderPreviewInputFromGraph({
+        nodeId: id,
+        graph,
+        sourceQuality,
+      }),
+    [graph, id, sourceQuality],
   );
   const { sourceUrl, sourceComposition, steps, isAlphaBearing = false } = renderPreviewInput;
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
@@ -109,16 +125,16 @@ export function useRenderNodePreview(args: {
   }, [renderFingerprint, sourceComposition, sourceUrl, steps]);
   const hasSource =
     (typeof sourceUrl === "string" && sourceUrl.length > 0) || Boolean(sourceComposition);
-  const previewNodeWidth = Math.max(260, Math.round(width ?? 320));
   const preview = usePipelinePreview({
-    sourceUrl,
-    sourceComposition,
-    steps,
+    sourceUrl: displayRenderPreviewInput.sourceUrl,
+    sourceComposition: displayRenderPreviewInput.sourceComposition,
+    steps: displayRenderPreviewInput.steps,
     nodeWidth: previewNodeWidth,
     debounceMs: previewDebounceMs,
     previewScale: 0.5,
     maxPreviewWidth: 720,
     maxDevicePixelRatio: 1.25,
+    previewQuality,
   });
   const fullscreenPreviewWidth = Math.max(960, Math.round((width ?? 320) * 3));
   const fullscreenPreview = usePipelinePreview({

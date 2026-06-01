@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   toastPromise: vi.fn(async <T,>(promise: Promise<T>) => await promise),
   toastWarning: vi.fn(),
+  viewportZoom: 1,
 }));
 
 vi.mock("next-intl", () => ({
@@ -98,6 +99,7 @@ vi.mock("@xyflow/react", () => ({
     getEdges: mocks.getEdges,
     getNode: mocks.getNode,
   }),
+  useViewport: () => ({ x: 0, y: 0, zoom: mocks.viewportZoom }),
 }));
 
 import AiImageNode from "@/components/canvas/nodes/ai-image-node";
@@ -122,6 +124,7 @@ describe("AiImageNode", () => {
     mocks.push.mockClear();
     mocks.toastPromise.mockClear();
     mocks.toastWarning.mockClear();
+    mocks.viewportZoom = 1;
   });
 
   afterEach(() => {
@@ -136,7 +139,10 @@ describe("AiImageNode", () => {
     vi.unstubAllEnvs();
   });
 
-  async function renderAiImageNode(data: Record<string, unknown>) {
+  async function renderAiImageNode(
+    data: Record<string, unknown>,
+    props: Partial<React.ComponentProps<typeof AiImageNode>> = {},
+  ) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -154,8 +160,11 @@ describe("AiImageNode", () => {
           isConnectable: true,
           type: "ai-image",
           data,
+          width: 320,
+          height: 320,
           positionAbsoluteX: 0,
           positionAbsoluteY: 0,
+          ...props,
         }),
       );
     });
@@ -214,6 +223,110 @@ describe("AiImageNode", () => {
       ),
     ).toBe(true);
     expect(container?.textContent).not.toContain("Bildvorschau wird geladen");
+  });
+
+  it("uses preview URLs for in-canvas AI image previews at low zoom", async () => {
+    mocks.viewportZoom = 0.4;
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "fertiges bild mit preview",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      url: "https://generated.test/full.png",
+      previewUrl: "https://generated.test/preview.webp",
+      _status: "done",
+    });
+
+    const primaryPreview = Array.from(container?.querySelectorAll("img") ?? []).find(
+      (image) =>
+        image.getAttribute("aria-hidden") !== "true" &&
+        image.getAttribute("alt") === "fertiges bild mit preview",
+    );
+
+    expect(primaryPreview?.getAttribute("src")).toBe("https://generated.test/preview.webp");
+  });
+
+  it("uses full URLs for in-canvas AI image previews at high zoom", async () => {
+    mocks.viewportZoom = 3;
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "fertiges bild mit preview",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      url: "https://generated.test/full.png",
+      previewUrl: "https://generated.test/preview.webp",
+      _status: "done",
+    });
+
+    const primaryPreview = Array.from(container?.querySelectorAll("img") ?? []).find(
+      (image) =>
+        image.getAttribute("aria-hidden") !== "true" &&
+        image.getAttribute("alt") === "fertiges bild mit preview",
+    );
+
+    expect(primaryPreview?.getAttribute("src")).toBe("https://generated.test/full.png");
+  });
+
+  it("uses rendered node slot size, not generated output pixels, for AI image preview buckets", async () => {
+    mocks.viewportZoom = 1;
+
+    await renderAiImageNode(
+      {
+        canvasId: "canvas-1",
+        prompt: "grosses generiertes bild",
+        model: "google/gemini-2.5-flash-image",
+        aspectRatio: "1:1",
+        outputWidth: 4096,
+        outputHeight: 4096,
+        url: "https://generated.test/full-large.png",
+        previewUrl: "https://generated.test/preview-large.webp",
+        _status: "done",
+      },
+      { width: 240, height: 240 },
+    );
+
+    const primaryPreview = Array.from(container?.querySelectorAll("img") ?? []).find(
+      (image) =>
+        image.getAttribute("aria-hidden") !== "true" &&
+        image.getAttribute("alt") === "grosses generiertes bild",
+    );
+
+    expect(primaryPreview?.getAttribute("src")).toBe(
+      "https://generated.test/preview-large.webp",
+    );
+  });
+
+  it("prefers full upload URLs over preview URLs for high zoom and fullscreen fallback", async () => {
+    mocks.viewportZoom = 3;
+
+    await renderAiImageNode({
+      canvasId: "canvas-1",
+      prompt: "full fallback bild",
+      model: "google/gemini-2.5-flash-image",
+      aspectRatio: "1:1",
+      lastUploadUrl: "https://generated.test/full-upload.png",
+      previewUrl: "https://generated.test/preview-upload.webp",
+      _status: "done",
+    });
+
+    const visibleImages = Array.from(container?.querySelectorAll("img") ?? []).filter(
+      (image) => image.getAttribute("aria-hidden") !== "true",
+    );
+
+    expect(
+      visibleImages.some(
+        (image) =>
+          image.getAttribute("src") === "https://generated.test/full-upload.png",
+      ),
+    ).toBe(true);
+    expect(
+      visibleImages.some(
+        (image) =>
+          image.getAttribute("src") === "https://generated.test/preview-upload.webp",
+      ),
+    ).toBe(false);
   });
 
   it("renders a generated image preview from storage while URL enrichment catches up", async () => {

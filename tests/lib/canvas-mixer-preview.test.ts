@@ -164,6 +164,53 @@ describe("resolveMixerPreviewFromGraph", () => {
     });
   });
 
+  it("can resolve mixer preview display sources through preview-quality URLs", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base-full.png",
+            previewUrl: "https://cdn.example.com/base-preview.webp",
+          },
+        },
+        {
+          id: "asset-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay-full.png",
+            previewUrl: "https://cdn.example.com/overlay-preview.webp",
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {},
+        },
+      ],
+      [
+        { source: "image-base", target: "mixer-1", targetHandle: "base" },
+        { source: "asset-overlay", target: "mixer-1", targetHandle: "overlay" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      baseUrl: "https://cdn.example.com/base-full.png",
+      overlayUrl: "https://cdn.example.com/overlay-full.png",
+    });
+    expect(
+      resolveMixerPreviewFromGraph({
+        nodeId: "mixer-1",
+        graph,
+        sourceQuality: "preview",
+      }),
+    ).toMatchObject({
+      baseUrl: "https://cdn.example.com/base-preview.webp",
+      overlayUrl: "https://cdn.example.com/overlay-preview.webp",
+    });
+  });
+
   it("resolves text nodes as rich-text mixer layer sources", () => {
     const richText = {
       format: "editorjs",

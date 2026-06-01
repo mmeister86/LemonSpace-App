@@ -39,6 +39,7 @@ vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   Position: { Left: "left", Right: "right" },
   useStore: (selector: (state: StoreState) => unknown) => selector(storeState),
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
 }));
 
 vi.mock("@/components/canvas/canvas-handle", () => ({

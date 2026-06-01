@@ -36,6 +36,7 @@ import {
 } from "@/lib/dashboard-snapshot-cache";
 import { toast } from "@/lib/toast";
 import { MediaBacklight } from "./media-backlight";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 
 const ALLOWED_VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -401,6 +402,8 @@ export default function VideoNode({
   );
 
   const durationLabel = formatDuration(data.durationSeconds);
+  const { sourceQuality } = useZoomAwarePreviewQuality({ width, height });
+  const videoPreload = sourceQuality === "full" ? "metadata" : "none";
   const uploadingLabel = isUploading
     ? isWaitingForCanvasSync
       ? "100% — wird synchronisiert..."
@@ -420,7 +423,7 @@ export default function VideoNode({
         className="h-full w-full object-cover"
         muted
         playsInline
-        preload="metadata"
+        preload={videoPreload}
         aria-hidden="true"
         tabIndex={-1}
       />
@@ -506,7 +509,7 @@ export default function VideoNode({
                   className="nodrag h-full w-full object-cover"
                   controls
                   playsInline
-                  preload="metadata"
+                  preload={videoPreload}
                 />
                 {durationLabel ? (
                   <div className="pointer-events-none absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium text-white tabular-nums">

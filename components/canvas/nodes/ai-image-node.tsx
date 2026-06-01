@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import CanvasHandle from "@/components/canvas/canvas-handle";
+import { useZoomAwarePreviewUrl } from "@/components/canvas/use-zoom-aware-preview-quality";
 import { MediaBacklight } from "./media-backlight";
 import {
   isAiImageReferenceSourceType,
@@ -243,13 +244,13 @@ function readPreviewString(value: unknown): string | undefined {
     : undefined;
 }
 
-function buildPreviewUrlCandidates(data: AiImageNodeData): string[] {
+function buildFullImageUrlCandidates(data: AiImageNodeData): string[] {
   const candidates = [
     readPreviewString(data.url),
-    readPreviewString(data.previewUrl),
     readPreviewString(data.lastUploadUrl),
     readPreviewString(data.imageUrl),
     resolveStoragePreviewUrl(data.storageId ?? data.lastUploadStorageId),
+    readPreviewString(data.previewUrl),
   ].filter((candidate): candidate is string => candidate !== undefined);
 
   return [...new Set(candidates)];
@@ -259,6 +260,8 @@ export default function AiImageNode({
   id,
   data,
   selected,
+  width,
+  height,
 }: NodeProps<AiImageNode>) {
   const t = useTranslations('toasts');
   const nodeData = data as AiImageNodeData;
@@ -289,9 +292,9 @@ export default function AiImageNode({
     status === "analyzing" ||
     status === "clarifying" ||
     isGenerating;
-  const previewUrlCandidates = useMemo(
+  const fullImageUrlCandidates = useMemo(
     () =>
-      buildPreviewUrlCandidates({
+      buildFullImageUrlCandidates({
         imageUrl: nodeData.imageUrl,
         lastUploadStorageId: nodeData.lastUploadStorageId,
         lastUploadUrl: nodeData.lastUploadUrl,
@@ -308,25 +311,35 @@ export default function AiImageNode({
       nodeData.url,
     ],
   );
-  const previewUrlCandidateKey = previewUrlCandidates.join("\n");
+  const fullImageUrlCandidateKey = fullImageUrlCandidates.join("\n");
   useEffect(() => {
     setFailedPreviewUrls((current) => {
       if (current.size === 0) return current;
-      const currentCandidates = new Set(previewUrlCandidates);
+      const currentCandidates = new Set(fullImageUrlCandidates);
       const next = new Set(
         [...current].filter((url) => currentCandidates.has(url)),
       );
       return next.size === current.size ? current : next;
     });
-  }, [previewUrlCandidateKey, previewUrlCandidates]);
-  const previewUrl =
-    previewUrlCandidates.find((candidate) => !failedPreviewUrls.has(candidate)) ??
+  }, [fullImageUrlCandidateKey, fullImageUrlCandidates]);
+  const fullPreviewUrl =
+    fullImageUrlCandidates.find((candidate) => !failedPreviewUrls.has(candidate)) ??
     undefined;
+  const previewVariantUrl =
+    nodeData.previewUrl && !failedPreviewUrls.has(nodeData.previewUrl)
+      ? nodeData.previewUrl
+      : undefined;
+  const { url: canvasPreviewUrl } = useZoomAwarePreviewUrl({
+    width,
+    height,
+    fullUrl: fullPreviewUrl,
+    previewUrl: previewVariantUrl,
+  });
   const hasResolvableStoragePreview = Boolean(
     nodeData.storageId ?? nodeData.lastUploadStorageId,
   );
   const isResolvingGeneratedImage =
-    status === "done" && hasResolvableStoragePreview && !previewUrl;
+    status === "done" && hasResolvableStoragePreview && !fullPreviewUrl;
   const markPreviewUrlFailed = useCallback((url: string) => {
     setFailedPreviewUrls((current) => {
       if (current.has(url)) return current;
@@ -433,16 +446,16 @@ export default function AiImageNode({
     }
   };
   const mediaBacklight =
-    previewUrl && !isLoading ? (
+    canvasPreviewUrl && !isLoading ? (
       <MediaBacklight>
         {/* eslint-disable-next-line @next/next/no-img-element -- Backlight halo mirrors the generated image preview */}
         <img
-          src={previewUrl}
+          src={canvasPreviewUrl}
           alt=""
           aria-hidden="true"
           className="h-full w-full object-contain"
           draggable={false}
-          onError={() => markPreviewUrlFailed(previewUrl)}
+          onError={() => markPreviewUrlFailed(canvasPreviewUrl)}
         />
       </MediaBacklight>
     ) : undefined;
@@ -457,7 +470,7 @@ export default function AiImageNode({
           label: "Fullscreen",
           icon: <Maximize2 size={14} />,
           onClick: () => setIsOutputFullscreenOpen(true),
-          disabled: !previewUrl,
+          disabled: !fullPreviewUrl,
         },
       ]}
       className="h-full w-full min-h-0 min-w-0"
@@ -484,7 +497,7 @@ export default function AiImageNode({
       </div>
 
       <div className="group relative min-h-0 flex-1 overflow-hidden bg-muted">
-        {status === "idle" && !previewUrl && (
+        {status === "idle" && !fullPreviewUrl && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <ImageIcon className="h-10 w-10 opacity-30" />
             <p className="px-6 text-center text-xs opacity-60">
@@ -568,20 +581,20 @@ export default function AiImageNode({
           </div>
         )}
 
-        {previewUrl && !isLoading && (
+        {canvasPreviewUrl && !isLoading && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={previewUrl}
+              src={canvasPreviewUrl}
               alt={nodeData.prompt ?? "AI generated image"}
               className="absolute inset-0 h-full w-full object-contain"
               draggable={false}
-              onError={() => markPreviewUrlFailed(previewUrl)}
+              onError={() => markPreviewUrlFailed(canvasPreviewUrl)}
             />
           </>
         )}
 
-        {status === "done" && previewUrl && !isLoading && (
+        {status === "done" && canvasPreviewUrl && !isLoading && (
           <div
             className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100"
           >
@@ -651,14 +664,14 @@ export default function AiImageNode({
             <X className="h-5 w-5" />
           </button>
           <div className="flex h-full w-full items-center justify-center">
-            {previewUrl ? (
+            {fullPreviewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={previewUrl}
+                src={fullPreviewUrl}
                 alt={nodeData.prompt ?? "AI generated image"}
                 className="h-auto max-h-[80vh] w-auto max-w-[80vw] rounded-xl object-contain shadow-2xl"
                 draggable={false}
-                onError={() => markPreviewUrlFailed(previewUrl)}
+                onError={() => markPreviewUrlFailed(fullPreviewUrl)}
               />
             ) : (
               <div className="rounded-lg bg-popover/95 px-4 py-3 text-sm text-muted-foreground shadow-lg">

@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emptyHistogram } from "@/lib/image-pipeline/histogram";
 import type { PipelineStep } from "@/lib/image-pipeline/contracts";
+import {
+  previewPipelineWidthForQuality,
+  type CanvasPreviewQuality,
+} from "@/lib/canvas-preview-quality";
+import { RENDER_NODE_HEADER_HEIGHT } from "@/components/canvas/nodes/render-node-state";
 
 const workerClientMocks = vi.hoisted(() => ({
   getLastBackendDiagnostics: vi.fn(() => null),
@@ -68,18 +73,32 @@ function PreviewHarness({
   steps,
   includeHistogram,
   debounceMs,
+  nodeWidth = 320,
+  previewScale,
+  maxPreviewWidth,
+  maxDevicePixelRatio,
+  previewQuality,
 }: {
   sourceUrl: string | null;
   steps: PipelineStep[];
   includeHistogram?: boolean;
   debounceMs?: number;
+  nodeWidth?: number;
+  previewScale?: number;
+  maxPreviewWidth?: number;
+  maxDevicePixelRatio?: number;
+  previewQuality?: CanvasPreviewQuality;
 }) {
   const { canvasRef, histogram, error, isRendering } = usePipelinePreview({
     sourceUrl,
     steps,
-    nodeWidth: 320,
+    nodeWidth,
     includeHistogram,
     debounceMs,
+    previewScale,
+    maxPreviewWidth,
+    maxDevicePixelRatio,
+    previewQuality,
   });
 
   useEffect(() => {
@@ -309,6 +328,103 @@ describe("usePipelinePreview", () => {
     );
   });
 
+  it("uses the exact bucketed pipeline width when preview quality is provided", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+          nodeWidth: 2400,
+          previewScale: 0.2,
+          maxPreviewWidth: 128,
+          maxDevicePixelRatio: 1,
+          previewQuality: "medium",
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewWidth: previewPipelineWidthForQuality("medium"),
+      }),
+    );
+  });
+
+  it("keeps rendering stable across node width changes in the same preview quality bucket", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+          nodeWidth: 320,
+          previewQuality: "low",
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+          nodeWidth: 960,
+          previewQuality: "low",
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+          nodeWidth: 960,
+          previewQuality: "high",
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledTimes(2);
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        previewWidth: previewPipelineWidthForQuality("low"),
+      }),
+    );
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        previewWidth: previewPipelineWidthForQuality("high"),
+      }),
+    );
+  });
+
   it("only commits the latest visible preview after rapid sequential invalidations", async () => {
     await act(async () => {
       root?.render(
@@ -518,6 +634,13 @@ describe("preview histogram call sites", () => {
     vi.doMock("@/hooks/use-pipeline-preview", () => ({
       usePipelinePreview: hookSpy,
     }));
+    vi.doMock("@/components/canvas/use-zoom-aware-preview-quality", () => ({
+      useZoomAwarePreviewQuality: () => ({
+        previewQuality: "medium",
+        sourceQuality: "preview",
+        zoom: 1,
+      }),
+    }));
     vi.doMock("@/components/canvas/canvas-graph-context", () => ({
       useCanvasGraph: () => ({
         nodes: [],
@@ -581,6 +704,13 @@ describe("preview histogram call sites", () => {
     vi.doMock("@/hooks/use-pipeline-preview", () => ({
       usePipelinePreview: hookSpy,
     }));
+    vi.doMock("@/components/canvas/use-zoom-aware-preview-quality", () => ({
+      useZoomAwarePreviewQuality: () => ({
+        previewQuality: "medium",
+        sourceQuality: "preview",
+        zoom: 1,
+      }),
+    }));
     vi.doMock("@/components/canvas/canvas-graph-context", () => ({
       useCanvasGraph: () => ({
         nodes: [],
@@ -643,6 +773,13 @@ describe("preview histogram call sites", () => {
 
     vi.doMock("@/hooks/use-pipeline-preview", () => ({
       usePipelinePreview: hookSpy,
+    }));
+    vi.doMock("@/components/canvas/use-zoom-aware-preview-quality", () => ({
+      useZoomAwarePreviewQuality: () => ({
+        previewQuality: "medium",
+        sourceQuality: "preview",
+        zoom: 1,
+      }),
     }));
     vi.doMock("@/components/canvas/canvas-graph-context", () => ({
       useCanvasGraph: () => ({
@@ -716,6 +853,7 @@ describe("preview histogram call sites", () => {
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
       useConnection: () => ({ inProgress: false }),
+      useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -905,6 +1043,7 @@ describe("preview histogram call sites", () => {
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
       useConnection: () => ({ inProgress: false }),
+      useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -1101,6 +1240,7 @@ describe("preview histogram call sites", () => {
       Handle: () => null,
       Position: { Left: "left", Right: "right" },
       useConnection: () => ({ inProgress: false }),
+      useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     }));
     vi.doMock("convex/react", () => ({
       useMutation: () => vi.fn(async () => undefined),
@@ -1223,7 +1363,7 @@ describe("preview histogram call sites", () => {
       expect.objectContaining({
         nodeId: "render-1",
         width: 450,
-        height: 450,
+        height: 450 + RENDER_NODE_HEADER_HEIGHT,
       }),
     ]);
 

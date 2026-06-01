@@ -7,6 +7,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  previewPipelineWidthForQuality,
+  type CanvasPreviewQuality,
+} from "@/lib/canvas-preview-quality";
 import { hashPipeline, type PipelineStep } from "@/lib/image-pipeline/contracts";
 import { emptyHistogram, type HistogramData } from "@/lib/image-pipeline/histogram";
 import type { RenderSourceComposition } from "@/lib/image-pipeline/render-types";
@@ -16,13 +20,14 @@ import {
   type PreviewRenderResult,
 } from "@/lib/image-pipeline/worker-client";
 
-type UsePipelinePreviewOptions = {
+export type UsePipelinePreviewOptions = {
   sourceUrl: string | null;
   sourceComposition?: RenderSourceComposition;
   steps: readonly PipelineStep[];
   nodeWidth: number;
   includeHistogram?: boolean;
   previewScale?: number;
+  previewQuality?: CanvasPreviewQuality;
   maxPreviewWidth?: number;
   maxDevicePixelRatio?: number;
   debounceMs?: number;
@@ -98,8 +103,25 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
   }, [options.debounceMs]);
 
   const previewWidth = useMemo(
-    () => computePreviewWidth(options.nodeWidth, previewScale, maxPreviewWidth, maxDevicePixelRatio),
-    [maxDevicePixelRatio, maxPreviewWidth, options.nodeWidth, previewScale],
+    () => {
+      if (options.previewQuality) {
+        return Math.max(1, previewPipelineWidthForQuality(options.previewQuality));
+      }
+
+      return computePreviewWidth(
+        options.nodeWidth,
+        previewScale,
+        maxPreviewWidth,
+        maxDevicePixelRatio,
+      );
+    },
+    [
+      maxDevicePixelRatio,
+      maxPreviewWidth,
+      options.nodeWidth,
+      options.previewQuality,
+      previewScale,
+    ],
   );
 
   const pipelineHash = useMemo(() => {

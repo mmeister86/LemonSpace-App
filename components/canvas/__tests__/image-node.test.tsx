@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
+  useViewport: () => ({ x: 0, y: 0, zoom: mockViewportZoom }),
 }));
+
+let mockViewportZoom = 1;
 
 vi.mock("convex/react", () => ({
   useMutation: () => vi.fn(async () => undefined),
@@ -60,6 +63,7 @@ describe("ImageNode", () => {
   let root: Root | null = null;
 
   beforeEach(() => {
+    mockViewportZoom = 1;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -134,6 +138,41 @@ describe("ImageNode", () => {
     expect(image?.getAttribute("src")).toBe("https://cdn.example.com/photo.png");
     expect(container?.querySelector('[data-testid="canvas-media-backlight"]')).toBeNull();
     expect(container?.textContent).not.toContain("Bild wird geladen…");
+  });
+
+  it("uses preview URLs for the in-canvas image at low zoom while keeping full URLs available", async () => {
+    mockViewportZoom = 0.5;
+
+    await renderImageNode({
+      filename: "photo.png",
+      mimeType: "image/png",
+      url: "https://cdn.example.com/photo-full.png",
+      previewUrl: "https://cdn.example.com/photo-preview.webp",
+    });
+
+    const imageSources = Array.from(container?.querySelectorAll("img") ?? []).map((image) =>
+      image.getAttribute("src"),
+    );
+
+    expect(imageSources).toContain("https://cdn.example.com/photo-preview.webp");
+    expect(imageSources).toContain("https://cdn.example.com/photo-full.png");
+  });
+
+  it("uses full URLs for the in-canvas image at high zoom", async () => {
+    mockViewportZoom = 4;
+
+    await renderImageNode({
+      filename: "photo.png",
+      mimeType: "image/png",
+      url: "https://cdn.example.com/photo-full.png",
+      previewUrl: "https://cdn.example.com/photo-preview.webp",
+    });
+
+    const primaryImage = Array.from(container?.querySelectorAll("img") ?? []).find(
+      (image) => image.getAttribute("alt") === "photo.png",
+    );
+
+    expect(primaryImage?.getAttribute("src")).toBe("https://cdn.example.com/photo-full.png");
   });
 
   it("does not render the media backlight before an image URL is available", async () => {
