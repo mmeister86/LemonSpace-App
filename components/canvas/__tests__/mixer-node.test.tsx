@@ -69,15 +69,68 @@ vi.mock("@/components/canvas/nodes/mixer-fabric-editor", () => ({
   MixerFabricEditor: ({
     stage,
     layers,
+    onTransformLayer,
   }: {
     stage: { width: number; height: number } | null | undefined;
-    layers: unknown[];
+    layers: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation: number;
+    }>;
+    onTransformLayer: (
+      layerId: string,
+      patch: { x: number; y: number; width: number; height: number; rotation: number },
+    ) => void;
   }) => (
     <div
       data-testid="mixer-fabric-editor"
       data-stage={stage ? `${stage.width}x${stage.height}` : ""}
       data-layer-count={layers.length}
-    />
+      data-first-layer-x={layers[0]?.x ?? ""}
+      data-first-layer-y={layers[0]?.y ?? ""}
+      data-first-layer-width={layers[0]?.width ?? ""}
+      data-first-layer-height={layers[0]?.height ?? ""}
+      data-first-layer-rotation={layers[0]?.rotation ?? ""}
+      data-second-layer-x={layers[1]?.x ?? ""}
+      data-second-layer-y={layers[1]?.y ?? ""}
+      data-second-layer-width={layers[1]?.width ?? ""}
+      data-second-layer-height={layers[1]?.height ?? ""}
+      data-second-layer-rotation={layers[1]?.rotation ?? ""}
+    >
+      <button
+        type="button"
+        data-testid="mock-transform-layer"
+        onClick={() => {
+          const layer = layers[0];
+          if (!layer) return;
+          onTransformLayer(layer.id, {
+            x: 0.25,
+            y: 0.1,
+            width: 0.5,
+            height: 0.75,
+            rotation: 18,
+          });
+        }}
+      />
+      <button
+        type="button"
+        data-testid="mock-transform-second-layer"
+        onClick={() => {
+          const layer = layers[1];
+          if (!layer) return;
+          onTransformLayer(layer.id, {
+            x: 0.2,
+            y: 0.15,
+            width: 0.45,
+            height: 0.55,
+            rotation: 12,
+          });
+        }}
+      />
+    </div>
   ),
 }));
 
@@ -770,6 +823,233 @@ describe("MixerNode", () => {
     });
 
     expect(mocks.queueNodeDataUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps layer transform preview after a local Fabric edit", async () => {
+    const mixerData = {
+      mixerVersion: 2,
+      stage: { width: 1200, height: 800 },
+      layers: [
+        {
+          id: "layer-1",
+          handleId: "layer-in",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          crop: { left: 0, top: 0, right: 0, bottom: 0 },
+          opacity: 100,
+          blendMode: "normal",
+          visible: true,
+          locked: false,
+        },
+      ],
+    };
+
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base.png",
+            intrinsicWidth: 1200,
+            intrinsicHeight: 800,
+          },
+        },
+        { id: "mixer-1", type: "mixer", data: mixerData },
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+      ],
+      props: { data: mixerData },
+    });
+
+    const editor = () => container?.querySelector('[data-testid="mixer-fabric-editor"]');
+    expect(editor()?.getAttribute("data-first-layer-x")).toBe("0");
+
+    await act(async () => {
+      container
+        ?.querySelector<HTMLButtonElement>('[data-testid="mock-transform-layer"]')
+        ?.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(editor()?.getAttribute("data-first-layer-x")).toBe("0.25");
+    expect(editor()?.getAttribute("data-first-layer-y")).toBe("0.1");
+    expect(editor()?.getAttribute("data-first-layer-width")).toBe("0.5");
+    expect(editor()?.getAttribute("data-first-layer-height")).toBe("0.75");
+    expect(editor()?.getAttribute("data-first-layer-rotation")).toBe("18");
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        mixerVersion: 2,
+        layers: [
+          expect.objectContaining({
+            id: "layer-1",
+            x: 0.25,
+            y: 0.1,
+            width: 0.5,
+            height: 0.75,
+            rotation: 18,
+          }),
+        ],
+      }),
+    });
+  });
+
+  it("keeps layer transform preview across a stale graph rerender before save flushes", async () => {
+    const mixerData = {
+      mixerVersion: 2,
+      stage: { width: 1200, height: 800 },
+      layers: [
+        {
+          id: "layer-1",
+          handleId: "layer-in",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          crop: { left: 0, top: 0, right: 0, bottom: 0 },
+          opacity: 100,
+          blendMode: "normal",
+          visible: true,
+          locked: false,
+        },
+      ],
+    };
+    const nodes = [
+      {
+        id: "image-base",
+        type: "image",
+        data: {
+          url: "https://cdn.example.com/base.png",
+          intrinsicWidth: 1200,
+          intrinsicHeight: 800,
+        },
+      },
+      { id: "mixer-1", type: "mixer", data: mixerData },
+    ];
+    const edges = [
+      { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+    ];
+
+    await renderNode({ nodes, edges, props: { data: mixerData } });
+    await act(async () => {
+      container
+        ?.querySelector<HTMLButtonElement>('[data-testid="mock-transform-layer"]')
+        ?.click();
+    });
+
+    await renderNode({
+      nodes: nodes.map((node) => ({ ...node })),
+      edges: edges.map((edge) => ({ ...edge })),
+      props: { data: mixerData, width: 361 },
+    });
+
+    const editor = container?.querySelector('[data-testid="mixer-fabric-editor"]');
+    expect(editor?.getAttribute("data-first-layer-x")).toBe("0.25");
+    expect(editor?.getAttribute("data-first-layer-y")).toBe("0.1");
+    expect(editor?.getAttribute("data-first-layer-width")).toBe("0.5");
+    expect(editor?.getAttribute("data-first-layer-height")).toBe("0.75");
+  });
+
+  it("persists transforms for preview-only spawned layers that are not yet in node data", async () => {
+    const mixerData = {
+      mixerVersion: 2,
+      stage: { width: 1200, height: 800 },
+      layers: [
+        {
+          id: "layer-1",
+          handleId: "layer-in",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          crop: { left: 0, top: 0, right: 0, bottom: 0 },
+          opacity: 100,
+          blendMode: "normal",
+          visible: true,
+          locked: false,
+        },
+      ],
+    };
+
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base.png",
+            intrinsicWidth: 1200,
+            intrinsicHeight: 800,
+          },
+        },
+        {
+          id: "image-overlay",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/overlay.png",
+            intrinsicWidth: 600,
+            intrinsicHeight: 400,
+          },
+        },
+        { id: "mixer-1", type: "mixer", data: mixerData },
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+        { id: "edge-overlay", source: "image-overlay", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+      props: { data: mixerData },
+    });
+
+    expect(
+      container?.querySelector('[data-testid="mixer-fabric-editor"]')?.getAttribute("data-layer-count"),
+    ).toBe("2");
+
+    await act(async () => {
+      container
+        ?.querySelector<HTMLButtonElement>('[data-testid="mock-transform-second-layer"]')
+        ?.click();
+    });
+
+    const editor = container?.querySelector('[data-testid="mixer-fabric-editor"]');
+    expect(editor?.getAttribute("data-second-layer-x")).toBe("0.2");
+    expect(editor?.getAttribute("data-second-layer-y")).toBe("0.15");
+    expect(editor?.getAttribute("data-second-layer-width")).toBe("0.45");
+    expect(editor?.getAttribute("data-second-layer-height")).toBe("0.55");
+    expect(editor?.getAttribute("data-second-layer-rotation")).toBe("12");
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(mocks.queueNodeDataUpdate).toHaveBeenLastCalledWith({
+      nodeId: "mixer-1",
+      data: expect.objectContaining({
+        mixerVersion: 2,
+        layers: [
+          expect.objectContaining({ handleId: "layer-in" }),
+          expect.objectContaining({
+            handleId: "layer-in-2",
+            x: 0.2,
+            y: 0.15,
+            width: 0.45,
+            height: 0.55,
+            rotation: 12,
+          }),
+        ],
+      }),
+    });
   });
 
   it("diffs persisted mixer fields for interaction diagnostics", () => {

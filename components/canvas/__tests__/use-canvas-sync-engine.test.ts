@@ -226,6 +226,58 @@ describe("useCanvasSyncEngine", () => {
     });
   });
 
+  it("moves optimistic node data pins to the real id when an update arrives after handoff", async () => {
+    const enqueueSyncMutation = vi.fn(async () => undefined);
+    let nodes = [
+      {
+        id: "node-real",
+        type: "mixer",
+        position: { x: 0, y: 0 },
+        data: { mixerVersion: 2, layers: [] },
+      },
+    ];
+    const setNodes = (updater: (current: typeof nodes) => typeof nodes) => {
+      nodes = updater(nodes);
+      return nodes;
+    };
+
+    const controller = createCanvasSyncEngineController({
+      canvasId: asCanvasId("canvas-1"),
+      isSyncOnline: true,
+      getEnqueueSyncMutation: () => enqueueSyncMutation,
+      getRunBatchRemoveNodes: () => vi.fn(async () => undefined),
+      getRunSplitEdgeAtExistingNode: () => vi.fn(async () => undefined),
+      getSetNodes: () => setNodes as never,
+    });
+    controller.resolvedRealIdByClientRequestRef.current.set(
+      "req-mixer",
+      asNodeId("node-real"),
+    );
+
+    const nextData = {
+      mixerVersion: 2,
+      layers: [{ id: "layer-2", handleId: "layer-in-2", x: 0.2 }],
+    };
+    await controller.queueNodeDataUpdate({
+      nodeId: asNodeId("optimistic_req-mixer"),
+      data: nextData,
+    });
+
+    expect(nodes[0]?.data).toEqual(nextData);
+    expect(
+      controller.pendingLocalNodeDataUntilConvexMatchesRef.current.has(
+        "optimistic_req-mixer",
+      ),
+    ).toBe(false);
+    expect(controller.pendingLocalNodeDataUntilConvexMatchesRef.current).toEqual(
+      new Map([["node-real", nextData]]),
+    );
+    expect(enqueueSyncMutation).toHaveBeenCalledWith("updateData", {
+      nodeId: asNodeId("node-real"),
+      data: nextData,
+    });
+  });
+
   it("pins local node size immediately when queueing a resize", async () => {
     const enqueueSyncMutation = vi.fn(async () => undefined);
     let nodes = [

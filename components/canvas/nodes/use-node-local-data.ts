@@ -53,6 +53,7 @@ export function useNodeLocalData<T>({
   saveDelayMs,
   onSave,
   debugLabel,
+  previewOverrideEnabled = true,
 }: {
   nodeId: string;
   data: unknown;
@@ -60,6 +61,7 @@ export function useNodeLocalData<T>({
   saveDelayMs: number;
   onSave: (value: T) => Promise<void> | void;
   debugLabel: string;
+  previewOverrideEnabled?: boolean;
 }) {
   const { setPreviewNodeDataOverride, clearPreviewNodeDataOverride } =
     useCanvasGraphPreviewOverrides();
@@ -120,7 +122,9 @@ export function useNodeLocalData<T>({
       acceptedPersistedDataRef.current = incomingData;
       hasPendingLocalChangesRef.current = false;
       acknowledgedSaveVersionRef.current = 0;
-      clearPreviewNodeDataOverride(nodeId);
+      if (previewOverrideEnabled) {
+        clearPreviewNodeDataOverride(nodeId);
+      }
       return;
     }
 
@@ -148,21 +152,25 @@ export function useNodeLocalData<T>({
       acknowledgedSaveVersionRef.current = 0;
       localDataRef.current = incomingData;
       setLocalDataState(incomingData);
-      clearPreviewNodeDataOverride(nodeId);
+      if (previewOverrideEnabled) {
+        clearPreviewNodeDataOverride(nodeId);
+      }
     }, 0);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [clearPreviewNodeDataOverride, data, debugLabel, nodeId, normalize]);
+  }, [clearPreviewNodeDataOverride, data, debugLabel, nodeId, normalize, previewOverrideEnabled]);
 
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
       queueSave.cancel();
-      clearPreviewNodeDataOverride(nodeId);
+      if (previewOverrideEnabled) {
+        clearPreviewNodeDataOverride(nodeId);
+      }
     };
-  }, [clearPreviewNodeDataOverride, nodeId, queueSave]);
+  }, [clearPreviewNodeDataOverride, nodeId, previewOverrideEnabled, queueSave]);
 
   const applyLocalData = useCallback(
     (next: T) => {
@@ -170,10 +178,12 @@ export function useNodeLocalData<T>({
       hasPendingLocalChangesRef.current = true;
       localDataRef.current = next;
       setLocalDataState(next);
-      setPreviewNodeDataOverride(nodeId, next);
+      if (previewOverrideEnabled) {
+        setPreviewNodeDataOverride(nodeId, next);
+      }
       queueSave();
     },
-    [nodeId, queueSave, setPreviewNodeDataOverride],
+    [nodeId, previewOverrideEnabled, queueSave, setPreviewNodeDataOverride],
   );
 
   const updateLocalData = useCallback(
@@ -194,10 +204,12 @@ export function useNodeLocalData<T>({
       hasPendingLocalChangesRef.current = true;
       localDataRef.current = next;
       setLocalDataState(next);
-      setPreviewNodeDataOverride(nodeId, next);
+      if (previewOverrideEnabled) {
+        setPreviewNodeDataOverride(nodeId, next);
+      }
       queueSave();
     },
-    [debugLabel, nodeId, queueSave, setPreviewNodeDataOverride],
+    [debugLabel, nodeId, previewOverrideEnabled, queueSave, setPreviewNodeDataOverride],
   );
 
   return {

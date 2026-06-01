@@ -28,6 +28,10 @@ import {
   type MixerPreviewLayer,
 } from "@/lib/canvas-mixer-preview";
 import {
+  MAX_MIXER_LAYER_POSITION,
+  MAX_MIXER_LAYER_SIZE,
+  MIN_MIXER_LAYER_POSITION,
+  MIN_MIXER_LAYER_SIZE,
   normalizeMixerLayerCompositionData,
   type MixerBlendMode,
   type NormalizedMixerLayerCompositionData,
@@ -126,6 +130,74 @@ function stripLayerSource(layer: MixerPreviewLayer | NormalizedMixerLayerData): 
   return persisted;
 }
 
+function mergePreviewLayersWithLocalLayerData(args: {
+  previewLayers: readonly MixerPreviewLayer[];
+  localLayers: readonly NormalizedMixerLayerData[];
+}): MixerPreviewLayer[] {
+  if (args.localLayers.length === 0) {
+    return [...args.previewLayers];
+  }
+
+  const previewById = new Map(args.previewLayers.map((layer) => [layer.id, layer]));
+  const previewByHandle = new Map(args.previewLayers.map((layer) => [layer.handleId, layer]));
+  const usedHandles = new Set<string>();
+  const layers: MixerPreviewLayer[] = [];
+
+  for (const localLayer of args.localLayers) {
+    const previewLayer =
+      previewByHandle.get(localLayer.handleId) ?? previewById.get(localLayer.id);
+    if (!previewLayer) {
+      continue;
+    }
+
+    usedHandles.add(previewLayer.handleId);
+    layers.push({
+      ...previewLayer,
+      ...localLayer,
+      source: previewLayer.source,
+    });
+  }
+
+  for (const previewLayer of args.previewLayers) {
+    if (!usedHandles.has(previewLayer.handleId)) {
+      layers.push(previewLayer);
+    }
+  }
+
+  return layers;
+}
+
+function mergeEditableLayersWithPreviewHandles(args: {
+  currentLayers: readonly NormalizedMixerLayerData[];
+  previewLayers: readonly MixerPreviewLayer[];
+}): NormalizedMixerLayerData[] {
+  const layers = args.currentLayers.map((layer) => ({ ...layer }));
+  const seenHandles = new Set(layers.map((layer) => layer.handleId));
+
+  for (const previewLayer of args.previewLayers) {
+    if (seenHandles.has(previewLayer.handleId)) {
+      continue;
+    }
+
+    seenHandles.add(previewLayer.handleId);
+    layers.push(stripLayerSource(previewLayer));
+  }
+
+  return layers;
+}
+
+function resolveLayerHandleForUpdate(args: {
+  layerId: string;
+  layers: readonly NormalizedMixerLayerData[];
+  previewLayers: readonly MixerPreviewLayer[];
+}): string | null {
+  return (
+    args.layers.find((layer) => layer.id === args.layerId)?.handleId ??
+    args.previewLayers.find((layer) => layer.id === args.layerId)?.handleId ??
+    null
+  );
+}
+
 function resolveLayerSize(args: {
   source: MixerLayerSource | undefined;
   loadedImageSize: LoadedImageSize;
@@ -175,6 +247,24 @@ export function MixerNodeBody({
     latestNodeDataRef.current = (data ?? {}) as Record<string, unknown>;
   }, [data]);
 
+  const incomingEdges = useMemo(
+    () => graph.incomingEdgesByTarget.get(id) ?? [],
+    [graph.incomingEdgesByTarget, id],
+  );
+  const isLayerMode =
+    isLayerMixerData(data) ||
+    incomingEdges.some((edge) => isRawLayerHandle(edge.targetHandle));
+  const derivedStage = useMemo(
+    () =>
+      isLayerMode
+        ? resolveMixerBaseStageFromGraph({
+            incomingEdges,
+            graph,
+          })
+      : null,
+    [graph, incomingEdges, isLayerMode],
+  );
+
   const { localData, updateLocalData } = useNodeLocalData<MixerLocalData>({
     nodeId: id,
     data,
@@ -186,6 +276,7 @@ export function MixerNodeBody({
         data: { ...latestNodeDataRef.current, ...next },
       }),
     debugLabel: "mixer",
+    previewOverrideEnabled: !isLayerMode,
   });
 
   const { localData: layerData, updateLocalData: updateLayerData } =
@@ -206,42 +297,42 @@ export function MixerNodeBody({
     () => resolveMixerPreviewFromGraph({ nodeId: id, graph, sourceQuality }),
     [graph, id, sourceQuality],
   );
-  const incomingEdges = useMemo(
-    () => graph.incomingEdgesByTarget.get(id) ?? [],
-    [graph.incomingEdgesByTarget, id],
-  );
-  const isLayerMode =
-    isLayerMixerData(data) ||
-    incomingEdges.some((edge) => isRawLayerHandle(edge.targetHandle));
-  const derivedStage = useMemo(
-    () =>
-      isLayerMode
-        ? resolveMixerBaseStageFromGraph({
-            incomingEdges,
-            graph,
-          })
-        : null,
-    [graph, incomingEdges, isLayerMode],
-  );
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const previewLayers = useMemo(() => previewState.layers ?? [], [previewState.layers]);
+  const displayLayers = useMemo(
+    () =>
+      mergePreviewLayersWithLocalLayerData({
+        previewLayers,
+        localLayers: layerData.layers,
+      }),
+    [layerData.layers, previewLayers],
+  );
   const selectedLayerId =
-    activeLayerId && previewLayers.some((layer) => layer.id === activeLayerId)
+    activeLayerId && displayLayers.some((layer) => layer.id === activeLayerId)
       ? activeLayerId
-      : (previewLayers.at(-1)?.id ?? null);
+      : (displayLayers.at(-1)?.id ?? null);
 
   const updateLayerById = useCallback(
     (layerId: string, updater: (layer: NormalizedMixerLayerData) => NormalizedMixerLayerData) => {
       updateLayerData((current) => {
-        const baseLayers =
-          current.layers.length > 0
-            ? current.layers
-            : previewLayers.map((layer) => stripLayerSource(layer));
+        const baseLayers = mergeEditableLayersWithPreviewHandles({
+          currentLayers: current.layers,
+          previewLayers,
+        });
+        const targetHandle = resolveLayerHandleForUpdate({
+          layerId,
+          layers: baseLayers,
+          previewLayers,
+        });
         return {
           ...current,
           mixerVersion: 2,
           stage: current.stage ?? previewState.stage ?? null,
-          layers: baseLayers.map((layer) => (layer.id === layerId ? updater(layer) : layer)),
+          layers: baseLayers.map((layer) =>
+            layer.id === layerId || (targetHandle !== null && layer.handleId === targetHandle)
+              ? updater(layer)
+              : layer,
+          ),
         };
       });
     },
@@ -251,10 +342,10 @@ export function MixerNodeBody({
   const moveLayer = useCallback(
     (layerId: string, direction: -1 | 1) => {
       updateLayerData((current) => {
-        const layers =
-          current.layers.length > 0
-            ? [...current.layers]
-            : previewLayers.map((layer) => stripLayerSource(layer));
+        const layers = mergeEditableLayersWithPreviewHandles({
+          currentLayers: current.layers,
+          previewLayers,
+        });
         const index = layers.findIndex((layer) => layer.id === layerId);
         const nextIndex = index + direction;
         if (index < 0 || nextIndex < 0 || nextIndex >= layers.length) {
@@ -284,7 +375,13 @@ export function MixerNodeBody({
 
       updateLayerById(layerId, (layer) => ({
         ...layer,
-        [field]: field === "opacity" ? clamp(nextValue, 0, 100) : nextValue,
+        [field]: field === "opacity"
+          ? clamp(nextValue, 0, 100)
+          : field === "x" || field === "y"
+            ? clamp(nextValue, MIN_MIXER_LAYER_POSITION, MAX_MIXER_LAYER_POSITION)
+            : field === "width" || field === "height"
+              ? clamp(nextValue, MIN_MIXER_LAYER_SIZE, MAX_MIXER_LAYER_SIZE)
+              : nextValue,
       }));
     };
 
@@ -323,10 +420,10 @@ export function MixerNodeBody({
     ) => {
       updateLayerById(layerId, (layer) => ({
         ...layer,
-        x: clamp(patch.x, 0, 1),
-        y: clamp(patch.y, 0, 1),
-        width: clamp(patch.width, 0.01, 1),
-        height: clamp(patch.height, 0.01, 1),
+        x: clamp(patch.x, MIN_MIXER_LAYER_POSITION, MAX_MIXER_LAYER_POSITION),
+        y: clamp(patch.y, MIN_MIXER_LAYER_POSITION, MAX_MIXER_LAYER_POSITION),
+        width: clamp(patch.width, MIN_MIXER_LAYER_SIZE, MAX_MIXER_LAYER_SIZE),
+        height: clamp(patch.height, MIN_MIXER_LAYER_SIZE, MAX_MIXER_LAYER_SIZE),
         rotation: patch.rotation,
       }));
     },
@@ -341,10 +438,10 @@ export function MixerNodeBody({
     }
 
     const stageKey = `${derivedStage.width}x${derivedStage.height}`;
-    const baseLayers =
-      layerData.layers.length > 0
-        ? layerData.layers
-        : previewLayers.map((layer) => stripLayerSource(layer));
+    const baseLayers = mergeEditableLayersWithPreviewHandles({
+      currentLayers: layerData.layers,
+      previewLayers,
+    });
     const stageDataKey = JSON.stringify({
       stage: derivedStage,
       layers: baseLayers,
@@ -571,7 +668,7 @@ export function MixerNodeBody({
         ) : previewLayers.length > 0 ? (
           <MixerFabricEditor
             stage={previewState.stage ?? layerData.stage}
-            layers={previewLayers}
+            layers={displayLayers}
             activeLayerId={selectedLayerId}
             onSelectLayer={setActiveLayerId}
             onTransformLayer={onFabricTransformLayer}
@@ -582,7 +679,7 @@ export function MixerNodeBody({
           </div>
         )}
         <MixerLayerControls
-          layers={previewLayers}
+          layers={displayLayers}
           activeLayerId={selectedLayerId}
           onSelectLayer={setActiveLayerId}
           onMoveLayer={moveLayer}
@@ -711,10 +808,10 @@ function MixerLayerControls({
           </div>
 
           <LayerNumber label="Opacity" value={activeLayer.opacity} min={0} max={100} step={1} onInput={onNumberChange(activeLayer.id, "opacity")} />
-          <LayerNumber label="X" value={activeLayer.x} min={0} max={1} step={0.01} onInput={onNumberChange(activeLayer.id, "x")} />
-          <LayerNumber label="Y" value={activeLayer.y} min={0} max={1} step={0.01} onInput={onNumberChange(activeLayer.id, "y")} />
-          <LayerNumber label="W" value={activeLayer.width} min={0.01} max={1} step={0.01} onInput={onNumberChange(activeLayer.id, "width")} />
-          <LayerNumber label="H" value={activeLayer.height} min={0.01} max={1} step={0.01} onInput={onNumberChange(activeLayer.id, "height")} />
+          <LayerNumber label="X" value={activeLayer.x} min={MIN_MIXER_LAYER_POSITION} max={MAX_MIXER_LAYER_POSITION} step={0.01} onInput={onNumberChange(activeLayer.id, "x")} />
+          <LayerNumber label="Y" value={activeLayer.y} min={MIN_MIXER_LAYER_POSITION} max={MAX_MIXER_LAYER_POSITION} step={0.01} onInput={onNumberChange(activeLayer.id, "y")} />
+          <LayerNumber label="W" value={activeLayer.width} min={MIN_MIXER_LAYER_SIZE} max={MAX_MIXER_LAYER_SIZE} step={0.01} onInput={onNumberChange(activeLayer.id, "width")} />
+          <LayerNumber label="H" value={activeLayer.height} min={MIN_MIXER_LAYER_SIZE} max={MAX_MIXER_LAYER_SIZE} step={0.01} onInput={onNumberChange(activeLayer.id, "height")} />
           <LayerNumber label="Rot" value={activeLayer.rotation} min={0} max={359} step={1} onInput={onNumberChange(activeLayer.id, "rotation")} />
           <LayerNumber label="Crop L" value={activeLayer.crop.left} min={0} max={0.9} step={0.01} onInput={onCropChange(activeLayer.id, "left")} />
           <LayerNumber label="Crop T" value={activeLayer.crop.top} min={0} max={0.9} step={0.01} onInput={onCropChange(activeLayer.id, "top")} />

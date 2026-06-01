@@ -1,8 +1,13 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from "vitest";
 
 import {
+  applyMixerFabricNoDragClasses,
+  buildMixerFabricLayerBuildKey,
   buildMixerFabricLayerObjectOptions,
   fitMixerFabricEditorDimensions,
+  shouldSkipMixerFabricLayoutSync,
 } from "@/components/canvas/nodes/mixer-fabric-editor";
 
 describe("fitMixerFabricEditorDimensions", () => {
@@ -53,5 +58,88 @@ describe("fitMixerFabricEditorDimensions", () => {
         originY: "top",
       },
     });
+  });
+
+  it("keeps the Fabric object build key stable for transform-only layer changes", () => {
+    const baseLayer = {
+      id: "layer-1",
+      handleId: "layer-in",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      rotation: 0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      opacity: 100,
+      blendMode: "normal" as const,
+      visible: true,
+      locked: false,
+      source: { kind: "image" as const, url: "https://cdn.example.com/base.png" },
+    };
+
+    expect(
+      buildMixerFabricLayerBuildKey([
+        {
+          ...baseLayer,
+          x: 0.25,
+          y: 0.1,
+          width: 0.5,
+          height: 0.75,
+          rotation: 18,
+        },
+      ]),
+    ).toBe(buildMixerFabricLayerBuildKey([baseLayer]));
+
+    expect(
+      buildMixerFabricLayerBuildKey([
+        {
+          ...baseLayer,
+          source: { kind: "image" as const, url: "https://cdn.example.com/changed.png" },
+        },
+      ]),
+    ).not.toBe(buildMixerFabricLayerBuildKey([baseLayer]));
+  });
+
+  it("marks all Fabric-managed canvas elements as non-draggable canvas UI", () => {
+    const lowerCanvasEl = document.createElement("canvas");
+    const upperCanvasEl = document.createElement("canvas");
+    const wrapperEl = document.createElement("div");
+
+    applyMixerFabricNoDragClasses({
+      lowerCanvasEl,
+      upperCanvasEl,
+      wrapperEl,
+    });
+
+    for (const element of [lowerCanvasEl, upperCanvasEl, wrapperEl]) {
+      expect(element.classList.contains("nodrag")).toBe(true);
+      expect(element.classList.contains("nopan")).toBe(true);
+    }
+  });
+
+  it("skips stale external layout while a Fabric transform is pending", () => {
+    expect(
+      shouldSkipMixerFabricLayoutSync({
+        isTransforming: false,
+        layer: { x: 0, y: 0, width: 1, height: 1, rotation: 0 },
+        pendingTransform: { x: 0.2, y: 0.15, width: 0.45, height: 0.55, rotation: 12 },
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldSkipMixerFabricLayoutSync({
+        isTransforming: true,
+        layer: { x: 0, y: 0, width: 1, height: 1, rotation: 0 },
+        pendingTransform: null,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldSkipMixerFabricLayoutSync({
+        isTransforming: false,
+        layer: { x: 0.2, y: 0.15, width: 0.45, height: 0.55, rotation: 12 },
+        pendingTransform: { x: 0.2, y: 0.15, width: 0.45, height: 0.55, rotation: 12 },
+      }),
+    ).toBe(false);
   });
 });

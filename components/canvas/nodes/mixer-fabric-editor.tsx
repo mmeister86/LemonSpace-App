@@ -17,10 +17,26 @@ type FabricObjectWithLayer = FabricObject & {
   };
 };
 
+type MixerFabricCanvasElements = {
+  lowerCanvasEl?: Element | null;
+  upperCanvasEl?: Element | null;
+  wrapperEl?: Element | null;
+};
+
 type MixerFabricLayerPlacement = Pick<
   MixerPreviewLayer,
   "id" | "x" | "y" | "width" | "height" | "rotation" | "opacity" | "locked"
 >;
+type MixerFabricLayerTransformPatch = Pick<
+  MixerPreviewLayer,
+  "x" | "y" | "width" | "height" | "rotation"
+>;
+type MixerFabricTransformEvent = {
+  target?: FabricObject;
+  transform?: {
+    target?: FabricObject;
+  };
+};
 
 function readLayerText(layer: MixerPreviewLayer): string {
   if (layer.source.kind === "text") {
@@ -86,6 +102,102 @@ export function buildMixerFabricLayerObjectOptions(args: {
   };
 }
 
+function readMixerFabricLayerSourceKey(layer: MixerPreviewLayer): string {
+  if (layer.source.kind === "image") {
+    return `image:${layer.source.url}`;
+  }
+
+  return [
+    "text",
+    layer.source.content,
+    layer.source.width,
+    layer.source.height,
+  ].join(":");
+}
+
+export function buildMixerFabricLayerBuildKey(layers: readonly MixerPreviewLayer[]): string {
+  return JSON.stringify(
+    layers.map((layer) => ({
+      id: layer.id,
+      handleId: layer.handleId,
+      source: readMixerFabricLayerSourceKey(layer),
+    })),
+  );
+}
+
+export function applyMixerFabricNoDragClasses(elements: MixerFabricCanvasElements): void {
+  for (const element of [
+    elements.lowerCanvasEl,
+    elements.upperCanvasEl,
+    elements.wrapperEl,
+  ]) {
+    element?.classList.add("nodrag", "nopan");
+  }
+}
+
+function getMixerFabricCanvasElements(canvas: FabricCanvas): MixerFabricCanvasElements {
+  const canvasWithElements = canvas as FabricCanvas & MixerFabricCanvasElements;
+  return {
+    lowerCanvasEl: canvasWithElements.lowerCanvasEl,
+    upperCanvasEl: canvasWithElements.upperCanvasEl,
+    wrapperEl: canvasWithElements.wrapperEl,
+  };
+}
+
+function numbersAlmostEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) < 0.000001;
+}
+
+export function shouldSkipMixerFabricLayoutSync(args: {
+  isTransforming: boolean;
+  layer: MixerFabricLayerTransformPatch;
+  pendingTransform: MixerFabricLayerTransformPatch | null;
+}): boolean {
+  if (args.isTransforming) {
+    return true;
+  }
+
+  const pending = args.pendingTransform;
+  if (!pending) {
+    return false;
+  }
+
+  return !(
+    numbersAlmostEqual(args.layer.x, pending.x) &&
+    numbersAlmostEqual(args.layer.y, pending.y) &&
+    numbersAlmostEqual(args.layer.width, pending.width) &&
+    numbersAlmostEqual(args.layer.height, pending.height) &&
+    numbersAlmostEqual(args.layer.rotation, pending.rotation)
+  );
+}
+
+function applyMixerFabricObjectLayout(args: {
+  object: FabricObject;
+  layer: MixerPreviewLayer;
+  editorSize: { width: number; height: number };
+}) {
+  const { frameWidth, frameHeight, shared } = buildMixerFabricLayerObjectOptions({
+    layer: args.layer,
+    editorSize: args.editorSize,
+  });
+
+  args.object.set(shared);
+  if (args.layer.source.kind === "image") {
+    args.object.set({
+      scaleX: frameWidth / Math.max(1, args.object.width),
+      scaleY: frameHeight / Math.max(1, args.object.height),
+    });
+  } else {
+    args.object.set({
+      width: frameWidth,
+      height: frameHeight,
+      scaleX: 1,
+      scaleY: 1,
+    });
+  }
+  args.object.setCoords();
+}
+
 export function MixerFabricEditor({
   stage,
   layers,
@@ -108,7 +220,11 @@ export function MixerFabricEditor({
   const activeLayerIdRef = useRef(activeLayerId);
   const onSelectLayerRef = useRef(onSelectLayer);
   const onTransformLayerRef = useRef(onTransformLayer);
+  const latestLayersRef = useRef(layers);
+  const transformingLayerIdsRef = useRef(new Set<string>());
+  const pendingTransformByLayerIdRef = useRef(new Map<string, MixerFabricLayerTransformPatch>());
   const stageSize = useMemo(() => stageDimensions(stage), [stage]);
+  const layerBuildKey = useMemo(() => buildMixerFabricLayerBuildKey(layers), [layers]);
   const [editorSize, setEditorSize] = useState(() =>
     fitMixerFabricEditorDimensions({
       containerWidth: 320,
@@ -117,6 +233,7 @@ export function MixerFabricEditor({
       stageHeight: stageSize.height,
     }),
   );
+  latestLayersRef.current = layers;
 
   useEffect(() => {
     activeLayerIdRef.current = activeLayerId;
@@ -155,6 +272,8 @@ export function MixerFabricEditor({
 
   useEffect(() => {
     let disposed = false;
+    let installed = false;
+    let nextCanvas: FabricCanvas | null = null;
     const host = fabricHostRef.current;
 
     async function buildCanvas() {
@@ -167,25 +286,27 @@ export function MixerFabricEditor({
         return;
       }
 
-      fabricCanvasRef.current?.dispose();
-      host.replaceChildren();
       const element = document.createElement("canvas");
       element.dataset.testid = "mixer-fabric-editor";
       element.className = "nodrag nopan";
       element.style.width = `${editorSize.width}px`;
       element.style.height = `${editorSize.height}px`;
-      host.appendChild(element);
 
       const canvas = new fabric.Canvas(element, {
         preserveObjectStacking: true,
         selection: false,
         backgroundColor: "#f8f5ef",
       });
-      fabricCanvasRef.current = canvas;
+      nextCanvas = canvas;
       canvas.setDimensions(editorSize);
+      applyMixerFabricNoDragClasses({
+        lowerCanvasEl: element,
+        ...getMixerFabricCanvasElements(canvas),
+      });
+      const layersToBuild = latestLayersRef.current;
 
       const objects = await Promise.all(
-        layers.map(async (layer) => {
+        layersToBuild.map(async (layer) => {
           const { frameWidth, frameHeight, shared } = buildMixerFabricLayerObjectOptions({
             layer,
             editorSize,
@@ -216,7 +337,8 @@ export function MixerFabricEditor({
         }),
       );
 
-      if (disposed || fabricCanvasRef.current !== canvas) {
+      if (disposed) {
+        canvas.dispose();
         return;
       }
 
@@ -229,6 +351,13 @@ export function MixerFabricEditor({
       }
       canvas.renderAll();
 
+      const previousCanvas = fabricCanvasRef.current;
+      fabricCanvasRef.current = canvas;
+      installed = true;
+      const { wrapperEl } = getMixerFabricCanvasElements(canvas);
+      host.replaceChildren(wrapperEl ?? element);
+      previousCanvas?.dispose();
+
       const selectObject = (object: FabricObject | undefined) => {
         const fabricObject = object as FabricObjectWithLayer | undefined;
         const layerId = fabricObject?.data?.layerId;
@@ -238,6 +367,16 @@ export function MixerFabricEditor({
 
         onSelectLayerRef.current(layerId);
       };
+      const readLayerId = (object: FabricObject | undefined) =>
+        (object as FabricObjectWithLayer | undefined)?.data?.layerId;
+      const markObjectTransforming = (object: FabricObject | undefined) => {
+        const layerId = readLayerId(object);
+        if (!layerId) {
+          return;
+        }
+
+        transformingLayerIdsRef.current.add(layerId);
+      };
       const syncObjectTransform = (object: FabricObject | undefined) => {
         const fabricObject = object as FabricObjectWithLayer | undefined;
         const layerId = fabricObject?.data?.layerId;
@@ -245,18 +384,33 @@ export function MixerFabricEditor({
           return;
         }
 
-        onSelectLayerRef.current(layerId);
-        onTransformLayerRef.current(layerId, {
+        const patch = {
           x: (fabricObject.left ?? 0) / editorSize.width,
           y: (fabricObject.top ?? 0) / editorSize.height,
           width: fabricObject.getScaledWidth() / editorSize.width,
           height: fabricObject.getScaledHeight() / editorSize.height,
           rotation: ((fabricObject.angle ?? 0) % 360 + 360) % 360,
-        });
+        };
+        transformingLayerIdsRef.current.delete(layerId);
+        pendingTransformByLayerIdRef.current.set(layerId, patch);
+        onSelectLayerRef.current(layerId);
+        onTransformLayerRef.current(layerId, patch);
       };
 
       canvas.on("selection:created", (event) => selectObject(event.selected?.[0]));
       canvas.on("selection:updated", (event) => selectObject(event.selected?.[0]));
+      canvas.on("before:transform", (event) =>
+        markObjectTransforming((event as MixerFabricTransformEvent).transform?.target),
+      );
+      canvas.on("object:moving", (event) =>
+        markObjectTransforming((event as MixerFabricTransformEvent).target),
+      );
+      canvas.on("object:scaling", (event) =>
+        markObjectTransforming((event as MixerFabricTransformEvent).target),
+      );
+      canvas.on("object:rotating", (event) =>
+        markObjectTransforming((event as MixerFabricTransformEvent).target),
+      );
       canvas.on("object:modified", (event) => syncObjectTransform(event.target));
     }
 
@@ -264,11 +418,56 @@ export function MixerFabricEditor({
 
     return () => {
       disposed = true;
+      if (!installed) {
+        nextCanvas?.dispose();
+      }
+    };
+  }, [editorSize, layerBuildKey]);
+
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const layerById = new Map(layers.map((layer) => [layer.id, layer]));
+    for (const object of canvas.getObjects()) {
+      const layerId = (object as FabricObjectWithLayer).data?.layerId;
+      const layer = layerId ? layerById.get(layerId) : undefined;
+      if (!layer) {
+        continue;
+      }
+      const pendingTransform = pendingTransformByLayerIdRef.current.get(layer.id) ?? null;
+      if (
+        shouldSkipMixerFabricLayoutSync({
+          isTransforming: transformingLayerIdsRef.current.has(layer.id),
+          layer,
+          pendingTransform,
+        })
+      ) {
+        continue;
+      }
+      if (pendingTransform) {
+        pendingTransformByLayerIdRef.current.delete(layer.id);
+      }
+
+      applyMixerFabricObjectLayout({
+        object,
+        layer,
+        editorSize,
+      });
+    }
+    canvas.requestRenderAll();
+  }, [editorSize, layers]);
+
+  useEffect(() => {
+    const host = fabricHostRef.current;
+    return () => {
       fabricCanvasRef.current?.dispose();
       fabricCanvasRef.current = null;
       host?.replaceChildren();
     };
-  }, [editorSize, layers]);
+  }, []);
 
   useEffect(() => {
     const canvas = fabricCanvasRef.current;

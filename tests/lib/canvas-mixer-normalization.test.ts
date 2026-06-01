@@ -74,10 +74,10 @@ describe("canvas mixer normalization", () => {
         {
           id: "hero",
           handleId: "layer-in",
-          x: 0,
+          x: -0.2,
           y: 0.25,
-          width: 1,
-          height: 0.1,
+          width: 1.4,
+          height: 0.01,
           rotation: 10,
           crop: { left: 0.2, top: 0, right: 0.7, bottom: 0.1 },
           opacity: 0,
@@ -86,6 +86,32 @@ describe("canvas mixer normalization", () => {
           locked: true,
         },
       ],
+    });
+  });
+
+  it("preserves stage-relative v2 layer frames that extend outside the stage", () => {
+    expect(
+      normalizeMixerLayerCompositionData({
+        mixerVersion: 2,
+        layers: [
+          {
+            id: "oversized",
+            handleId: "layer-in-2",
+            x: 0.36,
+            y: -0.2,
+            width: 1.25,
+            height: 1.1,
+            rotation: 0,
+          },
+        ],
+      }).layers[0],
+    ).toMatchObject({
+      id: "oversized",
+      handleId: "layer-in-2",
+      x: 0.36,
+      y: -0.2,
+      width: 1.25,
+      height: 1.1,
     });
   });
 

@@ -280,6 +280,8 @@ export function createCanvasSyncPendingController({
       : undefined;
 
     if (resolvedRealId) {
+      pendingLocalNodeDataUntilConvexMatchesRef.current.delete(rawNodeId);
+      pinNodeDataLocally(resolvedRealId as string, args.data);
       await getEnqueueSyncMutation()("updateData", {
         nodeId: resolvedRealId,
         data: args.data,

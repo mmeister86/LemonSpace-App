@@ -77,6 +77,10 @@ const MIN_OVERLAY_POSITION = 0;
 const MAX_OVERLAY_POSITION = 1;
 const MIN_OVERLAY_SIZE = 0.1;
 const MAX_OVERLAY_SIZE = 1;
+export const MIN_MIXER_LAYER_POSITION = -8;
+export const MAX_MIXER_LAYER_POSITION = 8;
+export const MIN_MIXER_LAYER_SIZE = 0.01;
+export const MAX_MIXER_LAYER_SIZE = 8;
 const DEFAULT_LAYER_ID_PREFIX = "layer";
 
 function clamp(value: number, min: number, max: number): number {
@@ -143,6 +147,44 @@ function normalizeUnitRect(args: {
   );
 
   return { x, y, width, height };
+}
+
+function normalizeMixerLayerFrame(args: {
+  x: unknown;
+  y: unknown;
+  width: unknown;
+  height: unknown;
+}): { x: number; y: number; width: number; height: number } {
+  return {
+    x: roundNormalized(
+      clamp(
+        normalizeOverlayNumber(args.x, 0),
+        MIN_MIXER_LAYER_POSITION,
+        MAX_MIXER_LAYER_POSITION,
+      ),
+    ),
+    y: roundNormalized(
+      clamp(
+        normalizeOverlayNumber(args.y, 0),
+        MIN_MIXER_LAYER_POSITION,
+        MAX_MIXER_LAYER_POSITION,
+      ),
+    ),
+    width: roundNormalized(
+      clamp(
+        normalizeOverlayNumber(args.width, 1),
+        MIN_MIXER_LAYER_SIZE,
+        MAX_MIXER_LAYER_SIZE,
+      ),
+    ),
+    height: roundNormalized(
+      clamp(
+        normalizeOverlayNumber(args.height, 1),
+        MIN_MIXER_LAYER_SIZE,
+        MAX_MIXER_LAYER_SIZE,
+      ),
+    ),
+  };
 }
 
 export function buildMixerLayerHandleId(index: number): string {
@@ -255,12 +297,11 @@ function normalizeMixerLayer(
     return null;
   }
 
-  const rect = normalizeUnitRect({
+  const rect = normalizeMixerLayerFrame({
     x: record.x,
     y: record.y,
     width: record.width,
     height: record.height,
-    defaults: { x: 0, y: 0, width: 1, height: 1 },
   });
   const blendMode = MIXER_BLEND_MODES.has(record.blendMode as MixerBlendMode)
     ? (record.blendMode as MixerBlendMode)

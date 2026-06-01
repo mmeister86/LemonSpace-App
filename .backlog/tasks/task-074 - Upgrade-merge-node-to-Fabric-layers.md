@@ -4,7 +4,7 @@ title: Upgrade merge node to Fabric layers
 status: In Progress
 assignee: []
 created_date: '2026-05-31 11:10'
-updated_date: '2026-06-01 13:12'
+updated_date: '2026-06-01 14:36'
 labels: []
 dependencies: []
 priority: high
@@ -50,4 +50,8 @@ Implemented approved spawned-input/base-stage slice. Repeating mixer inputs now 
 Bugfix after user report: Fabric.js 7 defaults object originX/originY to center, so Mixer layer images positioned at 0/0 were drawn as if centered and only partially filled the stage. Added explicit originX=left/originY=top through buildMixerFabricLayerObjectOptions and regression coverage. Verification: targeted TASK-074 Vitest matrix passed 8 files / 157 tests; focused ESLint passed; browser reload of the affected canvas showed the Mixer Fabric canvas mounted with 0 console errors and the base image no longer half-offset by Fabric origin.
 
 Bugfix after edge-drop report: creating a Mixer via connection drop could trigger a React maximum-update-depth loop while the derived layer-in stage update was still optimistic. Added a pending-stage data gate in MixerNode, allowed explicit free mixer layer handles for direct drops (e.g. layer-in-2), updated Mixer reconnect/drop tests to normalized layer handles, and refreshed Mixer policy copy. Verification: targeted TASK-074 Vitest matrix passed 11 files / 207 tests; focused ESLint passed; git diff --check passed; browser reload of the affected canvas shows 8 nodes / 1 Mixer / 0 console errors after cleanup of the temporary repro node.
+
+Bugfix after Fabric interaction reports: stopped transform-only layer changes from rebuilding/discarding the Fabric canvas, kept the existing Fabric canvas mounted until replacement objects are ready, marked Fabric lower/upper/wrapper DOM with nodrag/nopan, and made Mixer layer-mode render local layer data directly so graph rerenders cannot snap transforms back before persistence catches up. Also gated the legacy V1 mixer local-data hook from writing/clearing the shared preview override while the node is in V2 layer mode. Verification: targeted TASK-074 Vitest matrix passed 12 files / 220 tests; focused ESLint passed; git diff --check passed; browser reload of the affected canvas shows 8 nodes, Merge layers visible, Fabric lower/upper/wrapper classes include nodrag/nopan, and 0 warn/error console logs. Full tsc --noEmit still fails only on pre-existing unrelated typing errors in base-node-wrapper/comment/image-node/rate-limit/prompt tests.
+
+Second Fabric reset investigation with subagents. Root causes found and fixed: (1) preview-only spawned layers were visible but not merged into the editable layer mutation base, so transforms on layer-in-2/later could no-op and visually reset; (2) Fabric layout sync could reapply stale props while an object transform was active/pending; (3) node data pins were left on optimistic ids when updates arrived after real-id handoff; (4) V2 layer normalization still used V1 in-stage bounds, shrinking/moving layers back after persistence. Implemented merged editable layer base by handle, pending transform layout-skip, optimistic data pin handoff to real id, and stage-relative V2 layer bounds that allow off-stage positions and >1 scales. Verification: targeted TASK-074 Vitest matrix passed 14 files / 240 tests; focused ESLint passed; git diff --check passed. Full tsc --noEmit still fails only on pre-existing unrelated typing errors in base-node-wrapper/comment/image-node/rate-limit/prompt tests.
 <!-- SECTION:NOTES:END -->
