@@ -1,10 +1,10 @@
 ---
 id: TASK-076
 title: Add canvas zoom slider and node search controls
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-01 08:42'
-updated_date: '2026-06-01 08:56'
+updated_date: '2026-06-01 09:04'
 labels: []
 dependencies: []
 priority: high
@@ -51,3 +51,9 @@ Authenticated in-app browser verification completed on http://localhost:3000/can
 - Bottom-left zoom controls reveal slider on keyboard focus; opacity changes from 0.55 to 1 and reveal width expands to 144px.
 - MiniMap remains bottom-right with default opacity 0.55.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped canvas QoL controls: bottom-left hover-reveal zoom slider, toolbar node search, semi-transparent zoom controls and MiniMap, with focused tests, lint, and authenticated browser verification.
+<!-- SECTION:FINAL_SUMMARY:END -->
