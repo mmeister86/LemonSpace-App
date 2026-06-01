@@ -19,7 +19,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   Background,
-  Controls,
   MiniMap,
   applyEdgeChanges,
   useReactFlow,
@@ -46,6 +45,7 @@ import { nodeTypes } from "./node-types";
 import CanvasToolbar, {
   type CanvasNavTool,
 } from "@/components/canvas/canvas-toolbar";
+import { CanvasZoomSliderControls } from "@/components/canvas/canvas-zoom-controls";
 import { CanvasAppMenu } from "@/components/canvas/canvas-app-menu";
 import { CanvasCommandPalette } from "@/components/canvas/canvas-command-palette";
 import {
@@ -1003,9 +1003,10 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
                   )}
                 >
                   <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-                  <Controls className="bg-card! border! shadow-sm! rounded-lg!" />
+                  <CanvasZoomSliderControls />
                   <MiniMap
-                    className="bg-card! border! shadow-sm! rounded-lg!"
+                    position="bottom-right"
+                    className="bg-card! border! shadow-sm! rounded-lg! opacity-55 transition-opacity duration-200 ease-out hover:opacity-100 focus-within:opacity-100"
                     nodeColor={getMiniMapNodeColor}
                     nodeStrokeColor={getMiniMapNodeStrokeColor}
                     maskColor="rgba(0, 0, 0, 0.1)"

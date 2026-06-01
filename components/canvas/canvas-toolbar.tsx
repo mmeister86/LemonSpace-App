@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { CreditDisplay } from "@/components/canvas/credit-display";
+import { CanvasNodeSearchButton } from "@/components/canvas/canvas-node-search";
 import { useCanvasPlacement } from "@/components/canvas/canvas-placement-context";
 import {
   resolveToolbarSnapSide,
@@ -526,6 +527,8 @@ export default function CanvasToolbar({
       </Button>
 
       <CanvasToolbarNodeMenu onAddNode={(template) => void handleAddNode(template)} />
+
+      <CanvasNodeSearchButton />
 
       <CanvasToolbarToolButtons
         activeTool={activeTool}

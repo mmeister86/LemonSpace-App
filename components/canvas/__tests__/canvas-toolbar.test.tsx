@@ -82,6 +82,31 @@ vi.mock("@/lib/canvas-node-catalog", () => ({
   isNodePaletteEnabled: () => false,
 }));
 
+vi.mock("@/components/node-search", () => ({
+  NodeSearchDialog: ({
+    open,
+    placeholder,
+    title,
+  }: {
+    open?: boolean;
+    placeholder?: string;
+    title?: string;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label={title}>
+        <input placeholder={placeholder} />
+      </div>
+    ) : null,
+}));
+
+vi.mock("@xyflow/react", () => ({
+  useReactFlow: () => ({
+    fitView: vi.fn(),
+    getNodes: vi.fn(() => []),
+    setNodes: vi.fn(),
+  }),
+}));
+
 import CanvasToolbar, { resolveToolbarSnapSide } from "@/components/canvas/canvas-toolbar";
 import {
   clampToolbarPosition,
@@ -156,6 +181,30 @@ describe("CanvasToolbar", () => {
     expect(container?.querySelector('[data-onboarding="canvas-toolbar"]')).not.toBeNull();
     expect(container?.querySelector('[data-onboarding="canvas-add-node"]')).not.toBeNull();
     expect(container?.textContent).not.toContain("Export ZIP");
+  });
+
+  it("opens node search from the toolbar search button", async () => {
+    await act(async () => {
+      root?.render(
+        <CanvasToolbar
+          canvasId={"canvas-1" as never}
+          activeTool="select"
+          onToolChange={vi.fn()}
+        />,
+      );
+    });
+
+    const searchButton = container?.querySelector('button[aria-label="Knoten suchen"]');
+    if (!(searchButton instanceof HTMLButtonElement)) {
+      throw new Error("Search button not found");
+    }
+
+    await act(async () => {
+      searchButton.click();
+    });
+
+    expect(document.body.querySelector('[role="dialog"][aria-label="Knoten suchen"]')).not.toBeNull();
+    expect(document.body.querySelector('input[placeholder="Knoten suchen..."]')).not.toBeNull();
   });
 
   it("reflects active state via aria-pressed", async () => {

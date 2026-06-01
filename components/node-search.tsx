@@ -16,6 +16,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 export interface NodeSearchProps extends Omit<PanelProps, "children"> {
   // The function to search for nodes, should return an array of nodes that match the search string
@@ -24,17 +25,19 @@ export interface NodeSearchProps extends Omit<PanelProps, "children"> {
   // The function to select a node, should set the node as selected and fit the view to the node
   // By default, it will set the node as selected and fit the view to the node.
   onSelectNode?: (node: Node) => void;
+  getNodeLabel?: (node: Node) => string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  placeholder?: string;
 }
 
 export function NodeSearchInternal({
-  className,
+  getNodeLabel,
   onSearch,
   onSelectNode,
   open,
   onOpenChange,
-  ...props
+  placeholder = "Search nodes...",
 }: NodeSearchProps) {
   const [searchResults, setSearchResults] = useState<Node[]>([]);
   const [searchString, setSearchString] = useState<string>("");
@@ -44,12 +47,12 @@ export function NodeSearchInternal({
     (searchString: string) => {
       const nodes = getNodes();
       return nodes.filter((node) =>
-        (node.data.label as string)
+        (getNodeLabel?.(node) ?? String(node.data.label ?? node.id))
           .toLowerCase()
           .includes(searchString.toLowerCase()),
       );
     },
-    [getNodes],
+    [getNodeLabel, getNodes],
   );
 
   const onChange = useCallback(
@@ -59,9 +62,11 @@ export function NodeSearchInternal({
         onOpenChange?.(true);
         const results = (onSearch || defaultOnSearch)(searchString);
         setSearchResults(results);
+      } else {
+        setSearchResults([]);
       }
     },
-    [onSearch, onOpenChange],
+    [defaultOnSearch, onOpenChange, onSearch],
   );
 
   const defaultOnSelectNode = useCallback(
@@ -86,7 +91,7 @@ export function NodeSearchInternal({
   return (
     <>
       <CommandInput
-        placeholder="Search nodes..."
+        placeholder={placeholder}
         onValueChange={onChange}
         value={searchString}
         onFocus={() => onOpenChange?.(true)}
@@ -101,7 +106,7 @@ export function NodeSearchInternal({
               {searchResults.map((node) => {
                 return (
                   <CommandItem key={node.id} onSelect={() => onSelect(node)}>
-                    <span>{node.data.label as string}</span>
+                    <span>{getNodeLabel?.(node) ?? String(node.data.label ?? node.id)}</span>
                   </CommandItem>
                 );
               })}
@@ -115,22 +120,25 @@ export function NodeSearchInternal({
 
 export function NodeSearch({
   className,
+  getNodeLabel,
   onSearch,
   onSelectNode,
+  placeholder,
   ...props
 }: NodeSearchProps) {
   const [open, setOpen] = useState(false);
   return (
     <Command
       shouldFilter={false}
-      className="rounded-lg border shadow-md md:min-w-[450px]"
+      className={cn("rounded-lg border shadow-md md:min-w-[450px]", className)}
     >
       <NodeSearchInternal
-        className={className}
+        getNodeLabel={getNodeLabel}
         onSearch={onSearch}
         onSelectNode={onSelectNode}
         open={open}
         onOpenChange={setOpen}
+        placeholder={placeholder}
         {...props}
       />
     </Command>
@@ -143,23 +151,31 @@ export interface NodeSearchDialogProps extends NodeSearchProps {
 
 export function NodeSearchDialog({
   className,
+  getNodeLabel,
   onSearch,
   onSelectNode,
   open,
   onOpenChange,
+  placeholder,
   title = "Node Search",
   ...props
 }: NodeSearchDialogProps) {
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <NodeSearchInternal
-        className={className}
-        onSearch={onSearch}
-        onSelectNode={onSelectNode}
-        open={open}
-        onOpenChange={onOpenChange}
-        {...props}
-      />
+    <CommandDialog title={title} open={open} onOpenChange={onOpenChange}>
+      <Command
+        shouldFilter={false}
+        className={cn("rounded-none border-0 shadow-none", className)}
+      >
+        <NodeSearchInternal
+          getNodeLabel={getNodeLabel}
+          onSearch={onSearch}
+          onSelectNode={onSelectNode}
+          open={open}
+          onOpenChange={onOpenChange}
+          placeholder={placeholder}
+          {...props}
+        />
+      </Command>
     </CommandDialog>
   );
 }
