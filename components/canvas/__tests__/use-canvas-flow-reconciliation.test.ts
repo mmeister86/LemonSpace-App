@@ -255,7 +255,14 @@ describe("useCanvasFlowReconciliation", () => {
       );
     });
 
-    expect(latestStateRef.current?.nodes[0]?.style).toMatchObject({
+    const resizedNode = latestStateRef.current?.nodes[0];
+    expect(resizedNode?.style).toMatchObject({
+      width: 288,
+      height: 260,
+    });
+    expect(resizedNode?.width).toBe(288);
+    expect(resizedNode?.height).toBe(260);
+    expect(resizedNode?.measured).toMatchObject({
       width: 288,
       height: 260,
     });

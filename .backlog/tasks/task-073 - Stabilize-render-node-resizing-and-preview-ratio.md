@@ -1,10 +1,10 @@
 ---
 id: TASK-073
 title: Stabilize render node resizing and preview ratio
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-31 10:04'
-updated_date: '2026-05-31 10:43'
+updated_date: '2026-06-01 07:04'
 labels: []
 dependencies: []
 priority: high
@@ -18,7 +18,7 @@ Stabilize the Canvas render node after recent regressions: restore reliable resi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Render nodes are selectable and resizable with visible corner controls like other canvas nodes.
+- [x] #1 Render nodes are selectable and resizable with visible corner controls like other canvas nodes.
 - [x] #2 Render node resizing keeps the visible preview area aligned to the connected input aspect ratio.
 - [x] #3 Decorative inner gradient/shadow overlays no longer sit over the render content while status/actions/histogram remain available.
 - [x] #4 Render nodes do not automatically resize themselves from preview effects after user sizing or collapse/minimize actions.
@@ -49,4 +49,18 @@ User clarified the core remaining issue: the render node frame/resize follows as
 Follow-up fix after visual report: added resolveRenderPreviewDisplaySize and pass the computed ratio-locked display size into RenderNodePreviewSurface so the rendered canvas itself scales with the resized render node instead of staying visually small inside a larger frame. Verified render-node-ui and canvas-node-interaction helper tests, targeted ESLint, and production build outside sandbox after Turbopack port-binding sandbox failure.
 
 Second follow-up after user confirmed no visual improvement: compared render canvas to working image/crop patterns and removed the extra object-fit layer from the render canvas itself. The ratio is now owned by the preview frame, while the canvas fills that frame directly. Verification: render-node-ui.test.tsx passed, canvas-node-interaction-helpers.test.ts passed, targeted ESLint passed, and production build passed outside sandbox.
+
+Implementation pass started for measured render preview viewport sizing. Plan: add a failing RenderNode regression around ResizeObserver-measured viewport size, implement measured preview sizing, then verify targeted tests and browser geometry. Task remains In Progress pending user confirmation.
+
+Measured render preview viewport sizing implemented. Added RenderNode regression coverage for ResizeObserver-driven viewport sizing and flexible preview body layout. Browser verification on /canvas/j576nhh419p9ngnwj51psxvdg9848yy8: render preview viewport, frame, and canvas share the same visible box after reload; selecting the render node shows 4 resize controls. Verification: npm test -- components/canvas/__tests__/render-node.test.tsx components/canvas/__tests__/render-node-ui.test.tsx components/canvas/__tests__/canvas-node-interaction-helpers.test.ts passed (26 tests); targeted ESLint passed; npm run build passed. Task remains In Progress pending user manual confirmation before Done.
+
+Optimistic resize follow-up: reproduced the jump source in tests. Pending resize pins only updated node.style while React Flow width/height/measured still reflected stale Convex dimensions. Adding coverage and fixing pins to update all React Flow size channels before sync settles.
+
+Optimistic resize verification: targeted tests passed (39 tests across render, reconciliation, sync hook, interaction helpers), targeted ESLint passed, npm run build passed. Browser verification on /canvas/j576nhh419p9ngnwj51psxvdg9848yy8: after dragging the selected Render node resize handle, node style stayed stable at width 508px / height 622px across 16 samples while render preview frame and canvas stayed matched.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped Render node resizing stabilization: selectable/resizable Render nodes, ratio-locked visible preview sizing, measured preview viewport sizing, stable preview canvas scaling, and optimistic resize pins that keep React Flow style/direct/measured dimensions in sync while Convex persistence catches up. Verified targeted Render/Canvas tests, ESLint, production build, and browser resize behavior on the active canvas.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -90,11 +90,18 @@ const asNodeId = (id: string): Id<"nodes"> => id as Id<"nodes">;
 const latestHookValueRef: {
   current: ReturnType<typeof useCanvasSyncEngine> | null;
 } = { current: null };
+const latestNodesRef: { current: RFNode[] } = { current: [] };
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function HookHarness({ canvasId }: { canvasId: Id<"canvases"> }) {
-  const [, setNodes] = useState<RFNode[]>([]);
+function HookHarness({
+  canvasId,
+  initialNodes = [],
+}: {
+  canvasId: Id<"canvases">;
+  initialNodes?: RFNode[];
+}) {
+  const [nodes, setNodes] = useState<RFNode[]>(initialNodes);
   const [edges, setEdges] = useState<RFEdge[]>([]);
   const edgesRef = useRef<RFEdge[]>(edges);
   const deletingNodeIds = useRef(new Set<string>());
@@ -120,6 +127,10 @@ function HookHarness({ canvasId }: { canvasId: Id<"canvases"> }) {
   }, [hookValue]);
 
   useEffect(() => {
+    latestNodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
     latestEdgesRef.current = edges;
   }, [edges]);
 
@@ -141,6 +152,7 @@ describe("useCanvasSyncEngine hook wiring", () => {
 
   afterEach(async () => {
     latestHookValueRef.current = null;
+    latestNodesRef.current = [];
     latestEdgesRef.current = [];
     setNavigatorOnline(true);
     mocks.mutationMocks.clear();
@@ -187,6 +199,47 @@ describe("useCanvasSyncEngine hook wiring", () => {
         },
       }),
     );
+  });
+
+  it("pins resized nodes across all React Flow size fields before sync settles", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <HookHarness
+          canvasId={asCanvasId("canvas-1")}
+          initialNodes={[
+            {
+              id: "node-1",
+              type: "render",
+              position: { x: 0, y: 0 },
+              width: 320,
+              height: 240,
+              measured: { width: 320, height: 240 },
+              style: { width: 320, height: 240 },
+              data: {},
+            },
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await latestHookValueRef.current?.actions.resizeNode({
+        nodeId: asNodeId("node-1"),
+        width: 480,
+        height: 320,
+      });
+    });
+
+    expect(latestNodesRef.current[0]).toMatchObject({
+      width: 480,
+      height: 320,
+      measured: { width: 480, height: 320 },
+      style: { width: 480, height: 320 },
+    });
   });
 
   it("remaps optimistic edge ids to persisted ids after online createEdge returns", async () => {

@@ -46,6 +46,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const [localData, setLocalData] = useState<PersistedRenderData>(() => sanitizeRenderData(data));
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const [previewViewportSize, setPreviewViewportSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const localDataRef = useRef(localData);
   const lastAspectResizeRequestRef = useRef<{
     fromWidth: number;
@@ -81,11 +86,61 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     });
   };
 
+  useEffect(() => {
+    const previewViewport = previewViewportRef.current;
+    if (!previewViewport) {
+      return undefined;
+    }
+
+    const updatePreviewViewportSize = (nextWidth: number, nextHeight: number) => {
+      const roundedWidth = Math.max(1, Math.round(nextWidth));
+      const roundedHeight = Math.max(1, Math.round(nextHeight));
+
+      setPreviewViewportSize((current) =>
+        current?.width === roundedWidth && current?.height === roundedHeight
+          ? current
+          : { width: roundedWidth, height: roundedHeight },
+      );
+    };
+
+    const measurePreviewViewport = () => {
+      const rect = previewViewport.getBoundingClientRect();
+      updatePreviewViewportSize(rect.width, rect.height);
+    };
+
+    measurePreviewViewport();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+
+      updatePreviewViewportSize(entry.contentRect.width, entry.contentRect.height);
+    });
+
+    observer.observe(previewViewport);
+    return () => observer.disconnect();
+  }, []);
+
+  const fallbackPreviewViewportWidth =
+    typeof width === "number" && Number.isFinite(width) && width > 0 ? width : undefined;
+  const fallbackPreviewViewportHeight =
+    typeof height === "number" && Number.isFinite(height) && height > RENDER_NODE_HEADER_HEIGHT
+      ? height - RENDER_NODE_HEADER_HEIGHT
+      : undefined;
+  const previewViewportWidth = previewViewportSize?.width ?? fallbackPreviewViewportWidth;
+  const previewViewportHeight = previewViewportSize?.height ?? fallbackPreviewViewportHeight;
+
   const previewState = useRenderNodePreview({
     id,
     localData,
-    width,
-    height,
+    width: previewViewportWidth,
+    height: previewViewportHeight,
     isFullscreenOpen,
   });
   const { sourceUrl, sourceComposition, steps, currentPipelineHash, hasSource } = previewState;
@@ -226,12 +281,16 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const previewDisplaySize = useMemo(
     () =>
       resolveRenderPreviewDisplaySize({
-        containerWidth: width,
-        containerHeight:
-          typeof height === "number" ? height - RENDER_NODE_HEADER_HEIGHT : undefined,
+        containerWidth: previewViewportWidth,
+        containerHeight: previewViewportHeight,
         aspectRatio: previewState.targetAspectRatio ?? previewState.preview.previewAspectRatio,
       }),
-    [height, previewState.preview.previewAspectRatio, previewState.targetAspectRatio, width],
+    [
+      previewState.preview.previewAspectRatio,
+      previewState.targetAspectRatio,
+      previewViewportHeight,
+      previewViewportWidth,
+    ],
   );
 
   return (
@@ -251,6 +310,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
           },
         ]}
         className="flex h-full flex-col border-sky-500/30"
+        contentClassName="flex min-h-0 flex-col"
         backlight={renderBacklight}
       >
         <CanvasHandle
@@ -265,7 +325,11 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
           <div className="text-xs font-medium text-sky-600 dark:text-sky-400">Bildausgabe</div>
         </div>
 
-        <div className="relative min-h-[300px] flex-1 overflow-hidden bg-muted/40">
+        <div
+          ref={previewViewportRef}
+          data-testid="render-preview-viewport"
+          className="relative min-h-0 flex-1 overflow-hidden bg-muted/40"
+        >
           <RenderNodePreviewSurface
             hasSource={hasSource}
             canvasRef={previewState.preview.canvasRef}

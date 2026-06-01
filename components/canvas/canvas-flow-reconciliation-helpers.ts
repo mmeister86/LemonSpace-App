@@ -15,6 +15,10 @@ import {
 import { assignDisplayHandlesToRepeatingInputEdges } from "@/lib/canvas-repeating-input-handles";
 
 import {
+  applyNodeSizeToReactFlowNode,
+  type CanvasNodeSize,
+} from "./canvas-node-size-helpers";
+import {
   applyPinnedNodePositionsReadOnly,
   clientRequestIdFromOptimisticEdgeId,
   clientRequestIdFromOptimisticNodeId,
@@ -502,19 +506,30 @@ function applyLocalNodeDataPins(args: {
   };
 }
 
-function nodeStyleIncludesSizePin(
-  style: RFNode["style"] | undefined,
-  pin: { width: number; height: number },
+function optionalSizeValueMatchesPin(
+  value: unknown,
+  expected: number,
 ): boolean {
-  return style?.width === pin.width && style?.height === pin.height;
+  return value === undefined || value === expected;
+}
+
+function nodeIncludesSizePin(node: RFNode, pin: CanvasNodeSize): boolean {
+  return (
+    node.style?.width === pin.width &&
+    node.style?.height === pin.height &&
+    optionalSizeValueMatchesPin(node.width, pin.width) &&
+    optionalSizeValueMatchesPin(node.height, pin.height) &&
+    optionalSizeValueMatchesPin(node.measured?.width, pin.width) &&
+    optionalSizeValueMatchesPin(node.measured?.height, pin.height)
+  );
 }
 
 function applyLocalNodeSizePins(args: {
   nodes: RFNode[];
-  pendingLocalNodeSizePins: ReadonlyMap<string, { width: number; height: number }>;
+  pendingLocalNodeSizePins: ReadonlyMap<string, CanvasNodeSize>;
 }): {
   nodes: RFNode[];
-  nextPendingLocalNodeSizePins: Map<string, { width: number; height: number }>;
+  nextPendingLocalNodeSizePins: Map<string, CanvasNodeSize>;
 } {
   const nodeIds = new Set(args.nodes.map((node) => node.id));
   const nextPendingLocalNodeSizePins = new Map(
@@ -524,19 +539,12 @@ function applyLocalNodeSizePins(args: {
     const pin = nextPendingLocalNodeSizePins.get(node.id);
     if (!pin) return node;
 
-    if (nodeStyleIncludesSizePin(node.style, pin)) {
+    if (nodeIncludesSizePin(node, pin)) {
       nextPendingLocalNodeSizePins.delete(node.id);
       return node;
     }
 
-    return {
-      ...node,
-      style: {
-        ...(node.style ?? {}),
-        width: pin.width,
-        height: pin.height,
-      },
-    };
+    return applyNodeSizeToReactFlowNode(node, pin);
   });
 
   return {

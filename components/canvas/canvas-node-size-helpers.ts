@@ -4,6 +4,8 @@
  * DOM measurement, and interaction persistence can use the same minimums.
  */
 
+import type { Node as RFNode } from "@xyflow/react";
+
 export interface ResizeConfig {
   minWidth: number;
   minHeight: number;
@@ -15,6 +17,11 @@ export interface ResizeConfig {
 export type NodeMinimumSize = {
   minWidth: number;
   minHeight: number;
+};
+
+export type CanvasNodeSize = {
+  width: number;
+  height: number;
 };
 
 export const CANVAS_NODE_RESIZE_CONFIGS: Record<string, ResizeConfig> = {
@@ -73,6 +80,27 @@ export function getCanvasNodeResizeConfig(nodeType: string | undefined): ResizeC
   return nodeType
     ? (CANVAS_NODE_RESIZE_CONFIGS[nodeType] ?? DEFAULT_NODE_RESIZE_CONFIG)
     : DEFAULT_NODE_RESIZE_CONFIG;
+}
+
+export function applyNodeSizeToReactFlowNode<TNode extends RFNode>(
+  node: TNode,
+  size: CanvasNodeSize,
+): TNode {
+  return {
+    ...node,
+    width: size.width,
+    height: size.height,
+    measured: {
+      ...(node.measured ?? {}),
+      width: size.width,
+      height: size.height,
+    },
+    style: {
+      ...(node.style ?? {}),
+      width: size.width,
+      height: size.height,
+    },
+  };
 }
 
 export function getCanvasNodeStaticMinimumSize(

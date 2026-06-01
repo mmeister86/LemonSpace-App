@@ -55,6 +55,7 @@ export default defineConfig({
       "components/canvas/__tests__/canvas-favorites-visibility.test.ts",
       "components/canvas/__tests__/asset-browser-panel.test.tsx",
       "components/canvas/__tests__/video-browser-panel.test.tsx",
+      "components/canvas/__tests__/render-node.test.tsx",
       "components/canvas/__tests__/render-node-ui.test.tsx",
       "components/dashboard/__tests__/dashboard-onboarding-targets.test.tsx",
       "components/onboarding/__tests__/onboarding-provider.test.tsx",
