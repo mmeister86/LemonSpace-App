@@ -14,9 +14,13 @@ import {
   type MixerLayerSource,
 } from "@/lib/canvas-render-preview";
 import {
+  createDefaultMixerLayerData,
   MIXER_SOURCE_NODE_TYPES,
+  normalizeMixerLayerCompositionData,
+  normalizeMixerLayerHandle,
   normalizeMixerCompositionData,
   type MixerBlendMode,
+  type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
@@ -24,8 +28,14 @@ export type MixerPreviewStatus = "empty" | "partial" | "ready" | "error";
 
 export type MixerPreviewError = "duplicate-handle-edge";
 
+export type MixerPreviewLayer = NormalizedMixerLayerData & {
+  source: MixerLayerSource;
+};
+
 export type MixerPreviewState = {
   status: MixerPreviewStatus;
+  stage?: { width: number; height: number } | null;
+  layers?: MixerPreviewLayer[];
   baseUrl?: string;
   overlayUrl?: string;
   baseSource?: MixerLayerSource;
@@ -57,6 +67,36 @@ export function normalizeMixerPreviewData(data: unknown): Pick<
   | "cropBottom"
 > {
   return normalizeMixerCompositionData(data);
+}
+
+function isV2MixerData(data: unknown): boolean {
+  const record = (data ?? {}) as Record<string, unknown>;
+  return record.mixerVersion === 2 || Array.isArray(record.layers);
+}
+
+function isV2MixerHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && (handle === "layer-in" || handle.startsWith("layer-in-"));
+}
+
+function mergeLayersWithIncomingHandles(args: {
+  layers: readonly NormalizedMixerLayerData[];
+  incomingEdges: readonly CanvasGraphEdgeLike[];
+}): NormalizedMixerLayerData[] {
+  const layers = [...args.layers];
+  const seen = new Set(layers.map((layer) => layer.handleId));
+  const incomingHandles = args.incomingEdges
+    .map((edge) => normalizeMixerLayerHandle(edge.targetHandle))
+    .filter((handle): handle is string => Boolean(handle));
+
+  for (const handle of incomingHandles) {
+    if (seen.has(handle)) {
+      continue;
+    }
+    seen.add(handle);
+    layers.push(createDefaultMixerLayerData(handle, layers.length));
+  }
+
+  return layers;
 }
 
 function resolveHandleEdge(args: {
@@ -143,6 +183,48 @@ function resolveLayerSourceFromEdge(args: {
   return resolveLayerSourceFromNode({ sourceNode, graph: args.graph });
 }
 
+function resolveV2LayerSources(args: {
+  incomingEdges: readonly CanvasGraphEdgeLike[];
+  graph: CanvasGraphSnapshot;
+  layers: readonly NormalizedMixerLayerData[];
+}): { layers: MixerPreviewLayer[]; duplicate: boolean; expectedVisibleCount: number } {
+  const edgeByHandle = new Map<string, CanvasGraphEdgeLike>();
+  let duplicate = false;
+
+  for (const edge of args.incomingEdges) {
+    const handle = normalizeMixerLayerHandle(edge.targetHandle);
+    if (!handle) {
+      continue;
+    }
+    if (edgeByHandle.has(handle)) {
+      duplicate = true;
+      continue;
+    }
+    edgeByHandle.set(handle, edge);
+  }
+
+  const layers: MixerPreviewLayer[] = [];
+  let expectedVisibleCount = 0;
+  for (const layer of args.layers) {
+    if (!layer.visible) {
+      continue;
+    }
+
+    expectedVisibleCount += 1;
+    const source = resolveLayerSourceFromEdge({
+      edge: edgeByHandle.get(layer.handleId) ?? null,
+      graph: args.graph,
+    });
+    if (!source) {
+      continue;
+    }
+
+    layers.push({ ...layer, source });
+  }
+
+  return { layers, duplicate, expectedVisibleCount };
+}
+
 export function resolveMixerPreviewFromGraph(args: {
   nodeId: string;
   graph: CanvasGraphSnapshot;
@@ -157,6 +239,45 @@ export function resolveMixerPreviewFromGraph(args: {
   }
 
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.nodeId) ?? [];
+  if (isV2MixerData(node.data) || incomingEdges.some((edge) => isV2MixerHandle(edge.targetHandle))) {
+    const v2 = normalizeMixerLayerCompositionData(node.data);
+    const layers = mergeLayersWithIncomingHandles({
+      layers: v2.layers,
+      incomingEdges,
+    });
+    const resolved = resolveV2LayerSources({
+      incomingEdges,
+      graph: args.graph,
+      layers,
+    });
+
+    if (resolved.duplicate) {
+      return {
+        status: "error",
+        stage: v2.stage,
+        layers: [],
+        ...normalized,
+        error: "duplicate-handle-edge",
+      };
+    }
+
+    if (resolved.layers.length > 0) {
+      return {
+        status: resolved.layers.length === resolved.expectedVisibleCount ? "ready" : "partial",
+        stage: v2.stage,
+        layers: resolved.layers,
+        ...normalized,
+      };
+    }
+
+    return {
+      status: layers.length > 0 ? "partial" : "empty",
+      stage: v2.stage,
+      layers: [],
+      ...normalized,
+    };
+  }
+
   const base = resolveHandleEdge({ incomingEdges, handle: "base" });
   const overlay = resolveHandleEdge({ incomingEdges, handle: "overlay" });
 

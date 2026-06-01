@@ -127,6 +127,110 @@ describe("resolveRenderPreviewInputFromGraph", () => {
     });
   });
 
+  it("resolves v2 mixer input as a multi-layer render composition", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-image",
+          type: "image",
+          data: { url: "https://cdn.example.com/base.png" },
+        },
+        {
+          id: "overlay-image",
+          type: "asset",
+          data: { url: "https://cdn.example.com/overlay.png" },
+        },
+        {
+          id: "top-image",
+          type: "ai-image",
+          data: { url: "https://cdn.example.com/top.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: { width: 1200, height: 900 },
+            layers: [
+              {
+                id: "base",
+                handleId: "layer-in",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              },
+              {
+                id: "overlay",
+                handleId: "layer-in-2",
+                x: 0.18,
+                y: 0.2,
+                width: 0.5,
+                height: 0.4,
+                rotation: 15,
+                opacity: 70,
+                blendMode: "screen",
+                crop: { left: 0.1, top: 0.2, right: 0.3, bottom: 0.1 },
+              },
+              {
+                id: "top",
+                handleId: "layer-in-3",
+                x: 0.6,
+                y: 0.1,
+                width: 0.25,
+                height: 0.25,
+                visible: false,
+              },
+            ],
+          },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "base-image", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "overlay-image", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "top-image", target: "mixer-1", targetHandle: "layer-in-3" },
+        { source: "mixer-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview).toMatchObject({
+      sourceUrl: null,
+      sourceComposition: {
+        kind: "mixer",
+        stage: { width: 1200, height: 900 },
+        layers: [
+          {
+            id: "base",
+            source: { kind: "image", url: "https://cdn.example.com/base.png" },
+          },
+          {
+            id: "overlay",
+            source: { kind: "image", url: "https://cdn.example.com/overlay.png" },
+            x: 0.18,
+            y: 0.2,
+            width: 0.5,
+            height: 0.4,
+            rotation: 15,
+            opacity: 70,
+            blendMode: "screen",
+            crop: { left: 0.1, top: 0.2, right: 0.3, bottom: 0.1 },
+          },
+        ],
+      },
+      steps: [],
+    });
+  });
+
   it("resolves text mixer layers for renderable mixer compositions", () => {
     const richText = {
       format: "editorjs",

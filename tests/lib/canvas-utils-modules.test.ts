@@ -204,6 +204,7 @@ describe("split canvas utility modules", () => {
     expect(NODE_DEFAULTS.prompt.height).toBe(260);
     expect(getCanvasNodeStaticMinimumSize("prompt").minHeight).toBe(260);
     expect(getCanvasNodeStaticMinimumSize("video-prompt").minHeight).toBe(260);
+    expect(getCanvasNodeStaticMinimumSize("mixer")).toEqual({ minWidth: 360, minHeight: 460 });
     expect(facade.NODE_DEFAULTS["video-prompt"]).toEqual(NODE_DEFAULTS["video-prompt"]);
     expect(resolveMediaAspectRatio(1920, 1080)).toBe(facade.resolveMediaAspectRatio(1920, 1080));
     expect(computeMediaNodeSize("image", { intrinsicWidth: 1600, intrinsicHeight: 900 })).toEqual(

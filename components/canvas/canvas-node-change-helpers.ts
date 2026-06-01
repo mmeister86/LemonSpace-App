@@ -3,7 +3,7 @@
  * Supports the Canvas editor workflow for canvas node change helpers. Preserve the boundary between React Flow interaction state, Convex persistence, and local optimistic state.
  */
 
-import type { Node as RFNode, NodeChange } from "@xyflow/react";
+import type { Edge as RFEdge, Node as RFNode, NodeChange } from "@xyflow/react";
 
 import {
   AI_IMAGE_NODE_FOOTER_PX,
@@ -13,7 +13,30 @@ import {
 } from "@/lib/image-formats";
 import { readNodeCollapsed } from "@/lib/canvas-node-favorite";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
-import { clampNodeDimensionsToMinimum } from "./canvas-node-size-helpers";
+import {
+  RENDER_NODE_HEADER_HEIGHT,
+  toRenderNodeAspectSize,
+} from "@/components/canvas/nodes/render-node-state";
+import {
+  clampNodeDimensionsToMinimum,
+  getCanvasNodeStaticMinimumSize,
+} from "./canvas-node-size-helpers";
+
+const RENDER_RATIO_SOURCE_TYPES = new Set([
+  "image",
+  "asset",
+  "ai-image",
+  "bg-remove-output",
+  "change-camera",
+  "render",
+]);
+const RENDER_RATIO_PIPELINE_TYPES = new Set([
+  "crop",
+  "curves",
+  "color-adjust",
+  "light-adjust",
+  "detail-adjust",
+]);
 
 function isActiveResizeChange(change: NodeChange): boolean {
   return change.type === "dimensions" &&
@@ -201,6 +224,170 @@ function adjustAiImageNodeDimensionsChange(
   };
 }
 
+function readPositiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function resolveAspectFromNode(node: RFNode): number | null {
+  const data = readRecord(node.data);
+
+  if (node.type === "image") {
+    const width = readPositiveNumber(data.width);
+    const height = readPositiveNumber(data.height);
+    return width && height ? width / height : null;
+  }
+
+  if (node.type === "asset") {
+    const intrinsicWidth = readPositiveNumber(data.intrinsicWidth);
+    const intrinsicHeight = readPositiveNumber(data.intrinsicHeight);
+    if (intrinsicWidth && intrinsicHeight) {
+      return resolveMediaAspectRatio(
+        intrinsicWidth,
+        intrinsicHeight,
+        typeof data.orientation === "string" ? data.orientation : undefined,
+      );
+    }
+  }
+
+  if (node.type === "ai-image") {
+    const outputWidth = readPositiveNumber(data.outputWidth);
+    const outputHeight = readPositiveNumber(data.outputHeight);
+    if (outputWidth && outputHeight) return outputWidth / outputHeight;
+
+    const aspectRatioLabel =
+      typeof data.aspectRatio === "string" ? data.aspectRatio : DEFAULT_ASPECT_RATIO;
+    try {
+      const parsed = parseAspectRatioString(aspectRatioLabel);
+      return parsed.w / parsed.h;
+    } catch {
+      return null;
+    }
+  }
+
+  const width =
+    readPositiveNumber(data.width) ??
+    readPositiveNumber(data.outputWidth) ??
+    readPositiveNumber(data.lastRenderWidth);
+  const height =
+    readPositiveNumber(data.height) ??
+    readPositiveNumber(data.outputHeight) ??
+    readPositiveNumber(data.lastRenderHeight);
+  return width && height ? width / height : null;
+}
+
+function resolveCropAspectMultiplier(node: RFNode): number | null {
+  const data = readRecord(node.data);
+  const crop = readRecord(data.crop);
+  const width = readPositiveNumber(crop.width);
+  const height = readPositiveNumber(crop.height);
+  return width && height ? width / height : null;
+}
+
+function findSingleIncomingEdge(nodeId: string, edges: readonly RFEdge[]): RFEdge | null {
+  const incoming = edges
+    .filter((edge) => edge.target === nodeId && edge.className !== "temp")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return incoming[0] ?? null;
+}
+
+function resolveRenderTargetAspectRatio(
+  renderNode: RFNode,
+  nodes: readonly RFNode[],
+  edges: readonly RFEdge[],
+): number | null {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const visited = new Set<string>([renderNode.id]);
+  let currentId = renderNode.id;
+  let cropMultiplier = 1;
+
+  for (let index = 0; index < 24; index += 1) {
+    const incoming = findSingleIncomingEdge(currentId, edges);
+    if (!incoming || visited.has(incoming.source)) {
+      return null;
+    }
+
+    const sourceNode = nodesById.get(incoming.source);
+    if (!sourceNode) {
+      return null;
+    }
+
+    visited.add(sourceNode.id);
+    if (sourceNode.type && RENDER_RATIO_PIPELINE_TYPES.has(sourceNode.type)) {
+      if (sourceNode.type === "crop") {
+        const cropMultiplierCandidate = resolveCropAspectMultiplier(sourceNode);
+        if (cropMultiplierCandidate) {
+          cropMultiplier *= cropMultiplierCandidate;
+        }
+      }
+      currentId = sourceNode.id;
+      continue;
+    }
+
+    if (!sourceNode.type || !RENDER_RATIO_SOURCE_TYPES.has(sourceNode.type)) {
+      return null;
+    }
+
+    const sourceAspectRatio = resolveAspectFromNode(sourceNode);
+    return sourceAspectRatio ? sourceAspectRatio * cropMultiplier : null;
+  }
+
+  return null;
+}
+
+function adjustRenderNodeDimensionsChange(
+  change: NodeChange,
+  node: RFNode,
+  nodes: readonly RFNode[],
+  edges: readonly RFEdge[],
+): NodeChange {
+  if (change.type !== "dimensions" || !change.dimensions) return change;
+  if (!isActiveResizeChange(change)) {
+    return clampGenericNodeDimensionsChange(change, node);
+  }
+
+  const targetRatio = resolveRenderTargetAspectRatio(node, nodes, edges);
+  if (!targetRatio || !Number.isFinite(targetRatio) || targetRatio <= 0) {
+    return clampGenericNodeDimensionsChange(change, node);
+  }
+
+  const previousWidth =
+    typeof node.style?.width === "number" ? node.style.width : change.dimensions.width;
+  const previousHeight =
+    typeof node.style?.height === "number" ? node.style.height : change.dimensions.height;
+  const widthDelta = Math.abs(change.dimensions.width - previousWidth);
+  const heightDelta = Math.abs(change.dimensions.height - previousHeight);
+
+  const minimum = getCanvasNodeStaticMinimumSize(node.type);
+  const targetSize = toRenderNodeAspectSize({
+    currentWidth: heightDelta > widthDelta
+      ? Math.max(1, change.dimensions.height - RENDER_NODE_HEADER_HEIGHT) * targetRatio
+      : change.dimensions.width,
+    currentHeight: heightDelta > widthDelta
+      ? change.dimensions.height
+      : RENDER_NODE_HEADER_HEIGHT + change.dimensions.width / targetRatio,
+    aspectRatio: targetRatio,
+    minWidth: minimum.minWidth,
+    minHeight: minimum.minHeight,
+  });
+
+  return {
+    ...change,
+    dimensions: {
+      ...change.dimensions,
+      width: targetSize.width,
+      height: targetSize.height,
+    },
+  };
+}
+
 function clampGenericNodeDimensionsChange(
   change: NodeChange,
   node: RFNode,
@@ -233,6 +420,7 @@ function clampGenericNodeDimensionsChange(
 export function adjustNodeDimensionChanges(
   changes: NodeChange[],
   nodes: RFNode[],
+  edges: RFEdge[] = [],
 ): NodeChange[] {
   return changes
     .map((change) => {
@@ -255,6 +443,10 @@ export function adjustNodeDimensionChanges(
 
       if (node.type === "ai-image") {
         return adjustAiImageNodeDimensionsChange(change, node);
+      }
+
+      if (node.type === "render") {
+        return adjustRenderNodeDimensionsChange(change, node, nodes, edges);
       }
 
       return clampGenericNodeDimensionsChange(change, node);

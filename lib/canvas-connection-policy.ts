@@ -8,6 +8,10 @@ import {
   isAiImageReferenceSourceType,
   MAX_AI_IMAGE_REFERENCES,
 } from "@/lib/ai-image-references";
+import {
+  MAX_MIXER_LAYERS,
+  normalizeMixerLayerHandle,
+} from "@/lib/canvas-mixer-normalization";
 
 export const CANVAS_NODE_DND_MIME = "application/lemonspace-node-type";
 
@@ -149,15 +153,10 @@ const MIXER_ALLOWED_SOURCE_TYPES = new Set<string>([
   "text",
 ]);
 
-const MIXER_TARGET_HANDLES = new Set<string>(["base", "overlay"]);
 const STYLE_TRANSFER_TARGET_HANDLES = new Set<string>(["image", "reference"]);
 
 function normalizeMixerHandle(handle: string | null | undefined): string {
-  if (handle == null || handle === "" || handle === "null") {
-    return "base";
-  }
-
-  return handle;
+  return normalizeMixerLayerHandle(handle) ?? "";
 }
 
 function isAiTextInstructionHandle(handle: string | null | undefined): boolean {
@@ -285,13 +284,13 @@ export function validateCanvasConnectionPolicy(args: {
       return "mixer-source-invalid";
     }
 
-    const normalizedTargetHandle = normalizeMixerHandle(targetHandle);
-    if (!MIXER_TARGET_HANDLES.has(normalizedTargetHandle)) {
-      return "mixer-target-handle-invalid";
+    if (targetIncomingCount >= MAX_MIXER_LAYERS) {
+      return "mixer-incoming-limit";
     }
 
-    if (targetIncomingCount >= 2) {
-      return "mixer-incoming-limit";
+    const normalizedTargetHandle = normalizeMixerHandle(targetHandle);
+    if (!normalizedTargetHandle) {
+      return "mixer-target-handle-invalid";
     }
 
     const normalizedIncomingHandles = (targetIncomingHandles ?? []).map((handle) =>

@@ -29,7 +29,11 @@ describe("RenderNodePreviewSurface", () => {
     root = null;
   });
 
-  async function renderSurface(hasSource: boolean, isAlphaBearing = false) {
+  async function renderSurface(
+    hasSource: boolean,
+    isAlphaBearing = false,
+    displaySize?: { width: number; height: number } | null,
+  ) {
     const canvasRef = createRef<HTMLCanvasElement>();
     await act(async () => {
       root?.render(
@@ -37,6 +41,7 @@ describe("RenderNodePreviewSurface", () => {
           hasSource={hasSource}
           canvasRef={canvasRef}
           isAlphaBearing={isAlphaBearing}
+          displaySize={displaySize}
         />,
       );
     });
@@ -49,11 +54,27 @@ describe("RenderNodePreviewSurface", () => {
     expect(container?.querySelector("canvas")).toBeTruthy();
   });
 
+  it("renders opaque previews through a full-size canvas", async () => {
+    await renderSurface(true);
+
+    expect(container?.querySelector("canvas")?.className).toContain("h-full w-full");
+    expect(container?.querySelector("canvas")?.className).not.toContain("object-cover");
+  });
+
   it("renders alpha-bearing previews over a transparency surface", async () => {
     await renderSurface(true, true);
 
     expect(container?.querySelector('[data-alpha-source="true"]')).toBeTruthy();
-    expect(container?.querySelector("canvas")?.className).toContain("object-contain");
+    expect(container?.querySelector("canvas")?.className).toContain("h-full w-full");
+  });
+
+  it("scales the rendered canvas to the ratio-locked preview display size", async () => {
+    await renderSurface(true, false, { width: 320, height: 240 });
+
+    const previewFrame = container?.querySelector('[data-testid="render-preview-frame"]') as HTMLElement | null;
+    expect(previewFrame?.style.width).toBe("320px");
+    expect(previewFrame?.style.height).toBe("240px");
+    expect(container?.querySelector("canvas")?.className).toContain("h-full w-full");
   });
 
   it("does not mark opaque previews as alpha-bearing", async () => {

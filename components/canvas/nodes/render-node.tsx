@@ -5,7 +5,7 @@
  * Renders and manages the Canvas render node node. Keep node-local UI state separate from persisted node data and use shared wrappers/handles for policy parity.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Position, type Node, type NodeProps } from "@xyflow/react";
 import { Maximize2 } from "lucide-react";
 
@@ -14,12 +14,18 @@ import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import type { Id } from "@/convex/_generated/dataModel";
+import { readNodeCollapsed } from "@/lib/canvas-node-favorite";
 import {
+  ASPECT_RATIO_TOLERANCE,
+  RENDER_NODE_HEADER_HEIGHT,
+  SIZE_TOLERANCE_PX,
   type PersistedRenderData,
   type RenderNodeData,
   type RenderState,
   logRenderDebug,
+  resolveRenderPreviewDisplaySize,
   sanitizeRenderData,
+  toRenderNodeAspectSize,
 } from "./render-node-state";
 import {
   RenderNodeBottomStatus,
@@ -41,6 +47,13 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const localDataRef = useRef(localData);
+  const lastAspectResizeRequestRef = useRef<{
+    fromWidth: number;
+    fromHeight: number;
+    width: number;
+    height: number;
+    aspectRatio: number;
+  } | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -74,9 +87,68 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
     width,
     height,
     isFullscreenOpen,
-    queueNodeResize,
   });
   const { sourceUrl, sourceComposition, steps, currentPipelineHash, hasSource } = previewState;
+
+  useEffect(() => {
+    const targetAspectRatio = previewState.targetAspectRatio;
+    if (
+      !hasSource ||
+      readNodeCollapsed(data) ||
+      typeof targetAspectRatio !== "number" ||
+      !Number.isFinite(targetAspectRatio) ||
+      targetAspectRatio <= 0
+    ) {
+      lastAspectResizeRequestRef.current = null;
+      return;
+    }
+
+    const currentWidth = typeof width === "number" ? width : 0;
+    const currentHeight = typeof height === "number" ? height : 0;
+    if (currentWidth <= 0 || currentHeight <= 0) return;
+
+    const nextSize = toRenderNodeAspectSize({
+      currentWidth,
+      currentHeight,
+      aspectRatio: targetAspectRatio,
+    });
+    const currentPreviewHeight = currentHeight - RENDER_NODE_HEADER_HEIGHT;
+    const currentAspectRatio = currentWidth / Math.max(1, currentPreviewHeight);
+    if (
+      Math.abs(currentAspectRatio - targetAspectRatio) <= ASPECT_RATIO_TOLERANCE &&
+      Math.abs(nextSize.width - currentWidth) <= SIZE_TOLERANCE_PX &&
+      Math.abs(nextSize.height - currentHeight) <= SIZE_TOLERANCE_PX
+    ) {
+      lastAspectResizeRequestRef.current = null;
+      return;
+    }
+
+    const lastRequest = lastAspectResizeRequestRef.current;
+    if (
+      lastRequest &&
+      lastRequest.fromWidth === currentWidth &&
+      lastRequest.fromHeight === currentHeight &&
+      lastRequest.width === nextSize.width &&
+      lastRequest.height === nextSize.height &&
+      Math.abs(lastRequest.aspectRatio - targetAspectRatio) <= ASPECT_RATIO_TOLERANCE
+    ) {
+      return;
+    }
+
+    lastAspectResizeRequestRef.current = {
+      fromWidth: currentWidth,
+      fromHeight: currentHeight,
+      width: nextSize.width,
+      height: nextSize.height,
+      aspectRatio: targetAspectRatio,
+    };
+    void queueNodeResize({
+      nodeId: id as Id<"nodes">,
+      width: nextSize.width,
+      height: nextSize.height,
+      skipHistory: true,
+    });
+  }, [data, hasSource, height, id, previewState.targetAspectRatio, queueNodeResize, width]);
 
   useEffect(() => {
     logRenderDebug("node-data-updated", {
@@ -151,6 +223,16 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
       <div className="h-full w-full bg-sky-500/25 dark:bg-sky-400/20" />
     </MediaBacklight>
   ) : undefined;
+  const previewDisplaySize = useMemo(
+    () =>
+      resolveRenderPreviewDisplaySize({
+        containerWidth: width,
+        containerHeight:
+          typeof height === "number" ? height - RENDER_NODE_HEADER_HEIGHT : undefined,
+        aspectRatio: previewState.targetAspectRatio ?? previewState.preview.previewAspectRatio,
+      }),
+    [height, previewState.preview.previewAspectRatio, previewState.targetAspectRatio, width],
+  );
 
   return (
     <>
@@ -168,7 +250,7 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
             disabled: !canOpenFullscreen,
           },
         ]}
-        className="flex h-full min-w-[280px] flex-col overflow-hidden border-sky-500/30"
+        className="flex h-full flex-col border-sky-500/30"
         backlight={renderBacklight}
       >
         <CanvasHandle
@@ -188,8 +270,8 @@ export default function RenderNode({ id, data, selected, width, height }: NodePr
             hasSource={hasSource}
             canvasRef={previewState.preview.canvasRef}
             isAlphaBearing={previewState.isAlphaBearing}
+            displaySize={previewDisplaySize}
           />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/70 via-transparent to-background/80" />
           <RenderNodeStatusOverlay
             renderState={renderState}
             isPreviewRendering={previewState.preview.isRendering}

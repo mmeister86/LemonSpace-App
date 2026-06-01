@@ -93,6 +93,7 @@ export const MIN_CUSTOM_DIMENSION = 1;
 export const MAX_CUSTOM_DIMENSION = 16_384;
 export const RENDER_MIN_WIDTH = 260;
 export const RENDER_MIN_HEIGHT = 300;
+export const RENDER_NODE_HEADER_HEIGHT = 33;
 export const ASPECT_RATIO_TOLERANCE = 0.015;
 export const SIZE_TOLERANCE_PX = 1;
 
@@ -150,6 +151,63 @@ export function toRatioConstrainedSize(args: {
     Math.abs(heightCandidate.height - currentHeight);
 
   return widthDistance <= heightDistance ? widthCandidate : heightCandidate;
+}
+
+export function toRenderNodeAspectSize(args: {
+  currentWidth: number;
+  currentHeight: number;
+  aspectRatio: number;
+  minWidth?: number;
+  minHeight?: number;
+}): { width: number; height: number } {
+  const minWidth = args.minWidth ?? RENDER_MIN_WIDTH;
+  const minHeight = args.minHeight ?? RENDER_MIN_HEIGHT;
+  const size = toRatioConstrainedSize({
+    currentWidth: args.currentWidth,
+    currentHeight: Math.max(1, args.currentHeight - RENDER_NODE_HEADER_HEIGHT),
+    aspectRatio: args.aspectRatio,
+    minWidth,
+    minHeight: Math.max(1, minHeight - RENDER_NODE_HEADER_HEIGHT),
+  });
+
+  return {
+    width: size.width,
+    height: Math.round(size.height + RENDER_NODE_HEADER_HEIGHT),
+  };
+}
+
+export function resolveRenderPreviewDisplaySize(args: {
+  containerWidth?: number;
+  containerHeight?: number;
+  aspectRatio?: number | null;
+}): { width: number; height: number } | null {
+  const { containerWidth, containerHeight, aspectRatio } = args;
+  if (
+    typeof containerWidth !== "number" ||
+    typeof containerHeight !== "number" ||
+    typeof aspectRatio !== "number" ||
+    !Number.isFinite(containerWidth) ||
+    !Number.isFinite(containerHeight) ||
+    !Number.isFinite(aspectRatio) ||
+    containerWidth <= 0 ||
+    containerHeight <= 0 ||
+    aspectRatio <= 0
+  ) {
+    return null;
+  }
+
+  const containerAspectRatio = containerWidth / containerHeight;
+  if (containerAspectRatio > aspectRatio) {
+    return {
+      width: Math.round(containerHeight * aspectRatio),
+      height: Math.round(containerHeight),
+    };
+  }
+
+  return {
+    width: Math.round(containerWidth),
+    height: Math.round(containerWidth / aspectRatio),
+  };
 }
 
 export function sanitizeDimension(value: unknown): number | undefined {

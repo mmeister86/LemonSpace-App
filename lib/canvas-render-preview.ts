@@ -14,9 +14,13 @@ import {
   type EditorJsRichTextData,
 } from "@/lib/canvas-rich-text";
 import {
+  createDefaultMixerLayerData,
   MIXER_SOURCE_NODE_TYPES,
+  normalizeMixerLayerCompositionData,
+  normalizeMixerLayerHandle,
   normalizeMixerCompositionData,
   type MixerBlendMode,
+  type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
@@ -58,8 +62,14 @@ export type MixerTextLayerSource = {
 
 export type MixerLayerSource = MixerImageLayerSource | MixerTextLayerSource;
 
+export type RenderPreviewMixerLayer = NormalizedMixerLayerData & {
+  source: MixerLayerSource;
+};
+
 export type RenderPreviewSourceComposition = {
   kind: "mixer";
+  stage?: { width: number; height: number } | null;
+  layers?: RenderPreviewMixerLayer[];
   baseUrl?: string;
   overlayUrl?: string;
   baseSource?: MixerLayerSource;
@@ -514,6 +524,92 @@ function resolveMixerLayerSourceFromEdge(args: {
   });
 }
 
+function isV2MixerData(data: unknown): boolean {
+  const record = (data ?? {}) as Record<string, unknown>;
+  return record.mixerVersion === 2 || Array.isArray(record.layers);
+}
+
+function isV2MixerHandle(handle: string | null | undefined): boolean {
+  return typeof handle === "string" && (handle === "layer-in" || handle.startsWith("layer-in-"));
+}
+
+function mergeLayersWithIncomingHandles(args: {
+  layers: readonly NormalizedMixerLayerData[];
+  incomingEdges: readonly CanvasGraphEdgeLike[];
+}): NormalizedMixerLayerData[] {
+  const layers = [...args.layers];
+  const seen = new Set(layers.map((layer) => layer.handleId));
+
+  for (const edge of args.incomingEdges) {
+    const handle = normalizeMixerLayerHandle(edge.targetHandle);
+    if (!handle || seen.has(handle)) {
+      continue;
+    }
+    seen.add(handle);
+    layers.push(createDefaultMixerLayerData(handle, layers.length));
+  }
+
+  return layers;
+}
+
+function resolveRenderMixerLayerSourcesFromGraph(args: {
+  node: CanvasGraphNodeLike;
+  graph: CanvasGraphSnapshot;
+}): RenderPreviewSourceComposition | null {
+  const normalized = normalizeMixerLayerCompositionData(args.node.data);
+  const incomingEdges = args.graph.incomingEdgesByTarget.get(args.node.id) ?? [];
+  const normalizedLayers = mergeLayersWithIncomingHandles({
+    layers: normalized.layers,
+    incomingEdges,
+  });
+  const edgeByHandle = new Map<string, CanvasGraphEdgeLike>();
+
+  for (const edge of incomingEdges) {
+    const handle = normalizeMixerLayerHandle(edge.targetHandle);
+    if (!handle || edgeByHandle.has(handle)) {
+      continue;
+    }
+    edgeByHandle.set(handle, edge);
+  }
+
+  const layers: RenderPreviewMixerLayer[] = [];
+  for (const layer of normalizedLayers) {
+    if (!layer.visible) {
+      continue;
+    }
+
+    const source = resolveMixerLayerSourceFromEdge({
+      edge: edgeByHandle.get(layer.handleId) ?? null,
+      graph: args.graph,
+    });
+    if (!source) {
+      continue;
+    }
+
+    layers.push({ ...layer, source });
+  }
+
+  if (layers.length === 0) {
+    return null;
+  }
+
+  return {
+    kind: "mixer",
+    stage: normalized.stage,
+    layers,
+    blendMode: "normal",
+    opacity: 100,
+    overlayX: 0,
+    overlayY: 0,
+    overlayWidth: 1,
+    overlayHeight: 1,
+    cropLeft: 0,
+    cropTop: 0,
+    cropRight: 0,
+    cropBottom: 0,
+  };
+}
+
 function resolveRenderMixerCompositionFromGraph(args: {
   node: CanvasGraphNodeLike;
   graph: CanvasGraphSnapshot;
@@ -523,6 +619,10 @@ function resolveRenderMixerCompositionFromGraph(args: {
   }
 
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.node.id) ?? [];
+  if (isV2MixerData(args.node.data) || incomingEdges.some((edge) => isV2MixerHandle(edge.targetHandle))) {
+    return resolveRenderMixerLayerSourcesFromGraph(args);
+  }
+
   const baseEdge = resolveMixerHandleEdge({ incomingEdges, handle: "base" });
   const overlayEdge = resolveMixerHandleEdge({ incomingEdges, handle: "overlay" });
   const baseSource = resolveMixerLayerSourceFromEdge({ edge: baseEdge, graph: args.graph });

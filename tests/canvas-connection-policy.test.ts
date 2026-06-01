@@ -353,7 +353,7 @@ describe("canvas connection policy", () => {
         sourceType: "text",
         targetType: "mixer",
         targetIncomingCount: 0,
-        targetHandle: "overlay",
+        targetHandle: "layer-in-2",
       }),
     ).toBeNull();
   });
@@ -384,9 +384,60 @@ describe("canvas connection policy", () => {
         sourceType: "splitter",
         targetType: "mixer",
         targetIncomingCount: 0,
-        targetHandle: "base",
+        targetHandle: "layer-in",
       }),
     ).toBe("mixer-source-invalid");
+  });
+
+  it("allows the eighth mixer layer input but blocks the ninth", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetIncomingCount: 7,
+        targetHandle: "layer-in-8",
+        targetIncomingHandles: [
+          "layer-in",
+          "layer-in-2",
+          "layer-in-3",
+          "layer-in-4",
+          "layer-in-5",
+          "layer-in-6",
+          "layer-in-7",
+        ],
+      }),
+    ).toBeNull();
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetIncomingCount: 8,
+        targetHandle: "layer-in-9",
+        targetIncomingHandles: [
+          "layer-in",
+          "layer-in-2",
+          "layer-in-3",
+          "layer-in-4",
+          "layer-in-5",
+          "layer-in-6",
+          "layer-in-7",
+          "layer-in-8",
+        ],
+      }),
+    ).toBe("mixer-incoming-limit");
+  });
+
+  it("rejects duplicate mixer layer handles", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "mixer",
+        targetIncomingCount: 1,
+        targetHandle: "layer-in-2",
+        targetIncomingHandles: ["layer-in-2"],
+      }),
+    ).toBe("mixer-handle-incoming-limit");
   });
 
   it("describes unsupported crop source message", () => {
@@ -626,13 +677,13 @@ describe("canvas connection policy", () => {
     ).toBe("Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.");
   });
 
-  it("treats legacy mixer handles 'null' and empty string as base occupancy", () => {
+  it("treats legacy mixer handles 'null' and empty string as first layer occupancy", () => {
     expect(
       validateCanvasConnectionPolicy({
         sourceType: "asset",
         targetType: "mixer",
         targetIncomingCount: 1,
-        targetHandle: "base",
+        targetHandle: "layer-in",
         targetIncomingHandles: ["null", ""],
       }),
     ).toBe("mixer-handle-incoming-limit");

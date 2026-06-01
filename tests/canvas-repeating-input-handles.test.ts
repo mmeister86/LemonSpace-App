@@ -11,6 +11,7 @@ const nodeTypeById = new Map<string, string>([
   ["prompt-1", "prompt"],
   ["agent-1", "agent"],
   ["ai-text-1", "ai-text"],
+  ["mixer-1", "mixer"],
   ["image-1", "image"],
   ["image-2", "image"],
   ["image-3", "image"],
@@ -596,6 +597,106 @@ describe("canvas repeating input handles", () => {
         targetNodeId: "ai-text-1",
         targetHandle: "ai-text-instruction-in-2",
         edges,
+        nodeTypeById,
+      }),
+    ).toBeNull();
+  });
+
+  it("starts mixer nodes with a single free centered layer handle", () => {
+    expect(
+      resolveVisibleRepeatingInputHandles({
+        nodeType: "mixer",
+        nodeId: "mixer-1",
+        edges: [],
+        nodeTypeById,
+      }),
+    ).toEqual([
+      {
+        handleId: "layer-in",
+        isOccupied: false,
+        topPercent: 50,
+      },
+    ]);
+  });
+
+  it("renders occupied mixer layer handles plus one free handle while capacity remains", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "mixer",
+      nodeId: "mixer-1",
+      edges: [
+        { id: "edge-1", source: "image-1", target: "mixer-1", targetHandle: "layer-in" },
+        { id: "edge-2", source: "text-1", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+      nodeTypeById,
+    });
+
+    expect(handles).toEqual([
+      {
+        edgeId: "edge-1",
+        handleId: "layer-in",
+        isOccupied: true,
+        topPercent: 35,
+      },
+      {
+        edgeId: "edge-2",
+        handleId: "layer-in-2",
+        isOccupied: true,
+        topPercent: 50,
+      },
+      {
+        handleId: "layer-in-3",
+        isOccupied: false,
+        topPercent: 65,
+      },
+    ]);
+  });
+
+  it("omits the free mixer handle once eight layers are connected", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "mixer",
+      nodeId: "mixer-1",
+      edges: Array.from({ length: 8 }, (_, index) => ({
+        id: `edge-${index + 1}`,
+        source: `image-${index + 1}`,
+        target: "mixer-1",
+        targetHandle: buildRepeatingInputHandleId("layer-in", index),
+      })),
+      nodeTypeById,
+    });
+
+    expect(handles).toHaveLength(8);
+    expect(handles.every((handle) => handle.isOccupied)).toBe(true);
+    expect(handles.map((handle) => handle.handleId)).toEqual([
+      "layer-in",
+      "layer-in-2",
+      "layer-in-3",
+      "layer-in-4",
+      "layer-in-5",
+      "layer-in-6",
+      "layer-in-7",
+      "layer-in-8",
+    ]);
+  });
+
+  it("chooses the next compact free mixer handle and rejects invalid sources", () => {
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "asset",
+        targetType: "mixer",
+        targetNodeId: "mixer-1",
+        edges: [
+          { id: "edge-1", source: "image-1", target: "mixer-1", targetHandle: "layer-in" },
+        ],
+        nodeTypeById,
+      }),
+    ).toBe("layer-in-2");
+
+    expect(
+      resolveNextRepeatingInputHandleId({
+        sourceType: "video",
+        targetType: "mixer",
+        targetNodeId: "mixer-1",
+        edges: [],
         nodeTypeById,
       }),
     ).toBeNull();

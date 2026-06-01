@@ -252,7 +252,7 @@ export function useCanvasNodeInteractions(args: {
           }
         }
 
-        const adjustedChanges = adjustNodeDimensionChanges(changes, currentNodes);
+        const adjustedChanges = adjustNodeDimensionChanges(changes, currentNodes, edges);
         const nextNodes = applyNodeChanges(adjustedChanges, currentNodes);
 
         for (const resizeChange of computeResizeChangesToPersist(adjustedChanges, removedIds)) {
@@ -272,6 +272,7 @@ export function useCanvasNodeInteractions(args: {
     },
     [
       isResizing,
+      edges,
       pendingLocalPositionUntilConvexMatchesRef,
       preferLocalPositionNodeIdsRef,
       runResizeNodeMutation,

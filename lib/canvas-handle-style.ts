@@ -50,6 +50,8 @@ const COMPARE_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
 const MIXER_HANDLE_CONNECTION_RGB: Record<string, RgbColor> = {
   base: [14, 165, 233],
   overlay: [236, 72, 153],
+  "layer-in": [14, 165, 233],
+  "layer-in-2": [236, 72, 153],
   "mixer-out": [100, 116, 139],
 };
 
@@ -98,6 +100,9 @@ export function canvasHandleAccentRgb(args: {
   if (nodeType === "mixer" && handleId) {
     if (handleType === "target" && handleId === "mixer-out") {
       return SOURCE_NODE_GLOW_RGB.mixer;
+    }
+    if (handleId.startsWith("layer-in-")) {
+      return handleId === "layer-in-2" ? MIXER_HANDLE_CONNECTION_RGB["layer-in-2"] : SOURCE_NODE_GLOW_RGB.mixer;
     }
     const byHandle = MIXER_HANDLE_CONNECTION_RGB[handleId];
     if (byHandle) {
@@ -291,6 +296,6 @@ export const NODE_HANDLE_MAP: Record<
   "change-camera": { source: undefined, target: undefined },
   render: { source: undefined, target: undefined },
   agent: { target: "agent-in" },
-  mixer: { source: "mixer-out", target: "base" },
+  mixer: { source: "mixer-out", target: "layer-in" },
   "agent-output": { target: "agent-output-in" },
 };

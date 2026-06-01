@@ -19,13 +19,18 @@ import {
   MAX_AGENT_CONTEXT_INPUTS,
   MAX_PROMPT_TEXT_INPUTS,
 } from "@/lib/canvas-connection-policy";
+import {
+  MAX_MIXER_LAYERS,
+  MIXER_LAYER_HANDLE_BASE_ID,
+  MIXER_SOURCE_NODE_TYPES,
+} from "@/lib/canvas-mixer-normalization";
 
 export type RepeatingInputEdgeLike = {
   id?: string;
   source: string;
   target: string;
   targetHandle?: string | null;
-  className?: string;
+  className?: string | null;
 };
 
 export type RepeatingInputHandleSlot = {
@@ -42,6 +47,7 @@ const PROMPT_TEXT_SOURCE_TYPES = new Set(["text", "ai-text-output"]);
 const AGENT_REPEATING_INPUT_BASE_HANDLE_ID = "agent-in";
 const AI_TEXT_DRAFT_INPUT_BASE_HANDLE_ID = "ai-text-in";
 const AI_TEXT_INSTRUCTION_INPUT_BASE_HANDLE_ID = "ai-text-instruction-in";
+const MIXER_REPEATING_INPUT_BASE_HANDLE_ID = MIXER_LAYER_HANDLE_BASE_ID;
 
 type RepeatingInputConfig = {
   nodeType: string;
@@ -78,6 +84,12 @@ const AI_TEXT_DRAFT_INPUT_CONFIG: RepeatingInputConfig = {
   defaultForBodyDrop: true,
 };
 
+const MIXER_REPEATING_INPUT_CONFIG: RepeatingInputConfig = {
+  nodeType: "mixer",
+  baseHandleId: MIXER_REPEATING_INPUT_BASE_HANDLE_ID,
+  maxSlots: MAX_MIXER_LAYERS,
+};
+
 function getRepeatingInputConfigs(nodeType: string | undefined): RepeatingInputConfig[] {
   if (nodeType === PROMPT_REPEATING_INPUT_CONFIG.nodeType) {
     return [PROMPT_REPEATING_INPUT_CONFIG];
@@ -87,6 +99,9 @@ function getRepeatingInputConfigs(nodeType: string | undefined): RepeatingInputC
   }
   if (nodeType === "ai-text") {
     return [AI_TEXT_INSTRUCTION_INPUT_CONFIG, AI_TEXT_DRAFT_INPUT_CONFIG];
+  }
+  if (nodeType === MIXER_REPEATING_INPUT_CONFIG.nodeType) {
+    return [MIXER_REPEATING_INPUT_CONFIG];
   }
   return [];
 }
@@ -112,6 +127,9 @@ function isRepeatingSourceForTarget(sourceType: string, targetType: string): boo
   }
   if (targetType === "ai-text") {
     return isAiTextInputSourceType(sourceType);
+  }
+  if (targetType === "mixer") {
+    return MIXER_SOURCE_NODE_TYPES.has(sourceType);
   }
   return false;
 }
