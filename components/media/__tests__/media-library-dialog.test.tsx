@@ -199,4 +199,62 @@ describe("MediaLibraryDialog", () => {
 
     expect(document.querySelectorAll(".aspect-square.animate-pulse.bg-muted")).toHaveLength(8);
   });
+
+  it("passes both preview and original resolved storage URLs to picks", async () => {
+    const onPick = vi.fn();
+    mocks.useAuthQuery.mockReturnValue({
+      items: [
+        {
+          kind: "image",
+          source: "upload",
+          filename: "Library item",
+          storageId: "storage-full",
+          previewStorageId: "storage-preview",
+          width: 1200,
+          height: 800,
+          createdAt: 1,
+        },
+      ],
+      page: 1,
+      pageSize: 8,
+      totalPages: 1,
+      totalCount: 1,
+    });
+    mocks.resolveUrls.mockResolvedValue({
+      "storage-preview": "https://cdn.example.com/preview.webp",
+      "storage-full": "https://cdn.example.com/full.png",
+    });
+
+    await act(async () => {
+      root?.render(
+        <MediaLibraryDialog
+          open
+          onOpenChange={() => undefined}
+          onPick={onPick}
+          kindFilter="image"
+        />,
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const pickButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "pick",
+    );
+    if (!(pickButton instanceof HTMLButtonElement)) {
+      throw new Error("Pick button not found");
+    }
+
+    await act(async () => {
+      pickButton.click();
+    });
+
+    expect(onPick).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://cdn.example.com/preview.webp",
+        resolvedOriginalUrl: "https://cdn.example.com/full.png",
+      }),
+    );
+  });
 });

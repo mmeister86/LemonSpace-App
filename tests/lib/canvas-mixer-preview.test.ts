@@ -169,6 +169,67 @@ describe("resolveMixerPreviewFromGraph", () => {
     });
   });
 
+  it("preserves source aspect ratio for preview-only overlay layer frames", () => {
+    const richText = {
+      format: "editorjs",
+      version: 1,
+      blocks: [{ type: "paragraph", data: { text: "Caption" } }],
+    };
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "image-bg",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/bg.png",
+            intrinsicWidth: 700,
+            intrinsicHeight: 1000,
+          },
+        },
+        {
+          id: "asset-logo",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/logo.png",
+            intrinsicWidth: 500,
+            intrinsicHeight: 500,
+          },
+        },
+        {
+          id: "text-caption",
+          type: "text",
+          data: { content: "Caption", richText },
+          width: 240,
+          height: 120,
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [],
+          },
+        },
+      ],
+      [
+        { source: "image-bg", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "asset-logo", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "text-caption", target: "mixer-1", targetHandle: "layer-in-3" },
+      ],
+    );
+
+    expect(resolveMixerPreviewFromGraph({ nodeId: "mixer-1", graph })).toMatchObject({
+      status: "ready",
+      stage: { width: 700, height: 1000 },
+      layers: [
+        { handleId: "layer-in", width: 1, height: 1 },
+        { handleId: "layer-in-2", width: 1, height: 0.7 },
+        { handleId: "layer-in-3", width: 1, height: 0.35 },
+      ],
+    });
+  });
+
   it("does not derive a v2 mixer stage from overlay-only inputs", () => {
     const graph = buildGraphSnapshot(
       [

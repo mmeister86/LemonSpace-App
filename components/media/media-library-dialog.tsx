@@ -50,6 +50,7 @@ export type MediaLibraryMetadataItem = {
 
 export type MediaLibraryItem = MediaLibraryMetadataItem & {
   url?: string;
+  resolvedOriginalUrl?: string;
 };
 
 export type MediaLibraryDialogProps = {
@@ -130,6 +131,20 @@ function getItemLabel(
   }
 
   return tCommon("untitledImage");
+}
+
+function resolveMediaOriginalUrl(
+  item: MediaLibraryMetadataItem,
+  urlMap: Record<string, string | undefined>,
+): string | undefined {
+  if (item.storageId) {
+    const originalUrl = urlMap[item.storageId];
+    if (originalUrl) {
+      return originalUrl;
+    }
+  }
+
+  return item.originalUrl ?? item.sourceUrl ?? item.previewUrl;
 }
 
 export function MediaLibraryDialog({
@@ -240,6 +255,7 @@ export function MediaLibraryDialog({
     return metadata.items.map((item) => ({
       ...item,
       url: resolveMediaPreviewUrl(item, urlMap),
+      resolvedOriginalUrl: resolveMediaOriginalUrl(item, urlMap),
     }));
   }, [metadata, urlMap]);
 

@@ -19,6 +19,7 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Unlock } from "lucide-react";
 
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import { RepeatingInputHandles } from "@/components/canvas/repeating-input-handles";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
 import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -873,18 +874,12 @@ export default function MixerNode({ id, data, selected, width, height }: NodePro
 
   return (
     <BaseNodeWrapper nodeType="mixer" selected={selected} className="p-0">
-      {inputHandles.map((handle) => (
-        <CanvasHandle
-          key={handle.handleId}
-          nodeId={id}
-          nodeType="mixer"
-          type="target"
-          position={Position.Left}
-          id={handle.handleId}
-          style={{ top: `${handle.topPercent}%` }}
-          className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
-        />
-      ))}
+      <RepeatingInputHandles
+        nodeId={id}
+        nodeType="mixer"
+        handles={inputHandles}
+        className="!h-3 !w-3 !border-2 !border-background !bg-sky-500"
+      />
       <CanvasHandle
         nodeId={id}
         nodeType="mixer"

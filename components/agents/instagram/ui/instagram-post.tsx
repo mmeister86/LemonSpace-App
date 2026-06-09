@@ -13,6 +13,7 @@ interface InstagramPostProps {
   location?: string
   profileImageUrl?: string
   imageUrl?: string
+  imageAlt?: string
   isLiked?: boolean
   likesCount?: number
   caption?: string
@@ -24,6 +25,7 @@ export function InstagramPost({
   location = "Altadena, California",
   profileImageUrl,
   imageUrl,
+  imageAlt,
   isLiked = true,
   likesCount = 532,
   caption = "lorem ipsum dolor sit amet",
@@ -74,7 +76,7 @@ export function InstagramPost({
         {imageUrl ? (
           <Image
             src={imageUrl}
-            alt={`${username} post`}
+            alt={imageAlt ?? `${username} post`}
             fill
             sizes="(max-width: 470px) 100vw, 470px"
             className="object-cover"

@@ -53,11 +53,15 @@ const ALLOWED_IMAGE_TYPES = new Set([
 ]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const OPTIMISTIC_NODE_PREFIX = "optimistic_";
+const MEDIA_LIBRARY_DIMENSION_RATIO_TOLERANCE = 0.01;
+
+type ImageDimensions = { width: number; height: number };
 
 type ImageNodeData = {
   canvasId?: string;
   storageId?: string;
   previewStorageId?: string;
+  previewUrl?: string;
   url?: string;
   filename?: string;
   mimeType?: string;
@@ -72,6 +76,78 @@ type ImageNodeData = {
 };
 
 export type ImageNode = Node<ImageNodeData, "image">;
+
+function readValidImageDimensions(
+  width: unknown,
+  height: unknown,
+): ImageDimensions | undefined {
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return undefined;
+  }
+
+  return { width, height };
+}
+
+function haveMeaningfullyDifferentAspectRatio(
+  a: ImageDimensions,
+  b: ImageDimensions,
+): boolean {
+  const ratioA = a.width / a.height;
+  const ratioB = b.width / b.height;
+  return Math.abs(ratioA - ratioB) > MEDIA_LIBRARY_DIMENSION_RATIO_TOLERANCE;
+}
+
+async function decodeImageDimensionsFromUrl(
+  url: string,
+): Promise<ImageDimensions | undefined> {
+  return new Promise((resolve) => {
+    const image = new window.Image();
+
+    image.onload = () => {
+      resolve(readValidImageDimensions(image.naturalWidth, image.naturalHeight));
+    };
+    image.onerror = () => {
+      resolve(undefined);
+    };
+    image.src = url;
+  });
+}
+
+async function resolveMediaLibraryImageDimensions(
+  item: MediaLibraryItem,
+): Promise<ImageDimensions | undefined> {
+  const metadataDimensions = readValidImageDimensions(item.width, item.height);
+  const decodeUrl =
+    item.resolvedOriginalUrl ??
+    item.originalUrl ??
+    item.sourceUrl ??
+    item.url ??
+    item.previewUrl;
+
+  if (!decodeUrl) {
+    return metadataDimensions;
+  }
+
+  const decodedDimensions = await decodeImageDimensionsFromUrl(decodeUrl);
+  if (!decodedDimensions) {
+    return metadataDimensions;
+  }
+
+  if (!metadataDimensions) {
+    return decodedDimensions;
+  }
+
+  return haveMeaningfullyDifferentAspectRatio(metadataDimensions, decodedDimensions)
+    ? decodedDimensions
+    : metadataDimensions;
+}
 
 export default function ImageNode({
   id,
@@ -409,6 +485,8 @@ export default function ImageNode({
       setPendingMediaLibraryStorageId(item.storageId);
 
       try {
+        const dimensions = await resolveMediaLibraryImageDimensions(item);
+
         await queueNodeDataUpdate({
           nodeId: id as Id<"nodes">,
           data: preserveNodeFavorite(
@@ -417,8 +495,8 @@ export default function ImageNode({
               previewStorageId: item.previewStorageId,
               filename: item.filename,
               mimeType: item.mimeType,
-              width: item.width,
-              height: item.height,
+              width: dimensions?.width,
+              height: dimensions?.height,
               previewWidth: item.previewWidth,
               previewHeight: item.previewHeight,
             },
@@ -427,10 +505,10 @@ export default function ImageNode({
         });
         setMediaLibraryPhase("syncing");
 
-        if (typeof item.width === "number" && typeof item.height === "number") {
+        if (dimensions) {
           const targetSize = computeMediaNodeSize("image", {
-            intrinsicWidth: item.width,
-            intrinsicHeight: item.height,
+            intrinsicWidth: dimensions.width,
+            intrinsicHeight: dimensions.height,
           });
 
           await queueNodeResize({

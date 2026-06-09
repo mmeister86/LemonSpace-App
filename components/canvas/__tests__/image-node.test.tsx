@@ -4,6 +4,13 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({
+  queueNodeDataUpdate: vi.fn(async () => undefined),
+  queueNodeResize: vi.fn(async () => undefined),
+  mediaLibraryPickItem: null as null | Record<string, unknown>,
+  decodedImageSizes: new Map<string, { width: number; height: number }>(),
+}));
+
 vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
   useViewport: () => ({ x: 0, y: 0, zoom: mockViewportZoom }),
@@ -21,8 +28,8 @@ vi.mock("next-intl", () => ({
 
 vi.mock("@/components/canvas/canvas-sync-context", () => ({
   useCanvasSync: () => ({
-    queueNodeDataUpdate: vi.fn(async () => undefined),
-    queueNodeResize: vi.fn(async () => undefined),
+    queueNodeDataUpdate: mocks.queueNodeDataUpdate,
+    queueNodeResize: mocks.queueNodeResize,
     status: { isOffline: false },
   }),
 }));
@@ -45,7 +52,24 @@ vi.mock("@/components/canvas/canvas-handle", () => ({
 }));
 
 vi.mock("@/components/media/media-library-dialog", () => ({
-  MediaLibraryDialog: () => null,
+  MediaLibraryDialog: ({
+    onPick,
+  }: {
+    onPick?: (item: Record<string, unknown>) => void | Promise<void>;
+  }) => (
+    <button
+      type="button"
+      data-testid="mock-media-library-pick"
+      onClick={() => {
+        if (!mocks.mediaLibraryPickItem) {
+          return;
+        }
+        void onPick?.(mocks.mediaLibraryPickItem);
+      }}
+    >
+      Pick media
+    </button>
+  ),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -55,6 +79,7 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 import ImageNode from "@/components/canvas/nodes/image-node";
+import { computeMediaNodeSize } from "@/lib/canvas-utils";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -64,6 +89,30 @@ describe("ImageNode", () => {
 
   beforeEach(() => {
     mockViewportZoom = 1;
+    mocks.queueNodeDataUpdate.mockClear();
+    mocks.queueNodeResize.mockClear();
+    mocks.mediaLibraryPickItem = null;
+    mocks.decodedImageSizes.clear();
+    class MockImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 0;
+      naturalHeight = 0;
+
+      set src(value: string) {
+        const size = mocks.decodedImageSizes.get(value);
+        queueMicrotask(() => {
+          if (!size) {
+            this.onerror?.();
+            return;
+          }
+          this.naturalWidth = size.width;
+          this.naturalHeight = size.height;
+          this.onload?.();
+        });
+      }
+    }
+    vi.stubGlobal("Image", MockImage);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -79,6 +128,7 @@ describe("ImageNode", () => {
     container?.remove();
     root = null;
     container = null;
+    vi.unstubAllGlobals();
   });
 
   async function renderImageNode(data: Record<string, unknown>) {
@@ -208,5 +258,128 @@ describe("ImageNode", () => {
 
     expect(mediaLibraryButton).toBeTruthy();
     expect((mediaLibraryButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("resizes media library picks from decoded image dimensions when metadata is missing", async () => {
+    const fullUrl = "https://cdn.example.com/library-full.png";
+    const expectedSize = computeMediaNodeSize("image", {
+      intrinsicWidth: 1200,
+      intrinsicHeight: 800,
+    });
+    mocks.decodedImageSizes.set(fullUrl, { width: 1200, height: 800 });
+    mocks.mediaLibraryPickItem = {
+      kind: "image",
+      storageId: "storage-1",
+      filename: "library.png",
+      mimeType: "image/png",
+      resolvedOriginalUrl: fullUrl,
+    };
+
+    await renderImageNode({});
+
+    const pickButton = container?.querySelector<HTMLButtonElement>(
+      '[data-testid="mock-media-library-pick"]',
+    );
+    if (!pickButton) {
+      throw new Error("media library pick button missing");
+    }
+
+    await act(async () => {
+      pickButton.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: expect.objectContaining({
+        storageId: "storage-1",
+        width: 1200,
+        height: 800,
+      }),
+    });
+    expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      width: expectedSize.width,
+      height: expectedSize.height,
+    });
+  });
+
+  it("prefers decoded media library dimensions over stale archived dimensions", async () => {
+    const fullUrl = "https://cdn.example.com/stale-full.png";
+    const expectedSize = computeMediaNodeSize("image", {
+      intrinsicWidth: 1200,
+      intrinsicHeight: 800,
+    });
+    mocks.decodedImageSizes.set(fullUrl, { width: 1200, height: 800 });
+    mocks.mediaLibraryPickItem = {
+      kind: "image",
+      storageId: "storage-1",
+      filename: "stale.png",
+      mimeType: "image/png",
+      width: 640,
+      height: 640,
+      resolvedOriginalUrl: fullUrl,
+    };
+
+    await renderImageNode({});
+
+    const pickButton = container?.querySelector<HTMLButtonElement>(
+      '[data-testid="mock-media-library-pick"]',
+    );
+    if (!pickButton) {
+      throw new Error("media library pick button missing");
+    }
+
+    await act(async () => {
+      pickButton.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: expect.objectContaining({
+        storageId: "storage-1",
+        width: 1200,
+        height: 800,
+      }),
+    });
+    expect(mocks.queueNodeResize).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      width: expectedSize.width,
+      height: expectedSize.height,
+    });
+  });
+
+  it("applies media library picks without resizing when dimensions cannot be decoded", async () => {
+    mocks.mediaLibraryPickItem = {
+      kind: "image",
+      storageId: "storage-1",
+      filename: "unknown.png",
+      mimeType: "image/png",
+      resolvedOriginalUrl: "https://cdn.example.com/missing.png",
+    };
+
+    await renderImageNode({});
+
+    const pickButton = container?.querySelector<HTMLButtonElement>(
+      '[data-testid="mock-media-library-pick"]',
+    );
+    if (!pickButton) {
+      throw new Error("media library pick button missing");
+    }
+
+    await act(async () => {
+      pickButton.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.queueNodeDataUpdate).toHaveBeenCalledWith({
+      nodeId: "node-1",
+      data: expect.objectContaining({
+        storageId: "storage-1",
+        filename: "unknown.png",
+      }),
+    });
+    expect(mocks.queueNodeResize).not.toHaveBeenCalled();
   });
 });

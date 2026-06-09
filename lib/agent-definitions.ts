@@ -62,7 +62,7 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
     metadata: {
       name: "Instagram Post Agent",
       description:
-        "Turns connected LemonSpace assets and campaign context into a complete Instagram post mockup plus reusable copy and visual prompts.",
+        "Turns connected LemonSpace assets and campaign context into editable Instagram post fields feeding a live post mockup.",
       emoji: "camera",
       color: "pink",
       vibe: "Builds a ready-to-review Instagram post from the canvas context in front of it.",
@@ -96,18 +96,19 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
     analysisRules: [
       "Read only directly connected canvas inputs and treat them as the full available context.",
       "Select the strongest visual source for an Instagram feed post and record assumptions when context is sparse.",
-      "Create a complete Instagram post package with preview metadata clearly labelled when synthetic.",
+      "Create editable post fields as the source of truth and label synthetic preview metadata clearly.",
     ],
     executionRules: [
       "Use the Instagram harness tools instead of free-form canvas edits.",
-      "Create no more than one Instagram output, one supporting text node, and one prompt node per run.",
+      "Create exactly one editable Instagram post package per run.",
       "Never edit or delete existing canvas nodes.",
     ],
     defaultOutputBlueprints: [
       {
-        artifactType: "instagram-post",
-        requiredSections: ["Caption", "Hashtags", "CTA", "Alt text", "Assumptions"],
+        artifactType: "instagram-post-package",
+        requiredSections: ["Caption", "Hashtags", "CTA", "Alt text", "Visual prompt", "Assumptions"],
         requiredMetadataKeys: [
+          "fieldNodeIds",
           "sourceNodeIds",
           "syntheticPreviewFields",
           "selectedImageNodeId",
@@ -115,27 +116,29 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
         ],
         qualityChecks: [
           "uses_connected_canvas_context",
+          "creates_editable_field_nodes",
+          "wires_live_mockup_bindings",
           "labels_synthetic_preview_metadata",
           "contains_caption_hashtags_cta",
-          "includes_followup_prompt_node",
         ],
       },
     ],
     uiReference: {
       tools: [
         "read_connected_context",
-        "create_instagram_output",
-        "create_text_node",
-        "create_prompt_node",
+        "create_instagram_post_package",
       ],
       expectedInputs: [
         "Connected image, asset, render, ai-image, text, note, or agent-output nodes",
         "Optional briefing constraints on the agent node",
       ],
       expectedOutputs: [
-        "Instagram post preview agent-output",
-        "Supporting copy/variant text node",
-        "Follow-up visual prompt node",
+        "Editable caption text node",
+        "Editable hashtags text node",
+        "Editable CTA text node",
+        "Editable alt-text node",
+        "Editable visual prompt node",
+        "Live Instagram post mockup node",
       ],
       notes: [
         "The agent reads only directly connected inputs.",

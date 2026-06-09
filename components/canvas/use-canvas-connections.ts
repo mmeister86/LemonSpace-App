@@ -10,7 +10,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasConnectionValidationReason } from "@/lib/canvas-connection-policy";
 import type { CanvasNodeTemplate } from "@/lib/canvas-node-templates";
 import type { CanvasNodeType } from "@/lib/canvas-node-types";
-import { normalizeMixerLayerHandle } from "@/lib/canvas-mixer-normalization";
+import {
+  MIXER_LAYER_HANDLE_BASE_ID,
+  normalizeMixerLayerHandle,
+} from "@/lib/canvas-mixer-normalization";
 
 import {
   getConnectEndClientPoint,
@@ -212,6 +215,12 @@ export function useCanvasConnections({
       const oldHandle = normalizeMixerLayerHandle(oldEdge.targetHandle);
       const requestedHandle = normalizeMixerLayerHandle(newConnection.targetHandle);
       if (!oldHandle || !requestedHandle || oldHandle === requestedHandle) {
+        return null;
+      }
+      if (
+        oldHandle === MIXER_LAYER_HANDLE_BASE_ID ||
+        requestedHandle === MIXER_LAYER_HANDLE_BASE_ID
+      ) {
         return null;
       }
 

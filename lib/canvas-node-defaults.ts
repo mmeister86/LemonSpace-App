@@ -189,6 +189,19 @@ export const NODE_DEFAULTS: Record<
       body: "",
     },
   },
+  "instagram-post-mockup": {
+    width: 520,
+    height: 760,
+    data: {
+      title: "Instagram post mockup",
+      channel: "Instagram Feed",
+      snapshot: {
+        username: "lemonspace",
+        caption: "",
+        hashtags: [],
+      },
+    },
+  },
 };
 
 export type MediaNodeKind = "asset" | "image" | "video";

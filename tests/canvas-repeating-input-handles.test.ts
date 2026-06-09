@@ -679,6 +679,38 @@ describe("canvas repeating input handles", () => {
     ]);
   });
 
+  it("matches occupied mixer slots by normalized handle id even when edges arrive out of order", () => {
+    const handles = resolveVisibleRepeatingInputHandles({
+      nodeType: "mixer",
+      nodeId: "mixer-1",
+      edges: [
+        { id: "edge-overlay", source: "text-1", target: "mixer-1", targetHandle: "layer-in-2" },
+        { id: "edge-base", source: "image-1", target: "mixer-1", targetHandle: "layer-in" },
+      ],
+      nodeTypeById,
+    });
+
+    expect(handles).toEqual([
+      {
+        edgeId: "edge-base",
+        handleId: "layer-in",
+        isOccupied: true,
+        topPercent: 35,
+      },
+      {
+        edgeId: "edge-overlay",
+        handleId: "layer-in-2",
+        isOccupied: true,
+        topPercent: 50,
+      },
+      {
+        handleId: "layer-in-3",
+        isOccupied: false,
+        topPercent: 65,
+      },
+    ]);
+  });
+
   it("omits the free mixer handle once eight layers are connected", () => {
     const handles = resolveVisibleRepeatingInputHandles({
       nodeType: "mixer",

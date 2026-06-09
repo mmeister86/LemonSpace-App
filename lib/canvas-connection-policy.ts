@@ -12,6 +12,15 @@ import {
   MAX_MIXER_LAYERS,
   normalizeMixerLayerHandle,
 } from "@/lib/canvas-mixer-normalization";
+import {
+  INSTAGRAM_POST_MOCKUP_ALT_TEXT_HANDLE,
+  INSTAGRAM_POST_MOCKUP_CAPTION_HANDLE,
+  INSTAGRAM_POST_MOCKUP_CTA_HANDLE,
+  INSTAGRAM_POST_MOCKUP_HASHTAGS_HANDLE,
+  INSTAGRAM_POST_MOCKUP_TARGET_HANDLES,
+  INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE,
+  INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE,
+} from "@/lib/instagram-post-mockup";
 
 export const CANVAS_NODE_DND_MIME = "application/lemonspace-node-type";
 
@@ -131,6 +140,20 @@ const AI_TEXT_ALLOWED_SOURCE_TYPES = new Set<string>([
   ...AI_TEXT_VISUAL_SOURCE_TYPES,
 ]);
 
+const INSTAGRAM_POST_MOCKUP_VISUAL_SOURCE_TYPES = new Set<string>([
+  "image",
+  "asset",
+  "render",
+  "ai-image",
+]);
+const INSTAGRAM_POST_MOCKUP_TEXT_SOURCE_TYPES = new Set<string>([
+  "text",
+  "ai-text-output",
+]);
+const INSTAGRAM_POST_MOCKUP_TARGET_HANDLE_SET = new Set<string>(
+  INSTAGRAM_POST_MOCKUP_TARGET_HANDLES,
+);
+
 export function isAiTextInputSourceType(sourceType: string): boolean {
   return AI_TEXT_ALLOWED_SOURCE_TYPES.has(sourceType);
 }
@@ -219,6 +242,9 @@ export type CanvasConnectionValidationReason =
   | "ai-text-output-source-invalid"
   | "ai-text-output-incoming-limit"
   | "agent-output-source-invalid"
+  | "instagram-post-mockup-source-invalid"
+  | "instagram-post-mockup-target-handle-invalid"
+  | "instagram-post-mockup-handle-incoming-limit"
   | "mask-source-invalid"
   | "mask-incoming-limit"
   | "mask-target-handle-required"
@@ -340,6 +366,47 @@ export function validateCanvasConnectionPolicy(args: {
 
     if (incomingOnHandle >= 1) {
       return "style-transfer-handle-incoming-limit";
+    }
+
+    return null;
+  }
+
+  if (targetType === "instagram-post-mockup") {
+    const normalizedTargetHandle =
+      targetHandle == null || targetHandle === "" || targetHandle === "null"
+        ? ""
+        : targetHandle;
+
+    if (!INSTAGRAM_POST_MOCKUP_TARGET_HANDLE_SET.has(normalizedTargetHandle)) {
+      return "instagram-post-mockup-target-handle-invalid";
+    }
+
+    const acceptsSource =
+      normalizedTargetHandle === INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE
+        ? INSTAGRAM_POST_MOCKUP_VISUAL_SOURCE_TYPES.has(sourceType)
+        : normalizedTargetHandle === INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE
+          ? sourceType === "prompt"
+          : [
+              INSTAGRAM_POST_MOCKUP_CAPTION_HANDLE,
+              INSTAGRAM_POST_MOCKUP_HASHTAGS_HANDLE,
+              INSTAGRAM_POST_MOCKUP_CTA_HANDLE,
+              INSTAGRAM_POST_MOCKUP_ALT_TEXT_HANDLE,
+            ].includes(normalizedTargetHandle)
+            ? INSTAGRAM_POST_MOCKUP_TEXT_SOURCE_TYPES.has(sourceType)
+            : false;
+
+    if (!acceptsSource) {
+      return "instagram-post-mockup-source-invalid";
+    }
+
+    const incomingOnHandle = (targetIncomingHandles ?? []).filter((handle) => {
+      const normalized =
+        handle == null || handle === "" || handle === "null" ? "" : handle;
+      return normalized === normalizedTargetHandle;
+    }).length;
+
+    if (incomingOnHandle >= 1) {
+      return "instagram-post-mockup-handle-incoming-limit";
     }
 
     return null;
@@ -532,6 +599,12 @@ export function getCanvasConnectionValidationMessage(
       return "KI-Text-Ausgabe-Nodes erlauben genau eine eingehende Verbindung.";
     case "agent-output-source-invalid":
       return "Agent-Ausgabe akzeptiert nur Eingaben von Agent-Nodes.";
+    case "instagram-post-mockup-source-invalid":
+      return "Instagram-Mockups akzeptieren nur passende Text-, Prompt- oder Bildquellen fuer den gewaehlten Eingang.";
+    case "instagram-post-mockup-target-handle-invalid":
+      return "Instagram-Mockups akzeptieren nur definierte Ziel-Eingaenge.";
+    case "instagram-post-mockup-handle-incoming-limit":
+      return "Jeder Instagram-Mockup-Eingang akzeptiert nur eine Verbindung.";
     case "mask-source-invalid":
       return "Masken akzeptieren nur Bild-Inputs; Adjustment-Masken-Handles akzeptieren nur Mask-Nodes.";
     case "mask-incoming-limit":

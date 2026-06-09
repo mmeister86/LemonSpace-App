@@ -332,7 +332,7 @@ export function MixerFabricEditor({
             fontSize: 32,
             fontFamily: "Manrope, system-ui, sans-serif",
             fill: "#111827",
-            backgroundColor: "#ffffff",
+            backgroundColor: "",
           });
         }),
       );

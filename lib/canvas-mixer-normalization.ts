@@ -47,6 +47,11 @@ export type NormalizedMixerLayerCompositionData = {
   layers: NormalizedMixerLayerData[];
 };
 
+export type MixerLayerFrameSize = {
+  width?: number | null;
+  height?: number | null;
+};
+
 export const MIXER_SOURCE_NODE_TYPES = new Set([
   "image",
   "asset",
@@ -386,14 +391,47 @@ function legacyLayer(args: {
 export function createDefaultMixerLayerData(
   handleId: string,
   index: number,
+  options?: {
+    stage?: MixerLayerFrameSize | null;
+    sourceSize?: MixerLayerFrameSize | null;
+  },
 ): NormalizedMixerLayerData {
+  const stageWidth = options?.stage?.width;
+  const stageHeight = options?.stage?.height;
+  const sourceWidth = options?.sourceSize?.width;
+  const sourceHeight = options?.sourceSize?.height;
+  let width = 1;
+  let height = 1;
+
+  if (
+    handleId !== MIXER_LAYER_HANDLE_BASE_ID &&
+    typeof stageWidth === "number" &&
+    typeof stageHeight === "number" &&
+    typeof sourceWidth === "number" &&
+    typeof sourceHeight === "number" &&
+    stageWidth > 0 &&
+    stageHeight > 0 &&
+    sourceWidth > 0 &&
+    sourceHeight > 0
+  ) {
+    const stageAspectRatio = stageWidth / stageHeight;
+    const sourceAspectRatio = sourceWidth / sourceHeight;
+    if (sourceAspectRatio >= stageAspectRatio) {
+      width = 1;
+      height = roundNormalized(stageAspectRatio / sourceAspectRatio);
+    } else {
+      width = roundNormalized(sourceAspectRatio / stageAspectRatio);
+      height = 1;
+    }
+  }
+
   return legacyLayer({
     id: `layer-${index + 1}`,
     handleId,
     x: 0,
     y: 0,
-    width: 1,
-    height: 1,
+    width,
+    height,
     opacity: 100,
     blendMode: "normal",
   });

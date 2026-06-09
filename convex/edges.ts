@@ -12,22 +12,13 @@ import {
   getCanvasConnectionValidationMessage,
   validateCanvasConnectionPolicy,
 } from "../lib/canvas-connection-policy";
+import {
+  MIXER_LAYER_HANDLE_BASE_ID,
+  normalizeMixerLayerHandle,
+} from "../lib/canvas-mixer-normalization";
 
 const PERFORMANCE_LOG_THRESHOLD_MS = 250;
 const INCOMING_EDGE_POLICY_INSPECTION_LIMIT = 8;
-const MIXER_HANDLES = new Set(["base", "overlay"] as const);
-
-function normalizeMixerHandle(handle: string | undefined): "base" | "overlay" | null {
-  if (handle == null || handle === "" || handle === "null") {
-    return "base";
-  }
-
-  if (MIXER_HANDLES.has(handle as "base" | "overlay")) {
-    return handle as "base" | "overlay";
-  }
-
-  return null;
-}
 
 async function getIncomingEdgePolicyContext(
   ctx: MutationCtx,
@@ -320,10 +311,16 @@ export const swapMixerInputs = mutation({
       throw new Error("Mixer node not found");
     }
 
-    const edgeHandle = normalizeMixerHandle(edge.targetHandle);
-    const otherEdgeHandle = normalizeMixerHandle(otherEdge.targetHandle);
-    if (!edgeHandle || !otherEdgeHandle || edgeHandle === otherEdgeHandle) {
-      throw new Error("Mixer swap requires one base and one overlay edge");
+    const edgeHandle = normalizeMixerLayerHandle(edge.targetHandle);
+    const otherEdgeHandle = normalizeMixerLayerHandle(otherEdge.targetHandle);
+    if (
+      !edgeHandle ||
+      !otherEdgeHandle ||
+      edgeHandle === otherEdgeHandle ||
+      edgeHandle === MIXER_LAYER_HANDLE_BASE_ID ||
+      otherEdgeHandle === MIXER_LAYER_HANDLE_BASE_ID
+    ) {
+      throw new Error("Mixer swap supports overlay layer handles only");
     }
 
     await ctx.db.patch(edge._id, { targetHandle: otherEdgeHandle });

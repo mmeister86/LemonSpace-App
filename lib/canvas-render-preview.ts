@@ -14,7 +14,9 @@ import {
   type EditorJsRichTextData,
 } from "@/lib/canvas-rich-text";
 import {
+  buildMixerLayerHandleId,
   createDefaultMixerLayerData,
+  MAX_MIXER_LAYERS,
   MIXER_SOURCE_NODE_TYPES,
   normalizeMixerLayerCompositionData,
   normalizeMixerLayerHandle,
@@ -22,7 +24,10 @@ import {
   type MixerBlendMode,
   type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
-import { resolveMixerBaseStageFromGraph } from "@/lib/canvas-mixer-stage";
+import {
+  resolveMixerBaseStageFromGraph,
+  resolveMixerSourceStageSize,
+} from "@/lib/canvas-mixer-stage";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 import type { CanvasPreviewSourceQuality } from "@/lib/canvas-preview-quality";
 
@@ -52,6 +57,8 @@ export type ResolvedPreviewSourceImage = {
 export type MixerImageLayerSource = {
   kind: "image";
   url: string;
+  width?: number;
+  height?: number;
 };
 
 export type MixerTextLayerSource = {
@@ -243,6 +250,24 @@ function resolveNodeDimension(
     resolvePositiveDimension(node.style?.[key]) ??
     fallback
   );
+}
+
+function resolveImageLayerSourceDimensions(
+  node: CanvasGraphNodeLike,
+): { width: number; height: number } | null {
+  return resolveMixerSourceStageSize(node);
+}
+
+function imageLayerSourceFromNode(
+  node: CanvasGraphNodeLike,
+  url: string,
+): MixerImageLayerSource {
+  const dimensions = resolveImageLayerSourceDimensions(node);
+  return {
+    kind: "image",
+    url,
+    ...(dimensions ? dimensions : {}),
+  };
 }
 
 export function resolveTextLayerSource(node: CanvasGraphNodeLike): MixerTextLayerSource {
@@ -526,14 +551,14 @@ function resolveMixerLayerSourceFromNode(args: {
       return null;
     }
     if (preview.sourceUrl) {
-      return { kind: "image", url: preview.sourceUrl };
+      return imageLayerSourceFromNode(args.node, preview.sourceUrl);
     }
 
     const directRenderUrl = resolveRenderOutputUrl(args.node, {
       sourceQuality: args.sourceQuality,
     });
     if (directRenderUrl) {
-      return { kind: "image", url: directRenderUrl };
+      return imageLayerSourceFromNode(args.node, directRenderUrl);
     }
 
     return null;
@@ -542,7 +567,7 @@ function resolveMixerLayerSourceFromNode(args: {
   const url = resolveNodeImageUrl(args.node.data, {
     sourceQuality: args.sourceQuality,
   });
-  return url ? { kind: "image", url } : null;
+  return url ? imageLayerSourceFromNode(args.node, url) : null;
 }
 
 function resolveMixerLayerSourceFromEdge(args: {
@@ -578,17 +603,30 @@ function isV2MixerHandle(handle: string | null | undefined): boolean {
 function mergeLayersWithIncomingHandles(args: {
   layers: readonly NormalizedMixerLayerData[];
   incomingEdges: readonly CanvasGraphEdgeLike[];
+  graph: CanvasGraphSnapshot;
+  stage: { width: number; height: number } | null;
 }): NormalizedMixerLayerData[] {
   const layers = [...args.layers];
   const seen = new Set(layers.map((layer) => layer.handleId));
 
-  for (const edge of args.incomingEdges) {
-    const handle = normalizeMixerLayerHandle(edge.targetHandle);
-    if (!handle || seen.has(handle)) {
+  for (let index = 0; index < MAX_MIXER_LAYERS; index += 1) {
+    const handle = buildMixerLayerHandleId(index);
+    if (seen.has(handle)) {
       continue;
     }
+
+    const edge = args.incomingEdges.find(
+      (candidate) => normalizeMixerLayerHandle(candidate.targetHandle) === handle,
+    );
+    if (!edge) {
+      continue;
+    }
+    const sourceNode = args.graph.nodesById.get(edge.source);
     seen.add(handle);
-    layers.push(createDefaultMixerLayerData(handle, layers.length));
+    layers.push(createDefaultMixerLayerData(handle, layers.length, {
+      stage: args.stage,
+      sourceSize: sourceNode ? resolveMixerSourceStageSize(sourceNode) : null,
+    }));
   }
 
   return layers;
@@ -601,9 +639,17 @@ function resolveRenderMixerLayerSourcesFromGraph(args: {
 }): RenderPreviewSourceComposition | null {
   const normalized = normalizeMixerLayerCompositionData(args.node.data);
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.node.id) ?? [];
+  const stage =
+    normalized.stage ??
+    resolveMixerBaseStageFromGraph({
+      incomingEdges,
+      graph: args.graph,
+    });
   const normalizedLayers = mergeLayersWithIncomingHandles({
     layers: normalized.layers,
     incomingEdges,
+    graph: args.graph,
+    stage,
   });
   const edgeByHandle = new Map<string, CanvasGraphEdgeLike>();
 
@@ -639,12 +685,7 @@ function resolveRenderMixerLayerSourcesFromGraph(args: {
 
   return {
     kind: "mixer",
-    stage:
-      normalized.stage ??
-      resolveMixerBaseStageFromGraph({
-        incomingEdges,
-        graph: args.graph,
-      }),
+    stage,
     layers,
     blendMode: "normal",
     opacity: 100,

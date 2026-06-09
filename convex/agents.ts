@@ -60,6 +60,7 @@ import {
   summarizeIncomingContext,
   type PromptContextNode,
 } from "../lib/agent-prompting";
+import { AGENT_DOC_SEGMENTS } from "../lib/generated/agent-doc-segments";
 import {
   DEFAULT_AGENT_MODEL_ID,
   getAgentModel,
@@ -72,6 +73,7 @@ import {
   runAgentHarnessLoop,
   type AgentHarnessMessage,
 } from "../lib/agent-harness";
+import { assertConnectionPolicyForTypes } from "./nodes/validation";
 import {
   appendAiRunEvent,
   normalizeAiRunEvents,
@@ -80,10 +82,11 @@ import {
   type ToolCallTrace,
 } from "../lib/ai-run-history";
 import {
+  buildInstagramPostPackageArtifacts,
   createInstagramHarnessToolState,
   executeInstagramHarnessTool,
   INSTAGRAM_AGENT_TOOLS,
-  resolveInstagramOutputArgs,
+  resolveInstagramPostPackageArgs,
   type InstagramConnectedContextResult,
 } from "./agent_instagram_harness";
 
@@ -411,6 +414,20 @@ type InternalApiShape = {
         data: Record<string, unknown>;
       },
       { nodeId: Id<"nodes"> }
+    >;
+    createInstagramHarnessPostPackage: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        canvasId: Id<"canvases">;
+        nodeId: Id<"nodes">;
+        data: Record<string, unknown>;
+      },
+      {
+        nodeId: Id<"nodes">;
+        fieldNodeIds: Partial<Record<string, Id<"nodes">>>;
+        sourceNodeIds: string[];
+      }
     >;
   };
   credits: {
@@ -1542,6 +1559,128 @@ export const createInstagramHarnessPromptNode = internalMutation({
   },
 });
 
+export const createInstagramHarnessPostPackage = internalMutation({
+  args: {
+    canvasId: v.id("canvases"),
+    nodeId: v.id("nodes"),
+    data: v.record(v.string(), v.any()),
+  },
+  handler: async (ctx, args) => {
+    const node = await getAgentNodeForCanvasOrThrow(ctx, args.nodeId, args.canvasId);
+    const prev = getNodeDataRecord(node.data);
+    const outputNodeIds = Array.isArray(prev.outputNodeIds)
+      ? prev.outputNodeIds.filter((value): value is Id<"nodes"> => typeof value === "string")
+      : [];
+    const runId = stringFromRecord(args.data, "runId") || `${args.nodeId}:${Date.now()}`;
+    const artifacts = buildInstagramPostPackageArtifacts({
+      agentNodeId: args.nodeId,
+      runId,
+      data: args.data,
+    });
+    const sourceNodeIds = Array.isArray(artifacts.mockupNode.data.sourceNodeIds)
+      ? artifacts.mockupNode.data.sourceNodeIds.filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        )
+      : [];
+
+    const fieldNodeIds: Partial<Record<string, Id<"nodes">>> = {};
+    const createdNodeIds: Id<"nodes">[] = [];
+    const baseX = node.positionX + node.width + 120;
+    const baseY = node.positionY;
+
+    for (const [index, fieldNode] of artifacts.fieldNodes.entries()) {
+      const fieldNodeId = await ctx.db.insert("nodes", {
+        canvasId: args.canvasId,
+        type: fieldNode.type,
+        positionX: baseX,
+        positionY: baseY + index * 190,
+        width: 320,
+        height: fieldNode.type === "prompt" ? 220 : 150,
+        status: "idle",
+        retryCount: 0,
+        data: fieldNode.data,
+      });
+      fieldNodeIds[fieldNode.role] = fieldNodeId;
+      createdNodeIds.push(fieldNodeId);
+    }
+
+    const mockupNodeId = await ctx.db.insert("nodes", {
+      canvasId: args.canvasId,
+      type: artifacts.mockupNode.type,
+      positionX: baseX + 430,
+      positionY: baseY,
+      width: 520,
+      height: 760,
+      status: "done",
+      retryCount: 0,
+      data: {
+        ...artifacts.mockupNode.data,
+        fieldNodeIds,
+      },
+    });
+    createdNodeIds.push(mockupNodeId);
+
+    for (const binding of artifacts.mockupBindings) {
+      const sourceNodeId = fieldNodeIds[binding.role];
+      if (!sourceNodeId) {
+        continue;
+      }
+      const sourceNode = await ctx.db.get(sourceNodeId);
+      if (!sourceNode) {
+        throw new Error("Instagram field node missing during package binding");
+      }
+      await assertConnectionPolicyForTypes(ctx, {
+        sourceType: sourceNode.type,
+        targetType: artifacts.mockupNode.type,
+        targetNodeId: mockupNodeId,
+        targetHandle: binding.targetHandle,
+      });
+      await ctx.db.insert("edges", {
+        canvasId: args.canvasId,
+        sourceNodeId,
+        targetNodeId: mockupNodeId,
+        sourceHandle: undefined,
+        targetHandle: binding.targetHandle,
+      });
+    }
+
+    if (artifacts.visualBinding) {
+      const visualNodeId = artifacts.visualBinding.sourceNodeId as Id<"nodes">;
+      const visualNode = await ctx.db.get(visualNodeId);
+      if (visualNode && visualNode.canvasId === args.canvasId) {
+        await assertConnectionPolicyForTypes(ctx, {
+          sourceType: visualNode.type,
+          targetType: artifacts.mockupNode.type,
+          targetNodeId: mockupNodeId,
+          targetHandle: artifacts.visualBinding.targetHandle,
+        });
+        await ctx.db.insert("edges", {
+          canvasId: args.canvasId,
+          sourceNodeId: visualNodeId,
+          targetNodeId: mockupNodeId,
+          sourceHandle: undefined,
+          targetHandle: artifacts.visualBinding.targetHandle,
+        });
+      }
+    }
+
+    await ctx.db.patch(args.nodeId, {
+      data: mergeNodeData(prev, {
+        outputNodeIds: [...outputNodeIds, ...createdNodeIds],
+        lastRunPackageNodeId: mockupNodeId,
+      }),
+    });
+
+    await ctx.db.patch(args.canvasId, { updatedAt: Date.now() });
+
+    return {
+      nodeId: mockupNodeId,
+      fieldNodeIds,
+      sourceNodeIds,
+    };
+  },
+});
+
 export const setAgentError = internalMutation({
   args: {
     nodeId: v.id("nodes"),
@@ -1938,6 +2077,7 @@ function buildInstagramHarnessMessages(input: {
   briefConstraints: ReturnType<typeof normalizeAgentBriefConstraints>;
   connectedContext: InstagramConnectedContextResult;
 }): AgentHarnessMessage[] {
+  const promptSegments = AGENT_DOC_SEGMENTS["instagram-post-agent"];
   const languageInstruction =
     input.locale === "de"
       ? "Write generated post copy and final summary in German unless the connected context clearly uses another language."
@@ -1947,10 +2087,14 @@ function buildInstagramHarnessMessages(input: {
     {
       role: "system",
       content: [
-        "You are the Instagram Post Agent for LemonSpace.",
+        promptSegments.role,
+        promptSegments["style-rules"],
+        promptSegments["decision-framework"],
+        promptSegments["channel-notes"],
         "You operate through tools only when creating canvas artifacts.",
         "Use directly connected context only. Do not claim access to unrelated canvas nodes.",
-        "You must create exactly one Instagram output, one supporting text node, and one prompt node before finalizing.",
+        "You must create exactly one editable Instagram post package before finalizing.",
+        "The package must include caption, hashtags, CTA, alt text, visualPrompt, selected visual metadata when available, and synthetic preview field labels.",
         "Synthetic social preview fields such as likesCount, location, or profileImageUrl must be listed in syntheticPreviewFields.",
         "When finished, return JSON only: {\"summary\":\"...\"}.",
         languageInstruction,
@@ -2033,23 +2177,11 @@ export const runToolHarnessAgent = internalAction({
             call,
             ops: {
               readConnectedContext: async () => connectedContext,
-              createInstagramOutput: async (data) =>
-                ctx.runMutation(internalApi.agents.createInstagramHarnessOutput, {
+              createInstagramPostPackage: async (data) =>
+                ctx.runMutation(internalApi.agents.createInstagramHarnessPostPackage, {
                   canvasId: args.canvasId,
                   nodeId: args.nodeId,
-                  data: resolveInstagramOutputArgs(data, connectedContext),
-                }),
-              createTextNode: async (data) =>
-                ctx.runMutation(internalApi.agents.createInstagramHarnessTextNode, {
-                  canvasId: args.canvasId,
-                  nodeId: args.nodeId,
-                  data,
-                }),
-              createPromptNode: async (data) =>
-                ctx.runMutation(internalApi.agents.createInstagramHarnessPromptNode, {
-                  canvasId: args.canvasId,
-                  nodeId: args.nodeId,
-                  data,
+                  data: resolveInstagramPostPackageArgs(data, connectedContext),
                 }),
             },
           }),

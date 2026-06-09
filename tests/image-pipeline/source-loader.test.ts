@@ -573,6 +573,7 @@ describe("loadSourceBitmap", () => {
     ).resolves.toBe(composedBitmap);
 
     expect(fillText).toHaveBeenCalledWith("Launch headline", 12, 12);
+    expect(textContext.fillRect).not.toHaveBeenCalled();
     expect(drawImage).toHaveBeenNthCalledWith(1, textBitmap, 0, 0, 180, 90);
     expect(drawImage.mock.calls[1]?.[0]).toBe(overlayBitmap);
   });

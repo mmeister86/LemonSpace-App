@@ -83,6 +83,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   agent: "Instagram Agent",
   mixer: "Mixer / Merge",
   "agent-output": "Agent-Ausgabe",
+  "instagram-post-mockup": "Instagram Mockup",
 };
 
 type CollapsedHandleSpec = {

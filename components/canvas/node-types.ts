@@ -33,6 +33,7 @@ import FaceRestoreNode from "./nodes/face-restore-node";
 import ChangeCameraNode from "./nodes/change-camera-node";
 import AgentNode from "./nodes/agent-node";
 import AgentOutputNode from "./nodes/agent-output-node";
+import InstagramPostMockupNode from "./nodes/instagram-post-mockup-node";
 import MixerNode from "./nodes/mixer-node";
 import CommentNode from "./nodes/comment-node";
 
@@ -75,5 +76,6 @@ export const nodeTypes = {
   agent: AgentNode,
   mixer: MixerNode,
   "agent-output": AgentOutputNode,
+  "instagram-post-mockup": InstagramPostMockupNode,
   comment: CommentNode,
 } as const;

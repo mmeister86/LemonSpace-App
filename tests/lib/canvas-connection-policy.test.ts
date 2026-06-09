@@ -3,6 +3,71 @@ import { describe, expect, it } from "vitest";
 import { validateCanvasConnectionPolicy } from "@/lib/canvas-connection-policy";
 
 describe("canvas connection policy", () => {
+  it("allows typed sources into instagram post mockup handles", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "instagram-post-mockup",
+        targetHandle: "visual-in",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "instagram-post-mockup",
+        targetHandle: "caption-in",
+        targetIncomingCount: 1,
+        targetIncomingHandles: ["visual-in"],
+      }),
+    ).toBeNull();
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "prompt",
+        targetType: "instagram-post-mockup",
+        targetHandle: "visual-prompt-in",
+        targetIncomingCount: 2,
+        targetIncomingHandles: ["visual-in", "caption-in"],
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects invalid instagram post mockup handles and duplicate handle inputs", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "video",
+        targetType: "instagram-post-mockup",
+        targetHandle: "visual-in",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("instagram-post-mockup-source-invalid");
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "instagram-post-mockup",
+        targetHandle: "visual-in",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("instagram-post-mockup-source-invalid");
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "instagram-post-mockup",
+        targetHandle: "caption-in",
+        targetIncomingCount: 1,
+        targetIncomingHandles: ["caption-in"],
+      }),
+    ).toBe("instagram-post-mockup-handle-incoming-limit");
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "instagram-post-mockup",
+        targetHandle: "unknown-in",
+        targetIncomingCount: 0,
+      }),
+    ).toBe("instagram-post-mockup-target-handle-invalid");
+  });
+
   it("allows bg-remove outputs to feed adjustment, render, and transform nodes", () => {
     expect(
       validateCanvasConnectionPolicy({

@@ -1150,7 +1150,7 @@ describe("useCanvasConnections", () => {
     expect(runRemoveEdgeMutation).not.toHaveBeenCalled();
   });
 
-  it("swaps mixer inputs on reconnect when dropping onto occupied opposite handle (base->overlay)", async () => {
+  it("swaps mixer overlay inputs on reconnect when dropping layer-in-2 onto occupied layer-in-3", async () => {
     const runCreateEdgeMutation = vi.fn(async () => undefined);
     const runRemoveEdgeMutation = vi.fn(async () => undefined);
     const runSwapMixerInputsMutation = vi.fn(async () => undefined);
@@ -1162,13 +1162,19 @@ describe("useCanvasConnections", () => {
         id: "edge-base",
         source: "node-source-base",
         target: "node-mixer",
-        targetHandle: "base",
+        targetHandle: "layer-in",
       },
       {
-        id: "edge-overlay",
-        source: "node-source-overlay",
+        id: "edge-overlay-2",
+        source: "node-source-overlay-2",
         target: "node-mixer",
-        targetHandle: "overlay",
+        targetHandle: "layer-in-2",
+      },
+      {
+        id: "edge-overlay-3",
+        source: "node-source-overlay-3",
+        target: "node-mixer",
+        targetHandle: "layer-in-3",
       },
     ];
 
@@ -1187,7 +1193,8 @@ describe("useCanvasConnections", () => {
           setEdgesMock={setEdgesMock}
           nodes={[
             { id: "node-source-base", type: "image", position: { x: 0, y: 0 }, data: {} },
-            { id: "node-source-overlay", type: "asset", position: { x: 0, y: 120 }, data: {} },
+            { id: "node-source-overlay-2", type: "asset", position: { x: 0, y: 120 }, data: {} },
+            { id: "node-source-overlay-3", type: "text", position: { x: 0, y: 240 }, data: {} },
             { id: "node-mixer", type: "mixer", position: { x: 320, y: 120 }, data: {} },
           ]}
           edges={initialEdges}
@@ -1195,14 +1202,14 @@ describe("useCanvasConnections", () => {
       );
     });
 
-    const oldEdge = initialEdges[0] as RFEdge;
+    const oldEdge = initialEdges[1] as RFEdge;
     await act(async () => {
       latestHandlersRef.current?.onReconnectStart();
       latestHandlersRef.current?.onReconnect(oldEdge, {
-        source: "node-source-base",
+        source: "node-source-overlay-2",
         target: "node-mixer",
         sourceHandle: null,
-        targetHandle: "overlay",
+        targetHandle: "layer-in-3",
       });
       latestHandlersRef.current?.onReconnectEnd({} as MouseEvent, oldEdge);
       await Promise.resolve();
@@ -1213,20 +1220,21 @@ describe("useCanvasConnections", () => {
     expect(runRemoveEdgeMutation).not.toHaveBeenCalled();
     expect(runSwapMixerInputsMutation).toHaveBeenCalledWith({
       canvasId: "canvas-1",
-      edgeId: "edge-base",
-      otherEdgeId: "edge-overlay",
+      edgeId: "edge-overlay-2",
+      otherEdgeId: "edge-overlay-3",
     });
 
     expect(setEdgesMock).toHaveBeenCalledTimes(1);
     const applyEdges = setEdgesMock.mock.calls[0]?.[0] as ((edges: RFEdge[]) => RFEdge[]);
     const swappedEdges = applyEdges(initialEdges);
-    const baseEdge = swappedEdges.find((edge) => edge.id === "edge-base");
-    const overlayEdge = swappedEdges.find((edge) => edge.id === "edge-overlay");
-    expect(baseEdge?.targetHandle).toBe("layer-in-2");
-    expect(overlayEdge?.targetHandle).toBe("layer-in");
+    const overlay2Edge = swappedEdges.find((edge) => edge.id === "edge-overlay-2");
+    const overlay3Edge = swappedEdges.find((edge) => edge.id === "edge-overlay-3");
+    expect(overlay2Edge?.targetHandle).toBe("layer-in-3");
+    expect(overlay3Edge?.targetHandle).toBe("layer-in-2");
   });
 
-  it("swaps mixer inputs on reconnect when dropping onto occupied opposite handle (overlay->base)", async () => {
+  it("does not swap mixer reconnects that involve layer-in", async () => {
+    const runCreateEdgeMutation = vi.fn(async () => undefined);
     const runSwapMixerInputsMutation = vi.fn(async () => undefined);
     const showConnectionRejectedToast = vi.fn();
 
@@ -1238,6 +1246,7 @@ describe("useCanvasConnections", () => {
       root?.render(
         <HookHarness
           helperResult={null}
+          runCreateEdgeMutation={runCreateEdgeMutation}
           runSwapMixerInputsMutation={runSwapMixerInputsMutation}
           showConnectionRejectedToast={showConnectionRejectedToast}
           nodes={[
@@ -1250,13 +1259,13 @@ describe("useCanvasConnections", () => {
               id: "edge-base",
               source: "node-source-base",
               target: "node-mixer",
-              targetHandle: "base",
+              targetHandle: "layer-in",
             },
             {
               id: "edge-overlay",
               source: "node-source-overlay",
               target: "node-mixer",
-              targetHandle: "overlay",
+              targetHandle: "layer-in-2",
             },
           ]}
         />,
@@ -1267,7 +1276,7 @@ describe("useCanvasConnections", () => {
       id: "edge-overlay",
       source: "node-source-overlay",
       target: "node-mixer",
-      targetHandle: "overlay",
+      targetHandle: "layer-in-2",
     } as RFEdge;
 
     await act(async () => {
@@ -1276,18 +1285,15 @@ describe("useCanvasConnections", () => {
         source: "node-source-overlay",
         target: "node-mixer",
         sourceHandle: null,
-        targetHandle: "base",
+        targetHandle: "layer-in",
       });
       latestHandlersRef.current?.onReconnectEnd({} as MouseEvent, oldEdge);
       await Promise.resolve();
     });
 
-    expect(showConnectionRejectedToast).not.toHaveBeenCalled();
-    expect(runSwapMixerInputsMutation).toHaveBeenCalledWith({
-      canvasId: "canvas-1",
-      edgeId: "edge-overlay",
-      otherEdgeId: "edge-base",
-    });
+    expect(runSwapMixerInputsMutation).not.toHaveBeenCalled();
+    expect(runCreateEdgeMutation).not.toHaveBeenCalled();
+    expect(showConnectionRejectedToast).toHaveBeenCalledWith("mixer-handle-incoming-limit");
   });
 
   it("does not swap mixer reconnect when target mixer is not fully populated", async () => {

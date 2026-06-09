@@ -21,11 +21,23 @@ describe("agent definitions", () => {
     expect(definition?.defaultOutputBlueprints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          artifactType: "instagram-post",
-          requiredSections: expect.arrayContaining(["Caption", "Hashtags"]),
+          artifactType: "instagram-post-package",
+          requiredSections: expect.arrayContaining([
+            "Caption",
+            "Hashtags",
+            "CTA",
+            "Alt text",
+            "Visual prompt",
+          ]),
           requiredMetadataKeys: expect.arrayContaining([
+            "fieldNodeIds",
             "sourceNodeIds",
             "syntheticPreviewFields",
+            "selectedImageNodeId",
+          ]),
+          qualityChecks: expect.arrayContaining([
+            "creates_editable_field_nodes",
+            "wires_live_mockup_bindings",
           ]),
         }),
       ]),

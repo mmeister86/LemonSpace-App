@@ -34,10 +34,18 @@ describe("canvas agent config", () => {
     const agentsEntries = byCategory.get("agents") ?? [];
     const aiOutputEntries = byCategory.get("ai-output") ?? [];
 
-    expect(agentsEntries.map((entry) => entry.type)).toEqual(["agent", "agent-output"]);
+    expect(agentsEntries.map((entry) => entry.type)).toEqual([
+      "agent",
+      "agent-output",
+      "instagram-post-mockup",
+    ]);
     expect(agentsEntries[0]).toMatchObject({
       label: "Instagram Agent",
       category: "agents",
+    });
+    expect(agentsEntries.find((entry) => entry.type === "instagram-post-mockup")).toMatchObject({
+      label: "Instagram Mockup",
+      systemOutput: true,
     });
 
     expect(aiOutputEntries.map((entry) => entry.type)).toEqual([

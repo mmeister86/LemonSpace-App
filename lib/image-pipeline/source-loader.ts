@@ -368,8 +368,6 @@ async function createTextLayerBitmap(source: {
     return await createImageBitmap(canvas);
   }
 
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
   context.fillStyle = "#111827";
   context.textBaseline = "top";
 

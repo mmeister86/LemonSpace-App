@@ -30,6 +30,7 @@ export const CANVAS_NODE_TYPES = [
   "ai-video",
   "bg-remove-output",
   "agent-output",
+  "instagram-post-mockup",
   "crop",
   "bg-remove",
   "upscale",

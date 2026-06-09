@@ -163,6 +163,15 @@ export const NODE_CATALOG: readonly NodeCatalogEntry[] = [
     systemOutput: true,
     disabledHint: "Wird vom Agenten erzeugt",
   }),
+  entry({
+    type: "instagram-post-mockup",
+    label: "Instagram Mockup",
+    category: "agents",
+    phase: 2,
+    implemented: true,
+    systemOutput: true,
+    disabledHint: "Wird vom Instagram Agent erzeugt",
+  }),
   // Transformation
   entry({
     type: "crop",

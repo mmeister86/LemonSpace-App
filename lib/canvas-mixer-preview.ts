@@ -16,7 +16,9 @@ import {
   type RenderPreviewSourceQuality,
 } from "@/lib/canvas-render-preview";
 import {
+  buildMixerLayerHandleId,
   createDefaultMixerLayerData,
+  MAX_MIXER_LAYERS,
   MIXER_SOURCE_NODE_TYPES,
   normalizeMixerLayerCompositionData,
   normalizeMixerLayerHandle,
@@ -24,7 +26,10 @@ import {
   type MixerBlendMode,
   type NormalizedMixerLayerData,
 } from "@/lib/canvas-mixer-normalization";
-import { resolveMixerBaseStageFromGraph } from "@/lib/canvas-mixer-stage";
+import {
+  resolveMixerBaseStageFromGraph,
+  resolveMixerSourceStageSize,
+} from "@/lib/canvas-mixer-stage";
 import { readNodeBypassed } from "@/lib/canvas-node-favorite";
 
 export type MixerPreviewStatus = "empty" | "partial" | "ready" | "error";
@@ -84,19 +89,30 @@ function isV2MixerHandle(handle: string | null | undefined): boolean {
 function mergeLayersWithIncomingHandles(args: {
   layers: readonly NormalizedMixerLayerData[];
   incomingEdges: readonly CanvasGraphEdgeLike[];
+  graph: CanvasGraphSnapshot;
+  stage: { width: number; height: number } | null;
 }): NormalizedMixerLayerData[] {
   const layers = [...args.layers];
   const seen = new Set(layers.map((layer) => layer.handleId));
-  const incomingHandles = args.incomingEdges
-    .map((edge) => normalizeMixerLayerHandle(edge.targetHandle))
-    .filter((handle): handle is string => Boolean(handle));
 
-  for (const handle of incomingHandles) {
+  for (let index = 0; index < MAX_MIXER_LAYERS; index += 1) {
+    const handle = buildMixerLayerHandleId(index);
     if (seen.has(handle)) {
       continue;
     }
+
+    const edge = args.incomingEdges.find(
+      (candidate) => normalizeMixerLayerHandle(candidate.targetHandle) === handle,
+    );
+    if (!edge) {
+      continue;
+    }
+    const sourceNode = args.graph.nodesById.get(edge.source);
     seen.add(handle);
-    layers.push(createDefaultMixerLayerData(handle, layers.length));
+    layers.push(createDefaultMixerLayerData(handle, layers.length, {
+      stage: args.stage,
+      sourceSize: sourceNode ? resolveMixerSourceStageSize(sourceNode) : null,
+    }));
   }
 
   return layers;
@@ -249,9 +265,17 @@ export function resolveMixerPreviewFromGraph(args: {
   const incomingEdges = args.graph.incomingEdgesByTarget.get(args.nodeId) ?? [];
   if (isV2MixerData(node.data) || incomingEdges.some((edge) => isV2MixerHandle(edge.targetHandle))) {
     const v2 = normalizeMixerLayerCompositionData(node.data);
+    const stage =
+      v2.stage ??
+      resolveMixerBaseStageFromGraph({
+        incomingEdges,
+        graph: args.graph,
+      });
     const layers = mergeLayersWithIncomingHandles({
       layers: v2.layers,
       incomingEdges,
+      graph: args.graph,
+      stage,
     });
     const resolved = resolveV2LayerSources({
       incomingEdges,
@@ -259,13 +283,6 @@ export function resolveMixerPreviewFromGraph(args: {
       layers,
       sourceQuality: args.sourceQuality,
     });
-    const stage =
-      v2.stage ??
-      resolveMixerBaseStageFromGraph({
-        incomingEdges,
-        graph: args.graph,
-      });
-
     if (resolved.duplicate) {
       return {
         status: "error",

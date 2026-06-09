@@ -312,14 +312,14 @@ describe("edges.swapMixerInputs", () => {
           canvasId,
           sourceNodeId: "source-1" as Id<"nodes">,
           targetNodeId: mixerNodeId,
-          targetHandle: "base",
+          targetHandle: "layer-in-2",
         },
         {
           _id: "edge-overlay" as Id<"edges">,
           canvasId,
           sourceNodeId: "source-2" as Id<"nodes">,
           targetNodeId: mixerNodeId,
-          targetHandle: "overlay",
+          targetHandle: "layer-in-3",
         },
       ],
     });
@@ -341,11 +341,11 @@ describe("edges.swapMixerInputs", () => {
 
     const swappedEdges = mock.listEdges();
     expect(swappedEdges.find((edge) => edge._id === ("edge-base" as Id<"edges">))?.targetHandle).toBe(
-      "overlay",
+      "layer-in-3",
     );
     expect(
       swappedEdges.find((edge) => edge._id === ("edge-overlay" as Id<"edges">))?.targetHandle,
-    ).toBe("base");
+    ).toBe("layer-in-2");
     expect(mock.listCanvases()[0]?.updatedAt).toBeGreaterThan(1);
   });
 
@@ -383,7 +383,7 @@ describe("edges.swapMixerInputs", () => {
     ).rejects.toThrow("Edge not found");
   });
 
-  it("fails when edges are not exactly one base and one overlay handle", async () => {
+  it("fails when a mixer swap involves the protected base layer handle", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ userId: "user-1" } as never);
     const canvasId = "canvas-1" as Id<"canvases">;
     const mixerNodeId = "node-mixer" as Id<"nodes">;
@@ -396,14 +396,14 @@ describe("edges.swapMixerInputs", () => {
           canvasId,
           sourceNodeId: "source-1" as Id<"nodes">,
           targetNodeId: mixerNodeId,
-          targetHandle: "base",
+          targetHandle: "layer-in",
         },
         {
           _id: "edge-2" as Id<"edges">,
           canvasId,
           sourceNodeId: "source-2" as Id<"nodes">,
           targetNodeId: mixerNodeId,
-          targetHandle: "base",
+          targetHandle: "layer-in-2",
         },
       ],
     });
@@ -423,7 +423,7 @@ describe("edges.swapMixerInputs", () => {
         edgeId: "edge-1" as Id<"edges">,
         otherEdgeId: "edge-2" as Id<"edges">,
       }),
-    ).rejects.toThrow("Mixer swap requires one base and one overlay edge");
+    ).rejects.toThrow("Mixer swap supports overlay layer handles only");
   });
 
   it("fails when edges do not belong to the same mixer target on the same canvas", async () => {

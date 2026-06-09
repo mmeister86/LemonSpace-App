@@ -37,6 +37,7 @@ export const SOURCE_NODE_GLOW_RGB: Record<string, RgbColor> = {
   render: [14, 165, 233],
   agent: [245, 158, 11],
   "agent-output": [245, 158, 11],
+  "instagram-post-mockup": [236, 72, 153],
   mixer: [100, 116, 139],
 };
 
@@ -298,4 +299,5 @@ export const NODE_HANDLE_MAP: Record<
   agent: { target: "agent-in" },
   mixer: { source: "mixer-out", target: "layer-in" },
   "agent-output": { target: "agent-output-in" },
+  "instagram-post-mockup": { target: "visual-in" },
 };

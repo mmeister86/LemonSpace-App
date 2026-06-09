@@ -20,6 +20,7 @@ import {
   MAX_PROMPT_TEXT_INPUTS,
 } from "@/lib/canvas-connection-policy";
 import {
+  buildMixerLayerHandleId,
   MAX_MIXER_LAYERS,
   MIXER_LAYER_HANDLE_BASE_ID,
   MIXER_SOURCE_NODE_TYPES,
@@ -353,6 +354,16 @@ export function resolveVisibleRepeatingInputHandles(args: {
 
   return configs.flatMap((config) => {
     const occupiedEdges = collectRepeatingInputEdges({ ...args, config }).slice(0, config.maxSlots);
+    const occupiedMixerEdgeByHandle =
+      args.nodeType === "mixer"
+        ? new Map(
+            occupiedEdges.flatMap((edge) => {
+              const handle = normalizeMixerLayerHandle(edge.targetHandle);
+              return handle ? ([[handle, edge]] as const) : [];
+            }),
+          )
+        : null;
+    const occupiedSlotCount = occupiedMixerEdgeByHandle?.size ?? occupiedEdges.length;
     const includeFreeHandle =
       args.nodeType === "ai-text"
         ? occupiedEdges.length < config.maxSlots
@@ -363,14 +374,18 @@ export function resolveVisibleRepeatingInputHandles(args: {
           });
     const visibleCount = Math.min(
       config.maxSlots,
-      Math.max(config.minVisibleSlots ?? 0, occupiedEdges.length + (includeFreeHandle ? 1 : 0)),
+      Math.max(config.minVisibleSlots ?? 0, occupiedSlotCount + (includeFreeHandle ? 1 : 0)),
     );
 
     return Array.from({ length: visibleCount }, (_, index) => {
-      const edge = occupiedEdges[index];
+      const handleId =
+        args.nodeType === "mixer"
+          ? buildMixerLayerHandleId(index)
+          : buildRepeatingInputHandleId(config.baseHandleId, index);
+      const edge = occupiedMixerEdgeByHandle?.get(handleId) ?? occupiedEdges[index];
       return {
         ...(edge?.id ? { edgeId: edge.id } : {}),
-        handleId: buildRepeatingInputHandleId(config.baseHandleId, index),
+        handleId,
         isOccupied: edge !== undefined,
         topPercent: resolveRepeatingInputHandleTopPercent(index, visibleCount, config.topRange),
       };

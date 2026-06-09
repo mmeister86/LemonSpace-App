@@ -18,6 +18,7 @@ import {
 const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
   queueNodeResize: vi.fn(async () => undefined),
+  updateNodeInternals: vi.fn(),
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -25,6 +26,7 @@ vi.mock("@xyflow/react", () => ({
     <div data-testid={`handle-${id ?? "default"}`} data-handle-id={id} data-handle-type={type} />
   ),
   Position: { Left: "left", Right: "right" },
+  useUpdateNodeInternals: () => mocks.updateNodeInternals,
   useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
 }));
 
@@ -225,6 +227,7 @@ describe("MixerNode", () => {
     vi.useFakeTimers();
     mocks.queueNodeDataUpdate.mockClear();
     mocks.queueNodeResize.mockClear();
+    mocks.updateNodeInternals.mockClear();
     resizeObserverCallback = null;
     globalThis.ResizeObserver = class ResizeObserver {
       constructor(
@@ -322,6 +325,57 @@ describe("MixerNode", () => {
     await renderNode({ nodes: readyNodes, edges: readyEdges });
     expect(container?.querySelector('img[alt="Mixer base"]')).toBeTruthy();
     expect(container?.querySelector('img[alt="Mixer overlay"]')).toBeTruthy();
+  });
+
+  it("updates React Flow internals when spawned mixer input handles are rendered", async () => {
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base.png",
+            intrinsicWidth: 700,
+            intrinsicHeight: 1000,
+          },
+        },
+        {
+          id: "asset-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay.png",
+            intrinsicWidth: 500,
+            intrinsicHeight: 500,
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [],
+          },
+        },
+      ],
+      edges: [
+        { id: "edge-overlay", source: "asset-overlay", target: "mixer-1", targetHandle: "layer-in-2" },
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+      ],
+      props: {
+        data: {
+          mixerVersion: 2,
+          stage: null,
+          layers: [],
+        },
+      },
+    });
+
+    expect(
+      [...(container?.querySelectorAll("[data-canvas-handle='true'][data-handle-type='target']") ?? [])]
+        .map((handle) => handle.getAttribute("data-handle-id")),
+    ).toEqual(["layer-in", "layer-in-2", "layer-in-3"]);
+    expect(mocks.updateNodeInternals).toHaveBeenCalledWith("mixer-1");
   });
 
   it("renders a connected text node as rich text overlay content", async () => {
