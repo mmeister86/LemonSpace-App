@@ -11,6 +11,8 @@ import {
   findSourceNodeFromGraph,
   resolveRenderPreviewInputFromGraph,
   shouldFastPathPreviewPipeline,
+  type MixerLayerSource,
+  type RenderPreviewSourceComposition,
 } from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
@@ -57,6 +59,34 @@ function resolveSourceAspectRatio(sourceNode: SourceNodeDescriptor | null): numb
   }
 
   return null;
+}
+
+function resolveLayerSourceAspectRatio(source: MixerLayerSource | undefined): number | null {
+  if (!source) return null;
+
+  const width = readPositiveNumber(source.width);
+  const height = readPositiveNumber(source.height);
+  return width && height ? width / height : null;
+}
+
+function resolveSourceCompositionAspectRatio(
+  sourceComposition: RenderPreviewSourceComposition | undefined,
+): number | null {
+  if (!sourceComposition) return null;
+
+  const stageWidth = readPositiveNumber(sourceComposition.stage?.width);
+  const stageHeight = readPositiveNumber(sourceComposition.stage?.height);
+  if (stageWidth && stageHeight) {
+    return stageWidth / stageHeight;
+  }
+
+  const baseLayer = sourceComposition.layers?.find((layer) => layer.handleId === "layer-in");
+  const baseLayerAspectRatio = resolveLayerSourceAspectRatio(baseLayer?.source);
+  if (baseLayerAspectRatio) {
+    return baseLayerAspectRatio;
+  }
+
+  return resolveLayerSourceAspectRatio(sourceComposition.baseSource);
 }
 
 export function useRenderNodePreview(args: {
@@ -158,6 +188,27 @@ export function useRenderNodePreview(args: {
       return preview.previewAspectRatio;
     }
 
+    const sourceCompositionAspectRatio = resolveSourceCompositionAspectRatio(sourceComposition);
+    if (
+      sourceCompositionAspectRatio &&
+      Number.isFinite(sourceCompositionAspectRatio) &&
+      sourceCompositionAspectRatio > 0
+    ) {
+      return sourceCompositionAspectRatio;
+    }
+
+    if (sourceComposition) {
+      if (
+        typeof preview.previewAspectRatio === "number" &&
+        Number.isFinite(preview.previewAspectRatio) &&
+        preview.previewAspectRatio > 0
+      ) {
+        return preview.previewAspectRatio;
+      }
+
+      return null;
+    }
+
     const sourceAspectRatio = resolveSourceAspectRatio(sourceNode);
     if (sourceAspectRatio && Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0) {
       return sourceAspectRatio;
@@ -172,7 +223,7 @@ export function useRenderNodePreview(args: {
     }
 
     return null;
-  }, [hasCropStep, preview.previewAspectRatio, sourceNode]);
+  }, [hasCropStep, preview.previewAspectRatio, sourceComposition, sourceNode]);
 
   const histogramPlot = useMemo(
     () => buildHistogramPlot(preview.histogram, { points: 64, width: 96, height: 44 }),
