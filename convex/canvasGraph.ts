@@ -73,7 +73,7 @@ export const get = query({
       });
     }
 
-    return { nodes, edges };
+    return { canvas, nodes, edges };
   },
 });
 
@@ -108,6 +108,7 @@ const snapshotEdgeValidator = v.object({
   targetNodeId: v.string(),
   sourceHandle: v.optional(v.string()),
   targetHandle: v.optional(v.string()),
+  kind: v.optional(v.union(v.literal("data"), v.literal("provenance"))),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -280,6 +281,7 @@ export const restoreSnapshot = mutation({
           targetNodeId,
           sourceHandle: edge.sourceHandle,
           targetHandle: edge.targetHandle,
+          kind: edge.kind,
         });
         continue;
       }
@@ -290,6 +292,7 @@ export const restoreSnapshot = mutation({
         targetNodeId,
         sourceHandle: edge.sourceHandle,
         targetHandle: edge.targetHandle,
+        kind: edge.kind,
       });
       edgeIdBySnapshotId.set(edge.id, createdEdgeId);
     }

@@ -28,6 +28,7 @@ type EdgeHarnessProps = {
   scissorsMode: boolean;
   onInsertClick: ReturnType<typeof vi.fn>;
   edgeId?: string;
+  className?: string;
 };
 
 function EdgeHarness({
@@ -35,9 +36,11 @@ function EdgeHarness({
   scissorsMode,
   onInsertClick,
   edgeId = "edge-1",
+  className,
 }: EdgeHarnessProps) {
   const CanvasDefaultEdge = canvasEdgeTypes["canvas-default"] as React.ComponentType<{
     id: string;
+    className?: string;
   }>;
 
   return (
@@ -46,7 +49,7 @@ function EdgeHarness({
       scissorsMode={scissorsMode}
       onInsertClick={onInsertClick}
     >
-      <CanvasDefaultEdge id={edgeId} />
+      <CanvasDefaultEdge id={edgeId} className={className} />
     </CanvasEdgeTypesProvider>
   );
 }
@@ -149,5 +152,31 @@ describe("canvasEdgeTypes", () => {
     });
 
     expect(canvasEdgeTypes).toBe(firstEdgeTypes);
+  });
+
+  it("disables insert controls on provenance edges", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const onInsertClick = vi.fn();
+
+    act(() => {
+      root?.render(
+        <EdgeHarness
+          edgeInsertMenuEdgeId={null}
+          scissorsMode={false}
+          onInsertClick={onInsertClick}
+          className="provenance"
+        />,
+      );
+    });
+
+    expect(defaultEdgeMock.props).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        onInsertClick: undefined,
+      }),
+    );
   });
 });

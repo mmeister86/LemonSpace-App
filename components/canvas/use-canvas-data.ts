@@ -60,12 +60,9 @@ export function useCanvasData({
     canvasGraphQuery,
     shouldSkipCanvasQueries ? "skip" : { canvasId },
   );
+  const canvas = graph?.canvas;
   const convexNodes = graph?.nodes;
   const convexEdges = graph?.edges;
-  const canvas = useQuery(
-    api.canvases.get,
-    shouldSkipCanvasQueries ? "skip" : { canvasId },
-  );
 
   const storageIdsForCanvas = useMemo(() => {
     if (!convexNodes) {

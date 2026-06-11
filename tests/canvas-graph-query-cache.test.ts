@@ -16,6 +16,7 @@ import {
 describe("canvas graph query cache helpers", () => {
   it("returns cached nodes and edges from the shared graph query", () => {
     const graph = {
+      canvas: { _id: "canvas_1", name: "Launch Canvas" },
       nodes: [{ _id: "node_1" }],
       edges: [{ _id: "edge_1" }],
     };
@@ -31,6 +32,7 @@ describe("canvas graph query cache helpers", () => {
 
   it("preserves the sibling collection when replacing nodes or edges", () => {
     const graph = {
+      canvas: { _id: "canvas_1", name: "Launch Canvas" },
       nodes: [{ _id: "node_1" }],
       edges: [{ _id: "edge_1" }],
     };
@@ -55,10 +57,12 @@ describe("canvas graph query cache helpers", () => {
     expect(localStore.getQuery).toHaveBeenNthCalledWith(1, "canvasGraph.get", { canvasId: "canvas_1" });
     expect(localStore.getQuery).toHaveBeenNthCalledWith(2, "canvasGraph.get", { canvasId: "canvas_1" });
     expect(localStore.setQuery).toHaveBeenNthCalledWith(1, "canvasGraph.get", { canvasId: "canvas_1" }, {
+      canvas: graph.canvas,
       nodes: [{ _id: "node_2" }],
       edges: [{ _id: "edge_1" }],
     });
     expect(localStore.setQuery).toHaveBeenNthCalledWith(2, "canvasGraph.get", { canvasId: "canvas_1" }, {
+      canvas: graph.canvas,
       nodes: [{ _id: "node_1" }],
       edges: [{ _id: "edge_2" }],
     });

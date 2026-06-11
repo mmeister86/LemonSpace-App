@@ -106,6 +106,17 @@ describe("split canvas utility modules", () => {
     });
   });
 
+  it("marks provenance edges for non-functional React Flow handling", () => {
+    expect(
+      convexEdgeToRF(edgeDoc({ kind: "provenance" })),
+    ).toEqual(
+      expect.objectContaining({
+        data: { kind: "provenance" },
+        className: "provenance",
+      }),
+    );
+  });
+
   it("merges render last upload URLs from batched storage resolution", () => {
     const renderNode = nodeDoc({
       type: "render",

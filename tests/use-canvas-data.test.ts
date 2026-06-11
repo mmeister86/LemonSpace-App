@@ -10,7 +10,6 @@ const resolveStorageUrlsForCanvasMock = vi.hoisted(() => vi.fn());
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     canvasGraph: { get: "canvasGraph.get" },
-    canvases: { get: "canvases.get" },
     storage: { batchGetUrlsForCanvas: "storage.batchGetUrlsForCanvas" },
   },
 }));
@@ -71,6 +70,7 @@ describe("useCanvasData", () => {
 
   it("subscribes to the shared graph query and derives nodes and edges from it", async () => {
     const graph = {
+      canvas: { _id: "canvas_1", name: "Launch Canvas" },
       nodes: [
         {
           _id: "node_1",
@@ -84,9 +84,6 @@ describe("useCanvasData", () => {
     useQueryMock.mockImplementation((query: string) => {
       if (query === "canvasGraph.get") {
         return graph;
-      }
-      if (query === "canvases.get") {
-        return { _id: "canvas_1" };
       }
       return undefined;
     });
@@ -105,6 +102,10 @@ describe("useCanvasData", () => {
     });
 
     expect(useQueryMock).toHaveBeenCalledWith("canvasGraph.get", { canvasId: "canvas_1" });
+    expect(useQueryMock).not.toHaveBeenCalledWith("canvases.get", {
+      canvasId: "canvas_1",
+    });
+    expect(latestHookValue.current?.canvas).toEqual(graph.canvas);
     expect(latestHookValue.current?.convexNodes).toEqual(graph.nodes);
     expect(latestHookValue.current?.convexEdges).toEqual(graph.edges);
     expect(resolveStorageUrlsForCanvasMock).toHaveBeenCalledWith({
@@ -115,6 +116,7 @@ describe("useCanvasData", () => {
 
   it("includes render last upload storage ids in batched URL resolution", async () => {
     const graph = {
+      canvas: { _id: "canvas_1", name: "Launch Canvas" },
       nodes: [
         {
           _id: "render_1",
@@ -128,9 +130,6 @@ describe("useCanvasData", () => {
     useQueryMock.mockImplementation((query: string) => {
       if (query === "canvasGraph.get") {
         return graph;
-      }
-      if (query === "canvases.get") {
-        return { _id: "canvas_1" };
       }
       return undefined;
     });
@@ -158,6 +157,7 @@ describe("useCanvasData", () => {
 
   it("includes image preview storage ids in batched URL resolution", async () => {
     const graph = {
+      canvas: { _id: "canvas_1", name: "Launch Canvas" },
       nodes: [
         {
           _id: "image_1",
@@ -174,9 +174,6 @@ describe("useCanvasData", () => {
     useQueryMock.mockImplementation((query: string) => {
       if (query === "canvasGraph.get") {
         return graph;
-      }
-      if (query === "canvases.get") {
-        return { _id: "canvas_1" };
       }
       return undefined;
     });

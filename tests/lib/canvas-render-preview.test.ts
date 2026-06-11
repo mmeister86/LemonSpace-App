@@ -75,6 +75,48 @@ describe("resolveRenderPipelineHash", () => {
 });
 
 describe("resolveRenderPreviewInputFromGraph", () => {
+  it("ignores provenance edges when resolving functional crop sources", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "agent-1",
+          type: "agent",
+          data: {},
+        },
+        {
+          id: "image-1",
+          type: "image",
+          data: { url: "https://cdn.example.com/source.png" },
+        },
+        {
+          id: "crop-1",
+          type: "crop",
+          data: { crop: { x: 0.1, y: 0, width: 0.8, height: 1 } },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "agent-1", target: "crop-1", kind: "provenance" },
+        { source: "image-1", target: "crop-1" },
+        { source: "crop-1", target: "render-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/source.png");
+    expect(preview.steps).toMatchObject([
+      { nodeId: "crop-1", type: "crop" },
+    ]);
+  });
+
   it("marks bg-remove-output adjustment chains as alpha-bearing", () => {
     const graph = buildGraphSnapshot(
       [

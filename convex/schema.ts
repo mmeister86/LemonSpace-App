@@ -189,6 +189,7 @@ export default defineSchema({
     // Edge-Metadaten
     sourceHandle: v.optional(v.string()),          // Welcher Output-Port
     targetHandle: v.optional(v.string()),          // Welcher Input-Port
+    kind: v.optional(v.union(v.literal("data"), v.literal("provenance"))),
   })
     .index("by_canvas", ["canvasId"])
     .index("by_source", ["sourceNodeId"])

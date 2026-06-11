@@ -35,7 +35,12 @@ export function computeBridgeCreatesForDeletedNodes(
 ): BridgeCreatePayload[] {
   if (deletedNodes.length === 0) return [];
 
-  const initialPersisted = allEdges.filter((e) => e.className !== "temp");
+  const initialPersisted = allEdges.filter(
+    (e) =>
+      e.className !== "temp" &&
+      e.className !== "provenance" &&
+      (e.data as { kind?: string } | undefined)?.kind !== "provenance",
+  );
   const initialKeys = new Set(initialPersisted.map(reconnectEdgeKey));
 
   let remainingNodes = [...allNodes];

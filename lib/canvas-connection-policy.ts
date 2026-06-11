@@ -263,15 +263,34 @@ export function validateCanvasConnectionPolicy(args: {
   targetHandle?: string | null;
   targetIncomingHandles?: Array<string | null | undefined>;
   targetIncomingSourceTypes?: string[];
+  targetIncomingEdgeKinds?: Array<string | null | undefined>;
 }): CanvasConnectionValidationReason | null {
   const {
     sourceType,
     targetType,
-    targetIncomingCount,
     targetHandle,
-    targetIncomingHandles,
-    targetIncomingSourceTypes,
   } = args;
+  const dataEdgeIndexes = (args.targetIncomingEdgeKinds ?? []).reduce<number[]>(
+    (indexes, kind, index) => {
+      if (kind !== "provenance") {
+        indexes.push(index);
+      }
+      return indexes;
+    },
+    [],
+  );
+  const hasEdgeKindContext = args.targetIncomingEdgeKinds !== undefined;
+  const targetIncomingCount = hasEdgeKindContext
+    ? dataEdgeIndexes.length
+    : args.targetIncomingCount;
+  const targetIncomingHandles = hasEdgeKindContext
+    ? dataEdgeIndexes.map((index) => args.targetIncomingHandles?.[index])
+    : args.targetIncomingHandles;
+  const targetIncomingSourceTypes = hasEdgeKindContext
+    ? dataEdgeIndexes
+        .map((index) => args.targetIncomingSourceTypes?.[index])
+        .filter((value): value is string => typeof value === "string")
+    : args.targetIncomingSourceTypes;
 
   if (sourceType === "video-prompt" && targetType !== "ai-video") {
     return "video-prompt-target-invalid";

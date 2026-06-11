@@ -116,6 +116,7 @@ export type CanvasGraphEdgeLike = {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  kind?: "data" | "provenance" | string | null;
   className?: string | null;
 };
 
@@ -777,7 +778,11 @@ export function buildGraphSnapshot(
 
   const incomingEdgesByTarget = new Map<string, CanvasGraphEdgeLike[]>();
   for (const edge of edges) {
-    if (!includeTempEdges && edge.className === "temp") {
+    if (
+      (!includeTempEdges && edge.className === "temp") ||
+      edge.kind === "provenance" ||
+      edge.className === "provenance"
+    ) {
       continue;
     }
 

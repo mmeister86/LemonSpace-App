@@ -144,13 +144,24 @@ export function convexNodeToRF(node: Doc<"nodes">): RFNode {
 export function convexEdgeToRF(edge: Doc<"edges">): RFEdge {
   const sanitize = (h: string | undefined): string | undefined =>
     h === undefined || h === "null" ? undefined : h;
-  return {
+  const kind = edge.kind ?? "data";
+  const rfEdge: RFEdge = {
     id: edge._id,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
     sourceHandle: sanitize(edge.sourceHandle),
     targetHandle: sanitize(edge.targetHandle),
   };
+
+  if (kind === "provenance") {
+    return {
+      ...rfEdge,
+      className: "provenance",
+      data: { kind },
+    };
+  }
+
+  return rfEdge;
 }
 
 /** Wie convexEdgeToRF, setzt zusätzlich filter am Pfad nach Quell-Node-Typ. */

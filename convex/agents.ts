@@ -1403,6 +1403,7 @@ function buildAgentCreatedNodeEdge<
   agentNodeId: TAgentNodeId;
   targetNodeId: TTargetNodeId;
   targetHandle?: string;
+  kind?: "data" | "provenance";
 }) {
   return {
     canvasId: args.canvasId,
@@ -1410,6 +1411,7 @@ function buildAgentCreatedNodeEdge<
     targetNodeId: args.targetNodeId,
     sourceHandle: undefined,
     targetHandle: args.targetHandle,
+    ...(args.kind ? { kind: args.kind } : {}),
   };
 }
 
@@ -1626,6 +1628,15 @@ export const createInstagramHarnessPostPackage = internalMutation({
       });
       fieldNodeIds[fieldNode.role] = fieldNodeId;
       createdNodeIds.push(fieldNodeId);
+      await ctx.db.insert(
+        "edges",
+        buildAgentCreatedNodeEdge({
+          canvasId: args.canvasId,
+          agentNodeId: args.nodeId,
+          targetNodeId: fieldNodeId,
+          kind: "provenance",
+        }),
+      );
     }
 
     let cropNodeId: Id<"nodes"> | null = null;
@@ -1649,6 +1660,15 @@ export const createInstagramHarnessPostPackage = internalMutation({
           data: artifacts.cropNode.data,
         });
         createdNodeIds.push(cropNodeId);
+        await ctx.db.insert(
+          "edges",
+          buildAgentCreatedNodeEdge({
+            canvasId: args.canvasId,
+            agentNodeId: args.nodeId,
+            targetNodeId: cropNodeId,
+            kind: "provenance",
+          }),
+        );
 
         await assertConnectionPolicyForTypes(ctx, {
           sourceType: visualNode.type,
@@ -1680,6 +1700,15 @@ export const createInstagramHarnessPostPackage = internalMutation({
       },
     });
     createdNodeIds.push(mockupNodeId);
+    await ctx.db.insert(
+      "edges",
+      buildAgentCreatedNodeEdge({
+        canvasId: args.canvasId,
+        agentNodeId: args.nodeId,
+        targetNodeId: mockupNodeId,
+        kind: "provenance",
+      }),
+    );
 
     for (const binding of artifacts.mockupBindings) {
       const sourceNodeId = fieldNodeIds[binding.role];

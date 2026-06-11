@@ -2,9 +2,10 @@
 id: TASK-078
 title: Implement editable Instagram agent outputs feeding a live mockup
 status: In Progress
-assignee: []
+assignee:
+  - Codex
 created_date: '2026-06-09 10:31'
-updated_date: '2026-06-09 11:04'
+updated_date: '2026-06-11 12:46'
 labels:
   - agents
   - canvas
@@ -61,6 +62,8 @@ Change the Instagram agent flow so each run creates user-editable field nodes fo
 4. Replace the Instagram harness output tools with a package creation tool that creates editable field nodes, mockup node, and edges without overwriting prior runs.
 5. Update Instagram agent definitions, Markdown prompt docs, and compiled agent doc segments.
 6. Run targeted tests, compile agent docs, lint/build where practical, then record outcomes in Backlog without marking Done.
+
+2026-06-11 provenance follow-up: add non-functional `provenance` edges from the Instagram agent to generated package nodes (field nodes, optional crop node, and mockup node) while preserving existing data-flow edges; ensure graph traversal, connection policy counts, and edge insertion UI ignore provenance edges; verify with focused regression tests.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -69,4 +72,12 @@ Change the Instagram agent flow so each run creates user-editable field nodes fo
 Implemented TDD coverage and production changes for editable Instagram output packages: mockup resolver, connection policy, new canvas node, package harness, agent docs/definitions, compiled prompt segments, and targeted tests. Verification so far: targeted Vitest suite passed (101 tests), lint passed with 3 pre-existing warnings, build passed outside sandbox after sandboxed Turbopack port-bind failure.
 
 Addressed review findings: connected empty field nodes now stay empty instead of falling back to snapshots; visual-prompt live binding is covered; internal Instagram package edge creation now calls the shared Convex connection policy assertion before direct edge inserts; canvas agent catalog test now expects instagram-post-mockup. Final verification: focused Vitest suite passed (14 files, 115 tests); npm run lint passed with 3 existing warnings outside TASK-078; npm run build passed outside sandbox; npx tsc --noEmit still fails on pre-existing test type errors outside TASK-078 and no longer reports the new mockup test file.
+
+Starting follow-up implementation for Instagram agent spawn provenance. User-approved behavior: additive provenance edges from the agent, with existing text/crop/mockup data-flow edges preserved.
+
+Implemented Instagram agent spawn provenance follow-up. Added optional edge `kind` with `provenance` support; Instagram package creation now adds non-functional agent -> generated node provenance edges for field nodes, optional crop node, and mockup node while preserving existing data-flow edges. Graph snapshot traversal, connection policy counts, repeating handles, bridge-edge creation, and edge insert UI ignore provenance edges as functional inputs. Verification: focused Vitest suite passed (7 files, 74 tests); `npm run lint` passed with 3 existing warnings in webgl/parity files; `git diff --check` passed. `npx tsc --noEmit` still fails on pre-existing test type errors already outside this follow-up, with no new Provenance-related files reported.
+
+Incident follow-up after user reported the app was inaccessible. Root cause observed in dev logs: Server Component layout threw a Convex SSR auth lookup error (`NoAuthProvider`) while calling `getAuthUser()` only for Sentry user context. Fix: both authenticated layouts now treat `NoAuthProvider`/`Unauthenticated` from this Sentry lookup as recoverable, clear Sentry user, and continue rendering the app shell with the initial token. Added regression test `tests/authenticated-layout-auth-error.test.ts`. Verification: regression test passed; focused provenance + auth suite passed (8 files, 75 tests); `npm run lint` passed with the same 3 existing warnings; `git diff --check` passed; unsandboxed `curl -I http://localhost:3000/dashboard` reached Next and returned expected unauthenticated 307 redirect. `npx tsc --noEmit` still fails on pre-existing test type errors, with no new layout/provenance files reported.
+
+Crash follow-up: removed the redundant client-side canvases.get subscription from useCanvasData. canvasGraph.get now returns the canvas document alongside nodes/edges, so Canvas metadata comes from the bundled graph query and a slow optional canvases.get no longer trips the Canvas error boundary.
 <!-- SECTION:NOTES:END -->

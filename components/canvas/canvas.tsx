@@ -404,6 +404,9 @@ function CanvasInner({ canvasId }: CanvasInnerProps) {
         target: edge.target,
         sourceHandle: edge.sourceHandle ?? undefined,
         targetHandle: edge.targetHandle ?? undefined,
+        kind:
+          (edge.data as { kind?: string } | undefined)?.kind ??
+          (edge.className === "provenance" ? "provenance" : undefined),
         className: edge.className ?? undefined,
       })),
     [edges],

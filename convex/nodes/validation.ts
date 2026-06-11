@@ -37,6 +37,7 @@ async function getIncomingEdgePolicyContext(
   count: number;
   targetHandles: Array<string | undefined>;
   sourceTypes: string[];
+  edgeKinds: Array<string | undefined>;
 }> {
   const incomingEdgesQuery = ctx.db
     .query("edges")
@@ -71,6 +72,7 @@ async function getIncomingEdgePolicyContext(
     count: incomingCount,
     targetHandles: filteredIncomingEdges.map((edge) => edge.targetHandle),
     sourceTypes: sourceNodes.map((node) => node?.type ?? ""),
+    edgeKinds: filteredIncomingEdges.map((edge) => edge.kind),
   };
 }
 
@@ -96,6 +98,7 @@ export async function assertConnectionPolicyForTypes(
     targetHandle: args.targetHandle,
     targetIncomingHandles: targetIncoming.targetHandles,
     targetIncomingSourceTypes: targetIncoming.sourceTypes,
+    targetIncomingEdgeKinds: targetIncoming.edgeKinds,
   });
 
   if (reason) {

@@ -9,13 +9,28 @@ import { InitUser } from "@/components/init-user";
 import { AppProviders } from "@/components/providers";
 import { getAuthUser, getToken } from "@/lib/auth-server";
 
+function isRecoverableAuthLookupError(error: unknown): boolean {
+  const message = String(error);
+  return message.includes("NoAuthProvider") || message.includes("Unauthenticated");
+}
+
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const initialToken = await getToken();
-  const user = await getAuthUser();
+  let user: Awaited<ReturnType<typeof getAuthUser>> = null;
+  try {
+    user = await getAuthUser();
+  } catch (error) {
+    if (!isRecoverableAuthLookupError(error)) {
+      throw error;
+    }
+    console.warn("[dashboard/layout] SSR auth user lookup failed; continuing without Sentry user", {
+      error: String(error),
+    });
+  }
 
   if (user) {
     const id = user.userId ?? String(user._id);

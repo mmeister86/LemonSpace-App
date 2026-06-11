@@ -9,21 +9,22 @@ import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 
+type CanvasGraphQueryResult = {
+  canvas: Doc<"canvases">;
+  nodes: Doc<"nodes">[];
+  edges: Doc<"edges">[];
+};
+
 export const canvasGraphQuery = (api as unknown as {
   canvasGraph: {
     get: FunctionReference<
       "query",
       "public",
       { canvasId: Id<"canvases"> },
-      { nodes: Doc<"nodes">[]; edges: Doc<"edges">[] }
+      CanvasGraphQueryResult
     >;
   };
 }).canvasGraph.get;
-
-type CanvasGraphQueryResult = {
-  nodes: Doc<"nodes">[];
-  edges: Doc<"edges">[];
-};
 
 type CanvasGraphArgs = {
   canvasId: Id<"canvases">;
@@ -62,6 +63,7 @@ export function setCanvasGraphNodesInQuery(
   }
 
   localStore.setQuery(canvasGraphQuery, { canvasId: args.canvasId }, {
+    canvas: current.canvas,
     nodes: args.nodes,
     edges: current.edges,
   });
@@ -79,6 +81,7 @@ export function setCanvasGraphEdgesInQuery(
   }
 
   localStore.setQuery(canvasGraphQuery, { canvasId: args.canvasId }, {
+    canvas: current.canvas,
     nodes: current.nodes,
     edges: args.edges,
   });

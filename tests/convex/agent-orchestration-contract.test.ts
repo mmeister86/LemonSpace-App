@@ -142,6 +142,24 @@ describe("agent orchestration contract helpers", () => {
     });
   });
 
+  it("creates provenance agent edges for Instagram package nodes", () => {
+    const edge = __testables.buildAgentCreatedNodeEdge({
+      canvasId: "canvas-1",
+      agentNodeId: "agent-1",
+      targetNodeId: "mockup-1",
+      kind: "provenance",
+    });
+
+    expect(edge).toEqual({
+      canvasId: "canvas-1",
+      sourceNodeId: "agent-1",
+      targetNodeId: "mockup-1",
+      sourceHandle: undefined,
+      targetHandle: undefined,
+      kind: "provenance",
+    });
+  });
+
   it("keeps a successful agent finalization when post-success cleanup fails", async () => {
     const completeSuccessfulAgentRun =
       __testables.completeSuccessfulAgentRun as unknown as (args: {

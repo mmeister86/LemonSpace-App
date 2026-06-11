@@ -50,6 +50,28 @@ describe("canvas connection policy", () => {
     ).toBeNull();
   });
 
+  it("ignores provenance edges when enforcing incoming connection limits", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "image",
+        targetType: "crop",
+        targetIncomingCount: 1,
+        targetIncomingEdgeKinds: ["provenance"],
+      }),
+    ).toBeNull();
+
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "text",
+        targetType: "instagram-post-mockup",
+        targetHandle: "caption-in",
+        targetIncomingCount: 1,
+        targetIncomingHandles: ["caption-in"],
+        targetIncomingEdgeKinds: ["provenance"],
+      }),
+    ).toBeNull();
+  });
+
   it("rejects invalid instagram post mockup handles and duplicate handle inputs", () => {
     expect(
       validateCanvasConnectionPolicy({

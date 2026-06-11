@@ -57,7 +57,9 @@ function CanvasDefaultEdge(edgeProps: Parameters<typeof DefaultEdge>[0]) {
   );
   const edgeClassName = (edgeProps as { className?: string }).className;
   const isInsertableEdge =
-    edgeClassName !== "temp" && !isOptimisticEdgeId(edgeProps.id);
+    edgeClassName !== "temp" &&
+    edgeClassName !== "provenance" &&
+    !isOptimisticEdgeId(edgeProps.id);
 
   return (
     <DefaultEdge

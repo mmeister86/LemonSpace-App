@@ -32,6 +32,7 @@ export type RepeatingInputEdgeLike = {
   source: string;
   target: string;
   targetHandle?: string | null;
+  data?: { kind?: string } | null;
   className?: string | null;
 };
 
@@ -139,7 +140,11 @@ function isRepeatingSourceForTarget(sourceType: string, targetType: string): boo
 }
 
 function isVisibleEdge(edge: RepeatingInputEdgeLike): boolean {
-  return edge.className !== "temp";
+  return (
+    edge.className !== "temp" &&
+    edge.className !== "provenance" &&
+    edge.data?.kind !== "provenance"
+  );
 }
 
 function roundHandleTopPercent(value: number): number {
