@@ -1,10 +1,10 @@
 ---
 id: TASK-083
 title: Insert Instagram crop node before post mockup
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-10 08:11'
-updated_date: '2026-06-10 09:36'
+updated_date: '2026-06-11 11:40'
 labels: []
 dependencies: []
 modified_files:
@@ -75,3 +75,9 @@ Follow-up visual polish 2026-06-10:
 - Verification: npm run lint -> exit 0, existing warnings only.
 - Browser measurement after reload: mockup image area class relative aspect-[4/5] overflow-hidden; image area 78x98, preview frame 78x98, frame style 100% x 100%.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped the Instagram Agent crop-before-mockup flow. The agent no longer creates a visible KI-Bild/visualPrompt node, ready visual sources are routed through an editable 4:5 crop node, crop/render previews resolve live compositions, and the Instagram mockup uses a 4:5 crop image area without side gutters. Verified with targeted Instagram/crop/render tests and lint.
+<!-- SECTION:FINAL_SUMMARY:END -->
