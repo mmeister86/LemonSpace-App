@@ -5,7 +5,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CanvasGraphProvider } from "@/components/canvas/canvas-graph-context";
+import {
+  CanvasGraphProvider,
+  useCanvasGraphPreviewOverrides,
+} from "@/components/canvas/canvas-graph-context";
 
 const previewQualityMocks = vi.hoisted(() => ({
   usePipelinePreview: vi.fn(() => ({
@@ -80,6 +83,9 @@ function renderMockup(args: {
   visual?: { id: string; type: string; data: Record<string, unknown> };
   extraNodes?: Array<{ id: string; type: string; data: Record<string, unknown> }>;
   extraEdges?: Array<{ source: string; target: string; targetHandle?: string }>;
+  previewOverride?: { nodeId: string; data: Record<string, unknown> } | null;
+  snapshotImageUrl?: string;
+  syntheticPreviewFields?: string[];
 }) {
   const visual = args.visual ?? {
     id: "image-1",
@@ -93,17 +99,19 @@ function renderMockup(args: {
       data: {
         title: "Instagram post mockup",
         syntheticPreviewFields:
-          args.visual?.type === "render" || args.visual?.type === "crop"
+          args.syntheticPreviewFields ??
+          (args.visual?.type === "render" || args.visual?.type === "crop"
             ? ["imageUrl"]
-            : [],
+            : []),
         snapshot: {
           username: "lemonspace",
           caption: "Fallback caption",
           hashtags: ["#fallback"],
           imageUrl:
-            args.visual?.type === "render" || args.visual?.type === "crop"
+            args.snapshotImageUrl ??
+            (args.visual?.type === "render" || args.visual?.type === "crop"
               ? "https://example.com/synthetic-preview.png"
-              : undefined,
+              : undefined),
         },
       },
     },
@@ -128,6 +136,12 @@ function renderMockup(args: {
         nodes,
         edges,
       },
+      args.previewOverride ? (
+        React.createElement(PreviewOverrideSetter, {
+          nodeId: args.previewOverride.nodeId,
+          data: args.previewOverride.data,
+        })
+      ) : null,
       React.createElement(InstagramPostMockupNode, {
         id: "mockup-1",
         selected: false,
@@ -144,6 +158,22 @@ function renderMockup(args: {
       }),
     ),
   );
+}
+
+function PreviewOverrideSetter({
+  nodeId,
+  data,
+}: {
+  nodeId: string;
+  data: Record<string, unknown>;
+}) {
+  const { setPreviewNodeDataOverride } = useCanvasGraphPreviewOverrides();
+
+  React.useEffect(() => {
+    setPreviewNodeDataOverride(nodeId, data);
+  }, [data, nodeId, setPreviewNodeDataOverride]);
+
+  return null;
 }
 
 async function advancePublishStep(count = 1) {
@@ -295,7 +325,49 @@ describe("InstagramPostMockupNode", () => {
     expect(container.querySelector('img[src="https://example.com/synthetic-preview.png"]')).toBeNull();
   });
 
-  it("uses zoom-aware quality for the live crop preview resolution", async () => {
+  it("prefers the live crop preview slot over a stored snapshot image URL", async () => {
+    if (!container || !root) {
+      throw new Error("Missing test root");
+    }
+    const testRoot = root;
+
+    await act(async () => {
+      renderMockup({
+        caption: "Crop-backed caption",
+        visualPrompt: "Crop-backed visual prompt",
+        root: testRoot,
+        visual: {
+          id: "crop-1",
+          type: "crop",
+          data: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+        snapshotImageUrl: "https://example.com/stored-snapshot.png",
+        syntheticPreviewFields: [],
+        extraNodes: [
+          {
+            id: "source-image-1",
+            type: "image",
+            data: { url: "https://example.com/full-source.png" },
+          },
+        ],
+        extraEdges: [{ source: "source-image-1", target: "crop-1" }],
+      });
+    });
+
+    expect(container.querySelector('[data-testid="render-preview-frame"]')).not.toBeNull();
+    expect(container.querySelector('img[src="https://example.com/stored-snapshot.png"]')).toBeNull();
+  });
+
+  it("uses crop output dimensions for the live crop preview quality bucket", async () => {
     if (!container || !root) {
       throw new Error("Missing test root");
     }
@@ -329,13 +401,106 @@ describe("InstagramPostMockupNode", () => {
     });
 
     expect(previewQualityMocks.useZoomAwarePreviewQuality).toHaveBeenCalledWith({
-      width: 470,
-      height: 470,
+      width: 1080,
+      height: 1350,
       maxDevicePixelRatio: 2,
     });
     expect(previewQualityMocks.usePipelinePreview).toHaveBeenCalledWith(
       expect.objectContaining({
         previewQuality: "high",
+      }),
+    );
+  });
+
+  it("updates the live crop preview when crop node local data changes", async () => {
+    if (!container || !root) {
+      throw new Error("Missing test root");
+    }
+    const testRoot = root;
+
+    await act(async () => {
+      renderMockup({
+        caption: "Crop override caption",
+        visualPrompt: "Crop override prompt",
+        root: testRoot,
+        visual: {
+          id: "crop-1",
+          type: "crop",
+          data: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+        extraNodes: [
+          {
+            id: "source-image-1",
+            type: "image",
+            data: { url: "https://example.com/full-source.png" },
+          },
+        ],
+        extraEdges: [{ source: "source-image-1", target: "crop-1" }],
+      });
+    });
+
+    await act(async () => {
+      renderMockup({
+        caption: "Crop override caption",
+        visualPrompt: "Crop override prompt",
+        root: testRoot,
+        visual: {
+          id: "crop-1",
+          type: "crop",
+          data: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+        extraNodes: [
+          {
+            id: "source-image-1",
+            type: "image",
+            data: { url: "https://example.com/full-source.png" },
+          },
+        ],
+        extraEdges: [{ source: "source-image-1", target: "crop-1" }],
+        previewOverride: {
+          nodeId: "crop-1",
+          data: {
+            crop: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+      });
+    });
+
+    expect(previewQualityMocks.usePipelinePreview).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({
+            nodeId: "crop-1",
+            params: expect.objectContaining({
+              crop: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+            }),
+          }),
+        ]),
       }),
     );
   });

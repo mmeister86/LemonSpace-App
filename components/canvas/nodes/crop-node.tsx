@@ -12,6 +12,7 @@ import { useTranslations } from "next-intl";
 
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { useCanvasSync } from "@/components/canvas/canvas-sync-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
 import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import { useNodeLocalData } from "@/components/canvas/nodes/use-node-local-data";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
@@ -90,6 +91,34 @@ function clampCropRect(rect: CropNodeData["crop"]): CropNodeData["crop"] {
     y,
     width,
     height,
+  };
+}
+
+function resolveCropPreviewQualitySize(
+  data: CropNodeData,
+  fallbackSize: number,
+): {
+  width: number;
+  height: number;
+} {
+  if (
+    data.resize.mode === "custom" &&
+    typeof data.resize.width === "number" &&
+    Number.isFinite(data.resize.width) &&
+    data.resize.width > 0 &&
+    typeof data.resize.height === "number" &&
+    Number.isFinite(data.resize.height) &&
+    data.resize.height > 0
+  ) {
+    return {
+      width: data.resize.width,
+      height: data.resize.height,
+    };
+  }
+
+  return {
+    width: fallbackSize,
+    height: fallbackSize,
   };
 }
 
@@ -222,9 +251,16 @@ export function CropNodeBody({
     debugLabel: "crop",
   });
 
+  const previewNodeWidth = Math.max(250, Math.round(width ?? 300));
+  const previewQualitySize = resolveCropPreviewQualitySize(localData, previewNodeWidth);
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width: previewQualitySize.width,
+    height: previewQualitySize.height,
+  });
+
   const previewInput = useMemo(
-    () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph }),
-    [graph, id],
+    () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph, sourceQuality }),
+    [graph, id, sourceQuality],
   );
 
   const inputPreviewSteps = useMemo(() => {
@@ -248,12 +284,13 @@ export function CropNodeBody({
     sourceUrl: previewInput.sourceUrl,
     sourceComposition: previewInput.sourceComposition,
     steps: inputPreviewSteps,
-    nodeWidth: Math.max(250, Math.round(width ?? 300)),
+    nodeWidth: previewNodeWidth,
     includeHistogram: false,
     debounceMs: previewDebounceMs,
     previewScale: 0.5,
     maxPreviewWidth: 720,
     maxDevicePixelRatio: 1.25,
+    previewQuality,
   });
 
   const outputResolutionLabel =

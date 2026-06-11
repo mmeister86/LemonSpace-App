@@ -106,6 +106,34 @@ function visualSourceNode(args: {
   return edge ? args.graph.nodesById.get(edge.source) ?? null : null;
 }
 
+function readPositiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function resolveCropPreviewQualitySize(node: CanvasGraphNodeLike | undefined): {
+  width: number;
+  height: number;
+} {
+  const data = node?.data;
+  if (!data || typeof data !== "object") {
+    return { width: 470, height: 470 };
+  }
+
+  const resize = (data as { resize?: unknown }).resize;
+  if (!resize || typeof resize !== "object") {
+    return { width: 470, height: 470 };
+  }
+
+  const resizeRecord = resize as { mode?: unknown; width?: unknown; height?: unknown };
+  const width = readPositiveNumber(resizeRecord.width);
+  const height = readPositiveNumber(resizeRecord.height);
+  if (resizeRecord.mode === "custom" && width && height) {
+    return { width, height };
+  }
+
+  return { width: 470, height: 470 };
+}
+
 function InstagramRenderPreviewSlot({ nodeId }: { nodeId: string }) {
   const graph = useCanvasGraph();
   const node = graph.nodesById.get(nodeId);
@@ -141,9 +169,11 @@ function InstagramRenderPreviewSlot({ nodeId }: { nodeId: string }) {
 
 function InstagramCropPreviewSlot({ nodeId }: { nodeId: string }) {
   const graph = useCanvasGraph();
+  const node = graph.nodesById.get(nodeId);
+  const previewQualitySize = resolveCropPreviewQualitySize(node);
   const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
-    width: 470,
-    height: 470,
+    width: previewQualitySize.width,
+    height: previewQualitySize.height,
     maxDevicePixelRatio: 2,
   });
   const previewInput = useMemo(
@@ -269,9 +299,9 @@ export default function InstagramPostMockupNode({
   });
   const visualNode = visualSourceNode({ graph, nodeId: id });
   const imageSlot =
-    visualNode?.type === "render" && !resolved.post.imageUrl ? (
+    visualNode?.type === "render" ? (
       <InstagramRenderPreviewSlot nodeId={visualNode.id} />
-    ) : visualNode?.type === "crop" && !resolved.post.imageUrl ? (
+    ) : visualNode?.type === "crop" ? (
       <InstagramCropPreviewSlot nodeId={visualNode.id} />
     ) : undefined;
   const imageAspectRatio = visualNode?.type === "crop" ? "portrait-4-5" : "square";

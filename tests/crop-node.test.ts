@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
   setPreviewNodeDataOverride: vi.fn(),
   clearPreviewNodeDataOverride: vi.fn(),
+  useZoomAwarePreviewQuality: vi.fn(() => ({
+    previewQuality: "medium",
+    sourceQuality: "preview",
+    zoom: 1,
+  })),
   collectPipelineFromGraph: vi.fn(() => []),
   getSourceImageFromGraph: vi.fn(() => "https://cdn.example.com/source.png"),
   resolveRenderPreviewInputFromGraph: vi.fn(() => ({
@@ -56,6 +61,10 @@ vi.mock("@/components/canvas/canvas-graph-context", () => ({
 
 vi.mock("@/hooks/use-pipeline-preview", () => ({
   usePipelinePreview: mocks.usePipelinePreview,
+}));
+
+vi.mock("@/components/canvas/use-zoom-aware-preview-quality", () => ({
+  useZoomAwarePreviewQuality: mocks.useZoomAwarePreviewQuality,
 }));
 
 vi.mock("@/lib/canvas-render-preview", () => ({
@@ -121,6 +130,12 @@ describe("CropNode", () => {
     mocks.queueNodeDataUpdate.mockClear();
     mocks.setPreviewNodeDataOverride.mockClear();
     mocks.clearPreviewNodeDataOverride.mockClear();
+    mocks.useZoomAwarePreviewQuality.mockClear();
+    mocks.useZoomAwarePreviewQuality.mockReturnValue({
+      previewQuality: "medium",
+      sourceQuality: "preview",
+      zoom: 1,
+    });
     mocks.collectPipelineFromGraph.mockClear();
     mocks.collectPipelineFromGraph.mockReturnValue([]);
     mocks.getSourceImageFromGraph.mockClear();
@@ -278,6 +293,60 @@ describe("CropNode", () => {
       sourceComposition,
       steps: [],
     });
+  });
+
+  it("uses full source quality and high preview quality for high-zoom crop previews", async () => {
+    mocks.useZoomAwarePreviewQuality.mockReturnValue({
+      previewQuality: "high",
+      sourceQuality: "full",
+      zoom: 2,
+    });
+
+    await renderNode({
+      crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+      resize: { mode: "custom", width: 1080, height: 1350, fit: "cover", keepAspect: true },
+    });
+
+    expect(mocks.useZoomAwarePreviewQuality).toHaveBeenCalledWith({
+      width: 1080,
+      height: 1350,
+    });
+    expect(mocks.resolveRenderPreviewInputFromGraph).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "crop-1",
+        sourceQuality: "full",
+      }),
+    );
+    expect(mocks.usePipelinePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewQuality: "high",
+      }),
+    );
+  });
+
+  it("uses preview source quality for medium crop previews", async () => {
+    mocks.useZoomAwarePreviewQuality.mockReturnValue({
+      previewQuality: "medium",
+      sourceQuality: "preview",
+      zoom: 1,
+    });
+
+    await renderNode({
+      crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+      resize: { mode: "source", fit: "cover", keepAspect: false },
+    });
+
+    expect(mocks.resolveRenderPreviewInputFromGraph).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "crop-1",
+        sourceQuality: "preview",
+      }),
+    );
+    expect(mocks.usePipelinePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewQuality: "medium",
+      }),
+    );
   });
 
   it("resizes crop rect from corner and edge handles", async () => {
