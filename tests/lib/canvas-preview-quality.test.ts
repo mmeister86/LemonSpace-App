@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeZoomAwarePreviewQuality,
+  mixerRenderPreviewPipelineWidthForQuality,
   previewPipelineWidthForQuality,
   resolveZoomAwarePreviewUrl,
   sourceQualityForPreviewQuality,
@@ -54,6 +55,12 @@ describe("preview quality helpers", () => {
     expect(previewPipelineWidthForQuality("low")).toBe(360);
     expect(previewPipelineWidthForQuality("medium")).toBe(720);
     expect(previewPipelineWidthForQuality("high")).toBe(1280);
+  });
+
+  it("uses larger canvas-only pipeline widths for downstream mixer render previews", () => {
+    expect(mixerRenderPreviewPipelineWidthForQuality("low")).toBe(360);
+    expect(mixerRenderPreviewPipelineWidthForQuality("medium")).toBe(1280);
+    expect(mixerRenderPreviewPipelineWidthForQuality("high")).toBe(1920);
   });
 
   it("maps low and medium previews to preview sources and high previews to full sources", () => {

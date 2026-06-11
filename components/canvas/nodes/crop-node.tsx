@@ -16,8 +16,7 @@ import BaseNodeWrapper from "@/components/canvas/nodes/base-node-wrapper";
 import { useNodeLocalData } from "@/components/canvas/nodes/use-node-local-data";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import {
-  collectPipelineFromGraph,
-  getSourceImageFromGraph,
+  resolveRenderPreviewInputFromGraph,
   shouldFastPathPreviewPipeline,
 } from "@/lib/canvas-render-preview";
 import {
@@ -223,43 +222,20 @@ export function CropNodeBody({
     debugLabel: "crop",
   });
 
-  const sourceUrl = useMemo(
-    () =>
-      getSourceImageFromGraph(graph, {
-        nodeId: id,
-        isSourceNode: (node) =>
-          node.type === "image" ||
-          node.type === "ai-image" ||
-          node.type === "asset" ||
-          node.type === "asset-video" ||
-          node.type === "video" ||
-          node.type === "ai-video",
-        getSourceImageFromNode: (node) => {
-          const sourceData = (node.data ?? {}) as Record<string, unknown>;
-          const directUrl = typeof sourceData.url === "string" ? sourceData.url : null;
-          if (directUrl && directUrl.length > 0) {
-            return directUrl;
-          }
-          const previewUrl =
-            typeof sourceData.previewUrl === "string" ? sourceData.previewUrl : null;
-          return previewUrl && previewUrl.length > 0 ? previewUrl : null;
-        },
-      }),
+  const previewInput = useMemo(
+    () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph }),
     [graph, id],
   );
 
   const inputPreviewSteps = useMemo(() => {
-    const collected = collectPipelineFromGraph(graph, {
-      nodeId: id,
-      isPipelineNode: (node) => PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
-    });
-
-    const activeCropIndex = collected.findIndex(
+    const activeCropIndex = previewInput.steps.findIndex(
       (step) => step.nodeId === id && step.type === "crop",
     );
 
-    return activeCropIndex >= 0 ? collected.slice(0, activeCropIndex) : collected;
-  }, [graph, id]);
+    return activeCropIndex >= 0
+      ? previewInput.steps.slice(0, activeCropIndex)
+      : previewInput.steps.filter((step) => PREVIEW_PIPELINE_TYPES.has(step.type));
+  }, [id, previewInput.steps]);
 
   const previewDebounceMs = shouldFastPathPreviewPipeline(
     inputPreviewSteps,
@@ -269,7 +245,8 @@ export function CropNodeBody({
     : undefined;
 
   const { canvasRef, hasSource, isRendering, previewAspectRatio, error } = usePipelinePreview({
-    sourceUrl,
+    sourceUrl: previewInput.sourceUrl,
+    sourceComposition: previewInput.sourceComposition,
     steps: inputPreviewSteps,
     nodeWidth: Math.max(250, Math.round(width ?? 300)),
     includeHistogram: false,

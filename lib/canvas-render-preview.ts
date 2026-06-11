@@ -195,6 +195,7 @@ const DEFAULT_FORMAT: RenderFormatOption = "png";
 const DEFAULT_JPEG_QUALITY = 90;
 const MIN_CUSTOM_DIMENSION = 1;
 const MAX_CUSTOM_DIMENSION = 16_384;
+const MIXER_RENDER_SIZING_HASH_VERSION = 2;
 
 function sanitizeDimension(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -332,7 +333,13 @@ export function resolveRenderPipelineHash(args: {
 
   return hashPipeline(
     {
-      source: args.sourceComposition ?? args.sourceUrl,
+      source:
+        args.sourceComposition?.kind === "mixer"
+          ? {
+              ...args.sourceComposition,
+              renderSizingVersion: MIXER_RENDER_SIZING_HASH_VERSION,
+            }
+          : args.sourceComposition ?? args.sourceUrl,
       render: resolveRenderFingerprint(args.data),
     },
     args.steps,
@@ -345,6 +352,8 @@ export function resolveNodeImageUrl(
 ): string | null {
   const record = (data ?? {}) as Record<string, unknown>;
   const directUrl = typeof record.url === "string" ? record.url : null;
+  const lastUploadUrl =
+    typeof record.lastUploadUrl === "string" ? record.lastUploadUrl : null;
   const previewUrl =
     typeof record.previewUrl === "string" ? record.previewUrl : null;
 
@@ -355,11 +364,18 @@ export function resolveNodeImageUrl(
     if (directUrl && directUrl.length > 0) {
       return directUrl;
     }
+    if (lastUploadUrl && lastUploadUrl.length > 0) {
+      return lastUploadUrl;
+    }
     return null;
   }
 
   if (directUrl && directUrl.length > 0) {
     return directUrl;
+  }
+
+  if (lastUploadUrl && lastUploadUrl.length > 0) {
+    return lastUploadUrl;
   }
 
   if (previewUrl && previewUrl.length > 0) {
@@ -975,6 +991,34 @@ export function resolveRenderPreviewInputFromGraph(args: {
   const renderInputNode = renderIncoming
     ? args.graph.nodesById.get(renderIncoming.source)
     : null;
+
+  if (renderInputNode?.type === "render") {
+    const renderPreviewInput = resolveRenderPreviewInputFromGraph({
+      nodeId: renderInputNode.id,
+      graph: args.graph,
+      sourceQuality: args.sourceQuality,
+    });
+    const steps = collectPipelineFromGraph(args.graph, {
+      nodeId: args.nodeId,
+      isPipelineNode: (node) => RENDER_PREVIEW_PIPELINE_TYPES.has(node.type ?? ""),
+    });
+    if (renderPreviewInput.sourceUrl || renderPreviewInput.sourceComposition) {
+      return {
+        sourceUrl: renderPreviewInput.sourceUrl,
+        sourceComposition: renderPreviewInput.sourceComposition,
+        isAlphaBearing: renderPreviewInput.isAlphaBearing,
+        steps,
+      };
+    }
+
+    const directRenderUrl = resolveRenderOutputUrl(renderInputNode, {
+      sourceQuality: args.sourceQuality,
+    });
+    return {
+      sourceUrl: directRenderUrl,
+      steps,
+    };
+  }
 
   if (renderInputNode?.type === "mixer") {
     const sourceComposition = resolveRenderMixerCompositionFromGraph({

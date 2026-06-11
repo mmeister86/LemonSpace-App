@@ -8,6 +8,7 @@ import {
   buildGraphSnapshot,
   type CanvasGraphSnapshot,
 } from "@/lib/canvas-render-preview";
+import { mixerRenderPreviewPipelineWidthForQuality } from "@/lib/canvas-preview-quality";
 import { emptyHistogram } from "@/lib/image-pipeline/histogram";
 import type { PersistedRenderData } from "@/components/canvas/nodes/render-node-state";
 
@@ -16,6 +17,15 @@ import type { PersistedRenderData } from "@/components/canvas/nodes/render-node-
 type TestCanvasGraph = CanvasGraphSnapshot & {
   previewNodeDataOverrides: Map<string, unknown>;
 };
+
+const previewMocks = vi.hoisted(() => ({
+  usePipelinePreview: vi.fn(),
+  useZoomAwarePreviewQuality: vi.fn(() => ({
+    previewQuality: "medium",
+    sourceQuality: "preview",
+    zoom: 1,
+  })),
+}));
 
 let currentGraph: TestCanvasGraph | null = null;
 let latestTargetAspectRatio: number | null | undefined;
@@ -31,21 +41,11 @@ vi.mock("@/components/canvas/canvas-graph-context", () => ({
 }));
 
 vi.mock("@/components/canvas/use-zoom-aware-preview-quality", () => ({
-  useZoomAwarePreviewQuality: () => ({
-    previewQuality: "standard",
-    sourceQuality: undefined,
-  }),
+  useZoomAwarePreviewQuality: previewMocks.useZoomAwarePreviewQuality,
 }));
 
 vi.mock("@/hooks/use-pipeline-preview", () => ({
-  usePipelinePreview: () => ({
-    canvasRef: { current: null },
-    histogram: emptyHistogram(),
-    isRendering: false,
-    hasSource: true,
-    previewAspectRatio: currentPreviewAspectRatio,
-    error: null,
-  }),
+  usePipelinePreview: previewMocks.usePipelinePreview,
 }));
 
 import { useRenderNodePreview } from "@/components/canvas/nodes/use-render-node-preview";
@@ -80,6 +80,21 @@ describe("useRenderNodePreview", () => {
     currentGraph = null;
     latestTargetAspectRatio = undefined;
     currentPreviewAspectRatio = 6;
+    previewMocks.useZoomAwarePreviewQuality.mockReset();
+    previewMocks.useZoomAwarePreviewQuality.mockReturnValue({
+      previewQuality: "medium",
+      sourceQuality: "preview",
+      zoom: 1,
+    });
+    previewMocks.usePipelinePreview.mockReset();
+    previewMocks.usePipelinePreview.mockImplementation(() => ({
+      canvasRef: { current: null },
+      histogram: emptyHistogram(),
+      isRendering: false,
+      hasSource: true,
+      previewAspectRatio: currentPreviewAspectRatio,
+      error: null,
+    }));
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -198,5 +213,65 @@ describe("useRenderNodePreview", () => {
     });
 
     expect(latestTargetAspectRatio).toBeCloseTo(0.7, 5);
+  });
+
+  it("uses full-quality mixer layer sources for medium render previews", async () => {
+    currentGraph = {
+      ...buildGraphSnapshot(
+        [
+          {
+            id: "base-image",
+            type: "image",
+            data: {
+              url: "https://cdn.example.com/base-full.png",
+              previewUrl: "https://cdn.example.com/base-preview.webp",
+              width: 1080,
+              height: 1350,
+            },
+          },
+          {
+            id: "mixer-1",
+            type: "mixer",
+            data: {
+              mixerVersion: 2,
+              stage: { width: 1080, height: 1350 },
+              layers: [],
+            },
+          },
+          {
+            id: "render-1",
+            type: "render",
+            data: {},
+          },
+        ],
+        [
+          { source: "base-image", target: "mixer-1", targetHandle: "layer-in" },
+          { source: "mixer-1", target: "render-1" },
+        ],
+      ),
+      previewNodeDataOverrides: new Map(),
+    };
+
+    await act(async () => {
+      root?.render(createElement(HookHarness));
+    });
+
+    const previewCall = previewMocks.usePipelinePreview.mock.calls.find(
+      ([options]) => options.nodeWidth === 420,
+    );
+
+    expect(previewCall?.[0]).toMatchObject({
+      previewQuality: "medium",
+      previewWidth: mixerRenderPreviewPipelineWidthForQuality("medium"),
+      sourceComposition: {
+        layers: [
+          expect.objectContaining({
+            source: expect.objectContaining({
+              url: "https://cdn.example.com/base-full.png",
+            }),
+          }),
+        ],
+      },
+    });
   });
 });

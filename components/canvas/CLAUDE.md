@@ -172,6 +172,7 @@ render:      300 × 420    mixer:        360 × 460
 - **Stage/Sizing:** `layer-in` ist der Base-Slot und bestimmt die persistierte `stage` sowie die proportionale Node-Groesse. Wenn nur `layer-in-2` oder spaetere Inputs verbunden sind, darf der Mixer Layer anzeigen, setzt aber noch keine Stage.
 - **Node-Data (V2):** `mixerVersion: 2`, `stage: { width, height } | null`, `layers[]` mit `handleId`, normalisiertem Frame (`x/y/width/height`), `rotation`, `crop`, `opacity`, `blendMode`, `visible`, `locked`.
 - **Output-Semantik:** pseudo-image (clientseitig aus Graph + Controls aufgeloest), kein persistiertes Asset, kein Storage-Write.
+- **Canvas-Preview-Qualitaet:** Die FabricJS-Preview ist zoom-aware. Bei Low-Zoom nutzt sie Preview-Quellen und kleinere Backing-Store-Skalierung; bei Medium/High-Zoom nutzt sie Full-Quality-Quellen und einen groesseren, gekappten Fabric-Backing-Store. Das betrifft nur die Darstellung auf dem Canvas, nicht Render-Bake oder Storage-Uploads.
 - **UI/Interaction:** FabricJS rendert die Layer in Z-Order; Controls erlauben Reorder, Transform, Rotation, Crop, Opacity, Blend Mode, Visibility und Lock.
 - **Sizing/Crop-Verhalten:** Preview, Compare und Render verwenden dieselbe aus `layer-in` abgeleitete Stage. Wenn keine Stage persistiert ist, baken V2-Layer-Kompositionen auf die Bitmap-Groesse des ersten sichtbaren Layers.
 
@@ -184,6 +185,7 @@ render:      300 × 420    mixer:        360 × 460
 
 - Offizieller Bake-Flow: `mixer -> render`.
 - `render` konsumiert die Mixer-Komposition (`sourceComposition.kind = "mixer"`) und nutzt sie fuer Preview + finalen Render/Upload.
+- Die `render`-Node nutzt fuer Mixer-Kompositionen einen erhoehten Canvas-only Preview-Bucket, damit downstream Bildausgabe-Nodes bei Medium/High-Zoom nicht weich aus einer kleinen internen Preview skaliert werden. Finaler Render/Upload bleibt davon unberuehrt.
 - `mixer -> adjustments -> render` ist bewusst verschoben (deferred) und aktuell nicht offizieller Scope.
 
 ---

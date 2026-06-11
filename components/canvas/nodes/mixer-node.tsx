@@ -239,10 +239,11 @@ export function MixerNodeBody({
   const [baseImageSize, setBaseImageSize] = useState<LoadedImageSize>({ url: null, width: 0, height: 0 });
   const [overlayImageSize, setOverlayImageSize] = useState<LoadedImageSize>({ url: null, width: 0, height: 0 });
   const previewSurfaceSize = useMixerPreviewSize(previewRef);
-  const { sourceQuality } = useZoomAwarePreviewQuality({
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
     width: previewSurfaceSize.width || width,
     height: previewSurfaceSize.height || height,
   });
+  const displaySourceQuality = previewQuality === "low" ? sourceQuality : "full";
 
   useEffect(() => {
     latestNodeDataRef.current = (data ?? {}) as Record<string, unknown>;
@@ -295,8 +296,8 @@ export function MixerNodeBody({
     });
 
   const previewState = useMemo(
-    () => resolveMixerPreviewFromGraph({ nodeId: id, graph, sourceQuality }),
-    [graph, id, sourceQuality],
+    () => resolveMixerPreviewFromGraph({ nodeId: id, graph, sourceQuality: displaySourceQuality }),
+    [displaySourceQuality, graph, id],
   );
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const previewLayers = useMemo(() => previewState.layers ?? [], [previewState.layers]);
@@ -670,6 +671,7 @@ export function MixerNodeBody({
           <MixerFabricEditor
             stage={previewState.stage ?? layerData.stage}
             layers={displayLayers}
+            previewQuality={previewQuality}
             activeLayerId={selectedLayerId}
             onSelectLayer={setActiveLayerId}
             onTransformLayer={onFabricTransformLayer}

@@ -1042,6 +1042,130 @@ describe("loadSourceBitmap", () => {
     expect(drawImage).toHaveBeenNthCalledWith(2, overlayBitmap, 10, 10, 60, 35, -15, -20, 30, 40);
   });
 
+  it("renders v2 mixer exports at the base layer bitmap size when persisted stage is stale and smaller", async () => {
+    const baseBlob = new Blob(["base"]);
+    const overlayBlob = new Blob(["overlay"]);
+    const baseBitmap = { width: 896, height: 1200 } as ImageBitmap;
+    const overlayBitmap = { width: 3000, height: 588 } as ImageBitmap;
+    const composedBitmap = { width: 896, height: 1200 } as ImageBitmap;
+
+    const drawImage = vi.fn();
+    const context = {
+      clearRect: vi.fn(),
+      drawImage,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
+      globalCompositeOperation: "source-over" as GlobalCompositeOperation,
+      globalAlpha: 1,
+    };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(context),
+    } as unknown as HTMLCanvasElement;
+
+    const nativeCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      if (tagName.toLowerCase() === "canvas") {
+        return canvas;
+      }
+
+      return nativeCreateElement(tagName);
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue("image/png") },
+          blob: vi.fn().mockResolvedValue(url.includes("base.png") ? baseBlob : overlayBlob),
+        };
+      }),
+    );
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockImplementation(async (input: unknown) => {
+        if (input === baseBlob) {
+          return baseBitmap;
+        }
+        if (input === overlayBlob) {
+          return overlayBitmap;
+        }
+        if (input === canvas) {
+          return composedBitmap;
+        }
+
+        throw new Error("Unexpected createImageBitmap input in stale-stage mixer layer test.");
+      }),
+    );
+
+    const { loadRenderSourceBitmap } = await importSubject();
+
+    await expect(
+      loadRenderSourceBitmap({
+        sourceComposition: {
+          kind: "mixer",
+          stage: { width: 240, height: 320 },
+          layers: [
+            {
+              id: "base",
+              handleId: "layer-in",
+              source: { kind: "image", url: "https://cdn.example.com/base.png" },
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+              rotation: 0,
+              crop: { left: 0, top: 0, right: 0, bottom: 0 },
+              opacity: 100,
+              blendMode: "normal",
+              visible: true,
+              locked: false,
+            },
+            {
+              id: "logo",
+              handleId: "layer-in-2",
+              source: { kind: "image", url: "https://cdn.example.com/logo.png" },
+              x: 0,
+              y: 0.85,
+              width: 0.5,
+              height: 0.15,
+              rotation: 0,
+              crop: { left: 0, top: 0, right: 0, bottom: 0 },
+              opacity: 100,
+              blendMode: "normal",
+              visible: true,
+              locked: false,
+            },
+          ],
+          blendMode: "normal",
+          opacity: 100,
+          overlayX: 0,
+          overlayY: 0,
+          overlayWidth: 1,
+          overlayHeight: 1,
+          cropLeft: 0,
+          cropTop: 0,
+          cropRight: 0,
+          cropBottom: 0,
+        },
+      }),
+    ).resolves.toBe(composedBitmap);
+
+    expect(canvas.width).toBe(896);
+    expect(canvas.height).toBe(1200);
+    expect(drawImage).toHaveBeenNthCalledWith(1, baseBitmap, 0, 0, 896, 1200, -448, -600, 896, 1200);
+  });
+
   it("renders v2 mixer layers without a persisted stage at the first layer bitmap size", async () => {
     const baseBlob = new Blob(["base"]);
     const overlayBlob = new Blob(["overlay"]);

@@ -54,6 +54,7 @@ const CROP_ALLOWED_SOURCE_TYPES = new Set<string>([
   "asset",
   "ai-image",
   "bg-remove-output",
+  "render",
   "video",
   "asset-video",
   "ai-video",
@@ -145,6 +146,7 @@ const INSTAGRAM_POST_MOCKUP_VISUAL_SOURCE_TYPES = new Set<string>([
   "asset",
   "render",
   "ai-image",
+  "crop",
 ]);
 const INSTAGRAM_POST_MOCKUP_TEXT_SOURCE_TYPES = new Set<string>([
   "text",

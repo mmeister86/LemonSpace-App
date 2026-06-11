@@ -98,12 +98,18 @@ function snapshotFromData(data: unknown): InstagramPostMockupSnapshot {
 
   const rawSnapshot = isRecord(data.snapshot) ? data.snapshot : {};
   const legacyPost = isRecord(data.instagramPost) ? data.instagramPost : {};
+  const syntheticPreviewFields = stringListValue(data.syntheticPreviewFields);
+  const imageUrlIsSynthetic = syntheticPreviewFields.includes("imageUrl");
+  const profileImageUrlIsSynthetic = syntheticPreviewFields.includes("profileImageUrl");
   return {
     username: stringValue(rawSnapshot.username) || stringValue(legacyPost.username),
     location: stringValue(rawSnapshot.location) || stringValue(legacyPost.location),
-    profileImageUrl:
-      stringValue(rawSnapshot.profileImageUrl) || stringValue(legacyPost.profileImageUrl),
-    imageUrl: stringValue(rawSnapshot.imageUrl) || stringValue(legacyPost.imageUrl),
+    profileImageUrl: profileImageUrlIsSynthetic
+      ? ""
+      : stringValue(rawSnapshot.profileImageUrl) || stringValue(legacyPost.profileImageUrl),
+    imageUrl: imageUrlIsSynthetic
+      ? ""
+      : stringValue(rawSnapshot.imageUrl) || stringValue(legacyPost.imageUrl),
     likesCount: numberValue(rawSnapshot.likesCount, numberValue(legacyPost.likesCount, 128)),
     caption: stringValue(rawSnapshot.caption) || stringValue(legacyPost.caption),
     hashtags:
@@ -284,7 +290,19 @@ export function resolveInstagramPostMockup(args: {
     nodeId: args.nodeId,
     handle: INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE,
   });
-  const imageUrl = visualConnected ? imageUrlFromNode(visualNode) : snapshot.imageUrl;
+  const liveImageUrl = visualConnected ? imageUrlFromNode(visualNode) : "";
+  const imageUrl = liveImageUrl || snapshot.imageUrl;
+  const degradedFields = degradedFieldsFor({ graph: args.graph, nodeId: args.nodeId });
+  if (
+    visualConnected &&
+    visualNode?.type !== "render" &&
+    visualNode?.type !== "crop" &&
+    !liveImageUrl &&
+    !imageUrl &&
+    !degradedFields.includes("visual")
+  ) {
+    degradedFields.push("visual");
+  }
 
   return {
     post: {
@@ -304,7 +322,7 @@ export function resolveInstagramPostMockup(args: {
       altText,
       visualPrompt,
     },
-    degradedFields: degradedFieldsFor({ graph: args.graph, nodeId: args.nodeId }),
+    degradedFields,
     sourceNodeIds: visualNode ? [visualNode.id] : [],
   };
 }

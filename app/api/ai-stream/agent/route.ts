@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getOpenRouterModel } from "@/lib/ai-stream/openrouter-provider";
 import { parseAgentStreamRequest } from "@/lib/ai-stream/stream-protocol";
+import { splitSystemInstructionsFromMessages } from "@/lib/ai-stream/system-instructions";
 import { fetchAuthAction, getAuthUser } from "@/lib/auth-server";
 import {
   RATE_LIMIT_POLICIES,
@@ -52,9 +53,10 @@ export async function POST(request: Request): Promise<Response> {
     locale: parsed.value.locale,
   });
 
+  const prompt = splitSystemInstructionsFromMessages(prepared.messages);
   const result = streamText({
     model: getOpenRouterModel(prepared.modelId),
-    messages: prepared.messages,
+    ...prompt,
     onFinish: async ({ text }) => {
       await fetchAuthAction(api.agents.finalizeAgentStreamSummary, {
         nodeId: parsed.value.nodeId as Id<"nodes">,

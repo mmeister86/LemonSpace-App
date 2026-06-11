@@ -10,6 +10,7 @@ import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 
 import type { MixerPreviewLayer } from "@/lib/canvas-mixer-preview";
 import { MIXER_STAGE_FALLBACK_SIZE } from "@/lib/canvas-mixer-stage";
+import type { CanvasPreviewQuality } from "@/lib/canvas-preview-quality";
 
 type FabricObjectWithLayer = FabricObject & {
   data?: {
@@ -37,6 +38,40 @@ type MixerFabricTransformEvent = {
     target?: FabricObject;
   };
 };
+
+const MIXER_FABRIC_DPR_CAP = 1.5;
+const MIXER_FABRIC_RETINA_SCALE_CAP = 3;
+const MIXER_FABRIC_QUALITY_SCALE: Record<CanvasPreviewQuality, number> = {
+  low: 1,
+  medium: 1.5,
+  high: 2,
+};
+
+function readDevicePixelRatio(): number {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+
+  return window.devicePixelRatio || 1;
+}
+
+export function computeMixerFabricRetinaScale({
+  previewQuality,
+  devicePixelRatio,
+}: {
+  previewQuality: CanvasPreviewQuality;
+  devicePixelRatio: number;
+}): number {
+  const safeDevicePixelRatio =
+    Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const cappedDevicePixelRatio = Math.min(Math.max(safeDevicePixelRatio, 1), MIXER_FABRIC_DPR_CAP);
+  const qualityScale = MIXER_FABRIC_QUALITY_SCALE[previewQuality];
+
+  return Math.min(
+    MIXER_FABRIC_RETINA_SCALE_CAP,
+    Math.max(1, qualityScale * cappedDevicePixelRatio),
+  );
+}
 
 function readLayerText(layer: MixerPreviewLayer): string {
   if (layer.source.kind === "text") {
@@ -201,12 +236,14 @@ function applyMixerFabricObjectLayout(args: {
 export function MixerFabricEditor({
   stage,
   layers,
+  previewQuality,
   activeLayerId,
   onSelectLayer,
   onTransformLayer,
 }: {
   stage: { width: number; height: number } | null | undefined;
   layers: MixerPreviewLayer[];
+  previewQuality: CanvasPreviewQuality;
   activeLayerId: string | null;
   onSelectLayer: (layerId: string) => void;
   onTransformLayer: (
@@ -225,6 +262,14 @@ export function MixerFabricEditor({
   const pendingTransformByLayerIdRef = useRef(new Map<string, MixerFabricLayerTransformPatch>());
   const stageSize = useMemo(() => stageDimensions(stage), [stage]);
   const layerBuildKey = useMemo(() => buildMixerFabricLayerBuildKey(layers), [layers]);
+  const fabricRetinaScale = useMemo(
+    () =>
+      computeMixerFabricRetinaScale({
+        previewQuality,
+        devicePixelRatio: readDevicePixelRatio(),
+      }),
+    [previewQuality],
+  );
   const [editorSize, setEditorSize] = useState(() =>
     fitMixerFabricEditorDimensions({
       containerWidth: 320,
@@ -298,6 +343,7 @@ export function MixerFabricEditor({
         backgroundColor: "#f8f5ef",
       });
       nextCanvas = canvas;
+      canvas.getRetinaScaling = () => fabricRetinaScale;
       canvas.setDimensions(editorSize);
       applyMixerFabricNoDragClasses({
         lowerCanvasEl: element,
@@ -422,7 +468,7 @@ export function MixerFabricEditor({
         nextCanvas?.dispose();
       }
     };
-  }, [editorSize, layerBuildKey]);
+  }, [editorSize, fabricRetinaScale, layerBuildKey]);
 
   useEffect(() => {
     const canvas = fabricCanvasRef.current;

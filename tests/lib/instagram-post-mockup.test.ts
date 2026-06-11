@@ -106,7 +106,7 @@ describe("instagram post mockup resolver", () => {
 
     expect(resolved.post.caption).toBe("");
     expect(resolved.post.hashtags).toEqual([]);
-    expect(resolved.post.imageUrl).toBeUndefined();
+    expect(resolved.post.imageUrl).toBe("https://example.com/generated.png");
     expect(resolved.fields.cta).toBe("");
     expect(resolved.fields.altText).toBe("");
     expect(resolved.fields.visualPrompt).toBe("");
@@ -140,6 +140,140 @@ describe("instagram post mockup resolver", () => {
     expect(resolved.post.hashtags).toEqual(["#snapshot"]);
     expect(resolved.post.imageUrl).toBe("https://example.com/snapshot.png");
     expect(resolved.degradedFields).toEqual(["visual", "caption", "hashtags"]);
+  });
+
+  it("falls back to the snapshot image when a connected visual has no resolved URL yet", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "mockup-1",
+          type: "instagram-post-mockup",
+          data: {
+            snapshot: {
+              imageUrl: "https://example.com/snapshot.png",
+              caption: "Snapshot caption",
+              hashtags: ["#snapshot"],
+            },
+          },
+        },
+        { id: "image-1", type: "image", data: { storageId: "storage-1" } },
+      ],
+      [{ source: "image-1", target: "mockup-1", targetHandle: "visual-in" }],
+    );
+
+    const resolved = resolveInstagramPostMockup({
+      nodeId: "mockup-1",
+      graph,
+    });
+
+    expect(resolved.post.imageUrl).toBe("https://example.com/snapshot.png");
+    expect(resolved.sourceNodeIds).toEqual(["image-1"]);
+  });
+
+  it("does not render synthetic snapshot image URLs as real post images", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "mockup-1",
+          type: "instagram-post-mockup",
+          data: {
+            syntheticPreviewFields: ["imageUrl", "profileImageUrl"],
+            snapshot: {
+              profileImageUrl: "synthetic-profile-image",
+              imageUrl: "https://example.com/synthetic-preview.png",
+              caption: "Snapshot caption",
+              hashtags: ["#snapshot"],
+            },
+          },
+        },
+        { id: "image-1", type: "image", data: {} },
+      ],
+      [{ source: "image-1", target: "mockup-1", targetHandle: "visual-in" }],
+    );
+
+    const resolved = resolveInstagramPostMockup({
+      nodeId: "mockup-1",
+      graph,
+    });
+
+    expect(resolved.post.imageUrl).toBeUndefined();
+    expect(resolved.post.profileImageUrl).toBeUndefined();
+    expect(resolved.degradedFields).toContain("visual");
+    expect(resolved.sourceNodeIds).toEqual(["image-1"]);
+  });
+
+  it("treats connected crop nodes as live visual sources", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "mockup-1",
+          type: "instagram-post-mockup",
+          data: {
+            syntheticPreviewFields: ["imageUrl"],
+            snapshot: {
+              imageUrl: "https://example.com/synthetic-preview.png",
+              caption: "Snapshot caption",
+              hashtags: ["#snapshot"],
+            },
+          },
+        },
+        {
+          id: "crop-1",
+          type: "crop",
+          data: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+        { id: "image-1", type: "image", data: { url: "https://example.com/live.png" } },
+      ],
+      [
+        { source: "image-1", target: "crop-1" },
+        { source: "crop-1", target: "mockup-1", targetHandle: "visual-in" },
+      ],
+    );
+
+    const resolved = resolveInstagramPostMockup({
+      nodeId: "mockup-1",
+      graph,
+    });
+
+    expect(resolved.post.imageUrl).toBeUndefined();
+    expect(resolved.degradedFields).not.toContain("visual");
+    expect(resolved.sourceNodeIds).toEqual(["crop-1"]);
+  });
+
+  it("prefers a connected visual URL over the snapshot image", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "mockup-1",
+          type: "instagram-post-mockup",
+          data: {
+            snapshot: {
+              imageUrl: "https://example.com/snapshot.png",
+              caption: "Snapshot caption",
+              hashtags: ["#snapshot"],
+            },
+          },
+        },
+        { id: "image-1", type: "image", data: { url: "https://example.com/live.png" } },
+      ],
+      [{ source: "image-1", target: "mockup-1", targetHandle: "visual-in" }],
+    );
+
+    const resolved = resolveInstagramPostMockup({
+      nodeId: "mockup-1",
+      graph,
+    });
+
+    expect(resolved.post.imageUrl).toBe("https://example.com/live.png");
   });
 
   it("normalizes hashtags from free-form editable text", () => {

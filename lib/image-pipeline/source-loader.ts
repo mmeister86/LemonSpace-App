@@ -573,8 +573,9 @@ type LoadedMixerLayer = {
 
 function normalizeLayerStageSize(
   sourceComposition: RenderSourceComposition,
-  fallbackBitmap: ImageBitmap,
+  loadedLayers: readonly LoadedMixerLayer[],
 ): { width: number; height: number } {
+  const fallbackBitmap = loadedLayers[0]!.bitmap;
   const width =
     sourceComposition.stage &&
     Number.isFinite(sourceComposition.stage.width) &&
@@ -587,6 +588,20 @@ function normalizeLayerStageSize(
     sourceComposition.stage.height > 0
       ? Math.round(sourceComposition.stage.height)
       : fallbackBitmap.height;
+
+  const baseLayer = loadedLayers.find(({ layer }) => layer.handleId === "layer-in");
+  const baseBitmap = baseLayer?.bitmap ?? fallbackBitmap;
+  const stageAspectRatio = width / height;
+  const baseAspectRatio = baseBitmap.width / baseBitmap.height;
+  const hasSameBaseAspectRatio = Math.abs(stageAspectRatio - baseAspectRatio) <= 0.01;
+  const isSmallerThanBaseBitmap = width < baseBitmap.width && height < baseBitmap.height;
+
+  if (sourceComposition.stage && hasSameBaseAspectRatio && isSmallerThanBaseBitmap) {
+    return {
+      width: Math.max(1, Math.round(baseBitmap.width)),
+      height: Math.max(1, Math.round(baseBitmap.height)),
+    };
+  }
 
   return {
     width: Math.max(1, width),
@@ -612,8 +627,7 @@ async function loadMixerLayerCompositionBitmap(
 
   throwIfAborted(signal);
 
-  const firstBitmap = loadedLayers[0]!.bitmap;
-  const stage = normalizeLayerStageSize(sourceComposition, firstBitmap);
+  const stage = normalizeLayerStageSize(sourceComposition, loadedLayers);
   const canvas = createWorkingCanvas(stage.width, stage.height);
   const context = getWorkingCanvasContext(canvas);
 

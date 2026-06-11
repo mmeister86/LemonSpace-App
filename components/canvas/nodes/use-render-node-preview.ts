@@ -7,8 +7,10 @@ import { useMemo } from "react";
 
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
 import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
+import { mixerRenderPreviewPipelineWidthForQuality } from "@/lib/canvas-preview-quality";
 import {
   findSourceNodeFromGraph,
+  resolveRenderPipelineHash,
   resolveRenderPreviewInputFromGraph,
   shouldFastPathPreviewPipeline,
   type MixerLayerSource,
@@ -16,7 +18,6 @@ import {
 } from "@/lib/canvas-render-preview";
 import { resolveMediaAspectRatio } from "@/lib/canvas-utils";
 import { parseAspectRatioString } from "@/lib/image-formats";
-import { hashPipeline } from "@/lib/image-pipeline/contracts";
 import { buildHistogramPlot } from "@/lib/image-pipeline/histogram-plot";
 import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
 import type { PersistedRenderData, SourceNodeDescriptor } from "./render-node-state";
@@ -104,6 +105,7 @@ export function useRenderNodePreview(args: {
     width: previewNodeWidth,
     height: previewNodeHeight,
   });
+  const displaySourceQuality = previewQuality === "low" ? sourceQuality : "full";
 
   const renderPreviewInput = useMemo(
     () => resolveRenderPreviewInputFromGraph({ nodeId: id, graph }),
@@ -114,9 +116,9 @@ export function useRenderNodePreview(args: {
       resolveRenderPreviewInputFromGraph({
         nodeId: id,
         graph,
-        sourceQuality,
+        sourceQuality: displaySourceQuality,
       }),
-    [graph, id, sourceQuality],
+    [displaySourceQuality, graph, id],
   );
   const { sourceUrl, sourceComposition, steps, isAlphaBearing = false } = renderPreviewInput;
   const sourceNode = useMemo<SourceNodeDescriptor | null>(
@@ -133,28 +135,22 @@ export function useRenderNodePreview(args: {
   const previewDebounceMs = shouldFastPathPreviewPipeline(steps, graph.previewNodeDataOverrides)
     ? 16
     : undefined;
-  const renderFingerprint = useMemo(
-    () => ({
-      resolution: localData.outputResolution,
-      customWidth: localData.outputResolution === "custom" ? localData.customWidth : undefined,
-      customHeight: localData.outputResolution === "custom" ? localData.customHeight : undefined,
-      format: localData.format,
-      jpegQuality: localData.format === "jpeg" ? localData.jpegQuality : undefined,
-    }),
-    [
-      localData.customHeight,
-      localData.customWidth,
-      localData.format,
-      localData.jpegQuality,
-      localData.outputResolution,
-    ],
+  const currentPipelineHash = useMemo(
+    () =>
+      resolveRenderPipelineHash({
+        sourceUrl,
+        sourceComposition,
+        steps,
+        data: localData,
+      }),
+    [localData, sourceComposition, sourceUrl, steps],
   );
-  const currentPipelineHash = useMemo(() => {
-    if (!sourceUrl && !sourceComposition) return null;
-    return hashPipeline({ source: sourceComposition ?? sourceUrl, render: renderFingerprint }, steps);
-  }, [renderFingerprint, sourceComposition, sourceUrl, steps]);
   const hasSource =
     (typeof sourceUrl === "string" && sourceUrl.length > 0) || Boolean(sourceComposition);
+  const displayPreviewWidth =
+    displayRenderPreviewInput.sourceComposition?.kind === "mixer"
+      ? mixerRenderPreviewPipelineWidthForQuality(previewQuality)
+      : undefined;
   const preview = usePipelinePreview({
     sourceUrl: displayRenderPreviewInput.sourceUrl,
     sourceComposition: displayRenderPreviewInput.sourceComposition,
@@ -164,6 +160,7 @@ export function useRenderNodePreview(args: {
     previewScale: 0.5,
     maxPreviewWidth: 720,
     maxDevicePixelRatio: 1.25,
+    previewWidth: displayPreviewWidth,
     previewQuality,
   });
   const fullscreenPreviewWidth = Math.max(960, Math.round((width ?? 320) * 3));

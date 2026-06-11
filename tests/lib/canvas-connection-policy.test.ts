@@ -14,6 +14,14 @@ describe("canvas connection policy", () => {
     ).toBeNull();
     expect(
       validateCanvasConnectionPolicy({
+        sourceType: "crop",
+        targetType: "instagram-post-mockup",
+        targetHandle: "visual-in",
+        targetIncomingCount: 0,
+      }),
+    ).toBeNull();
+    expect(
+      validateCanvasConnectionPolicy({
         sourceType: "text",
         targetType: "instagram-post-mockup",
         targetHandle: "caption-in",
@@ -28,6 +36,16 @@ describe("canvas connection policy", () => {
         targetHandle: "visual-prompt-in",
         targetIncomingCount: 2,
         targetIncomingHandles: ["visual-in", "caption-in"],
+      }),
+    ).toBeNull();
+  });
+
+  it("allows render output to feed crop nodes for instagram preparation", () => {
+    expect(
+      validateCanvasConnectionPolicy({
+        sourceType: "render",
+        targetType: "crop",
+        targetIncomingCount: 0,
       }),
     ).toBeNull();
   });

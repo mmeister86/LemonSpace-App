@@ -141,4 +141,111 @@ describe("agent orchestration contract helpers", () => {
       targetHandle: undefined,
     });
   });
+
+  it("keeps a successful agent finalization when post-success cleanup fails", async () => {
+    const completeSuccessfulAgentRun =
+      __testables.completeSuccessfulAgentRun as unknown as (args: {
+        finalizeSuccess: () => Promise<void>;
+        cleanupSteps: Array<{ label: string; run: () => Promise<void> }>;
+        onCleanupError: (entry: { label: string; error: unknown }) => void;
+      }) => Promise<void>;
+    const calls: string[] = [];
+    const cleanupErrors: string[] = [];
+
+    expect(completeSuccessfulAgentRun).toBeTypeOf("function");
+
+    await expect(
+      completeSuccessfulAgentRun({
+        finalizeSuccess: async () => {
+          calls.push("finalize");
+        },
+        cleanupSteps: [
+          {
+            label: "commit credits",
+            run: async () => {
+              calls.push("commit");
+              throw new Error("commit timeout");
+            },
+          },
+          {
+            label: "decrement concurrency",
+            run: async () => {
+              calls.push("decrement");
+              throw new Error("concurrency timeout");
+            },
+          },
+        ],
+        onCleanupError: ({ label }) => {
+          cleanupErrors.push(label);
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(calls).toEqual(["finalize", "commit", "decrement"]);
+    expect(cleanupErrors).toEqual(["commit credits", "decrement concurrency"]);
+  });
+
+  it("propagates finalization failures before post-success cleanup runs", async () => {
+    const completeSuccessfulAgentRun =
+      __testables.completeSuccessfulAgentRun as unknown as (args: {
+        finalizeSuccess: () => Promise<void>;
+        cleanupSteps: Array<{ label: string; run: () => Promise<void> }>;
+      }) => Promise<void>;
+    const calls: string[] = [];
+
+    expect(completeSuccessfulAgentRun).toBeTypeOf("function");
+
+    await expect(
+      completeSuccessfulAgentRun({
+        finalizeSuccess: async () => {
+          calls.push("finalize");
+          throw new Error("tool result missing");
+        },
+        cleanupSteps: [
+          {
+            label: "commit credits",
+            run: async () => {
+              calls.push("commit");
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("tool result missing");
+
+    expect(calls).toEqual(["finalize"]);
+  });
+
+  it("allows render mockup bindings while requiring URL-backed types to have media data", () => {
+    const isMockupVisualSourceReady =
+      __testables.isMockupVisualSourceReady as unknown as (node: {
+        type?: string;
+        data?: unknown;
+      } | null) => boolean;
+
+    expect(isMockupVisualSourceReady).toBeTypeOf("function");
+    expect(
+      isMockupVisualSourceReady({
+        type: "render",
+        data: { format: "png", outputResolution: "original" },
+      }),
+    ).toBe(true);
+    expect(
+      isMockupVisualSourceReady({
+        type: "render",
+        data: { lastUploadStorageId: "storage-render-1" },
+      }),
+    ).toBe(true);
+    expect(
+      isMockupVisualSourceReady({
+        type: "image",
+        data: {},
+      }),
+    ).toBe(false);
+    expect(
+      isMockupVisualSourceReady({
+        type: "image",
+        data: { storageId: "storage-image-1" },
+      }),
+    ).toBe(true);
+  });
 });

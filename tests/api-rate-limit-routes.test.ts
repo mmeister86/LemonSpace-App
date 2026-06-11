@@ -56,7 +56,10 @@ vi.mock("@/lib/ai-stream/openrouter-provider", () => ({
 }));
 
 vi.mock("@/lib/ai-stream/text-messages", () => ({
-  buildAiTextStreamMessages: vi.fn(() => [{ role: "user", content: "hello" }]),
+  buildAiTextStreamMessages: vi.fn(() => [
+    { role: "system", content: "Text stream system rule" },
+    { role: "user", content: "hello" },
+  ]),
 }));
 
 vi.mock("@/lib/ai-text-models", () => ({
@@ -174,6 +177,30 @@ describe("rate limited route handlers", () => {
     expect(fetchAuthAction).not.toHaveBeenCalled();
   });
 
+  it("AI text stream route passes system messages through instructions", async () => {
+    const route = await import("@/app/api/ai-stream/text/route");
+    const response = await route.POST(
+      new Request("https://app.lemonspace.io/api/ai-stream/text", {
+        method: "POST",
+        body: JSON.stringify({
+          canvasId: "canvas-1",
+          sourceNodeId: "source-1",
+          outputNodeId: "output-1",
+          modelId: "openai/gpt-5.4-mini",
+          inputText: "draft",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: "Text stream system rule",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+  });
+
   it("AI agent stream route does not prepare a run when rejected", async () => {
     rateLimitDecision.mockResolvedValue(rejectedDecision());
     const route = await import("@/app/api/ai-stream/agent/route");
@@ -191,6 +218,39 @@ describe("rate limited route handlers", () => {
 
     expect(response.status).toBe(429);
     expect(fetchAuthAction).not.toHaveBeenCalled();
+  });
+
+  it("AI agent stream route passes prepared system messages through instructions", async () => {
+    fetchAuthAction.mockResolvedValueOnce({
+      modelId: "openai/gpt-5.4-mini",
+      outputNodeId: "agent-output-1",
+      messages: [
+        { role: "system", content: "Agent stream system rule" },
+        { role: "user", content: "Agent status" },
+      ],
+      userId: "user-1",
+    });
+
+    const route = await import("@/app/api/ai-stream/agent/route");
+    const response = await route.POST(
+      new Request("https://app.lemonspace.io/api/ai-stream/agent", {
+        method: "POST",
+        body: JSON.stringify({
+          canvasId: "canvas-1",
+          nodeId: "agent-1",
+          modelId: "openai/gpt-5.4-mini",
+          locale: "de",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: "Agent stream system rule",
+        messages: [{ role: "user", content: "Agent status" }],
+      }),
+    );
   });
 
   it("Redis fail-open decisions still reach the underlying handler", async () => {

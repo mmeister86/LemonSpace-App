@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildGraphSnapshot,
+  resolveRenderPipelineHash,
   resolveRenderPreviewInputFromGraph,
 } from "@/lib/canvas-render-preview";
+import { hashPipeline } from "@/lib/image-pipeline/contracts";
 import {
   computeMixerCompareOverlayImageStyle,
   computeMixerFrameRectInSurface,
@@ -11,6 +13,66 @@ import {
   computeMixerCropImageStyle,
   isMixerCropImageReady,
 } from "@/lib/mixer-crop-layout";
+
+describe("resolveRenderPipelineHash", () => {
+  it("versions mixer render sizing so stale low-resolution exports are invalidated", () => {
+    const sourceComposition = {
+      kind: "mixer" as const,
+      stage: { width: 240, height: 320 },
+      layers: [
+        {
+          id: "base",
+          handleId: "layer-in",
+          source: { kind: "image" as const, url: "https://cdn.example.com/base.png" },
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          opacity: 100,
+          blendMode: "normal" as const,
+          crop: { left: 0, top: 0, right: 0, bottom: 0 },
+          visible: true,
+          locked: false,
+        },
+      ],
+      blendMode: "normal" as const,
+      opacity: 100,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+    };
+    const data = { outputResolution: "original", format: "png" };
+
+    const legacyHash = hashPipeline(
+      {
+        source: sourceComposition,
+        render: {
+          resolution: "original",
+          customWidth: undefined,
+          customHeight: undefined,
+          format: "png",
+          jpegQuality: undefined,
+        },
+      },
+      [],
+    );
+
+    expect(
+      resolveRenderPipelineHash({
+        sourceUrl: null,
+        sourceComposition,
+        steps: [],
+        data,
+      }),
+    ).not.toBe(legacyHash);
+  });
+});
 
 describe("resolveRenderPreviewInputFromGraph", () => {
   it("marks bg-remove-output adjustment chains as alpha-bearing", () => {
@@ -85,6 +147,40 @@ describe("resolveRenderPreviewInputFromGraph", () => {
     });
 
     expect(preview.sourceUrl).toBe("https://cdn.example.com/full.png");
+  });
+
+  it("uses uploaded full-quality URLs before preview URLs for render sources", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "ai-image-1",
+          type: "ai-image",
+          data: {
+            lastUploadUrl: "https://cdn.example.com/full-upload.png",
+            previewUrl: "https://cdn.example.com/preview.webp",
+          },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [{ source: "ai-image-1", target: "render-1" }],
+    );
+
+    const full = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+      sourceQuality: "preview",
+    });
+
+    expect(full.sourceUrl).toBe("https://cdn.example.com/full-upload.png");
+    expect(preview.sourceUrl).toBe("https://cdn.example.com/preview.webp");
   });
 
   it("can resolve render preview sources through preview-quality image URLs", () => {
@@ -170,6 +266,91 @@ describe("resolveRenderPreviewInputFromGraph", () => {
     expect(preview.sourceComposition).toMatchObject({
       baseUrl: "https://cdn.example.com/base-preview.webp",
       overlayUrl: "https://cdn.example.com/overlay-preview.webp",
+    });
+  });
+
+  it("keeps uploaded full-quality URLs for mixer render layers", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "base-ai-image",
+          type: "ai-image",
+          data: {
+            lastUploadUrl: "https://cdn.example.com/base-full-upload.png",
+            previewUrl: "https://cdn.example.com/base-preview.webp",
+            outputWidth: 2048,
+            outputHeight: 2048,
+          },
+        },
+        {
+          id: "overlay-ai-image",
+          type: "ai-image",
+          data: {
+            lastUploadUrl: "https://cdn.example.com/overlay-full-upload.png",
+            previewUrl: "https://cdn.example.com/overlay-preview.webp",
+            outputWidth: 1024,
+            outputHeight: 512,
+          },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: null,
+            layers: [],
+          },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+      ],
+      [
+        { source: "base-ai-image", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "overlay-ai-image", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "mixer-1", target: "render-1" },
+      ],
+    );
+
+    const full = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+    });
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "render-1",
+      graph,
+      sourceQuality: "preview",
+    });
+
+    expect(full.sourceComposition).toMatchObject({
+      kind: "mixer",
+      stage: { width: 2048, height: 2048 },
+      layers: [
+        {
+          handleId: "layer-in",
+          source: { kind: "image", url: "https://cdn.example.com/base-full-upload.png" },
+        },
+        {
+          handleId: "layer-in-2",
+          source: { kind: "image", url: "https://cdn.example.com/overlay-full-upload.png" },
+        },
+      ],
+    });
+    expect(preview.sourceComposition).toMatchObject({
+      kind: "mixer",
+      stage: { width: 2048, height: 2048 },
+      layers: [
+        {
+          handleId: "layer-in",
+          source: { kind: "image", url: "https://cdn.example.com/base-preview.webp" },
+        },
+        {
+          handleId: "layer-in-2",
+          source: { kind: "image", url: "https://cdn.example.com/overlay-preview.webp" },
+        },
+      ],
     });
   });
 
@@ -343,6 +524,104 @@ describe("resolveRenderPreviewInputFromGraph", () => {
       },
       steps: [],
     });
+  });
+
+  it("uses a direct render input as the live source composition for crop preview output", () => {
+    const graph = buildGraphSnapshot(
+      [
+        {
+          id: "logo-image",
+          type: "image",
+          data: { url: "https://cdn.example.com/lemonspace-logo.png" },
+        },
+        {
+          id: "photo-image",
+          type: "image",
+          data: { url: "https://cdn.example.com/photo.png" },
+        },
+        {
+          id: "mixer-1",
+          type: "mixer",
+          data: {
+            mixerVersion: 2,
+            stage: { width: 1200, height: 900 },
+            layers: [
+              { id: "photo", handleId: "layer-in", x: 0, y: 0, width: 1, height: 1 },
+              {
+                id: "logo",
+                handleId: "layer-in-2",
+                x: 0.02,
+                y: 0.88,
+                width: 0.36,
+                height: 0.08,
+              },
+            ],
+          },
+        },
+        {
+          id: "render-1",
+          type: "render",
+          data: {},
+        },
+        {
+          id: "crop-1",
+          type: "crop",
+          data: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+            resize: {
+              mode: "custom",
+              width: 1080,
+              height: 1350,
+              fit: "cover",
+              keepAspect: true,
+            },
+          },
+        },
+      ],
+      [
+        { source: "photo-image", target: "mixer-1", targetHandle: "layer-in" },
+        { source: "logo-image", target: "mixer-1", targetHandle: "layer-in-2" },
+        { source: "mixer-1", target: "render-1" },
+        { source: "render-1", target: "crop-1" },
+      ],
+    );
+
+    const preview = resolveRenderPreviewInputFromGraph({
+      nodeId: "crop-1",
+      graph,
+    });
+
+    expect(preview.sourceUrl).toBeNull();
+    expect(preview.sourceComposition).toMatchObject({
+      kind: "mixer",
+      stage: { width: 1200, height: 900 },
+      layers: [
+        {
+          id: "photo",
+          source: { kind: "image", url: "https://cdn.example.com/photo.png" },
+        },
+        {
+          id: "logo",
+          source: { kind: "image", url: "https://cdn.example.com/lemonspace-logo.png" },
+        },
+      ],
+    });
+    expect(preview.steps).toEqual([
+      {
+        nodeId: "crop-1",
+        type: "crop",
+        params: {
+          crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+          resize: {
+            mode: "custom",
+            width: 1080,
+            height: 1350,
+            fit: "cover",
+            keepAspect: true,
+          },
+        },
+      },
+    ]);
   });
 
   it("derives v2 mixer render stage from layer-in when no stage is persisted", () => {

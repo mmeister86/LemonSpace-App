@@ -27,6 +27,7 @@ export type UsePipelinePreviewOptions = {
   nodeWidth: number;
   includeHistogram?: boolean;
   previewScale?: number;
+  previewWidth?: number;
   previewQuality?: CanvasPreviewQuality;
   maxPreviewWidth?: number;
   maxDevicePixelRatio?: number;
@@ -104,6 +105,10 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
 
   const previewWidth = useMemo(
     () => {
+      if (typeof options.previewWidth === "number" && Number.isFinite(options.previewWidth)) {
+        return Math.max(1, Math.round(options.previewWidth));
+      }
+
       if (options.previewQuality) {
         return Math.max(1, previewPipelineWidthForQuality(options.previewQuality));
       }
@@ -119,6 +124,7 @@ export function usePipelinePreview(options: UsePipelinePreviewOptions): {
       maxDevicePixelRatio,
       maxPreviewWidth,
       options.nodeWidth,
+      options.previewWidth,
       options.previewQuality,
       previewScale,
     ],

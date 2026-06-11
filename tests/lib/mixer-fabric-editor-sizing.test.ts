@@ -6,6 +6,7 @@ import {
   applyMixerFabricNoDragClasses,
   buildMixerFabricLayerBuildKey,
   buildMixerFabricLayerObjectOptions,
+  computeMixerFabricRetinaScale,
   fitMixerFabricEditorDimensions,
   shouldSkipMixerFabricLayoutSync,
 } from "@/components/canvas/nodes/mixer-fabric-editor";
@@ -141,5 +142,35 @@ describe("fitMixerFabricEditorDimensions", () => {
         pendingTransform: { x: 0.2, y: 0.15, width: 0.45, height: 0.55, rotation: 12 },
       }),
     ).toBe(false);
+  });
+
+  it("scales the Fabric backing store by preview quality with capped device pixel ratio", () => {
+    expect(
+      computeMixerFabricRetinaScale({
+        previewQuality: "low",
+        devicePixelRatio: 2,
+      }),
+    ).toBe(1.5);
+
+    expect(
+      computeMixerFabricRetinaScale({
+        previewQuality: "medium",
+        devicePixelRatio: 2,
+      }),
+    ).toBe(2.25);
+
+    expect(
+      computeMixerFabricRetinaScale({
+        previewQuality: "high",
+        devicePixelRatio: 2,
+      }),
+    ).toBe(3);
+
+    expect(
+      computeMixerFabricRetinaScale({
+        previewQuality: "high",
+        devicePixelRatio: 0.5,
+      }),
+    ).toBe(2);
   });
 });

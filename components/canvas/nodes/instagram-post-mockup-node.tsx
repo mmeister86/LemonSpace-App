@@ -6,10 +6,28 @@
  */
 
 import { Position, type Node, type NodeProps } from "@xyflow/react";
+import { CheckCircle2, Send } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { InstagramPost } from "@/components/agents/instagram/ui/instagram-post";
 import CanvasHandle from "@/components/canvas/canvas-handle";
 import { useCanvasGraph } from "@/components/canvas/canvas-graph-context";
+import { useZoomAwarePreviewQuality } from "@/components/canvas/use-zoom-aware-preview-quality";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { usePipelinePreview } from "@/hooks/use-pipeline-preview";
+import {
+  resolveRenderPreviewInputFromGraph,
+  type CanvasGraphNodeLike,
+  type CanvasGraphSnapshot,
+} from "@/lib/canvas-render-preview";
 import {
   INSTAGRAM_POST_MOCKUP_ALT_TEXT_HANDLE,
   INSTAGRAM_POST_MOCKUP_CAPTION_HANDLE,
@@ -20,6 +38,13 @@ import {
   resolveInstagramPostMockup,
 } from "@/lib/instagram-post-mockup";
 import BaseNodeWrapper from "./base-node-wrapper";
+import { RenderNodePreviewSurface } from "./render-node-ui";
+import {
+  resolveRenderPreviewDisplaySize,
+  sanitizeRenderData,
+  type RenderNodeData,
+} from "./render-node-state";
+import { useRenderNodePreview } from "./use-render-node-preview";
 
 type InstagramPostMockupNodeData = {
   title?: string;
@@ -46,6 +71,19 @@ const HANDLE_SPECS = [
   { id: INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE, top: "84%" },
 ] as const;
 
+const PUBLISH_STEP_DELAY_MS = 650;
+const PUBLISH_SUCCESS_CLOSE_DELAY_MS = 900;
+
+const PUBLISH_SIMULATION_STEPS = [
+  { label: "Verbinde mit Instagram...", progress: 12 },
+  { label: "Prüfe Feed-Ziel...", progress: 28 },
+  { label: "Lade Bild hoch...", progress: 46 },
+  { label: "Erstelle Text...", progress: 64 },
+  { label: "Setze Hashtags und Alt-Text...", progress: 82 },
+  { label: "Veröffentliche im Feed...", progress: 94 },
+  { label: "Beitrag veröffentlicht.", progress: 100 },
+] as const;
+
 function normalizeList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -57,18 +95,186 @@ function normalizeList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function visualSourceNode(args: {
+  graph: CanvasGraphSnapshot;
+  nodeId: string;
+}): CanvasGraphNodeLike | null {
+  const incoming = args.graph.incomingEdgesByTarget.get(args.nodeId) ?? [];
+  const edge = incoming.find(
+    (candidate) => candidate.targetHandle === INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE,
+  );
+  return edge ? args.graph.nodesById.get(edge.source) ?? null : null;
+}
+
+function InstagramRenderPreviewSlot({ nodeId }: { nodeId: string }) {
+  const graph = useCanvasGraph();
+  const node = graph.nodesById.get(nodeId);
+  const renderData = sanitizeRenderData((node?.data ?? {}) as RenderNodeData);
+  const previewState = useRenderNodePreview({
+    id: nodeId,
+    localData: renderData,
+    width: 470,
+    height: 470,
+    isFullscreenOpen: false,
+  });
+  const previewDisplaySize = useMemo(
+    () =>
+      resolveRenderPreviewDisplaySize({
+        containerWidth: 470,
+        containerHeight: 470,
+        aspectRatio: previewState.targetAspectRatio ?? previewState.preview.previewAspectRatio,
+      }),
+    [previewState.preview.previewAspectRatio, previewState.targetAspectRatio],
+  );
+
+  return (
+    <div className="absolute inset-0 bg-muted/40">
+      <RenderNodePreviewSurface
+        hasSource={previewState.hasSource}
+        canvasRef={previewState.preview.canvasRef}
+        isAlphaBearing={previewState.isAlphaBearing}
+        displaySize={previewDisplaySize}
+      />
+    </div>
+  );
+}
+
+function InstagramCropPreviewSlot({ nodeId }: { nodeId: string }) {
+  const graph = useCanvasGraph();
+  const { previewQuality, sourceQuality } = useZoomAwarePreviewQuality({
+    width: 470,
+    height: 470,
+    maxDevicePixelRatio: 2,
+  });
+  const previewInput = useMemo(
+    () => resolveRenderPreviewInputFromGraph({ nodeId, graph, sourceQuality }),
+    [graph, nodeId, sourceQuality],
+  );
+  const preview = usePipelinePreview({
+    sourceUrl: previewInput.sourceUrl,
+    sourceComposition: previewInput.sourceComposition,
+    steps: previewInput.steps,
+    nodeWidth: 470,
+    previewScale: 0.5,
+    maxPreviewWidth: 720,
+    maxDevicePixelRatio: 1.25,
+    previewQuality,
+  });
+
+  return (
+    <div className="absolute inset-0 bg-muted/40">
+      <RenderNodePreviewSurface
+        hasSource={preview.hasSource}
+        canvasRef={preview.canvasRef}
+        isAlphaBearing={previewInput.isAlphaBearing}
+      />
+    </div>
+  );
+}
+
+function InstagramPublishSimulationDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const currentStep = PUBLISH_SIMULATION_STEPS[stepIndex] ?? PUBLISH_SIMULATION_STEPS[0];
+  const isComplete = stepIndex === PUBLISH_SIMULATION_STEPS.length - 1;
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setStepIndex(0);
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(
+      () => {
+        if (isComplete) {
+          handleOpenChange(false);
+          return;
+        }
+
+        setStepIndex((currentIndex) =>
+          Math.min(currentIndex + 1, PUBLISH_SIMULATION_STEPS.length - 1),
+        );
+      },
+      isComplete ? PUBLISH_SUCCESS_CLOSE_DELAY_MS : PUBLISH_STEP_DELAY_MS,
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [handleOpenChange, isComplete, open, stepIndex]);
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md" showCloseButton>
+        <DialogHeader>
+          <DialogTitle>Instagram-Post senden</DialogTitle>
+          <DialogDescription>
+            Demo-Simulation: Es wird nichts an Instagram oder den Server gesendet.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4" aria-live="polite" aria-atomic="true">
+          <div className="flex items-start gap-3 rounded-md border border-border/70 bg-muted/30 p-3">
+            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-pink-500/10 text-pink-600 dark:text-pink-300">
+              {isComplete ? <CheckCircle2 className="size-4" /> : <Send className="size-4" />}
+            </div>
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-foreground">{currentStep.label}</p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {isComplete
+                  ? "Der Feed-Post ist fuer die Demo erfolgreich veroeffentlicht."
+                  : "Der direkte Feed-Post wird realitaetsnah vorbereitet."}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Progress value={currentStep.progress} className="h-2" />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{isComplete ? "Abgeschlossen" : "In Arbeit"}</span>
+              <span className="tabular-nums">{currentStep.progress}%</span>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function InstagramPostMockupNode({
   id,
   data,
   selected,
 }: NodeProps<InstagramPostMockupNodeType>) {
   const graph = useCanvasGraph();
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
   const nodeData = data as InstagramPostMockupNodeData;
   const resolved = resolveInstagramPostMockup({
     nodeId: id,
     graph,
     data: nodeData,
   });
+  const visualNode = visualSourceNode({ graph, nodeId: id });
+  const imageSlot =
+    visualNode?.type === "render" && !resolved.post.imageUrl ? (
+      <InstagramRenderPreviewSlot nodeId={visualNode.id} />
+    ) : visualNode?.type === "crop" && !resolved.post.imageUrl ? (
+      <InstagramCropPreviewSlot nodeId={visualNode.id} />
+    ) : undefined;
+  const imageAspectRatio = visualNode?.type === "crop" ? "portrait-4-5" : "square";
   const syntheticPreviewFields = normalizeList(nodeData.syntheticPreviewFields);
   const assumptions = normalizeList(nodeData.assumptions);
   const hasDetails =
@@ -110,8 +316,32 @@ export default function InstagramPostMockupNode({
         </header>
 
         <section data-testid="instagram-post-mockup-preview" className="overflow-hidden rounded-md">
-          <InstagramPost {...resolved.post} />
+          <InstagramPost
+            {...resolved.post}
+            imageSlot={imageSlot}
+            imageAspectRatio={imageAspectRatio}
+          />
         </section>
+
+        <Button
+          type="button"
+          size="sm"
+          className="nodrag nopan w-full bg-pink-600 text-white hover:bg-pink-500"
+          data-testid="instagram-post-mockup-send-button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsPublishDialogOpen(true);
+          }}
+        >
+          <Send className="size-3.5" />
+          Senden
+        </Button>
+
+        <InstagramPublishSimulationDialog
+          open={isPublishDialogOpen}
+          onOpenChange={setIsPublishDialogOpen}
+        />
 
         {hasDetails ? (
           <details

@@ -58,6 +58,17 @@ export function previewPipelineWidthForQuality(quality: CanvasPreviewQuality): n
   }
 }
 
+export function mixerRenderPreviewPipelineWidthForQuality(quality: CanvasPreviewQuality): number {
+  switch (quality) {
+    case "low":
+      return 360;
+    case "medium":
+      return 1280;
+    case "high":
+      return 1920;
+  }
+}
+
 export function sourceQualityForPreviewQuality(
   quality: CanvasPreviewQuality,
 ): CanvasPreviewSourceQuality {

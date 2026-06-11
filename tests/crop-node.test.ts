@@ -12,7 +12,18 @@ const mocks = vi.hoisted(() => ({
   clearPreviewNodeDataOverride: vi.fn(),
   collectPipelineFromGraph: vi.fn(() => []),
   getSourceImageFromGraph: vi.fn(() => "https://cdn.example.com/source.png"),
+  resolveRenderPreviewInputFromGraph: vi.fn(() => ({
+    sourceUrl: "https://cdn.example.com/source.png",
+    steps: [],
+  })),
   shouldFastPathPreviewPipeline: vi.fn(() => false),
+  usePipelinePreview: vi.fn(() => ({
+    canvasRef: { current: null },
+    hasSource: true,
+    isRendering: false,
+    previewAspectRatio: 1,
+    error: null,
+  })),
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -44,18 +55,13 @@ vi.mock("@/components/canvas/canvas-graph-context", () => ({
 }));
 
 vi.mock("@/hooks/use-pipeline-preview", () => ({
-  usePipelinePreview: () => ({
-    canvasRef: { current: null },
-    hasSource: true,
-    isRendering: false,
-    previewAspectRatio: 1,
-    error: null,
-  }),
+  usePipelinePreview: mocks.usePipelinePreview,
 }));
 
 vi.mock("@/lib/canvas-render-preview", () => ({
   collectPipelineFromGraph: mocks.collectPipelineFromGraph,
   getSourceImageFromGraph: mocks.getSourceImageFromGraph,
+  resolveRenderPreviewInputFromGraph: mocks.resolveRenderPreviewInputFromGraph,
   shouldFastPathPreviewPipeline: mocks.shouldFastPathPreviewPipeline,
 }));
 
@@ -117,6 +123,21 @@ describe("CropNode", () => {
     mocks.clearPreviewNodeDataOverride.mockClear();
     mocks.collectPipelineFromGraph.mockClear();
     mocks.collectPipelineFromGraph.mockReturnValue([]);
+    mocks.getSourceImageFromGraph.mockClear();
+    mocks.getSourceImageFromGraph.mockReturnValue("https://cdn.example.com/source.png");
+    mocks.resolveRenderPreviewInputFromGraph.mockClear();
+    mocks.resolveRenderPreviewInputFromGraph.mockReturnValue({
+      sourceUrl: "https://cdn.example.com/source.png",
+      steps: [],
+    });
+    mocks.usePipelinePreview.mockClear();
+    mocks.usePipelinePreview.mockReturnValue({
+      canvasRef: { current: null },
+      hasSource: true,
+      isRendering: false,
+      previewAspectRatio: 1,
+      error: null,
+    });
 
     if (!("setPointerCapture" in HTMLElement.prototype)) {
       Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
@@ -212,6 +233,51 @@ describe("CropNode", () => {
 
     expect(getNumberInput(container as HTMLElement, "adjustments.crop.fields.x").value).toBe("0.2");
     expect(getNumberInput(container as HTMLElement, "adjustments.crop.fields.y").value).toBe("0.2");
+  });
+
+  it("passes live render source composition into the preview pipeline", async () => {
+    const sourceComposition = {
+      kind: "mixer",
+      stage: { width: 1200, height: 900 },
+      layers: [],
+      blendMode: "normal",
+      opacity: 100,
+      overlayX: 0,
+      overlayY: 0,
+      overlayWidth: 1,
+      overlayHeight: 1,
+      cropLeft: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+    };
+    mocks.resolveRenderPreviewInputFromGraph.mockReturnValue({
+      sourceUrl: null,
+      sourceComposition,
+      steps: [
+        {
+          nodeId: "crop-1",
+          type: "crop",
+          params: {
+            crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+          },
+        },
+      ],
+    });
+
+    await renderNode({
+      crop: { x: 0.1, y: 0, width: 0.8, height: 1 },
+      resize: { mode: "custom", width: 1080, height: 1350, fit: "cover", keepAspect: true },
+    });
+
+    const calls = mocks.usePipelinePreview.mock.calls;
+    const previewOptions = calls[calls.length - 1]?.[0];
+
+    expect(previewOptions).toMatchObject({
+      sourceUrl: null,
+      sourceComposition,
+      steps: [],
+    });
   });
 
   it("resizes crop rect from corner and edge handles", async () => {

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   queueNodeDataUpdate: vi.fn(async () => undefined),
   queueNodeResize: vi.fn(async () => undefined),
   updateNodeInternals: vi.fn(),
+  viewportZoom: 1,
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -27,7 +28,7 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right" },
   useUpdateNodeInternals: () => mocks.updateNodeInternals,
-  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+  useViewport: () => ({ x: 0, y: 0, zoom: mocks.viewportZoom }),
 }));
 
 vi.mock("@/components/canvas/canvas-handle", () => ({
@@ -71,6 +72,7 @@ vi.mock("@/components/canvas/nodes/mixer-fabric-editor", () => ({
   MixerFabricEditor: ({
     stage,
     layers,
+    previewQuality,
     onTransformLayer,
   }: {
     stage: { width: number; height: number } | null | undefined;
@@ -81,7 +83,9 @@ vi.mock("@/components/canvas/nodes/mixer-fabric-editor", () => ({
       width: number;
       height: number;
       rotation: number;
+      source?: { kind: string; url?: string };
     }>;
+    previewQuality?: string;
     onTransformLayer: (
       layerId: string,
       patch: { x: number; y: number; width: number; height: number; rotation: number },
@@ -90,17 +94,20 @@ vi.mock("@/components/canvas/nodes/mixer-fabric-editor", () => ({
     <div
       data-testid="mixer-fabric-editor"
       data-stage={stage ? `${stage.width}x${stage.height}` : ""}
+      data-preview-quality={previewQuality ?? ""}
       data-layer-count={layers.length}
       data-first-layer-x={layers[0]?.x ?? ""}
       data-first-layer-y={layers[0]?.y ?? ""}
       data-first-layer-width={layers[0]?.width ?? ""}
       data-first-layer-height={layers[0]?.height ?? ""}
       data-first-layer-rotation={layers[0]?.rotation ?? ""}
+      data-first-layer-source-url={layers[0]?.source?.url ?? ""}
       data-second-layer-x={layers[1]?.x ?? ""}
       data-second-layer-y={layers[1]?.y ?? ""}
       data-second-layer-width={layers[1]?.width ?? ""}
       data-second-layer-height={layers[1]?.height ?? ""}
       data-second-layer-rotation={layers[1]?.rotation ?? ""}
+      data-second-layer-source-url={layers[1]?.source?.url ?? ""}
     >
       <button
         type="button"
@@ -228,6 +235,7 @@ describe("MixerNode", () => {
     mocks.queueNodeDataUpdate.mockClear();
     mocks.queueNodeResize.mockClear();
     mocks.updateNodeInternals.mockClear();
+    mocks.viewportZoom = 1;
     resizeObserverCallback = null;
     globalThis.ResizeObserver = class ResizeObserver {
       constructor(
@@ -841,6 +849,104 @@ describe("MixerNode", () => {
     expect(
       container?.querySelector('[data-testid="mixer-fabric-editor"]')?.getAttribute("data-stage"),
     ).toBe("1600x800");
+  });
+
+  it("uses full-quality layer sources for medium zoom mixer previews", async () => {
+    mocks.viewportZoom = 2;
+    const mixerData = {
+      mixerVersion: 2,
+      stage: { width: 1200, height: 800 },
+      layers: [],
+    };
+
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base-full.png",
+            previewUrl: "https://cdn.example.com/base-preview.webp",
+            intrinsicWidth: 1200,
+            intrinsicHeight: 800,
+          },
+        },
+        {
+          id: "image-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay-full.png",
+            previewUrl: "https://cdn.example.com/overlay-preview.webp",
+            intrinsicWidth: 600,
+            intrinsicHeight: 400,
+          },
+        },
+        { id: "mixer-1", type: "mixer", data: mixerData },
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+        { id: "edge-overlay", source: "image-overlay", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+      props: { data: mixerData },
+    });
+
+    const editor = container?.querySelector('[data-testid="mixer-fabric-editor"]');
+    expect(editor?.getAttribute("data-preview-quality")).toBe("medium");
+    expect(editor?.getAttribute("data-first-layer-source-url")).toBe(
+      "https://cdn.example.com/base-full.png",
+    );
+    expect(editor?.getAttribute("data-second-layer-source-url")).toBe(
+      "https://cdn.example.com/overlay-full.png",
+    );
+  });
+
+  it("keeps preview-quality layer sources for low zoom mixer previews", async () => {
+    mocks.viewportZoom = 1;
+    const mixerData = {
+      mixerVersion: 2,
+      stage: { width: 1200, height: 800 },
+      layers: [],
+    };
+
+    await renderNode({
+      nodes: [
+        {
+          id: "image-base",
+          type: "image",
+          data: {
+            url: "https://cdn.example.com/base-full.png",
+            previewUrl: "https://cdn.example.com/base-preview.webp",
+            intrinsicWidth: 1200,
+            intrinsicHeight: 800,
+          },
+        },
+        {
+          id: "image-overlay",
+          type: "asset",
+          data: {
+            url: "https://cdn.example.com/overlay-full.png",
+            previewUrl: "https://cdn.example.com/overlay-preview.webp",
+            intrinsicWidth: 600,
+            intrinsicHeight: 400,
+          },
+        },
+        { id: "mixer-1", type: "mixer", data: mixerData },
+      ],
+      edges: [
+        { id: "edge-base", source: "image-base", target: "mixer-1", targetHandle: "layer-in" },
+        { id: "edge-overlay", source: "image-overlay", target: "mixer-1", targetHandle: "layer-in-2" },
+      ],
+      props: { data: mixerData },
+    });
+
+    const editor = container?.querySelector('[data-testid="mixer-fabric-editor"]');
+    expect(editor?.getAttribute("data-preview-quality")).toBe("low");
+    expect(editor?.getAttribute("data-first-layer-source-url")).toBe(
+      "https://cdn.example.com/base-preview.webp",
+    );
+    expect(editor?.getAttribute("data-second-layer-source-url")).toBe(
+      "https://cdn.example.com/overlay-preview.webp",
+    );
   });
 
   it("does not requeue derived stage data while the same optimistic stage update is pending", async () => {

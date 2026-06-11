@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getOpenRouterModel } from "@/lib/ai-stream/openrouter-provider";
 import { parseTextStreamRequest } from "@/lib/ai-stream/stream-protocol";
+import { splitSystemInstructionsFromMessages } from "@/lib/ai-stream/system-instructions";
 import { buildAiTextStreamMessages } from "@/lib/ai-stream/text-messages";
 import { DEFAULT_AI_TEXT_MODEL_ID, getAiTextModel } from "@/lib/ai-text-models";
 import { fetchAuthAction, getAuthUser } from "@/lib/auth-server";
@@ -53,13 +54,16 @@ async function buildMessagesForPreparedTextRun(prepared: {
     throw new Error("The selected model cannot read images and no vision fallback model is available");
   }
 
-  const caption = await generateText({
-    model: getOpenRouterModel(fallbackModel.id),
-    messages: buildAiTextStreamMessages({
+  const captionPrompt = splitSystemInstructionsFromMessages(
+    buildAiTextStreamMessages({
       instruction: "Translate the attached visual material into concise source notes for a later text generation step.",
       visualMode: "describe",
       visualReferences,
     }),
+  );
+  const caption = await generateText({
+    model: getOpenRouterModel(fallbackModel.id),
+    ...captionPrompt,
   });
   const captionText = caption.text.trim();
   if (!captionText) {
@@ -122,9 +126,12 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
+    const prompt = splitSystemInstructionsFromMessages(
+      await buildMessagesForPreparedTextRun(prepared),
+    );
     const result = streamText({
       model: getOpenRouterModel(prepared.modelId),
-      messages: await buildMessagesForPreparedTextRun(prepared),
+      ...prompt,
       onFinish: async ({ text }) => {
         finalized = true;
         await fetchAuthAction(api.ai.finalizeTextStreamSuccess, {

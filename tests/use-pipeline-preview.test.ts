@@ -78,6 +78,7 @@ function PreviewHarness({
   maxPreviewWidth,
   maxDevicePixelRatio,
   previewQuality,
+  previewWidth,
 }: {
   sourceUrl: string | null;
   steps: PipelineStep[];
@@ -88,6 +89,7 @@ function PreviewHarness({
   maxPreviewWidth?: number;
   maxDevicePixelRatio?: number;
   previewQuality?: CanvasPreviewQuality;
+  previewWidth?: number;
 }) {
   const { canvasRef, histogram, error, isRendering } = usePipelinePreview({
     sourceUrl,
@@ -99,6 +101,7 @@ function PreviewHarness({
     maxPreviewWidth,
     maxDevicePixelRatio,
     previewQuality,
+    previewWidth,
   });
 
   useEffect(() => {
@@ -352,6 +355,32 @@ describe("usePipelinePreview", () => {
     expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledWith(
       expect.objectContaining({
         previewWidth: previewPipelineWidthForQuality("medium"),
+      }),
+    );
+  });
+
+  it("uses an explicit preview width ahead of the bucketed quality width", async () => {
+    await act(async () => {
+      root?.render(
+        createElement(PreviewHarness, {
+          sourceUrl: "https://cdn.example.com/source.png",
+          steps: [],
+          includeHistogram: false,
+          nodeWidth: 2400,
+          previewQuality: "medium",
+          previewWidth: 1600,
+        }),
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_SETTLE_MS);
+      await Promise.resolve();
+    });
+
+    expect(workerClientMocks.renderPreviewWithWorkerFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewWidth: 1600,
       }),
     );
   });
@@ -912,6 +941,7 @@ describe("preview histogram call sites", () => {
         ],
       }),
       findSourceNodeFromGraph: () => null,
+      resolveRenderPipelineHash: () => "pipeline-hash",
       shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
         steps.some((step) => overrides.has(step.nodeId)),
     }));
@@ -1099,6 +1129,7 @@ describe("preview histogram call sites", () => {
         ],
       }),
       findSourceNodeFromGraph: () => null,
+      resolveRenderPipelineHash: () => "pipeline-hash",
       shouldFastPathPreviewPipeline: (steps: PipelineStep[], overrides: Map<string, unknown>) =>
         steps.some((step) => overrides.has(step.nodeId)),
     }));
@@ -1300,6 +1331,7 @@ describe("preview histogram call sites", () => {
         type: "image",
         data: { width: 1200, height: 800 },
       }),
+      resolveRenderPipelineHash: () => "pipeline-hash",
       shouldFastPathPreviewPipeline: () => false,
     }));
     vi.doMock("@/lib/canvas-utils", () => ({

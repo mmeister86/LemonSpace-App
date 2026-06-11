@@ -1358,6 +1358,26 @@ function numberFromRecord(record: Record<string, unknown>, key: string, fallback
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function isMockupVisualSourceReady(node: { type?: string; data?: unknown } | null): boolean {
+  if (!node?.type || !["image", "asset", "render", "ai-image"].includes(node.type)) {
+    return false;
+  }
+  if (node.type === "render") {
+    return true;
+  }
+
+  const data = getNodeDataRecord(node.data);
+  return Boolean(
+    stringFromRecord(data, "url") ||
+      stringFromRecord(data, "imageUrl") ||
+      stringFromRecord(data, "previewUrl") ||
+      stringFromRecord(data, "lastUploadUrl") ||
+      stringFromRecord(data, "storageId") ||
+      stringFromRecord(data, "previewStorageId") ||
+      stringFromRecord(data, "lastUploadStorageId"),
+  );
+}
+
 async function getAgentNodeForCanvasOrThrow(
   ctx: { db: { get: (id: Id<"nodes">) => Promise<Doc<"nodes"> | null> } },
   nodeId: Id<"nodes">,
@@ -1414,8 +1434,12 @@ export const createInstagramHarnessOutput = internalMutation({
     const altText = stringFromRecord(args.data, "altText");
     const username = stringFromRecord(args.data, "username") || "lemonspace";
     const location = stringFromRecord(args.data, "location") || "Preview location";
-    const imageUrl = stringFromRecord(args.data, "imageUrl");
-    const profileImageUrl = stringFromRecord(args.data, "profileImageUrl");
+    const imageUrl = syntheticPreviewFields.includes("imageUrl")
+      ? ""
+      : stringFromRecord(args.data, "imageUrl");
+    const profileImageUrl = syntheticPreviewFields.includes("profileImageUrl")
+      ? ""
+      : stringFromRecord(args.data, "profileImageUrl");
 
     const outputNodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
@@ -1595,7 +1619,7 @@ export const createInstagramHarnessPostPackage = internalMutation({
         positionX: baseX,
         positionY: baseY + index * 190,
         width: 320,
-        height: fieldNode.type === "prompt" ? 220 : 150,
+        height: 150,
         status: "idle",
         retryCount: 0,
         data: fieldNode.data,
@@ -1604,10 +1628,47 @@ export const createInstagramHarnessPostPackage = internalMutation({
       createdNodeIds.push(fieldNodeId);
     }
 
+    let cropNodeId: Id<"nodes"> | null = null;
+    if (artifacts.cropNode && artifacts.cropBinding) {
+      const visualNodeId = artifacts.cropBinding.sourceNodeId as Id<"nodes">;
+      const visualNode = await ctx.db.get(visualNodeId);
+      if (
+        visualNode &&
+        visualNode.canvasId === args.canvasId &&
+        isMockupVisualSourceReady(visualNode)
+      ) {
+        cropNodeId = await ctx.db.insert("nodes", {
+          canvasId: args.canvasId,
+          type: artifacts.cropNode.type,
+          positionX: baseX + 430,
+          positionY: baseY,
+          width: 340,
+          height: 620,
+          status: "idle",
+          retryCount: 0,
+          data: artifacts.cropNode.data,
+        });
+        createdNodeIds.push(cropNodeId);
+
+        await assertConnectionPolicyForTypes(ctx, {
+          sourceType: visualNode.type,
+          targetType: artifacts.cropNode.type,
+          targetNodeId: cropNodeId,
+        });
+        await ctx.db.insert("edges", {
+          canvasId: args.canvasId,
+          sourceNodeId: visualNodeId,
+          targetNodeId: cropNodeId,
+          sourceHandle: undefined,
+          targetHandle: undefined,
+        });
+      }
+    }
+
     const mockupNodeId = await ctx.db.insert("nodes", {
       canvasId: args.canvasId,
       type: artifacts.mockupNode.type,
-      positionX: baseX + 430,
+      positionX: cropNodeId ? baseX + 860 : baseX + 430,
       positionY: baseY,
       width: 520,
       height: 760,
@@ -1644,24 +1705,20 @@ export const createInstagramHarnessPostPackage = internalMutation({
       });
     }
 
-    if (artifacts.visualBinding) {
-      const visualNodeId = artifacts.visualBinding.sourceNodeId as Id<"nodes">;
-      const visualNode = await ctx.db.get(visualNodeId);
-      if (visualNode && visualNode.canvasId === args.canvasId) {
-        await assertConnectionPolicyForTypes(ctx, {
-          sourceType: visualNode.type,
-          targetType: artifacts.mockupNode.type,
-          targetNodeId: mockupNodeId,
-          targetHandle: artifacts.visualBinding.targetHandle,
-        });
-        await ctx.db.insert("edges", {
-          canvasId: args.canvasId,
-          sourceNodeId: visualNodeId,
-          targetNodeId: mockupNodeId,
-          sourceHandle: undefined,
-          targetHandle: artifacts.visualBinding.targetHandle,
-        });
-      }
+    if (artifacts.visualBinding && cropNodeId) {
+      await assertConnectionPolicyForTypes(ctx, {
+        sourceType: "crop",
+        targetType: artifacts.mockupNode.type,
+        targetNodeId: mockupNodeId,
+        targetHandle: artifacts.visualBinding.targetHandle,
+      });
+      await ctx.db.insert("edges", {
+        canvasId: args.canvasId,
+        sourceNodeId: cropNodeId,
+        targetNodeId: mockupNodeId,
+        sourceHandle: undefined,
+        targetHandle: artifacts.visualBinding.targetHandle,
+      });
     }
 
     await ctx.db.patch(args.nodeId, {
@@ -2061,6 +2118,27 @@ type InstagramHarnessFinal = {
   summary: string;
 };
 
+type SuccessfulAgentCleanupStep = {
+  label: string;
+  run: () => Promise<void>;
+};
+
+async function completeSuccessfulAgentRun(args: {
+  finalizeSuccess: () => Promise<void>;
+  cleanupSteps: SuccessfulAgentCleanupStep[];
+  onCleanupError?: (entry: { label: string; error: unknown }) => void;
+}): Promise<void> {
+  await args.finalizeSuccess();
+
+  for (const step of args.cleanupSteps) {
+    try {
+      await step.run();
+    } catch (error) {
+      args.onCleanupError?.({ label: step.label, error });
+    }
+  }
+}
+
 function parseInstagramHarnessFinal(content: string): InstagramHarnessFinal {
   const parsed = JSON.parse(content) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -2195,12 +2273,44 @@ export const runToolHarnessAgent = internalAction({
         },
       });
 
-      await ctx.runMutation(internalApi.agents.finalizeAgentSuccessWithOutputs, {
-        nodeId: args.nodeId,
-        summary: result.final.summary,
+      await completeSuccessfulAgentRun({
+        finalizeSuccess: async () => {
+          await ctx.runMutation(internalApi.agents.finalizeAgentSuccessWithOutputs, {
+            nodeId: args.nodeId,
+            summary: result.final.summary,
+          });
+        },
+        cleanupSteps: [
+          {
+            label: "commit internal reservation",
+            run: async () => {
+              await commitInternalReservationIfNeeded(
+                ctx,
+                args.reservationId,
+                selectedModel.creditCost,
+              );
+            },
+          },
+          {
+            label: "decrement concurrency",
+            run: async () => {
+              await decrementConcurrencyIfNeeded(
+                ctx,
+                args.shouldDecrementConcurrency,
+                args.userId,
+              );
+            },
+          },
+        ],
+        onCleanupError: ({ label, error }) => {
+          console.warn("[agents] runToolHarnessAgent post-success cleanup failed", {
+            nodeId: args.nodeId,
+            modelId: args.modelId,
+            label,
+            error: errorMessage(error),
+          });
+        },
       });
-      await commitInternalReservationIfNeeded(ctx, args.reservationId, selectedModel.creditCost);
-      await decrementConcurrencyIfNeeded(ctx, args.shouldDecrementConcurrency, args.userId);
     } catch (error) {
       logAgentFailure("runToolHarnessAgent", { nodeId: args.nodeId, modelId: args.modelId }, error);
       await releaseInternalReservationBestEffort(ctx, args.reservationId, "agents");
@@ -2221,6 +2331,8 @@ export const __testables = {
   resolveExecutionPlanSummary,
   resolveFinalExecutionSummary,
   buildAgentCreatedNodeEdge,
+  completeSuccessfulAgentRun,
+  isMockupVisualSourceReady,
 };
 
 export const runAgent = action({

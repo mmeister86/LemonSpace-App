@@ -14,7 +14,6 @@ import {
   INSTAGRAM_POST_MOCKUP_CTA_HANDLE,
   INSTAGRAM_POST_MOCKUP_HASHTAGS_HANDLE,
   INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE,
-  INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE,
 } from "../lib/instagram-post-mockup";
 
 export type InstagramHarnessToolState = {
@@ -43,26 +42,28 @@ export type InstagramPostPackageFieldRole =
   | "caption"
   | "hashtags"
   | "cta"
-  | "altText"
-  | "visualPrompt";
+  | "altText";
 
 type InstagramPostPackagePersistedFieldRole =
   | "caption"
   | "hashtags"
   | "cta"
-  | "alt-text"
-  | "visual-prompt";
+  | "alt-text";
 
 export type InstagramPostPackageFieldArtifact = {
   role: InstagramPostPackageFieldRole;
   persistedRole: InstagramPostPackagePersistedFieldRole;
-  type: "text" | "prompt";
+  type: "text";
   targetHandle:
     | typeof INSTAGRAM_POST_MOCKUP_CAPTION_HANDLE
     | typeof INSTAGRAM_POST_MOCKUP_HASHTAGS_HANDLE
     | typeof INSTAGRAM_POST_MOCKUP_CTA_HANDLE
-    | typeof INSTAGRAM_POST_MOCKUP_ALT_TEXT_HANDLE
-    | typeof INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE;
+    | typeof INSTAGRAM_POST_MOCKUP_ALT_TEXT_HANDLE;
+  data: Record<string, unknown>;
+};
+
+export type InstagramPostPackageCropArtifact = {
+  type: "crop";
   data: Record<string, unknown>;
 };
 
@@ -76,10 +77,37 @@ export type InstagramPostPackageArtifacts = {
     role: InstagramPostPackageFieldRole;
     targetHandle: InstagramPostPackageFieldArtifact["targetHandle"];
   }>;
-  visualBinding: {
+  cropNode: InstagramPostPackageCropArtifact | null;
+  cropBinding: {
     sourceNodeId: string;
+  } | null;
+  visualBinding: {
+    source: "crop";
     targetHandle: typeof INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE;
   } | null;
+};
+
+const INSTAGRAM_FEED_CROP_ASPECT = 4 / 5;
+const INSTAGRAM_FEED_CROP_WIDTH = 1080;
+const INSTAGRAM_FEED_CROP_HEIGHT = 1350;
+const CROP_RATIO_PRECISION = 6;
+const VISUAL_SOURCE_PRIORITY: Record<string, number> = {
+  render: 50,
+  "ai-image": 40,
+  asset: 30,
+  image: 20,
+  "agent-output": 10,
+};
+
+type ConnectedImageCandidate = {
+  nodeId: string;
+  type: string;
+  imageUrl?: string;
+  storageId?: string;
+  width?: number;
+  height?: number;
+  priority: number;
+  contextIndex: number;
 };
 
 function trimText(value: unknown): string {
@@ -105,45 +133,151 @@ function numberFromRecord(
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function findFirstConnectedImage(
+function positiveNumberFromRecord(
+  record: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = numberFromRecord(record, key);
+  return value !== undefined && value > 0 ? value : undefined;
+}
+
+function readContextDimension(
+  fields: Record<string, unknown>,
+  key: "width" | "height",
+): number | undefined {
+  const direct = positiveNumberFromRecord(fields, key);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  const intrinsicKey = key === "width" ? "intrinsicWidth" : "intrinsicHeight";
+  return positiveNumberFromRecord(fields, intrinsicKey);
+}
+
+function connectedImageCandidateFromContextNode(
+  node: InstagramConnectedContextResult["nodes"][number],
+  contextIndex: number,
+): ConnectedImageCandidate | null {
+  const priority = VISUAL_SOURCE_PRIORITY[node.type] ?? 0;
+  if (priority <= 0) {
+    return null;
+  }
+
+  const imageUrl = trimText(node.fields.url) || trimText(node.fields.imageUrl);
+  const storageId = trimText(node.fields.storageId);
+  if (!imageUrl && !storageId && node.type !== "render") {
+    return null;
+  }
+
+  return {
+    nodeId: node.nodeId,
+    type: node.type,
+    priority,
+    contextIndex,
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(storageId ? { storageId } : {}),
+    ...(readContextDimension(node.fields, "width") !== undefined
+      ? { width: readContextDimension(node.fields, "width") }
+      : {}),
+    ...(readContextDimension(node.fields, "height") !== undefined
+      ? { height: readContextDimension(node.fields, "height") }
+      : {}),
+  };
+}
+
+function selectBestConnectedImage(
   context: InstagramConnectedContextResult,
-): { nodeId: string; imageUrl: string; storageId?: string } | null {
-  for (const node of context.nodes) {
-    if (!["image", "asset", "render", "ai-image", "agent-output"].includes(node.type)) {
-      continue;
+  requestedNodeId: string,
+): ConnectedImageCandidate | null {
+  const candidates = context.nodes
+    .map((node, index) => connectedImageCandidateFromContextNode(node, index))
+    .filter((candidate): candidate is ConnectedImageCandidate => candidate !== null);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const sorted = [...candidates].sort((left, right) => {
+    const priorityCompare = right.priority - left.priority;
+    if (priorityCompare !== 0) {
+      return priorityCompare;
     }
 
-    const imageUrl = trimText(node.fields.url) || trimText(node.fields.imageUrl);
-    if (!imageUrl) {
-      continue;
+    if (requestedNodeId) {
+      const leftRequested = left.nodeId === requestedNodeId ? 1 : 0;
+      const rightRequested = right.nodeId === requestedNodeId ? 1 : 0;
+      const requestedCompare = rightRequested - leftRequested;
+      if (requestedCompare !== 0) {
+        return requestedCompare;
+      }
     }
 
-    const storageId = trimText(node.fields.storageId);
+    return left.contextIndex - right.contextIndex;
+  });
+
+  return sorted[0] ?? null;
+}
+
+function buildCenteredInstagramCropRect(args: {
+  width?: number;
+  height?: number;
+}): { x: number; y: number; width: number; height: number } {
+  if (!args.width || !args.height) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+
+  const sourceAspect = args.width / args.height;
+  if (!Number.isFinite(sourceAspect) || sourceAspect <= 0) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+
+  if (sourceAspect > INSTAGRAM_FEED_CROP_ASPECT) {
+    const width = INSTAGRAM_FEED_CROP_ASPECT / sourceAspect;
     return {
-      nodeId: node.nodeId,
-      imageUrl,
-      ...(storageId ? { storageId } : {}),
+      x: roundCropRatio((1 - width) / 2),
+      y: 0,
+      width: roundCropRatio(width),
+      height: 1,
     };
   }
 
-  return null;
+  const height = sourceAspect / INSTAGRAM_FEED_CROP_ASPECT;
+  return {
+    x: 0,
+    y: roundCropRatio((1 - height) / 2),
+    width: 1,
+    height: roundCropRatio(height),
+  };
+}
+
+function roundCropRatio(value: number): number {
+  return Number(value.toFixed(CROP_RATIO_PRECISION));
 }
 
 export function resolveInstagramPostPackageArgs(
   raw: Record<string, unknown>,
   context: InstagramConnectedContextResult,
 ): Record<string, unknown> {
-  const connectedImage = findFirstConnectedImage(context);
-  const explicitImageUrl = trimText(raw.imageUrl);
+  const requestedImageNodeId = trimText(raw.selectedImageNodeId);
+  const connectedImage = selectBestConnectedImage(context, requestedImageNodeId);
   const sourceNodeIds = normalizeStringList(raw.sourceNodeIds);
   const syntheticPreviewFields = normalizeStringList(raw.syntheticPreviewFields);
+  const explicitImageUrl = syntheticPreviewFields.includes("imageUrl")
+    ? ""
+    : trimText(raw.imageUrl);
+  const profileImageUrl = syntheticPreviewFields.includes("profileImageUrl")
+    ? ""
+    : trimText(raw.profileImageUrl);
   const imageUrl = explicitImageUrl || connectedImage?.imageUrl || "";
-  const selectedImageNodeId =
-    trimText(raw.selectedImageNodeId) || connectedImage?.nodeId || "";
+  const selectedImageNodeId = connectedImage?.nodeId || "";
   const selectedImageStorageId =
     trimText(raw.selectedImageStorageId) || connectedImage?.storageId || "";
+  const selectedImageWidth =
+    positiveNumberFromRecord(raw, "selectedImageWidth") ?? connectedImage?.width;
+  const selectedImageHeight =
+    positiveNumberFromRecord(raw, "selectedImageHeight") ?? connectedImage?.height;
 
-  return {
+  const normalized: Record<string, unknown> = {
     ...raw,
     username: trimText(raw.username) || "lemonspace",
     caption: trimText(raw.caption),
@@ -160,16 +294,23 @@ export function resolveInstagramPostPackageArgs(
           ? [selectedImageNodeId]
           : context.nodes.map((node) => node.nodeId),
     ...(trimText(raw.location) ? { location: trimText(raw.location) } : {}),
-    ...(trimText(raw.profileImageUrl)
-      ? { profileImageUrl: trimText(raw.profileImageUrl) }
-      : {}),
+    ...(profileImageUrl ? { profileImageUrl } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     ...(selectedImageNodeId ? { selectedImageNodeId } : {}),
     ...(selectedImageStorageId ? { selectedImageStorageId } : {}),
+    ...(selectedImageWidth ? { selectedImageWidth } : {}),
+    ...(selectedImageHeight ? { selectedImageHeight } : {}),
     ...(numberFromRecord(raw, "likesCount") !== undefined
       ? { likesCount: numberFromRecord(raw, "likesCount") }
       : {}),
   };
+  if (!imageUrl) {
+    delete normalized.imageUrl;
+  }
+  if (!profileImageUrl) {
+    delete normalized.profileImageUrl;
+  }
+  return normalized;
 }
 
 export const resolveInstagramOutputArgs = resolveInstagramPostPackageArgs;
@@ -190,8 +331,14 @@ export function buildInstagramPostPackageArtifacts(args: {
   const username = trimText(args.data.username) || "lemonspace";
   const location = trimText(args.data.location) || "Preview location";
   const imageUrl = trimText(args.data.imageUrl);
-  const profileImageUrl = trimText(args.data.profileImageUrl);
+  const profileImageUrl = syntheticPreviewFields.includes("profileImageUrl")
+    ? ""
+    : trimText(args.data.profileImageUrl);
   const selectedImageNodeId = trimText(args.data.selectedImageNodeId);
+  const cropRect = buildCenteredInstagramCropRect({
+    width: positiveNumberFromRecord(args.data, "selectedImageWidth"),
+    height: positiveNumberFromRecord(args.data, "selectedImageHeight"),
+  });
   const baseFieldData = {
     agentNodeId: args.agentNodeId,
     runId: args.runId,
@@ -242,20 +389,24 @@ export function buildInstagramPostPackageArtifacts(args: {
         content: altText,
       },
     },
-    {
-      role: "visualPrompt",
-      persistedRole: "visual-prompt",
-      type: "prompt",
-      targetHandle: INSTAGRAM_POST_MOCKUP_VISUAL_PROMPT_HANDLE,
-      data: {
-        ...baseFieldData,
-        instagramFieldRole: "visual-prompt",
-        prompt: visualPrompt,
-        aspectRatio: trimText(args.data.aspectRatio) || "1:1",
-        model: "google/gemini-2.5-flash-image",
-      },
-    },
   ];
+  const cropNode: InstagramPostPackageCropArtifact | null = selectedImageNodeId
+    ? {
+        type: "crop",
+        data: {
+          ...baseFieldData,
+          instagramFieldRole: "visual-crop",
+          crop: cropRect,
+          resize: {
+            mode: "custom",
+            width: INSTAGRAM_FEED_CROP_WIDTH,
+            height: INSTAGRAM_FEED_CROP_HEIGHT,
+            fit: "cover",
+            keepAspect: true,
+          },
+        },
+      }
+    : null;
 
   return {
     fieldNodes,
@@ -289,9 +440,15 @@ export function buildInstagramPostPackageArtifacts(args: {
       role: fieldNode.role,
       targetHandle: fieldNode.targetHandle,
     })),
-    visualBinding: selectedImageNodeId
+    cropNode,
+    cropBinding: selectedImageNodeId
       ? {
           sourceNodeId: selectedImageNodeId,
+        }
+      : null,
+    visualBinding: cropNode
+      ? {
+          source: "crop",
           targetHandle: INSTAGRAM_POST_MOCKUP_VISUAL_HANDLE,
         }
       : null,
@@ -312,7 +469,7 @@ export const INSTAGRAM_AGENT_TOOLS: AgentHarnessTool[] = [
   {
     name: "create_instagram_post_package",
     description:
-      "Create one editable Instagram post package: field nodes, visual prompt, live mockup node, and bindings.",
+      "Create one editable Instagram post package: field nodes, optional 4:5 visual crop, live mockup node, and bindings.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -331,6 +488,8 @@ export const INSTAGRAM_AGENT_TOOLS: AgentHarnessTool[] = [
         aspectRatio: { type: "string" },
         selectedImageNodeId: { type: "string" },
         selectedImageStorageId: { type: "string" },
+        selectedImageWidth: { type: "number" },
+        selectedImageHeight: { type: "number" },
         sourceNodeIds: { type: "array", items: { type: "string" } },
         syntheticPreviewFields: { type: "array", items: { type: "string" } },
         assumptions: { type: "array", items: { type: "string" } },

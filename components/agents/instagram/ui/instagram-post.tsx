@@ -7,12 +7,15 @@
 
 import Image from "next/image"
 import { Heart, MessageCircle, Send, Bookmark, MoreVertical } from "lucide-react"
+import type { ReactNode } from "react"
 
 interface InstagramPostProps {
   username?: string
   location?: string
   profileImageUrl?: string
   imageUrl?: string
+  imageSlot?: ReactNode
+  imageAspectRatio?: "square" | "portrait-4-5"
   imageAlt?: string
   isLiked?: boolean
   likesCount?: number
@@ -20,19 +23,43 @@ interface InstagramPostProps {
   hashtags?: string[]
 }
 
+function safeImageSrc(value: string | undefined): string | undefined {
+  const src = value?.trim()
+  if (!src) {
+    return undefined
+  }
+
+  if (/^(https?:\/\/|data:image\/|blob:)/i.test(src)) {
+    return src
+  }
+
+  if (src.startsWith("/") && !src.startsWith("/canvas/")) {
+    return src
+  }
+
+  return undefined
+}
+
 export function InstagramPost({
   username = "paula_johnson83",
   location = "Altadena, California",
   profileImageUrl,
   imageUrl,
+  imageSlot,
+  imageAspectRatio = "square",
   imageAlt,
   isLiked = true,
   likesCount = 532,
   caption = "lorem ipsum dolor sit amet",
   hashtags = ["#augue", "#adipiscing", "#elit", "#do", "#eiusmod", "#tempor"],
 }: InstagramPostProps) {
+  const safeProfileImageUrl = safeImageSrc(profileImageUrl)
+  const safePostImageUrl = safeImageSrc(imageUrl)
+  const imageAreaAspectClass =
+    imageAspectRatio === "portrait-4-5" ? "aspect-[4/5]" : "aspect-square"
+
   return (
-    <div className="w-full max-w-[470px] bg-white border border-gray-200">
+    <div className="w-full bg-white border border-gray-200">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-3">
@@ -40,9 +67,9 @@ export function InstagramPost({
           <div className="w-11 h-11 rounded-full p-[2px] bg-linear-to-tr from-yellow-400 via-pink-500 to-purple-600">
             <div className="w-full h-full rounded-full bg-white p-[2px]">
               <div className="relative w-full h-full rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                {profileImageUrl ? (
+                {safeProfileImageUrl ? (
                   <Image
-                    src={profileImageUrl}
+                    src={safeProfileImageUrl}
                     alt={username}
                     fill
                     sizes="44px"
@@ -72,13 +99,18 @@ export function InstagramPost({
       </div>
 
       {/* Image Area - Checkered Pattern Placeholder */}
-      <div className="relative aspect-square overflow-hidden">
-        {imageUrl ? (
+      <div
+        data-testid="instagram-post-image-area"
+        className={`relative ${imageAreaAspectClass} overflow-hidden`}
+      >
+        {imageSlot ? (
+          imageSlot
+        ) : safePostImageUrl ? (
           <Image
-            src={imageUrl}
+            src={safePostImageUrl}
             alt={imageAlt ?? `${username} post`}
             fill
-            sizes="(max-width: 470px) 100vw, 470px"
+            sizes="100vw"
             className="object-cover"
             unoptimized
           />
